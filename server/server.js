@@ -16,6 +16,12 @@ import {
 } from './balance.js';
 import { ITEMS, SLOTS, itemDef, slotOf, valueOf, equipStats } from './items.js';
 import {
+  dist2, closestOnPolyline, pointInPoly, polyCentroid, generateTrees, generateScatter, generateHanging,
+} from './worldgen.js';
+
+function rand(min, max) { return min + Math.random() * (max - min); }
+function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+import {
   QUESTS, questPayload, questProgress, canStart, recordKill, recordReach,
   consumeQuestItems,
 } from './quests.js';
@@ -41,76 +47,6 @@ const ATTACK_COOLDOWN = PLAYER.attackCooldown;
 const RESPAWN_TIME = PLAYER.respawnTime;
 const QUEST_REACH_RADIUS = 9;   // how close you must stand to satisfy a 'reach'
 const NPC_TALK_RADIUS = 10;     // how close you must stand to accept/turn in
-
-// ---------------------------------------------------------------------------
-// Geometry helpers
-// ---------------------------------------------------------------------------
-function rand(min, max) { return min + Math.random() * (max - min); }
-function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
-function dist2(ax, az, bx, bz) { const dx = ax - bx, dz = az - bz; return dx * dx + dz * dz; }
-
-// Closest point on segment AB to P.
-function closestOnSeg(px, pz, ax, az, bx, bz) {
-  const abx = bx - ax, abz = bz - az;
-  const t = clamp(((px - ax) * abx + (pz - az) * abz) / (abx * abx + abz * abz || 1), 0, 1);
-  return { x: ax + abx * t, z: az + abz * t };
-}
-function closestOnPolyline(px, pz, pts) {
-  let best = null, bestD = Infinity;
-  for (let i = 0; i < pts.length - 1; i++) {
-    const c = closestOnSeg(px, pz, pts[i].x, pts[i].z, pts[i + 1].x, pts[i + 1].z);
-    const d = dist2(px, pz, c.x, c.z);
-    if (d < bestD) { bestD = d; best = c; }
-  }
-  return { ...best, dist: Math.sqrt(bestD) };
-}
-
-function pointInPoly(x, z, poly) {
-  let inside = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const xi = poly[i].x, zi = poly[i].z, xj = poly[j].x, zj = poly[j].z;
-    if (((zi > z) !== (zj > z)) && (x < (xj - xi) * (z - zi) / (zj - zi) + xi)) inside = !inside;
-  }
-  return inside;
-}
-function polyCentroid(poly) {
-  let x = 0, z = 0; for (const p of poly) { x += p.x; z += p.z; }
-  return { x: x / poly.length, z: z / poly.length };
-}
-function mulberry32(a) {
-  return function () {
-    a |= 0; a = a + 0x6D2B79F5 | 0;
-    let t = Math.imul(a ^ a >>> 15, 1 | a);
-    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-    return ((t ^ t >>> 14) >>> 0) / 4294967296;
-  };
-}
-function clearRadiusS(p) {
-  if (p.kind === 'safe') return (p.r || 9) + 3;
-  if (p.kind === 'boss') return 15;
-  if (p.kind === 'gate') return 11;
-  if (p.kind === 'cave') return 9;
-  return 7;
-}
-// Deterministic, thinned, well-spaced trees. Authoritative so they can be solid.
-function generateTrees(zone) {
-  if (!zone.treeCount || zone.treeCount <= 0) return [];
-  const b = zone.bounds, rng = mulberry32(zone.treeSeed || 1);
-  const trees = [], minSpace = 11;
-  let guard = 0;
-  while (trees.length < zone.treeCount && guard++ < zone.treeCount * 25) {
-    const x = b.minX + 3 + rng() * (b.maxX - b.minX - 6);
-    const z = b.minZ + 3 + rng() * (b.maxZ - b.minZ - 6);
-    if (zone.boundary && !pointInPoly(x, z, zone.boundary)) continue;
-    if (closestOnPolyline(x, z, zone.path).dist < 6) continue;
-    if (zone.river && closestOnPolyline(x, z, zone.river.points).dist < zone.river.width / 2 + 3) continue;
-    if (zone.pois.some(p => dist2(x, z, p.x, p.z) < clearRadiusS(p) ** 2)) continue;
-    if ((zone.rocks || []).some(o => dist2(x, z, o.x, o.z) < (o.r + 2) ** 2)) continue;
-    if (trees.some(t => dist2(x, z, t.x, t.z) < minSpace * minSpace)) continue;
-    trees.push({ x: +x.toFixed(1), z: +z.toFixed(1), s: +(0.85 + rng() * 0.35).toFixed(2), r: +(rng() * 6).toFixed(2) });
-  }
-  return trees;
-}
 
 function inSafeZone(zone, x, z) {
   for (const p of zone.pois) {
@@ -145,6 +81,13 @@ function resolveCollision(zone, ent, radius) {
       if (d < 1e-4) { dx = 1; dz = 0; d = 1; }
       ent.x = c.x + (dx / d) * half; ent.z = c.z + (dz / d) * half;
     }
+  }
+
+  // Solid cave dressing (columns, big stalagmites, ore veins).
+  for (const o of (zone._scatter || [])) {
+    if (!o.c) continue;
+    const dx = ent.x - o.x, dz = ent.z - o.z, d = Math.hypot(dx, dz), min = o.c * o.s + radius;
+    if (d < min && d > 1e-4) { ent.x = o.x + (dx / d) * min; ent.z = o.z + (dz / d) * min; }
   }
 
   // Trees are solid.
@@ -233,6 +176,8 @@ function populate() {
     }
     for (const e of (zone.elites || [])) populateElite(zoneId, e);
     zone._trees = generateTrees(zone);
+    zone._scatter = generateScatter(zone);
+    zone._hanging = generateHanging(zone);
   }
 }
 
@@ -758,6 +703,9 @@ function zoneForClient(zone) {
     env: zone.env, enclosed: !!zone.enclosed, ceilingY: zone.ceilingY,
     npcs: zone.npcs || [],
     trees: zone._trees || [],
+    scatter: zone._scatter || [],
+    hanging: zone._hanging || [],
+    models: zone.models || [],
   };
 }
 
