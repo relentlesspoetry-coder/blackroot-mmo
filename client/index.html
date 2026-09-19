@@ -1247,11 +1247,9 @@ function buildPoi(p) {
     const light = new THREE.PointLight(0xff8844, 1.6, 22); light.position.y = 1.5; g.add(light);
     g.userData.flame = flame;
   };
-  const addSafeRing = (r) => {
-    const ring = new THREE.Mesh(new THREE.RingGeometry(r - 0.4, r, 44),
-      new THREE.MeshBasicMaterial({ color: 0x6fe0a0, transparent: true, opacity: 0.22, side: THREE.DoubleSide }));
-    ring.rotation.x = -Math.PI / 2; ring.position.y = 0.05; g.add(ring);
-  };
+  // Safe zones no longer draw a ground ring (the green circles) — the no-aggro
+  // / regen mechanic is unchanged, it just isn't marked on the ground.
+  const addSafeRing = (_r) => {};
   const addSignpost = (arms) => {
     const post = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 3, 6), woodMat());
     post.position.y = 1.5; post.castShadow = true; g.add(post);

@@ -152,10 +152,7 @@ export const darkwoods = {
     { type: 'guard', name: 'The Rootbound Guardian', cx: 24, cz: 36, level: 8, expect: 8 },
   ],
 
-  // Environmental hazards (damage-over-time areas). Intensity rises southward.
-  hazards: [
-    { key: 'rotfen',  type: 'poison', x: 48,  z: -30, r: 12, dps: 4, label: 'Rotfen Thicket' },
-    { key: 'ravine',  type: 'poison', x: -36, z: 44,  r: 11, dps: 6, label: 'Choking Roots' },
-    { key: 'southbog', type: 'poison', x: 10, z: 82,  r: 13, dps: 8, label: 'Blighted Bog' },
-  ],
+  // No environmental hazards — the poison damage areas (and their green circles)
+  // were removed.
+  hazards: [],
 };
