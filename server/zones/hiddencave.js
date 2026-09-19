@@ -83,13 +83,15 @@ export const hiddencave = {
 
   pois: [
     { key: 'entrance', name: 'Entrance Cavern',    x: 0,    z: -150, kind: 'exitup' },
-    { key: 'fungal',   name: 'Fungal Gallery',     x: 0,    z: -62,  kind: 'deep' },
+    // `art` overrides which visual the client builds; without it every 'deep'
+    // room would grow the same altar and egg sacs.
+    { key: 'fungal',   name: 'Fungal Gallery',     x: 0,    z: -62,  kind: 'deep', art: 'none' },
     { key: 'echo',     name: 'Echo Pool',          x: -98,  z: -96,  kind: 'pool' },
     { key: 'smuggler', name: "Smuggler's Niche",   x: 96,   z: -90,  kind: 'cache' },
-    { key: 'hall',     name: 'Collapsed Hall',     x: 0,    z: 14,   kind: 'deep' },
+    { key: 'hall',     name: 'Collapsed Hall',     x: 0,    z: 14,   kind: 'deep', art: 'collapsed' },
     { key: 'crystal',  name: 'Crystal Hollow',     x: -108, z: 62,   kind: 'crystal' },
     { key: 'workings', name: 'Old Workings',       x: -72,  z: 152,  kind: 'cache' },
-    { key: 'deep',     name: 'Deep Chamber',       x: 104,  z: 74,   kind: 'deep' },
+    { key: 'deep',     name: 'Deep Chamber',       x: 104,  z: 74,   kind: 'deep', art: 'none' },
     { key: 'nest',     name: "Broodmother's Nest", x: 8,    z: 148,  kind: 'deep' },
   ],
 

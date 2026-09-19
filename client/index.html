@@ -403,7 +403,7 @@ function handle(m) {
     case 'snapshot':
       snapPrev = snapCur; snapPrevT = snapCurT;
       snapCur = m; snapCurT = performance.now();
-      if (m.time != null) worldTime = m.time;
+      if (m.time != null && !timeFrozen) worldTime = m.time;
       if (m.weather) worldWeather = m.weather;
       applyDepleted(m.depleted);
       updateHudFromSnapshot(m);
@@ -447,6 +447,7 @@ let targetRing = null;
 let hemiLight = null, sunLight = null;
 let sky = {};
 let worldTime = 0.35, worldWeather = 'clear';
+let timeFrozen = false;   // set only through the ?debug=1 hook
 const UP = new THREE.Vector3(0, 1, 0);
 const chestMeshes = new Map(); // chestId -> { lid, opened }
 const itemMeshes = new Map();  // groundItemId -> { mesh, name, qty }
@@ -456,6 +457,7 @@ let ground;
 
 let camYaw = 0, camPitch = 0.55, camDist = 14;
 const camBlockers = [];          // walls the camera must not end up behind
+let camFrozen = false;           // set only through the ?debug=1 hook
 const camRay = new THREE.Raycaster();
 const _camHead = new THREE.Vector3(), _camWant = new THREE.Vector3(), _camDir = new THREE.Vector3();
 const jump = { active: false, t: 0 };
@@ -1018,7 +1020,88 @@ function buildPoi(p) {
     }
   };
 
-  switch (p.key) {
+
+  // A cave mouth: an arched opening cut into a rock face, framed by boulders
+  // with rubble spilling out of it. Used from both sides — from the woods the
+  // opening is black, from inside the cave it is full of daylight.
+  const addCaveMouth = (opts) => {
+    const faceOut = opts.faceOut || 0;          // yaw so the opening faces the player
+    const m = new THREE.Group();
+    m.rotation.y = faceOut;
+    g.add(m);
+
+    const rock = () => new THREE.MeshStandardMaterial({
+      color: opts.rock || 0x4a4740, roughness: 1, flatShading: true });
+
+    // Rock face: overlapping lumps rather than one dome, so the silhouette is
+    // broken up like the cave walls.
+    const W = opts.width || 7.5, H = opts.height || 6.4;
+    for (const [lx, ly, lz, r, sy] of [
+      [-W * 0.95, 0, -1.2, W * 0.75, 0.85], [W * 0.95, 0, -1.4, W * 0.7, 0.9],
+      [-W * 0.35, 0, -2.6, W * 0.8, 1.0], [W * 0.45, 0, -2.8, W * 0.78, 0.95],
+      [0, 0, -4.2, W * 0.9, 1.05],
+    ]) {
+      const lump = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 0), rock());
+      lump.position.set(lx, ly, lz); lump.scale.y = sy;
+      lump.rotation.set(Math.random() * 0.4, Math.random() * 3, Math.random() * 0.4);
+      lump.castShadow = lump.receiveShadow = true; m.add(lump);
+    }
+
+    // The opening: a rectangle capped with a half arch, extruded thin.
+    const shape = new THREE.Shape();
+    const hw = (opts.mouthW || 3.1) / 2, sh = (opts.mouthH || 4.2) - hw;
+    shape.moveTo(-hw, 0); shape.lineTo(-hw, sh);
+    shape.absarc(0, sh, hw, Math.PI, 0, true);
+    shape.lineTo(hw, 0); shape.lineTo(-hw, 0);
+
+    // Jamb stones around the opening.
+    for (const sgn of [-1, 1]) {
+      const jamb = new THREE.Mesh(new THREE.IcosahedronGeometry(1.9, 0), rock());
+      jamb.position.set(sgn * (hw + 1.1), 1.9, 0.5);
+      jamb.scale.set(0.75, 1.5, 0.8); jamb.rotation.y = sgn * 0.6;
+      jamb.castShadow = true; m.add(jamb);
+    }
+    const lintel = new THREE.Mesh(new THREE.IcosahedronGeometry(2.3, 0), rock());
+    lintel.position.set(0, (opts.mouthH || 4.2) + 0.5, 0.2);
+    lintel.scale.set(1.5, 0.6, 0.8); lintel.castShadow = true; m.add(lintel);
+
+    // What you see through it.
+    const inner = new THREE.Mesh(
+      new THREE.ExtrudeGeometry(shape, { depth: 0.3, bevelEnabled: false }),
+      new THREE.MeshBasicMaterial({ color: opts.throat, side: THREE.DoubleSide }));
+    inner.position.z = 0.9; m.add(inner);
+
+    // A short throat behind the opening so it reads as depth, not a decal.
+    const throat = new THREE.Mesh(new THREE.CylinderGeometry(hw * 1.05, hw * 1.15, 7, 10, 1, true),
+      new THREE.MeshBasicMaterial({ color: opts.throat, side: THREE.BackSide }));
+    throat.rotation.x = Math.PI / 2; throat.position.set(0, sh * 0.9, -2.6); m.add(throat);
+
+    if (opts.glow) {
+      const light = new THREE.PointLight(opts.glow, opts.glowPower || 1.4, opts.glowRange || 26);
+      light.position.set(0, 2.6, 1.6); m.add(light);
+      const haze = new THREE.Mesh(
+        new THREE.ExtrudeGeometry(shape, { depth: 0.1, bevelEnabled: false }),
+        new THREE.MeshBasicMaterial({ color: opts.glow, transparent: true, opacity: 0.22, depthWrite: false }));
+      haze.position.z = 1.35; haze.scale.set(1.15, 1.12, 1); m.add(haze);
+    }
+
+    // Rubble spilling out of the mouth.
+    for (let i = 0; i < 9; i++) {
+      const a = (i / 9) * Math.PI - Math.PI / 2;
+      const rr = 2.4 + (i % 3) * 1.3;
+      const stone = new THREE.Mesh(new THREE.IcosahedronGeometry(0.35 + (i % 4) * 0.18, 0), rock());
+      stone.position.set(Math.sin(a) * rr, 0.2, 1.6 + Math.cos(a) * 1.4);
+      stone.rotation.set(i, i * 1.7, i * 0.6);
+      stone.castShadow = true; m.add(stone);
+    }
+  };
+
+  // Which visual to build. The Dark Woods authors one-off art per landmark so
+  // it dispatches on key; the cave has nine rooms sharing five kinds of room,
+  // so it dispatches on kind. Both zones have a POI keyed 'entrance', which is
+  // why this cannot simply be the key.
+  const art = p.art || (zone.id === 'hiddencave' ? p.kind : p.key);
+  switch (art) {
     case 'entrance': addCampfire(); addSafeRing(p.r || 10); addSignpost(1); break;
     case 'shrine': {
       addSafeRing(p.r || 11);
@@ -1120,10 +1203,13 @@ function buildPoi(p) {
       break;
     }
     case 'cave': {
-      const mound = new THREE.Mesh(new THREE.SphereGeometry(5, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2),
-        new THREE.MeshStandardMaterial({ color: 0x2c3138, roughness: 1, flatShading: true })); mound.castShadow = true; g.add(mound);
-      const mouth = new THREE.Mesh(new THREE.CircleGeometry(1.8, 16), new THREE.MeshBasicMaterial({ color: 0x05070a }));
-      mouth.position.set(0, 1.8, 4.6); g.add(mouth);
+      // Face the opening back toward the middle of the zone, so players walking
+      // up to it see a mouth rather than the back of a hill.
+      addCaveMouth({
+        faceOut: Math.atan2(-p.x, -p.z),
+        rock: 0x3a3f36, throat: 0x05070a,
+        width: 8, mouthW: 3.4, mouthH: 4.6,
+      });
       break;
     }
     case 'southgate': {
@@ -1136,22 +1222,30 @@ function buildPoi(p) {
     case 'bridge': break; // structure built with the river
 
     // ---- Hidden Cave landmarks ----
-    case 'upper': {
-      // exit dais with a glowing shaft of daylight (stairs to the surface)
-      const dais = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 3.6, 0.6, 10), stoneMat()); dais.position.y = 0.3; g.add(dais);
-      for (let i = 0; i < 3; i++) { const step = new THREE.Mesh(new THREE.CylinderGeometry(2.4 - i * 0.6, 2.4 - i * 0.6, 0.4, 8), stoneMat()); step.position.y = 0.6 + i * 0.4; g.add(step); }
-      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.6, 14, 16, 1, true),
-        new THREE.MeshBasicMaterial({ color: 0xfff0c0, transparent: true, opacity: 0.14, side: THREE.DoubleSide, depthWrite: false }));
-      shaft.position.y = 8; g.add(shaft);
-      const light = new THREE.PointLight(0xffe8b0, 1.2, 26); light.position.y = 5; g.add(light);
+    case 'exitup': {
+      // The same mouth seen from inside: daylight instead of darkness, facing
+      // back into the cave.
+      addCaveMouth({
+        faceOut: Math.atan2(-p.x, -p.z) + Math.PI,
+        rock: 0x2f3239, throat: 0xffeec4,
+        width: 8, mouthW: 3.6, mouthH: 4.8,
+        glow: 0xffe8b0, glowPower: 2.0, glowRange: 34,
+      });
+      // Rubble ramp up to the opening.
+      for (let i = 0; i < 4; i++) {
+        const step = new THREE.Mesh(new THREE.BoxGeometry(5 - i * 0.7, 0.45, 1.6), stoneMat());
+        step.position.set(0, 0.22 + i * 0.4, 3.4 - i * 1.5);
+        step.rotation.y = (i % 2 ? 1 : -1) * 0.06;
+        step.receiveShadow = true; g.add(step);
+      }
       break;
     }
-    case 'echo': {
+    case 'pool': {
       // Boulders around the pool come from the scatter pack.
       const light = new THREE.PointLight(0x5fa8d0, 0.9, 20); light.position.y = 2; g.add(light);
       break;
     }
-    case 'smuggler': {
+    case 'cache': {
       for (const [bx, bz] of [[-1.5, 0], [-0.3, 0.6], [1.2, -0.4]]) {
         const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 1.1, 10), woodMat()); barrel.position.set(bx, 0.55, bz); barrel.castShadow = true; g.add(barrel);
       }
@@ -1162,6 +1256,20 @@ function buildPoi(p) {
       // The crystals themselves are authored models, clustered here by the
       // scatter spec's `near: 'crystal'`. This just lights them.
       const light = new THREE.PointLight(0x5fb0ff, 2.0, 30); light.position.y = 3; g.add(light);
+      break;
+    }
+    case 'none': break;   // the room's scatter is its decoration
+    case 'collapsed': {
+      // Fallen roof pillars, snapped and leaning.
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2 + 0.4;
+        const col = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 1.0, 6 + (i % 3), 7), stoneMat());
+        col.position.set(Math.cos(a) * (5 + i), 1.4 + (i % 2), Math.sin(a) * (5 + i));
+        col.rotation.set(1.1 + (i % 3) * 0.2, a, 0.3 * (i % 2 ? 1 : -1));
+        col.castShadow = col.receiveShadow = true; g.add(col);
+      }
+      const stump = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.3, 2.2, 8), stoneMat());
+      stump.position.y = 1.1; stump.castShadow = true; g.add(stump);
       break;
     }
     case 'deep': {
@@ -1630,6 +1738,7 @@ function updateControls(dt) {
   // Pull the camera in if a boundary wall would end up between it and the
   // player. Standing near the zone edge used to park the camera inside the
   // wall, which filled half the screen with black.
+  if (camFrozen) return;         // a test has parked the camera somewhere
   _camHead.set(px, 1.8, pz);
   _camWant.set(cx, cy, cz);
   _camDir.copy(_camWant).sub(_camHead);
@@ -2507,6 +2616,18 @@ if (location.search.includes('debug')) {
     get camYaw() { return camYaw; },
     get camDist() { return camDist; },
     get frames() { return frameCount; },
+    // Park the camera for a screenshot; the render loop stops moving it.
+    parkCamera(from, look) {
+      camFrozen = true;
+      camera.position.set(from[0], from[1], from[2]);
+      camera.lookAt(look[0], look[1], look[2]);
+      camera.updateMatrixWorld(true);
+    },
+    releaseCamera() { camFrozen = false; },
+    // Freeze the sky at a given time of day so a screenshot is not at the
+    // mercy of the cycle. The server keeps sending the real time; this just
+    // overrides what the client draws with.
+    setDayTime(t) { worldTime = t; timeFrozen = true; },
     openDialogue: (id) => openDialogue(id),
     // What is drawn at this normalised screen point, nearest first?
     pick(nx = 0, ny = 0, limit = 6) {
