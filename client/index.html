@@ -912,6 +912,8 @@ function buildDetails() {
   // rubble, mushrooms and crystals all arrive through zone.scatter.
   if (zone.id === 'hiddencave') return;
 
+  // Little blades of grass across the whole zone.
+  buildGrass();
   // grass tufts (close to path OK)
   instScatter(new THREE.ConeGeometry(0.28, 0.8, 4), stdMat(0x4a7a3a), gen(700, 1.2), p => 0.4 * p.s);
   // ferns
@@ -935,6 +937,45 @@ function buildDetails() {
     log.rotation.z = Math.PI / 2; log.rotation.y = p.r; log.position.set(p.x, 0.35, p.z);
     log.castShadow = true; log.receiveShadow = true; scene.add(log);
   }
+}
+
+// A field of little grass blades — many small bent quads, instanced, scattered
+// across the whole zone (thicker off the path).
+function buildGrass() {
+  const b = zone.bounds, rng = mulberry32((zone.treeSeed || 1) + 271);
+  // One blade: a thin quad from the ground to a slightly-offset tip (a lean).
+  const bladeGeo = new THREE.BufferGeometry();
+  const verts = new Float32Array([
+    -0.06, 0, 0, 0.06, 0, 0, 0.02, 0.55, 0.06,  // front tri
+    -0.06, 0, 0, 0.02, 0.55, 0.06, -0.02, 0.55, 0.06, // second tri
+  ]);
+  bladeGeo.setAttribute('position', new THREE.BufferAttribute(verts, 3));
+  bladeGeo.computeVertexNormals();
+  const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, side: THREE.DoubleSide, roughness: 1, flatShading: true });
+
+  const N = 5200, placed = [];
+  let guard = 0;
+  while (placed.length < N && guard++ < N * 4) {
+    const x = b.minX + 2 + rng() * (b.maxX - b.minX - 4);
+    const z = b.minZ + 2 + rng() * (b.maxZ - b.minZ - 4);
+    if (zone.boundary && !inBoundary(x, z)) continue;
+    if (zone.river && distToPolyline(x, z, zone.river.points) < zone.river.width / 2 + 0.5) continue;
+    if (zone.rocks.some(o => Math.hypot(x - o.x, z - o.z) < o.r)) continue;
+    const onPath = zone.path && distToPolyline(x, z, zone.path) < 2.2;
+    if (onPath && rng() > 0.15) continue; // sparse on the trail, thick off it
+    placed.push({ x, z });
+  }
+  const im = new THREE.InstancedMesh(bladeGeo, mat, placed.length);
+  im.receiveShadow = true;
+  const mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), col = new THREE.Color();
+  placed.forEach((p, i) => {
+    q.setFromAxisAngle(UP, rng() * 6.28);
+    const s = 0.7 + rng() * 0.9; sc.set(s, 0.8 + rng() * 0.7, s);
+    mtx.compose(new THREE.Vector3(p.x, 0, p.z), q, sc); im.setMatrixAt(i, mtx);
+    const g = 0.32 + rng() * 0.28; col.setRGB(g * 0.6, g, g * 0.35); im.setColorAt(i, col);
+  });
+  im.instanceColor.needsUpdate = true;
+  scene.add(im);
 }
 
 function makeSoftDot() {

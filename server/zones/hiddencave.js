@@ -46,10 +46,14 @@ export const hiddencave = {
     ],
   },
 
+  // Dark and enclosed — much dimmer than the surface. These keys match what the
+  // client's loadZone() reads (bg/fog/hemi/sun); the day-night cycle never runs
+  // underground (the client skips it for enclosed zones), so this is static.
+  // Light comes from crystals, campfires and the entrance shaft, not the sky.
   env: {
-    fog: 0x0a0c10, fogNear: 12, fogFar: 150,
-    ambient: 0x2a3038, ambientIntensity: 0.55,
-    ground: 0x2b2e33, groundAccent: 0x33373d,
+    bg: 0x121821, fogNear: 12, fogFar: 95,
+    hemiSky: 0x4a5666, hemiGround: 0x1a2028, hemiInt: 0.8,
+    sun: 0x56658a, sunInt: 0.42,
   },
 
   models: [
