@@ -939,40 +939,79 @@ function buildDetails() {
   }
 }
 
-// A field of little grass blades — many small bent quads, instanced, scattered
-// across the whole zone (thicker off the path).
+// A cut-out grass-tuft texture (several tapered blades on transparency).
+function makeGrassTexture() {
+  const w = 64, h = 80, cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  const ctx = cv.getContext('2d'); ctx.clearRect(0, 0, w, h);
+  for (let i = 0; i < 7; i++) {
+    const bx = 8 + Math.random() * (w - 16), bw = 3 + Math.random() * 3;
+    const topY = 4 + Math.random() * 22, lean = (Math.random() - 0.5) * 14;
+    const hue = 95 + Math.random() * 40;
+    const g = ctx.createLinearGradient(0, h, 0, topY);
+    g.addColorStop(0, `hsl(${hue},52%,34%)`); g.addColorStop(1, `hsl(${hue},60%,62%)`);
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(bx - bw / 2, h);
+    ctx.quadraticCurveTo(bx + lean * 0.5 - bw * 0.4, (h + topY) / 2, bx + lean, topY);
+    ctx.quadraticCurveTo(bx + lean * 0.5 + bw * 0.4, (h + topY) / 2, bx + bw / 2, h);
+    ctx.closePath(); ctx.fill();
+  }
+  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+// A small crossed billboard (two quads in a + so it reads from any angle).
+function crossBladeGeo(w, h) {
+  const hw = w / 2, pos = [], uv = [];
+  const quad = (ax, az, bx, bz) => {
+    pos.push(ax, 0, az, bx, 0, bz, bx, h, bz, ax, 0, az, bx, h, bz, ax, h, az);
+    uv.push(0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1);
+  };
+  quad(-hw, 0, hw, 0); quad(0, -hw, 0, hw);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.computeVertexNormals();
+  return g;
+}
+// Small, dense, textured grass tufts — scattered singles plus little clumps,
+// each a randomised shade of green.
 function buildGrass() {
   const b = zone.bounds, rng = mulberry32((zone.treeSeed || 1) + 271);
-  // One blade: a thin quad from the ground to a slightly-offset tip (a lean).
-  const bladeGeo = new THREE.BufferGeometry();
-  const verts = new Float32Array([
-    -0.06, 0, 0, 0.06, 0, 0, 0.02, 0.55, 0.06,  // front tri
-    -0.06, 0, 0, 0.02, 0.55, 0.06, -0.02, 0.55, 0.06, // second tri
-  ]);
-  bladeGeo.setAttribute('position', new THREE.BufferAttribute(verts, 3));
-  bladeGeo.computeVertexNormals();
-  const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, side: THREE.DoubleSide, roughness: 1, flatShading: true });
-
-  const N = 5200, placed = [];
-  let guard = 0;
-  while (placed.length < N && guard++ < N * 4) {
-    const x = b.minX + 2 + rng() * (b.maxX - b.minX - 4);
-    const z = b.minZ + 2 + rng() * (b.maxZ - b.minZ - 4);
-    if (zone.boundary && !inBoundary(x, z)) continue;
-    if (zone.river && distToPolyline(x, z, zone.river.points) < zone.river.width / 2 + 0.5) continue;
-    if (zone.rocks.some(o => Math.hypot(x - o.x, z - o.z) < o.r)) continue;
-    const onPath = zone.path && distToPolyline(x, z, zone.path) < 2.2;
-    if (onPath && rng() > 0.15) continue; // sparse on the trail, thick off it
-    placed.push({ x, z });
+  const geo = crossBladeGeo(0.45, 0.45);
+  const mat = new THREE.MeshStandardMaterial({
+    map: makeGrassTexture(), transparent: true, alphaTest: 0.4, side: THREE.DoubleSide,
+    vertexColors: true, roughness: 1,
+  });
+  const ok = (x, z) => (!zone.boundary || inBoundary(x, z)) &&
+    !(zone.river && distToPolyline(x, z, zone.river.points) < zone.river.width / 2 + 0.5) &&
+    !zone.rocks.some(o => Math.hypot(x - o.x, z - o.z) < o.r);
+  const onPathSkip = (x, z) => zone.path && distToPolyline(x, z, zone.path) < 2.2 && rng() > 0.12;
+  const spots = [];
+  // Little groups (clumps of a few tufts).
+  let clumps = 2200, guard = 0;
+  while (clumps > 0 && guard++ < clumps * 6) {
+    const ccx = b.minX + 2 + rng() * (b.maxX - b.minX - 4), ccz = b.minZ + 2 + rng() * (b.maxZ - b.minZ - 4);
+    if (!ok(ccx, ccz) || onPathSkip(ccx, ccz)) continue;
+    const n = 3 + Math.floor(rng() * 5);
+    for (let k = 0; k < n; k++) { const a = rng() * 6.28, rr = rng() * 0.55; spots.push({ x: ccx + Math.cos(a) * rr, z: ccz + Math.sin(a) * rr }); }
+    clumps--;
   }
-  const im = new THREE.InstancedMesh(bladeGeo, mat, placed.length);
-  im.receiveShadow = true;
+  // Scattered singles.
+  let singles = 6000; guard = 0;
+  while (singles > 0 && guard++ < singles * 6) {
+    const x = b.minX + 2 + rng() * (b.maxX - b.minX - 4), z = b.minZ + 2 + rng() * (b.maxZ - b.minZ - 4);
+    if (!ok(x, z) || onPathSkip(x, z)) continue;
+    spots.push({ x, z }); singles--;
+  }
+  const im = new THREE.InstancedMesh(geo, mat, spots.length);
+  im.receiveShadow = true; im.castShadow = false;
   const mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), col = new THREE.Color();
-  placed.forEach((p, i) => {
+  spots.forEach((p, i) => {
     q.setFromAxisAngle(UP, rng() * 6.28);
-    const s = 0.7 + rng() * 0.9; sc.set(s, 0.8 + rng() * 0.7, s);
+    const s = 0.55 + rng() * 0.7; sc.set(s, 0.6 + rng() * 0.7, s);
     mtx.compose(new THREE.Vector3(p.x, 0, p.z), q, sc); im.setMatrixAt(i, mtx);
-    const g = 0.32 + rng() * 0.28; col.setRGB(g * 0.6, g, g * 0.35); im.setColorAt(i, col);
+    // varied shades of green (yellow-green to deep green), kept bright so the
+    // tuft texture reads rather than darkening to specks
+    col.setHSL(0.25 + rng() * 0.11, 0.35 + rng() * 0.3, 0.72 + rng() * 0.45); im.setColorAt(i, col);
   });
   im.instanceColor.needsUpdate = true;
   scene.add(im);
