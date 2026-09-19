@@ -54,10 +54,14 @@ ws.on('open', async () => {
   await sleep(400);
   check('cannot equip an item you do not hold', !bag.equipment.weapon);
 
-  console.log('\n--- earn a weapon ---');
-  // Goblins drop Bronze Daggers; kill until one drops, then pick everything up.
+  console.log('\n--- earn some gear ---');
+  // Goblins drop a Bronze Dagger on ~8% of kills and Goblin Mail on ~5%, so
+  // waiting on one specific item made this test fail about a third of the time
+  // for no reason. Take whichever turns up first.
+  const WANTED = ['Bronze Dagger', 'Goblin Mail'];
+  const earned = () => WANTED.find(n => held(n) > 0);
   let tries = 0;
-  while (held('Bronze Dagger') === 0 && tries++ < 14) {
+  while (!earned() && tries++ < 30) {
     const gobs = (snapshot?.monsters || []).filter(m => m.type === 'goblin' && m.alive);
     if (!gobs.length) { await sleep(400); continue; }
     gobs.sort((a, b) => Math.hypot(a.x - me.x, a.z - me.z) - Math.hypot(b.x - me.x, b.z - me.z));
@@ -75,21 +79,23 @@ ws.on('open', async () => {
       await sleep(800);
     }
   }
-  check('a Bronze Dagger dropped and was looted', held('Bronze Dagger') > 0,
-    held('Bronze Dagger') + ' held after ' + tries + ' goblins');
-  if (!held('Bronze Dagger')) { console.log('\ncannot continue without a weapon\n'); ws.close(); process.exit(1); }
+  const gear = earned();
+  check('a wearable item dropped and was looted', !!gear, (gear || 'nothing') + ' after ' + tries + ' goblins');
+  if (!gear) { console.log('\ncannot continue without gear\n'); ws.close(); process.exit(1); }
+  const slot = ITEMS[gear].slot;
+  const bonusKey = ITEMS[gear].atk ? 'atk' : 'def';
 
   console.log('\n--- equip ---');
-  const beforeAtk = bag.stats.atk || 0;
+  const beforeBonus = bag.stats[bonusKey] || 0;
   const carried = bag.items.length;
-  send({ t: 'equip', item: 'Bronze Dagger' });
+  send({ t: 'equip', item: gear });
   await sleep(500);
-  check('weapon slot is filled', bag.equipment.weapon === 'Bronze Dagger', JSON.stringify(bag.equipment));
-  check('attack bonus went up', (bag.stats.atk || 0) === beforeAtk + ITEMS['Bronze Dagger'].atk,
-    `+${beforeAtk} -> +${bag.stats.atk}`);
+  check(`${slot} slot is filled`, bag.equipment[slot] === gear, JSON.stringify(bag.equipment));
+  check(`${bonusKey} bonus went up`, (bag.stats[bonusKey] || 0) === beforeBonus + ITEMS[gear][bonusKey],
+    `+${beforeBonus} -> +${bag.stats[bonusKey]}`);
   check('it left the bag', bag.items.length === carried - 1, `${carried} -> ${bag.items.length}`);
-  check('the item still exists exactly once', totalOf('Bronze Dagger') === 1);
-  check('an equip event fired', events.some(e => e.kind === 'equip' && e.item === 'Bronze Dagger'));
+  check('the item still exists exactly once', totalOf(gear) === 1);
+  check('an equip event fired', events.some(e => e.kind === 'equip' && e.item === gear));
 
   console.log('\n--- gear actually changes the damage dealt ---');
   const dmgSamples = [];
@@ -116,20 +122,20 @@ ws.on('open', async () => {
     (outOfRange.length ? ' outliers: ' + outOfRange.join(',') : ''));
 
   console.log('\n--- swap and unequip ---');
-  send({ t: 'unequip', slot: 'weapon' });
+  send({ t: 'unequip', slot });
   await sleep(500);
-  check('weapon slot is empty again', !bag.equipment.weapon);
-  check('the dagger came back to the bag', held('Bronze Dagger') === 1);
-  check('attack bonus dropped back', (bag.stats.atk || 0) === beforeAtk, `+${bag.stats.atk}`);
-  send({ t: 'unequip', slot: 'weapon' });
+  check(`${slot} slot is empty again`, !bag.equipment[slot]);
+  check('the item came back to the bag', held(gear) === 1);
+  check(`${bonusKey} bonus dropped back`, (bag.stats[bonusKey] || 0) === beforeBonus, `+${bag.stats[bonusKey]}`);
+  send({ t: 'unequip', slot });
   await sleep(300);
-  check('unequipping an empty slot does nothing', totalOf('Bronze Dagger') === 1, totalOf('Bronze Dagger') + ' copies');
+  check('unequipping an empty slot does nothing', totalOf(gear) === 1, totalOf(gear) + ' copies');
 
   console.log('\n--- selling ---');
   const goldBefore = me.gold;
-  send({ t: 'sell', item: 'Bronze Dagger' });   // merchant is far away
+  send({ t: 'sell', item: gear });   // merchant is far away
   await sleep(500);
-  check('cannot sell away from a merchant', held('Bronze Dagger') === 1 && me.gold === goldBefore,
+  check('cannot sell away from a merchant', held(gear) === 1 && me.gold === goldBefore,
     `gold ${me.gold}`);
 
   console.log(`\n${failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECK(S) FAILED'}\n`);

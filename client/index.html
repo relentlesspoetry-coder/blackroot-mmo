@@ -264,23 +264,34 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 // ---------------------------------------------------------------------------
 const gltfLoader = new GLTFLoader();
 const LOADED = {};
-const MODEL_LIST = ['Male', 'Goblin', 'Bandit', 'Guard', 'Hill_Ogre', 'Spider', 'Cow', 'Chicken',
-  'Oak_Tree', 'Willow_Tree', 'Yew_Tree', 'Maple_Tree', 'Magic_Tree', 'Normal_Tree', 'Tree',
-  'Normal_Bush', 'Berry_Bush', 'Flowering_Bush', 'Thorn_Bush', 'Darkroot_Bush', 'Dead_Bush'];
+// Only the player model is always needed; everything else is declared by the
+// zone (server/zones/*.js) and fetched on entry. Loading all 73 models up front
+// doubled the wait on the login button for assets most players never see.
+const CORE_MODELS = ['Male'];
 const MOB_MODEL = {
   goblin: { model: 'Goblin', h: 2.0 }, bandit: { model: 'Bandit', h: 2.3 }, guard: { model: 'Hill_Ogre', h: 3.0 },
-  spider: { model: 'Spider', h: 1.5 }, cow: { model: 'Cow', h: 2.0 }, chicken: { model: 'Chicken', h: 1.1 },
+  spider: { model: 'Cave_Spider', h: 1.6 }, cow: { model: 'Cow', h: 2.0 }, chicken: { model: 'Chicken', h: 1.1 },
+  venom_spider: { model: 'Venom_Spider', h: 1.7 }, crystal_spider: { model: 'Crystal_Spider', h: 1.8 },
+  bat: { model: 'Bat', h: 1.0 },
+  cave_giant: { model: 'Moss_Cave_Giant', h: 3.4 }, crystal_giant: { model: 'Crystal_Cave_Giant', h: 3.6 },
 };
 const TREE_SPECIES = ['Oak_Tree', 'Willow_Tree', 'Yew_Tree', 'Maple_Tree', 'Normal_Tree', 'Tree'];
 const BUSH_SPECIES = ['Normal_Bush', 'Berry_Bush', 'Flowering_Bush', 'Thorn_Bush'];
 const MODEL_YAW = Math.PI; // GLB characters face -Z; flip to match our +Z "forward"
 
-async function loadModels(onProgress) {
+// A name may carry a subdirectory ('cave/Teal_Crystals'); the cache key is
+// always the bare model name.
+function modelKey(path) { const i = path.lastIndexOf('/'); return i < 0 ? path : path.slice(i + 1); }
+
+async function loadModels(list, onProgress) {
+  const wanted = list.filter(p => LOADED[modelKey(p)] === undefined);
+  if (!wanted.length) { if (onProgress) onProgress(1, 1); return; }
   let done = 0;
-  await Promise.all(MODEL_LIST.map(async (name) => {
-    try { const g = await gltfLoader.loadAsync('models/' + name + '.glb'); LOADED[name] = g.scene; }
-    catch (e) { console.warn('Model failed to load:', name, e); }
-    done++; if (onProgress) onProgress(done, MODEL_LIST.length);
+  await Promise.all(wanted.map(async (path) => {
+    const key = modelKey(path);
+    try { const g = await gltfLoader.loadAsync('models/' + path + '.glb'); LOADED[key] = g.scene; }
+    catch (e) { console.warn('Model failed to load:', path, e); LOADED[key] = null; }
+    done++; if (onProgress) onProgress(done, wanted.length);
   }));
 }
 
@@ -312,7 +323,7 @@ function bakeModel(name, targetH) {
   const meshes = []; src.traverse(o => { if (o.isMesh) meshes.push(o); });
   if (!meshes.length) { bakeCache[key] = null; return null; }
   const box = new THREE.Box3().setFromObject(src);
-  const s = targetH / ((box.max.y - box.min.y) || 1);
+  const s = targetH ? targetH / ((box.max.y - box.min.y) || 1) : 1;
   const cx = (box.min.x + box.max.x) / 2, cz = (box.min.z + box.max.z) / 2, minY = box.min.y;
   const parts = [];
   for (const m of meshes) {
@@ -355,7 +366,7 @@ function handle(m) {
       updateHudFromSnapshot(m);
       break;
     case 'transition':
-      loadZone(m.zone);
+      enterZone(m.zone);
       break;
     case 'bag':
       bag = { items: m.items || [], gold: m.gold || 0,
@@ -416,8 +427,8 @@ function initThree() {
   clock = new THREE.Clock();
 
   addEventListeners();
-  loadZone(zone);
-  animate();
+  animate();          // render loop starts immediately; the zone fills in
+  enterZone(zone);
 }
 
 // ---------------------------------------------------------------------------
@@ -724,6 +735,9 @@ function buildZone() {
 
   // Points of interest (structures + label data)
   for (const p of zone.pois) { buildPoi(p); poiWorld.push(p); }
+
+  // Cave dressing (stalagmites, crystals, ore veins, cobwebs)
+  buildScatter();
 
   // Quest givers / merchants
   buildNpcs();
@@ -1156,6 +1170,41 @@ function buildPoi(p) {
   scene.add(g);
 }
 
+// ---- Cave dressing, instanced from the server's placements ----
+// bakeModel normalises to a target height, which is wrong for props whose
+// whole point is that they differ in size. Bake at native scale instead and
+// let the per-placement scale do the work.
+const NATIVE = 0; // sentinel: keep the model's own dimensions
+function buildScatter() {
+  const mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
+  const place = (list, yOf) => {
+    const byModel = {};
+    for (const o of list) (byModel[o.m] || (byModel[o.m] = [])).push(o);
+    for (const model of Object.keys(byModel)) {
+      const parts = bakeModel(model, NATIVE);
+      if (!parts) continue;
+      const items = byModel[model];
+      for (const part of parts) {
+        const im = new THREE.InstancedMesh(part.geo, part.mat, items.length);
+        im.castShadow = im.receiveShadow = true;
+        items.forEach((o, i) => {
+          q.setFromAxisAngle(UP, o.r || 0);
+          const sVal = o.s || 1; sc.set(sVal, sVal, sVal);
+          mtx.compose(new THREE.Vector3(o.x, yOf(o), o.z), q, sc);
+          im.setMatrixAt(i, mtx);
+        });
+        im.instanceMatrix.needsUpdate = true;
+        scene.add(im);
+      }
+    }
+  };
+  place(zone.scatter || [], () => 0);
+  // Hanging pieces are modelled downward from their origin, so they mount at
+  // the ceiling rather than the floor.
+  const ceil = (zone.ceilingY || 13) - 0.1;
+  place(zone.hanging || [], () => ceil);
+}
+
 // ---- NPCs (quest givers / merchants), placed from the zone data ----
 const npcMeshes = new Map(); // npcId -> { mesh, def }
 function buildNpcs() {
@@ -1279,7 +1328,9 @@ function ensureMesh(ent, kind) {
 // Ogre's club. Swap this out for AnimationMixer the day the models are rigged.
 const RIG_STYLE = {
   goblin: 'biped', bandit: 'biped', guard: 'ogre',
-  spider: 'spider', cow: 'quad', chicken: 'bird',
+  spider: 'spider', venom_spider: 'spider', crystal_spider: 'spider',
+  cow: 'quad', chicken: 'bird', bat: 'flier',
+  cave_giant: 'biped', crystal_giant: 'biped',
 };
 // bob = vertical rise per step, roll = side-to-side sway, stride = metres per
 // step (drives cadence from real speed, so nothing moonwalks).
@@ -1289,6 +1340,9 @@ const GAIT = {
   quad:   { bob: 0.07, roll: 0.045, lean: 0.04, stride: 1.40 },
   bird:   { bob: 0.09, roll: 0.090, lean: 0.06, stride: 0.55 },
   spider: { bob: 0.05, roll: 0.030, lean: 0.03, stride: 1.10 },
+  // The bat is one merged mesh with no wing nodes, so it can't flap. A fast
+  // hover bob and a banked roll are the most that can be read as flight.
+  flier:  { bob: 0.22, roll: 0.240, lean: 0.14, stride: 0.40 },
 };
 
 function findByName(root, re) {
@@ -1359,6 +1413,14 @@ function animateEntity(rec, e, kind, dt) {
 
   const a = rig.amp;
   const idle = (1 - a) * Math.sin(rig.gait) * 0.012; // breathing when standing
+  if (rig.style === 'flier') {
+    // Hovers, and keeps bobbing when it isn't going anywhere.
+    b.position.y = rig.home.y + 1.6 + Math.sin(rig.gait * 2.2) * (0.18 + 0.1 * a);
+    b.position.z = rig.home.z - punch * 0.6;
+    b.rotation.x = -g.lean * a - punch * 0.4;
+    b.rotation.z = Math.sin(rig.gait * 1.1) * g.roll * (0.4 + 0.6 * a);
+    return;
+  }
   // The model sits inside a group that carries the yaw, so -Z is forward here.
   b.position.y = rig.home.y + Math.abs(Math.sin(rig.gait)) * g.bob * a + idle;
   b.position.z = rig.home.z - punch * 0.5;
@@ -2288,10 +2350,25 @@ nameInput.value = 'Hero' + Math.floor(Math.random() * 1000);
 
 // Preload 3D models up front; the button shows progress.
 let modelsDone = false;
-const modelsReady = loadModels((d, t) => {
-  if (d < t) playBtn.textContent = `Loading models… ${d}/${t}`;
-  else { playBtn.textContent = 'Enter World'; modelsDone = true; }
+const modelsReady = loadModels(CORE_MODELS, (d, t) => {
+  if (d < t) playBtn.textContent = `Loading… ${d}/${t}`;
 }).then(() => { modelsDone = true; playBtn.textContent = 'Enter World'; });
+
+// Zone assets arrive with the zone itself, so a zone can add content without
+// the client knowing anything about it.
+let zoneLoading = false;
+async function enterZone(zdata) {
+  zoneLoading = true;
+  const list = zdata.models || [];
+  if (list.length) {
+    const el = document.getElementById('ztMain');
+    await loadModels(list, (d, t) => {
+      if (el && d < t) el.textContent = `Loading ${zdata.name}… ${d}/${t}`;
+    });
+  }
+  zoneLoading = false;
+  loadZone(zdata);
+}
 
 async function play() {
   const name = nameInput.value.trim() || 'Adventurer';
