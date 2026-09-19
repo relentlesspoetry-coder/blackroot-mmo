@@ -40,7 +40,7 @@ export const darkwoods = {
 
   // Zone transitions — step onto the cave mouth to descend.
   portals: [
-    { x: -60, z: 58, r: 5, to: 'hiddencave', spawn: { x: 0, z: -42, yaw: 0 } },
+    { x: -60, z: 58, r: 5, to: 'hiddencave', spawn: { x: 0, z: -152, yaw: 0 } },
   ],
 
   // ------------------------------------------------------------------

@@ -17,6 +17,7 @@ import {
 import { ITEMS, SLOTS, SLOT_INFO, DOLL, itemDef, slotOf, valueOf, equipStats, slotsFor, emptySlots } from './items.js';
 import {
   dist2, closestOnPolyline, pointInPoly, polyCentroid, generateTrees, generateScatter, generateHanging,
+  caveOutline,
 } from './worldgen.js';
 import {
   MINING, ORES, PICKAXES, oreFromModel, bestPickaxe, swingChance, swingTime,
@@ -179,6 +180,11 @@ function populate() {
       }
     }
     for (const e of (zone.elites || [])) populateElite(zoneId, e);
+    // A cave authored as rooms and tunnels gets its boundary traced from them,
+    // so collision, walls and placement all work off one polygon as before.
+    if (zone.cavern && !zone.boundary) {
+      zone.boundary = caveOutline(zone.cavern, zone.bounds);
+    }
     zone._trees = generateTrees(zone);
     zone._scatter = generateScatter(zone);
     zone._hanging = generateHanging(zone);

@@ -90,12 +90,16 @@ export function generateScatter(zone) {
     while (placed < spec.count && guard++ < spec.count * 40) {
       let x, z;
       if (anchor) {
-        const a = rng() * Math.PI * 2, rr = Math.sqrt(rng()) * 14;
+        const a = rng() * Math.PI * 2, rr = Math.sqrt(rng()) * (spec.nearR || 22);
         x = anchor.x + Math.cos(a) * rr; z = anchor.z + Math.sin(a) * rr;
       } else {
         x = b.minX + 3 + rng() * (b.maxX - b.minX - 6);
         z = b.minZ + 3 + rng() * (b.maxZ - b.minZ - 6);
       }
+      // Test the value that actually gets stored. Testing the full-precision
+      // point and then rounding it lets a piece one hundredth inside the wall
+      // round to one tenth outside it.
+      x = +x.toFixed(1); z = +z.toFixed(1);
       if (zone.boundary && !pointInPoly(x, z, zone.boundary)) continue;
       if (zone.path && closestOnPolyline(x, z, zone.path).dist < (spec.r > 0 ? 4.5 : 2.2)) continue;
       // Keep dressing out of the water. A solid piece in a river is worse than
@@ -110,7 +114,7 @@ export function generateScatter(zone) {
       const lo = spec.scale ? spec.scale[0] : 1, hi = spec.scale ? spec.scale[1] : 1;
       out.push({
         i: out.length,                      // stable id: veins are addressed by it
-        m: spec.model, x: +x.toFixed(1), z: +z.toFixed(1),
+        m: spec.model, x, z,
         s: +(lo + rng() * (hi - lo)).toFixed(2), r: +(rng() * 6.28).toFixed(2),
         c: spec.r || 0,
       });
@@ -127,15 +131,144 @@ export function generateHanging(zone) {
   for (const spec of zone.hanging) {
     let placed = 0, guard = 0;
     while (placed < spec.count && guard++ < spec.count * 30) {
-      const x = b.minX + 2 + rng() * (b.maxX - b.minX - 4);
-      const z = b.minZ + 2 + rng() * (b.maxZ - b.minZ - 4);
+      const x = +(b.minX + 2 + rng() * (b.maxX - b.minX - 4)).toFixed(1);
+      const z = +(b.minZ + 2 + rng() * (b.maxZ - b.minZ - 4)).toFixed(1);
       if (zone.boundary && !pointInPoly(x, z, zone.boundary)) continue;
       if (out.some(o => dist2(x, z, o.x, o.z) < 9)) continue;
       const lo = spec.scale ? spec.scale[0] : 1, hi = spec.scale ? spec.scale[1] : 1;
-      out.push({ m: spec.model, x: +x.toFixed(1), z: +z.toFixed(1),
+      out.push({ m: spec.model, x, z,
         s: +(lo + rng() * (hi - lo)).toFixed(2), r: +(rng() * 6.28).toFixed(2) });
       placed++;
     }
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Cavern outlines
+// ---------------------------------------------------------------------------
+// A cave authored as rooms and tunnels, traced into the single boundary polygon
+// the rest of the engine already understands — collision (pointInPoly), the
+// client's wall segments, spawn placement and scatter all keep working
+// unchanged. Rooms are discs, tunnels are capsules between them; the walkable
+// region is their union.
+//
+// Keep the tunnel graph a tree. A cycle encloses rock in the middle, the union
+// grows a hole, and a hole is a second contour ring that this returns nothing
+// for and that pointInPoly could not represent anyway.
+
+export function inCavern(cav, x, z) {
+  for (const r of cav.rooms) {
+    const dx = x - r.x, dz = z - r.z;
+    if (dx * dx + dz * dz <= r.r * r.r) return true;
+  }
+  for (const t of cav.tunnels) {
+    const a = cav.rooms.find(r => r.key === t.from), b = cav.rooms.find(r => r.key === t.to);
+    if (!a || !b) continue;
+    const vx = b.x - a.x, vz = b.z - a.z;
+    const len2 = vx * vx + vz * vz || 1;
+    let s = ((x - a.x) * vx + (z - a.z) * vz) / len2;
+    s = s < 0 ? 0 : s > 1 ? 1 : s;
+    const dx = x - (a.x + vx * s), dz = z - (a.z + vz * s);
+    const w = (t.w || cav.tunnelWidth || 12) / 2;
+    if (dx * dx + dz * dz <= w * w) return true;
+  }
+  return false;
+}
+
+// Marching squares over the union, chained into one ring and simplified.
+export function caveOutline(cav, bounds, opts = {}) {
+  const step = opts.step || 2.5;
+  const x0 = bounds.minX, x1 = bounds.maxX, z0 = bounds.minZ, z1 = bounds.maxZ;
+  const nx = Math.ceil((x1 - x0) / step), nz = Math.ceil((z1 - z0) / step);
+  const at = (i, j) => inCavern(cav, x0 + i * step, z0 + j * step);
+
+  const grid = [];
+  for (let i = 0; i <= nx; i++) {
+    grid[i] = [];
+    for (let j = 0; j <= nz; j++) grid[i][j] = at(i, j);
+  }
+
+  // Each cell contributes edge segments between midpoints of its sides.
+  const key = (p) => p[0].toFixed(2) + ',' + p[1].toFixed(2);
+  const segs = [];
+  for (let i = 0; i < nx; i++) {
+    for (let j = 0; j < nz; j++) {
+      const tl = grid[i][j], tr = grid[i + 1][j], br = grid[i + 1][j + 1], bl = grid[i][j + 1];
+      const code = (tl ? 8 : 0) | (tr ? 4 : 0) | (br ? 2 : 0) | (bl ? 1 : 0);
+      if (code === 0 || code === 15) continue;
+      const X = x0 + i * step, Z = z0 + j * step;
+      const T = [X + step / 2, Z], R = [X + step, Z + step / 2];
+      const B = [X + step / 2, Z + step], L = [X, Z + step / 2];
+      const push = (a, b) => segs.push([a, b]);
+      switch (code) {
+        case 1: case 14: push(L, B); break;
+        case 2: case 13: push(B, R); break;
+        case 3: case 12: push(L, R); break;
+        case 4: case 11: push(T, R); break;
+        case 6: case 9:  push(T, B); break;
+        case 7: case 8:  push(L, T); break;
+        case 5: push(L, T); push(B, R); break;
+        case 10: push(T, R); push(L, B); break;
+      }
+    }
+  }
+  if (!segs.length) return [];
+
+  // Chain segments end-to-end into the longest closed ring.
+  const adj = new Map();
+  for (const [a, b] of segs) {
+    for (const [p, q] of [[a, b], [b, a]]) {
+      const k = key(p);
+      if (!adj.has(k)) adj.set(k, { pt: p, next: [] });
+      adj.get(k).next.push(q);
+    }
+  }
+  const used = new Set();
+  let best = [];
+  for (const startKey of adj.keys()) {
+    if (used.has(startKey)) continue;
+    const ring = [];
+    let cur = adj.get(startKey).pt, curKey = startKey;
+    while (true) {
+      used.add(curKey);
+      ring.push(cur);
+      const node = adj.get(curKey);
+      if (!node) break;
+      const nxt = node.next.find(p => !used.has(key(p)));
+      if (!nxt) break;
+      cur = nxt; curKey = key(nxt);
+    }
+    if (ring.length > best.length) best = ring;
+  }
+
+  // Ramer-Douglas-Peucker: the raw ring is thousands of 2.5-unit steps, and
+  // the client turns every edge into a wall mesh.
+  const tol = opts.tolerance || 1.6;
+  const simplify = (pts) => {
+    if (pts.length < 3) return pts;
+    const d2 = (p, a, b) => {
+      const vx = b[0] - a[0], vz = b[1] - a[1];
+      const len2 = vx * vx + vz * vz || 1;
+      let s = ((p[0] - a[0]) * vx + (p[1] - a[1]) * vz) / len2;
+      s = s < 0 ? 0 : s > 1 ? 1 : s;
+      const dx = p[0] - (a[0] + vx * s), dz = p[1] - (a[1] + vz * s);
+      return dx * dx + dz * dz;
+    };
+    const keep = new Array(pts.length).fill(false);
+    keep[0] = keep[pts.length - 1] = true;
+    const stack = [[0, pts.length - 1]];
+    while (stack.length) {
+      const [lo, hi] = stack.pop();
+      let far = -1, fd = tol * tol;
+      for (let i = lo + 1; i < hi; i++) {
+        const d = d2(pts[i], pts[lo], pts[hi]);
+        if (d > fd) { fd = d; far = i; }
+      }
+      if (far > 0) { keep[far] = true; stack.push([lo, far], [far, hi]); }
+    }
+    return pts.filter((_, i) => keep[i]);
+  };
+
+  return simplify(best).map(p => ({ x: +p[0].toFixed(1), z: +p[1].toFixed(1) }));
 }

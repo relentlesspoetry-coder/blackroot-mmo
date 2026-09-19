@@ -3,7 +3,7 @@
 // necessarily get 26 — this prints what it really managed, and checks that
 // nothing landed somewhere it shouldn't.
 
-import { generateTrees, generateScatter, generateHanging, pointInPoly, dist2 } from '../server/worldgen.js';
+import { generateTrees, generateScatter, generateHanging, pointInPoly, dist2, caveOutline, inCavern } from '../server/worldgen.js';
 import { darkwoods } from '../server/zones/darkwoods.js';
 import { hiddencave } from '../server/zones/hiddencave.js';
 
@@ -13,6 +13,52 @@ function flag(msg) { console.log('  !! ' + msg); problems++; }
 
 for (const zone of [darkwoods, hiddencave]) {
   console.log(`\n=== ${zone.name} ===`);
+
+  // A cave authored as rooms and tunnels: trace it, then check the shape is
+  // one connected piece and that nothing authored fell outside it.
+  if (zone.cavern && !zone.boundary) {
+    zone.boundary = caveOutline(zone.cavern, zone.bounds);
+    const cav = zone.cavern;
+    console.log(`cavern         ${cav.rooms.length} rooms, ${cav.tunnels.length} tunnels ` +
+      `-> ${zone.boundary.length} wall segments`);
+
+    // The tunnel graph has to be a tree, or the union encloses rock and the
+    // outline becomes two rings.
+    const seen = new Set(['' + cav.rooms[0].key]);
+    let edges = 0;
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const t of cav.tunnels) {
+        if (seen.has(t.from) !== seen.has(t.to)) { seen.add(t.from); seen.add(t.to); changed = true; }
+      }
+    }
+    edges = cav.tunnels.length;
+    if (seen.size !== cav.rooms.length) flag(`${cav.rooms.length - seen.size} room(s) unreachable from the entrance`);
+    if (edges !== cav.rooms.length - 1) flag(`tunnel graph is not a tree (${edges} tunnels for ${cav.rooms.length} rooms) — the outline will have holes`);
+    for (const t of cav.tunnels) {
+      for (const k of [t.from, t.to]) {
+        if (!cav.rooms.some(r => r.key === k)) flag(`tunnel refers to unknown room "${k}"`);
+      }
+    }
+    // Every room must be walkable from the arrival point; sample the tunnels.
+    for (const t of cav.tunnels) {
+      const a = cav.rooms.find(r => r.key === t.from), b = cav.rooms.find(r => r.key === t.to);
+      for (let s = 0; s <= 1.0001; s += 0.05) {
+        const x = a.x + (b.x - a.x) * s, z = a.z + (b.z - a.z) * s;
+        if (!inCavern(cav, x, z) || !pointInPoly(x, z, zone.boundary)) {
+          flag(`tunnel ${t.from} -> ${t.to} is pinched off at ${x.toFixed(0)},${z.toFixed(0)}`);
+          break;
+        }
+      }
+    }
+    for (const p of zone.pois) {
+      if (!pointInPoly(p.x, p.z, zone.boundary)) flag(`POI "${p.key}" is outside the cave`);
+    }
+    for (const sp of zone.spawns) {
+      if (!pointInPoly(sp.cx, sp.cz, zone.boundary)) flag(`spawn "${sp.hint}" is centred outside the cave`);
+    }
+  }
   const trees = generateTrees(zone);
   const scatter = generateScatter(zone);
   const hanging = generateHanging(zone);
@@ -58,6 +104,29 @@ for (const zone of [darkwoods, hiddencave]) {
   // Wire cost — this ships to every client on zone entry.
   const bytes = JSON.stringify({ trees, scatter, hanging }).length;
   console.log(`wire cost      ${(bytes / 1024).toFixed(1)} KB`);
+}
+
+// A portal names where it drops you in the destination zone, and that point
+// lives in the source zone's file — easy to leave behind when a zone is
+// relaid out.
+const ZONES = { darkwoods, hiddencave };
+for (const zone of [darkwoods, hiddencave]) {
+  for (const portal of (zone.portals || [])) {
+    const to = ZONES[portal.to];
+    if (!to) { flag(`${zone.name}: portal leads to unknown zone "${portal.to}"`); continue; }
+    const at = portal.spawn || to.spawn;
+    if (to.boundary && !pointInPoly(at.x, at.z, to.boundary)) {
+      flag(`${zone.name}: portal drops the player at ${at.x},${at.z}, which is outside ${to.name}`);
+    }
+    // The drop point should be somewhere the player can get back from: either
+    // the destination's own arrival point, or beside one of its portals (a
+    // return portal lands you at the door you came out of, not at the start).
+    const anchors = [to.spawn, ...(to.portals || [])];
+    const near = anchors.some(a => Math.hypot(at.x - a.x, at.z - a.z) <= 30);
+    if (!near) {
+      flag(`${zone.name}: portal drops the player at ${at.x},${at.z} — nowhere near ${to.name}'s arrival point or any of its portals`);
+    }
+  }
 }
 
 console.log(`\n${problems === 0 ? 'NO PLACEMENT PROBLEMS' : problems + ' PROBLEM(S)'}\n`);
