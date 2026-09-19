@@ -57,9 +57,62 @@ export const MONSTER = {
 // with roughly a tenth of their health left — see tools/balance.mjs.
 export const ELITE = { hp: 2.2, dmg: 1.0, xp: 4, leash: 14 };
 
+// ---------------------------------------------------------------------------
+// Independent-roll drop tables. Unlike the weighted `loot` table (one pick per
+// roll), every entry here rolls on its own, so a single kill can drop several
+// items. `always` = guaranteed; `chance: N` = 1/N per kill.
+// Specs are [item, minQty, maxQty, [chanceA, chanceB, chanceC]] where a chance
+// of 0 means guaranteed and the array columns are the creature variants.
+// ---------------------------------------------------------------------------
+function buildDropTable(spec, col) {
+  return spec.map(([item, min, max, ch]) => {
+    const c = ch[col], e = { item };
+    if (!(min === 1 && max === 1)) { e.min = min; e.max = max; }
+    if (c === 0) e.always = true; else e.chance = c;
+    return e;
+  });
+}
+// Cave / Venom / Crystal spiders.
+const SPIDER_DROPS = [
+  ['Spider Silk', 1, 3, [0, 0, 0]],
+  ['Spider Fang', 1, 1, [0, 0, 0]],
+  ['Coins', 5, 25, [3, 4, 5]],
+  ['Chitin Fragment', 1, 2, [5, 8, 6]],
+  ['Sticky Webbing', 1, 1, [10, 15, 20]],
+  ['Cave Mushroom', 1, 2, [20, 35, 50]],
+  ['Venom Gland', 1, 1, [75, 12, 150]],
+  ['Uncut Quartz', 1, 1, [100, 200, 25]],
+  ['Pristine Silk', 1, 1, [150, 175, 125]],
+  ['Hardened Carapace', 1, 1, [250, 350, 100]],
+  ['Venomous Fang', 1, 1, [750, 200, 1000]],
+  ['Spiderfang Dagger', 1, 1, [1000, 800, 1250]],
+  ['Crystal Heart', 1, 1, [2500, 3000, 500]],
+  ["Broodmother's Signet", 1, 1, [5000, 4000, 3500]],
+  ['Spiderling Pet Egg', 1, 1, [10000, 10000, 10000]],
+];
+// Moss / Crystal cave giants and the Cave Guardian.
+const GIANT_DROPS = [
+  ['Giant Bones', 1, 1, [0, 0, 0]],
+  ['Rough Hide', 1, 3, [0, 0, 0]],
+  ['Coins', 20, 80, [3, 4, 2]],
+  ['Stone Fragment', 2, 5, [5, 6, 10]],
+  ['Iron Ore', 1, 3, [12, 15, 8]],
+  ['Cave Moss', 1, 2, [8, 60, 80]],
+  ['Crystal Shard', 1, 2, [75, 10, 100]],
+  ['Leather Straps', 1, 2, [25, 40, 15]],
+  ['Giant Tusk', 1, 1, [60, 75, 50]],
+  ['Uncut Emerald', 1, 1, [200, 125, 250]],
+  ["Giant's Stone Maul", 1, 1, [400, 1200, 1000]],
+  ["Guardian's Iron Shield", 1, 1, [1500, 2000, 500]],
+  ['Living Crystal Core', 1, 1, [3000, 750, 4000]],
+  ["Ancient Giant's Signet", 1, 1, [5000, 4500, 3500]],
+  ['Cave Giant Pet Stone', 1, 1, [10000, 10000, 10000]],
+];
+
 // `passive` mobs never initiate combat (classic cows/chickens); `respawn` is
 // seconds; `loot` is a weighted table rolled on death (an entry with item
-// 'Coins' drops a coin pile; item null = nothing that roll).
+// 'Coins' drops a coin pile; item null = nothing that roll). Cave creatures use
+// `droptable` (independent rolls) instead — assigned just below.
 export const MONSTER_TEMPLATES = {
   goblin: { name: 'Goblin', hp: 35, dmg: [2, 5], speed: 4.5, aggro: 12, xp: 28, respawn: 25, rolls: 1,
     loot: [ { item: 'Coins', min: 5, max: 20, w: 55 }, { item: 'Bronze Dagger', w: 10 }, { item: 'Goblin Mail', w: 6 }, { item: 'Goblin Ear', w: 26 }, { item: null, w: 30 } ] },
@@ -88,7 +141,18 @@ export const MONSTER_TEMPLATES = {
     loot: [ { item: 'Cowhide', w: 70 }, { item: 'Raw Beef', w: 60 }, { item: 'Coins', min: 1, max: 8, w: 20 } ] },
   chicken: { name: 'Chicken', hp: 12, dmg: [1, 1], speed: 3, aggro: 0, xp: 8, respawn: 18, passive: true, rolls: 2,
     loot: [ { item: 'Feather', min: 5, max: 15, w: 80 }, { item: 'Raw Chicken', w: 60 }, { item: 'Bones', w: 80 } ] },
+  // The Cave Guardian — a hulking variant that guards the Deep Chamber.
+  cave_guardian: { name: 'Cave Guardian', hp: 210, dmg: [10, 18], speed: 3.6, aggro: 14, xp: 300, respawn: 80, rolls: 1,
+    loot: [ { item: 'Coins', min: 40, max: 120, w: 1 } ] },
 };
+
+// Independent drop tables for the cave creatures (see SPIDER_DROPS / GIANT_DROPS).
+MONSTER_TEMPLATES.spider.droptable = buildDropTable(SPIDER_DROPS, 0);
+MONSTER_TEMPLATES.venom_spider.droptable = buildDropTable(SPIDER_DROPS, 1);
+MONSTER_TEMPLATES.crystal_spider.droptable = buildDropTable(SPIDER_DROPS, 2);
+MONSTER_TEMPLATES.cave_giant.droptable = buildDropTable(GIANT_DROPS, 0);
+MONSTER_TEMPLATES.crystal_giant.droptable = buildDropTable(GIANT_DROPS, 1);
+MONSTER_TEMPLATES.cave_guardian.droptable = buildDropTable(GIANT_DROPS, 2);
 
 export function scaledMonster(type, level) {
   const t = MONSTER_TEMPLATES[type];
@@ -104,6 +168,16 @@ export function scaledMonster(type, level) {
 
 export function rollLoot(type) {
   const t = MONSTER_TEMPLATES[type]; const drops = [];
+  // Independent-roll table: each entry rolls on its own (may drop several).
+  if (t.droptable) {
+    for (const e of t.droptable) {
+      if (e.always || Math.random() < 1 / e.chance) {
+        const qty = e.min != null ? e.min + Math.floor(Math.random() * (e.max - e.min + 1)) : 1;
+        drops.push({ item: e.item, qty });
+      }
+    }
+    return drops;
+  }
   const rolls = t.rolls || 1;
   for (let n = 0; n < rolls; n++) {
     let total = 0; for (const e of t.loot) total += e.w;

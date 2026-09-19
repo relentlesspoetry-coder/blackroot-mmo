@@ -132,7 +132,7 @@ export const hiddencave = {
   elites: [
     { type: 'spider', name: 'The Broodmother', cx: 8, cz: 154, level: 9, expect: 9,
       hpMult: 4.3, dmgMult: 2.2 },
-    { type: 'cave_giant', name: 'The Cave Guardian', cx: 104, cz: 74, level: 8, expect: 8,
+    { type: 'cave_guardian', name: 'The Cave Guardian', cx: 104, cz: 74, level: 8, expect: 8,
       hpMult: 1.8, dmgMult: 0.95,
       drops: ["Guardian's Iron Shield", "Ancient Giant's Signet"] },
   ],
