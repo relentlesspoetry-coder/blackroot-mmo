@@ -79,17 +79,24 @@ ws.on('open', async () => {
   }
   check('the server walked us to the vein', arrived,
     `${Math.hypot(me.x - vein.x, me.z - vein.z).toFixed(1)}m from it`);
-  let mined = null;
-  for (let i = 0; i < 80 && !mined; i++) {
+  // Copper is a 28% roll per 2.4s swing, so a short window fails by chance
+  // roughly once in seventy runs. Wait long enough that a failure means
+  // something is actually broken, and report swings separately so an unlucky
+  // run is distinguishable from a dead one.
+  let mined = null, swings = 0;
+  for (let i = 0; i < 160 && !mined; i++) {
     await sleep(400);
+    swings = events.filter(e => e.kind === 'mineswing' && e.id === vein.id).length;
     mined = events.find(e => e.kind === 'mined' && e.id === vein.id);
   }
-  check('the vein gave up ore', !!mined, mined ? `${mined.item} for ${mined.xp} xp` : 'nothing in 32s');
+  check('the pickaxe is swinging', swings > 0, swings + ' swings');
+  check('the vein gave up ore', !!mined,
+    mined ? `${mined.item} for ${mined.xp} xp after ${swings} swings` : `nothing in ${swings} swings`);
   if (!mined) { console.log('\ncannot continue\n'); ws.close(); process.exit(1); }
   check('the ore is in the bag', held('Copper Ore') >= 1, held('Copper Ore') + ' held');
   check('mining xp was awarded', skills.mining.xp === xpBefore + ORES.Copper.xp,
     `${xpBefore} -> ${skills.mining.xp}`);
-  check('swings were reported for the animation', events.some(e => e.kind === 'mineswing'));
+  check('swings were reported for the animation', swings > 0, swings + ' swings');
 
   console.log('\n--- the vein depletes, then comes back ---');
   await sleep(600);
