@@ -477,7 +477,7 @@ const _camHead = new THREE.Vector3(), _camWant = new THREE.Vector3(), _camDir = 
 const jump = { active: false, t: 0 };
 // Jump phases (seconds): a quick knee-bend crouch, the airborne hop, then a
 // knee-bend landing absorb.
-const JUMP_CROUCH = 0.14, JUMP_AIR = 0.52, JUMP_LAND = 0.16, JUMP_TOTAL = JUMP_CROUCH + JUMP_AIR + JUMP_LAND;
+const JUMP_CROUCH = 0.18, JUMP_AIR = 0.52, JUMP_LAND = 0.22, JUMP_TOTAL = JUMP_CROUCH + JUMP_AIR + JUMP_LAND;
 const keys = {};
 let targetId = null;
 let attackTimer = 0;
@@ -715,9 +715,9 @@ function buildMountains(poly) {
     const pos = geo.attributes.position;
     for (let i = 0; i < pos.count; i++) {
       const y = pos.getY(i);
-      if (y < height / 2 - 0.01) {           // base ring — crag it
-        pos.setX(i, pos.getX(i) * (0.7 + rng() * 0.55));
-        pos.setZ(i, pos.getZ(i) * (0.7 + rng() * 0.55));
+      if (y < height / 2 - 0.01) {           // base ring — crag it (kept modest so
+        pos.setX(i, pos.getX(i) * (0.88 + rng() * 0.18)); // the foot lands predictably
+        pos.setZ(i, pos.getZ(i) * (0.88 + rng() * 0.18)); // at the collision inset
         pos.setY(i, y + (rng() - 0.3) * height * 0.15);
       } else {                                // apex — shove it off-centre
         pos.setX(i, pos.getX(i) + (rng() - 0.5) * radius * 0.5);
@@ -736,7 +736,7 @@ function buildMountains(poly) {
   };
 
   for (let ring = 0; ring < 2; ring++) {
-    const spacing = ring === 0 ? 12 : 20;
+    const spacing = ring === 0 ? 8 : 15; // front row dense so the feet form a wall
     for (let i = 0; i < N; i++) {
       const a = poly[i], b = poly[(i + 1) % N];
       const ex = b.x - a.x, ez = b.z - a.z, len = Math.hypot(ex, ez);
@@ -747,11 +747,11 @@ function buildMountains(poly) {
         let nx = x - cen.x, nz = z - cen.z, nl = Math.hypot(nx, nz) || 1; nx /= nl; nz /= nl;
         const height = ring === 0 ? 15 + rng() * 12 : 26 + rng() * 22;
         const radius = ring === 0 ? 13 + rng() * 7 : 17 + rng() * 11;
-        // Push each peak out so its inner face sits at (front) or just beyond
-        // (back) the boundary — the peaks ring the edge instead of flooding the
-        // play area, so the boundary collision (with its inset) stops the player
-        // right at the rock foot rather than deep inside the range.
-        const o = (ring === 0 ? radius - 2 : radius + 8) + rng() * 3;
+        // The front row's foot overlaps INWARD onto the grass, to ~BOUNDARY_INSET
+        // units inside the border: the feet sit on the ground (no see-through
+        // gap) and the collision inset stops the player right at the rock. The
+        // back row sits behind for a layered silhouette.
+        const o = (ring === 0 ? radius - 9 : radius) + rng() * 2;
         makePeak(x + nx * o, z + nz * o, height, radius);
       }
     }
@@ -784,10 +784,14 @@ function buildZone() {
   // Low-poly faceted, vertex-coloured ground (Old School RuneScape style)
   buildLowPolyGround(W, D, cx, cz);
 
-  // Boundary — organic polygon walls, or a rectangular fallback.
+  // Boundary walls. In the cave these are the visible dark rock/light occluder;
+  // in the open air the mountain range IS the border, so the walls are invisible
+  // and only serve to keep the camera from slipping past the edge.
   const enclosed = zone.enclosed;
-  const wallMat = new THREE.MeshStandardMaterial({ color: enclosed ? 0x24272e : 0x35422a, roughness: 1, flatShading: true });
-  const h = enclosed ? (zone.ceilingY || 13) + 2 : 6;
+  const wallMat = enclosed
+    ? new THREE.MeshStandardMaterial({ color: 0x24272e, roughness: 1, flatShading: true })
+    : new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
+  const h = enclosed ? (zone.ceilingY || 13) + 2 : 8;
   if (zone.boundary) {
     const poly = zone.boundary;
     for (let i = 0; i < poly.length; i++) {
@@ -796,7 +800,7 @@ function buildZone() {
       const wall = new THREE.Mesh(new THREE.BoxGeometry(len + 2, h, 3), wallMat);
       wall.position.set((a.x + bpt.x) / 2, h / 2, (a.z + bpt.z) / 2);
       wall.rotation.y = Math.atan2(-dz, dx);
-      wall.castShadow = true; wall.receiveShadow = true;
+      wall.castShadow = wall.receiveShadow = enclosed;
       wall.userData.camBlocker = true; camBlockers.push(wall); scene.add(wall);
     }
     // Open-air zones get a mountain range ringing the boundary.
@@ -919,10 +923,13 @@ function buildLowPolyGround(W, D, cx, cz) {
   const texName = zone.id === 'hiddencave' ? 'dark_stone' : 'grass';
   const rng = mulberry32(9), c = new THREE.Color();
   const positions = [], colors = [], uvs = [];
-  for (let i = 0; i < src.count; i += 3) { // one flat colour per triangle, clipped to the boundary
+  for (let i = 0; i < src.count; i += 3) { // one flat colour per triangle
     const mxw = (src.getX(i) + src.getX(i + 1) + src.getX(i + 2)) / 3 + cx;
     const mzw = (src.getZ(i) + src.getZ(i + 1) + src.getZ(i + 2)) / 3 + cz;
-    const keep = !zone.boundary || inBoundary(mxw, mzw);
+    // Enclosed zones (the cave) are clipped to their outline. Open-air zones keep
+    // the full sheet: the mountain range hides the edge, and a jagged clipped
+    // edge would leave see-through holes at the border.
+    const keep = zone.enclosed ? (!zone.boundary || inBoundary(mxw, mzw)) : true;
     if (!keep) continue;
     const p = pal[Math.floor(rng() * pal.length)], j = 0.9 + rng() * 0.2;
     // tint toward the palette hue but keep it bright enough to show the texture
@@ -1770,11 +1777,34 @@ function splitHumanoid(wrap, bones) {
   }
   for (const k of ['Arm_L', 'Arm_R', 'Leg_L', 'Leg_R']) {
     const parts = limbAcc[k]; if (!parts.length) continue;
-    const j = segs[k].a, pivot = new THREE.Vector3(j[0], j[1], j[2]);
+    const seg = segs[k], j = seg.a, pivot = new THREE.Vector3(j[0], j[1], j[2]);
     const grp = new THREE.Group(); grp.name = k; grp.position.copy(pivot);
-    for (const hp of parts) {
-      const g2 = chickenPartGeo(hp.bk, hp.hasUV); g2.translate(-pivot.x, -pivot.y, -pivot.z);
-      const mm = new THREE.Mesh(g2, hp.material); mm.castShadow = mm.receiveShadow = true; grp.add(mm);
+    if (k.startsWith('Leg')) {
+      // Split the leg at the knee (midway hip→foot) so it can actually bend: the
+      // thigh stays on the hip-pivoted group, the shin hangs off a knee-pivoted
+      // child (named Shin_L/Shin_R) so the calf can fold back.
+      const kneeY = (seg.a[1] + seg.b[1]) / 2;
+      const shin = new THREE.Group(); shin.name = 'Shin_' + k.slice(4);
+      shin.position.set(0, kneeY - pivot.y, 0);
+      for (const hp of parts) {
+        const P = hp.bk.p, Nn = hp.bk.n, Uu = hp.bk.u;
+        const thighB = { p: [], n: [], u: [] }, shinB = { p: [], n: [], u: [] };
+        for (let t = 0; t < P.length; t += 9) {
+          const cy = (P[t + 1] + P[t + 4] + P[t + 7]) / 3;
+          const dst = cy < kneeY ? shinB : thighB;
+          for (let v = 0; v < 9; v++) dst.p.push(P[t + v]);
+          for (let v = 0; v < 9; v++) dst.n.push(Nn[t + v]);
+          for (let v = 0; v < 6; v++) dst.u.push(Uu[(t / 9) * 6 + v]);
+        }
+        if (thighB.p.length) { const gt = chickenPartGeo(thighB, hp.hasUV); gt.translate(-pivot.x, -pivot.y, -pivot.z); const m = new THREE.Mesh(gt, hp.material); m.castShadow = m.receiveShadow = true; grp.add(m); }
+        if (shinB.p.length) { const gs = chickenPartGeo(shinB, hp.hasUV); gs.translate(-pivot.x, -kneeY, -pivot.z); const m = new THREE.Mesh(gs, hp.material); m.castShadow = m.receiveShadow = true; shin.add(m); }
+      }
+      grp.add(shin);
+    } else {
+      for (const hp of parts) {
+        const g2 = chickenPartGeo(hp.bk, hp.hasUV); g2.translate(-pivot.x, -pivot.y, -pivot.z);
+        const mm = new THREE.Mesh(g2, hp.material); mm.castShadow = mm.receiveShadow = true; grp.add(mm);
+      }
     }
     anchor.add(grp);
   }
@@ -1874,6 +1904,7 @@ function buildRig(wrap, style) {
   rig.wingL = part(/^Wing_L$/); rig.wingR = part(/^Wing_R$/);
   rig.armL  = part(/^Arm_L$/);  rig.armR  = part(/^Arm_R$/);
   rig.legL  = part(/^Leg_L$/);  rig.legR  = part(/^Leg_R$/);
+  rig.shinL = part(/^Shin_L$/); rig.shinR = part(/^Shin_R$/); // knee joints (player)
   rig.head  = part(/^Head$/);   // chicken: neck-pivoted head for pecking/nodding
   rig.weapon = part(/^Weapon$/); rig.shield = part(/^Shield$/);
   // Which arm carries the weapon decides which one swings on an attack.
@@ -2019,23 +2050,27 @@ function animateEntity(rec, e, kind, dt) {
 
     // Body: step-bob, forward lean into a walk (+Z), gentle roll, breathing swell.
     const br = (1 - a) * (Math.sin(rig.breath) * 0.5 + 0.5);
-    b.position.y = rig.home.y + Math.abs(Math.sin(rig.gait)) * g.bob * a - crouch * 0.18;
+    b.position.y = rig.home.y + Math.abs(Math.sin(rig.gait)) * g.bob * a - crouch * 0.28;
     b.position.z = rig.home.z + punch * 0.35;         // lunge forward (+Z) on a strike
-    b.rotation.x = 0.10 * a + crouch * 0.12;           // lean forward while moving / crouching
+    b.rotation.x = 0.10 * a + crouch * 0.14;           // lean forward while moving / crouching
     b.rotation.y = 0;
     b.rotation.z = Math.sin(rig.gait * 0.5) * g.roll * a;
     b.scale.set(bs.x * (1 - br * 0.02), bs.y * (1 + br * 0.03), bs.z * (1 - br * 0.02));
 
-    // Walk stride: legs anti-phase, arms counter-swing; a little idle arm sway.
+    // Walk stride: thighs anti-phase; the knee bends on the back-swing; arms
+    // counter-swing with a little idle sway.
     const stride = Math.sin(rig.gait) * a;
     const sway = (1 - a) * Math.sin(rig.breath * 0.7) * 0.05;
     let lLeg = stride * 0.6, rLeg = -stride * 0.6;
+    let lShin = Math.max(0, -stride) * 0.7 * a, rShin = Math.max(0, stride) * 0.7 * a;
     let lArm = -stride * 0.5 + sway, rArm = stride * 0.5 + sway;
     let lArmZ = 0.10 + 0.03 * a, rArmZ = -(0.10 + 0.03 * a);
 
-    // Jump: bend both knees (legs forward) and bring the arms forward for balance
-    // during the crouch and the landing absorb; legs stay straight in the air.
-    lLeg -= crouch * 0.7; rLeg -= crouch * 0.7; lArm -= crouch * 0.4; rArm -= crouch * 0.4;
+    // Jump: bend the knees — thighs forward, calves fold back — on the takeoff
+    // crouch and again to absorb the landing; arms come forward for balance.
+    lLeg -= crouch * 0.55; rLeg -= crouch * 0.55;
+    lShin += crouch * 1.35; rShin += crouch * 1.35;
+    lArm -= crouch * 0.4; rArm -= crouch * 0.4;
 
     // Attack: alternate a straight punch and a front kick (forward is -rot.x).
     if (punch > 0) {
@@ -2043,8 +2078,9 @@ function animateEntity(rec, e, kind, dt) {
         rArm = -1.7 * punch; rArmZ = -0.08;
         lArm = 0.5 * punch;
         b.rotation.y = -0.28 * punch;                  // twist the torso into it
-      } else {                                         // kick: right leg forward
-        rLeg = -1.5 * punch;
+      } else {                                         // kick: right leg snaps forward, knee extends
+        rLeg = -1.4 * punch; rShin = -0.15 * punch;
+        lShin = 0.4 * punch;                            // the support knee bends
         lArm = -0.4 * punch; rArm = 0.4 * punch;       // arms balance
         b.rotation.x = 0.10 * a - 0.12 * punch;        // lean back a touch
       }
@@ -2053,6 +2089,8 @@ function animateEntity(rec, e, kind, dt) {
     if (rig.armR) rig.armR.rotation.set(rArm, 0, rArmZ);
     if (rig.legL) rig.legL.rotation.set(lLeg, 0, 0);
     if (rig.legR) rig.legR.rotation.set(rLeg, 0, 0);
+    if (rig.shinL) rig.shinL.rotation.set(lShin, 0, 0);
+    if (rig.shinR) rig.shinR.rotation.set(rShin, 0, 0);
     return;
   }
   // The model sits inside a group that carries the yaw, so -Z is forward here.
@@ -2159,15 +2197,69 @@ function renderWorld(dt) {
 function itemModelName(name) {
   return name.replace(/['\u2019]/g, '').replace(/\s+/g, '_');
 }
+// A themed low-poly stand-in for any drop that has no GLB, so ground loot always
+// looks like an item (bones, a feather, a hide, meat, a blade…) rather than a
+// generic marker. Keyword-matched on the item name.
+function makeProceduralItem(name) {
+  const g = new THREE.Group();
+  const n = name.toLowerCase();
+  const mat = (c, r = 0.85, m = 0) => new THREE.MeshStandardMaterial({ color: c, roughness: r, metalness: m, flatShading: true });
+  const add = (mesh, x, y, z, rx, ry, rz) => { mesh.position.set(x || 0, y || 0, z || 0); mesh.rotation.set(rx || 0, ry || 0, rz || 0); g.add(mesh); return mesh; };
+  if (/bone|skull/.test(n)) {
+    const bm = mat(0xe8e2cf), big = /big|giant/.test(n) ? 1.25 : 1;
+    for (const dx of [-0.09, 0.09]) {
+      add(new THREE.Mesh(new THREE.CylinderGeometry(0.045 * big, 0.045 * big, 0.4 * big, 6), bm), dx, 0.13, 0, 0, 0, Math.PI / 2 - 0.4);
+      for (const e of [-1, 1]) { add(new THREE.Mesh(new THREE.SphereGeometry(0.07 * big, 6, 5), bm), dx + e * 0.19 * big, 0.13 + e * 0.08 * big, 0); }
+    }
+  } else if (/feather/.test(n)) {
+    const q = add(new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.52, 4), mat(0xeef0f2)), 0, 0.26, 0, 0, 0, 0.28); q.scale.set(1, 1, 0.22);
+  } else if (/hide|leather|cowhide|body|straps/.test(n)) {
+    add(new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.12, 0.36), mat(0x7a5230)), 0, 0.1, 0, 0, 0.4, 0);
+    add(new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.1, 0.28), mat(0x6a4526)), 0.05, 0.21, 0.03, 0, 0.15, 0);
+  } else if (/raw|beef|meat|chicken|kebab/.test(n)) {
+    const m2 = add(new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 6), mat(0xb0503f, 0.6)), 0, 0.15, 0); m2.scale.set(1.1, 0.6, 0.8);
+    if (/kebab/.test(n)) add(new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.6, 5), mat(0x8a6a40)), 0, 0.18, 0, 0.5, 0, 0);
+  } else if (/sword|dagger|blade|maul|scimitar|mace/.test(n)) {
+    add(new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.5, 0.025), mat(0xccd0d8, 0.4, 0.6)), 0, 0.33, 0);
+    add(new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.05, 0.05), mat(0x4a3a26)), 0, 0.09, 0);
+    add(new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.11, 6), mat(0x3a2e1c)), 0, 0.03, 0);
+  } else if (/pickaxe|axe|hatchet/.test(n)) {
+    add(new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.5, 6), mat(0x6b4a2c)), 0, 0.25, 0);
+    add(new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.07, 0.07), mat(0xaab0b8, 0.4, 0.5)), 0, 0.46, 0, 0, 0, 0.25);
+  } else if (/club/.test(n)) {
+    add(new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.05, 0.52, 7), mat(0x6b4a2c)), 0, 0.26, 0);
+  } else if (/coin|gold/.test(n)) {
+    const gm = mat(0xd9b53a, 0.4, 0.6);
+    for (let i = 0; i < 5; i++) add(new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.04, 12), gm), (i % 2) * 0.07 - 0.035, 0.04 + i * 0.033, (i % 3) * 0.05 - 0.05);
+  } else if (/pendant|signet|ring|amulet|necklace/.test(n)) {
+    add(new THREE.Mesh(new THREE.TorusGeometry(0.1, 0.03, 6, 12), mat(0xd9b53a, 0.4, 0.6)), 0, 0.2, 0, Math.PI / 2, 0, 0);
+    add(new THREE.Mesh(new THREE.OctahedronGeometry(0.07, 0), mat(0x49c0b0, 0.25, 0.2)), 0, 0.34, 0);
+  } else if (/ore|coal|stone|fragment|shard|crystal|quartz|emerald|gem|rock/.test(n)) {
+    const rk = add(new THREE.Mesh(new THREE.IcosahedronGeometry(0.2, 0), mat(/crystal|quartz|emerald|gem|shard/.test(n) ? 0x5fb7c0 : 0x6b6f74)), 0, 0.16, 0);
+    rk.rotation.set(0.4, 0.6, 0.2);
+  } else if (/ear|tooth|fang|tusk|claw/.test(n)) {
+    const t = add(new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.34, 6), mat(0xe6d9be)), 0, 0.17, 0, 0, 0, 0.2);
+  } else {
+    // generic small loot pouch (brown) — never a glowing blue diamond
+    const p = add(new THREE.Mesh(new THREE.SphereGeometry(0.19, 8, 6), mat(0x6e5a3c)), 0, 0.16, 0); p.scale.set(1, 0.95, 1);
+    add(new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.11, 0.06, 8), mat(0x5a4930)), 0, 0.3, 0);
+  }
+  return g;
+}
 function makeItemMesh(it) {
   const g = new THREE.Group();
-  const model = cloneModel(itemModelName(it.name), 0.55);
+  const key = itemModelName(it.name);
+  const model = cloneModel(key, 0.55);
   if (model) {
     g.add(model);
+    g.userData.hasModel = true;
   } else {
-    const m = new THREE.Mesh(new THREE.OctahedronGeometry(0.3, 0),
-      new THREE.MeshStandardMaterial({ color: 0x8fe0ff, emissive: 0x2f8fff, emissiveIntensity: 0.7 }));
-    g.add(m);
+    // No model in memory: show a themed stand-in now, and stream the GLB in (if
+    // one exists) so updateGroundItems can swap to it. Items with no GLB keep the
+    // themed mesh.
+    g.add(makeProceduralItem(it.name));
+    g.userData.hasModel = false; g.userData.itemKey = key;
+    if (LOADED[key] === undefined) loadModels(['items/' + key]).catch(() => {});
   }
   g.traverse(o => { if (o.isMesh) { o.userData.pickKind = 'item'; o.userData.pickId = it.id; } });
   return g;
@@ -2178,6 +2270,11 @@ function updateGroundItems(items) {
     seen.add(it.id);
     let rec = itemMeshes.get(it.id);
     if (!rec) { const mesh = makeItemMesh(it); scene.add(mesh); rec = { mesh, name: it.name, qty: it.qty }; itemMeshes.set(it.id, rec); }
+    else if (rec.mesh.userData.hasModel === false && LOADED[rec.mesh.userData.itemKey]) {
+      // The real model finished loading — replace the placeholder marker.
+      scene.remove(rec.mesh);
+      rec.mesh = makeItemMesh(it); scene.add(rec.mesh);
+    }
     rec.mesh.position.set(it.x, 0.5 + Math.sin(performance.now() / 300 + it.id) * 0.12, it.z);
     rec.mesh.rotation.y += 0.03;
   }

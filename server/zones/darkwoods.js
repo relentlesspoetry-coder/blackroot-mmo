@@ -34,8 +34,9 @@ export const darkwoods = {
   ],
 
   // Keep entities this far inside the boundary so they stop at the foot of the
-  // mountain range that rings the border, not inside the rock.
-  boundaryInset: 6,
+  // mountain range (whose front row overlaps ~9 units inward onto the grass), so
+  // the player walks right up to the rock — no gap, no walk-in, no see-through.
+  boundaryInset: 9,
 
   spawn: { x: 5, z: -92, yaw: 0 }, // Entrance Clearing, facing south
 
