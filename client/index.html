@@ -330,9 +330,14 @@ const MOB_MODEL = {
   cave_giant: { model: 'Moss_Cave_Giant', h: 3.4 }, crystal_giant: { model: 'Crystal_Cave_Giant', h: 3.6 },
   cave_guardian: { model: 'Cave_Guardian', h: 3.9 },
   broodmother: { model: 'Cave_Broodmother', h: 2.8 },
+  goblin_scavenger: { model: 'Goblin_Scavenger', h: 1.9 }, goblin_warrior: { model: 'Goblin_Warrior', h: 2.2 },
+  goblin_archer: { model: 'Goblin_Archer', h: 2.1 }, goblin_shaman: { model: 'Goblin_Shaman', h: 2.1 },
+  goblin_miner: { model: 'Goblin_Miner', h: 2.0 }, goblin_chief: { model: 'Goblin_Chief', h: 2.6 },
+  ember_dragon: { model: 'Ember_Dragon', h: 4.6 }, frost_dragon: { model: 'Frost_Dragon', h: 4.8 },
+  venom_dragon: { model: 'Venom_Dragon', h: 4.4 },
 };
-const TREE_SPECIES = ['Oak_Tree', 'Willow_Tree', 'Yew_Tree', 'Maple_Tree', 'Normal_Tree', 'Tree'];
-const BUSH_SPECIES = ['Normal_Bush', 'Berry_Bush', 'Flowering_Bush', 'Thorn_Bush'];
+const TREE_SPECIES = ['Oak_Tree', 'Willow_Tree', 'Yew_Tree', 'Maple_Tree', 'Magic_Tree', 'Normal_Tree', 'Tree'];
+const BUSH_SPECIES = ['Normal_Bush', 'Berry_Bush', 'Flowering_Bush', 'Thorn_Bush', 'Darkroot_Bush', 'Dead_Bush'];
 const MODEL_YAW = Math.PI; // GLB characters face -Z; flip to match our +Z "forward"
 
 // A name may carry a subdirectory ('cave/Teal_Crystals'); the cache key is
@@ -820,13 +825,17 @@ function buildMountainWall(poly) {
   wall.castShadow = true; wall.receiveShadow = true; scene.add(wall);
 }
 
-function ribbon(points, width, y, color, opacity) {
+function ribbon(points, width, y, color, opacity, texName) {
   const g = new THREE.Group();
-  const mat = new THREE.MeshStandardMaterial({ color, roughness: 1,
+  const TILE = 5;
+  const plainMat = texName ? null : new THREE.MeshStandardMaterial({ color, roughness: 1,
     transparent: opacity < 1, opacity, depthWrite: opacity >= 1 });
   for (let i = 0; i < points.length - 1; i++) {
     const a = points[i], b = points[i + 1];
     const dx = b.x - a.x, dz = b.z - a.z, len = Math.hypot(dx, dz);
+    const mat = texName
+      ? new THREE.MeshStandardMaterial({ map: loadTexture(texName, width / TILE, (len + 1.5) / TILE), roughness: 1, transparent: opacity < 1, opacity, depthWrite: opacity >= 1 })
+      : plainMat;
     const seg = new THREE.Mesh(new THREE.PlaneGeometry(width, len + 1.5), mat);
     seg.rotation.x = -Math.PI / 2;
     seg.rotation.z = -Math.atan2(dx, dz);
@@ -888,8 +897,8 @@ function buildZone() {
     // Hanging_Roots / Corner_Cobweb), placed server-side — see buildScatter().
   }
 
-  // Primary path (dirt trail)
-  if (zone.path) ribbon(zone.path, 4.2, 0.04, 0x6b5a3c, 1);
+  // Primary path (textured dirt trail)
+  if (zone.path) ribbon(zone.path, 4.2, 0.04, 0x6b5a3c, 1, 'dirt');
 
   // River (Blackroot Creek) + Mossy Bridge
   if (zone.river) {
@@ -900,7 +909,7 @@ function buildZone() {
     const ang = Math.atan2(near.dx, near.dz);
     const bridge = new THREE.Group();
     const deck = new THREE.Mesh(new THREE.BoxGeometry(6, 0.5, zone.river.width + 5),
-      new THREE.MeshStandardMaterial({ color: 0x5a4a33, roughness: 0.9 }));
+      new THREE.MeshStandardMaterial({ map: loadTexture('moss', 2, 2), color: 0x9fb07a, roughness: 0.9 }));
     deck.position.y = 0.6; deck.castShadow = true; deck.receiveShadow = true; bridge.add(deck);
     for (const side of [-1, 1]) {
       const rail = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.9, zone.river.width + 5),
@@ -912,8 +921,8 @@ function buildZone() {
     scene.add(bridge);
   }
 
-  // Rocks (collision)
-  const rockMat = new THREE.MeshStandardMaterial({ color: 0x5c6067, roughness: 0.95, flatShading: true });
+  // Rocks (collision) — textured stone
+  const rockMat = new THREE.MeshStandardMaterial({ map: loadTexture('stone', 1.5, 1.5), color: 0x9195a0, roughness: 0.95, flatShading: true });
   for (const o of zone.rocks) {
     const rock = new THREE.Mesh(new THREE.IcosahedronGeometry(o.r, 0), rockMat);
     rock.position.set(o.x, o.r * 0.6, o.z); rock.scale.y = 0.85;
@@ -1052,21 +1061,25 @@ function buildDetails() {
   // Little blades of grass across the whole zone. (This replaced the old solid
   // cone "grass tufts" and "ferns", which read as weird green pyramids/blobs.)
   buildGrass();
-  // bushes (GLB models)
-  instanceModels(gen(150), BUSH_SPECIES, 1.5, 1);
-  // small rocks
-  instScatter(new THREE.IcosahedronGeometry(0.5, 0), stdMat(0x5c6067), gen(150), p => 0.3 * p.s);
+  // Detail density scales with zone area so the bigger woods stay full.
+  const areaK = Math.min(3.2, ((b.maxX - b.minX) * (b.maxZ - b.minZ)) / 37800);
+  const N = (n) => Math.round(n * areaK);
+  // bushes (GLB models) — every bush species
+  instanceModels(gen(N(150)), BUSH_SPECIES, 1.5, 1);
+  // small rocks (textured stone)
+  const smallRockMat = new THREE.MeshStandardMaterial({ map: loadTexture('stone', 1, 1), color: 0x9195a0, roughness: 0.95, flatShading: true });
+  instScatter(new THREE.IcosahedronGeometry(0.5, 0), smallRockMat, gen(N(150)), p => 0.3 * p.s);
 
   // mushrooms (stem + cap) and fallen logs — grouped, fewer
   const stemMat = stdMat(0xe6dcc4), capMat = stdMat(0xb5462f);
-  for (const p of gen(70)) {
+  for (const p of gen(N(70))) {
     const m = new THREE.Group(); m.position.set(p.x, 0, p.z); m.scale.setScalar(p.s);
     const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.09, 0.4, 6), stemMat); stem.position.y = 0.2; m.add(stem);
     const cap = new THREE.Mesh(new THREE.SphereGeometry(0.22, 8, 6, 0, 6.3, 0, 1.7), capMat); cap.position.y = 0.4; m.add(cap);
     scene.add(m);
   }
   const logMat = stdMat(0x4a3826);
-  for (const p of gen(28, 4)) {
+  for (const p of gen(N(28), 4)) {
     const log = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.4, 2.6 + Math.random() * 1.5, 7), logMat);
     log.rotation.z = Math.PI / 2; log.rotation.y = p.r; log.position.set(p.x, 0.35, p.z);
     log.castShadow = true; log.receiveShadow = true; scene.add(log);
@@ -1120,8 +1133,10 @@ function buildGrass() {
     !zone.rocks.some(o => Math.hypot(x - o.x, z - o.z) < o.r);
   const onPathSkip = (x, z) => zone.path && distToPolyline(x, z, zone.path) < 2.2 && rng() > 0.12;
   const spots = [];
+  // Density scales with the zone's area so a larger zone stays as lush.
+  const areaK = Math.min(3.2, ((b.maxX - b.minX) * (b.maxZ - b.minZ)) / 37800);
   // Little groups (clumps of a few tufts).
-  let clumps = 2200, guard = 0;
+  let clumps = Math.round(2200 * areaK), guard = 0;
   while (clumps > 0 && guard++ < clumps * 6) {
     const ccx = b.minX + 2 + rng() * (b.maxX - b.minX - 4), ccz = b.minZ + 2 + rng() * (b.maxZ - b.minZ - 4);
     if (!ok(ccx, ccz) || onPathSkip(ccx, ccz)) continue;
@@ -1130,7 +1145,7 @@ function buildGrass() {
     clumps--;
   }
   // Scattered singles.
-  let singles = 6000; guard = 0;
+  let singles = Math.round(6000 * areaK); guard = 0;
   while (singles > 0 && guard++ < singles * 6) {
     const x = b.minX + 2 + rng() * (b.maxX - b.minX - 4), z = b.minZ + 2 + rng() * (b.maxZ - b.minZ - 4);
     if (!ok(x, z) || onPathSkip(x, z)) continue;
@@ -1616,16 +1631,23 @@ const npcMeshes = new Map(); // npcId -> { mesh, def }
 function buildNpcs() {
   npcMeshes.clear();
   for (const def of (zone.npcs || [])) {
-    const g = new THREE.Group();
-    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.45, 0.9, 4, 8),
-      new THREE.MeshStandardMaterial({ color: def.tint || 0x8a5cc0, roughness: 0.6 }));
-    body.position.y = 0.95; body.castShadow = true; g.add(body);
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.34, 14, 10),
-      new THREE.MeshStandardMaterial({ color: 0xe8c9a0 }));
-    head.position.y = 1.8; head.castShadow = true; g.add(head);
-    // A staff so givers read as people at a distance, not as barrels.
-    const staff = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 2.2, 6), woodMat());
-    staff.position.set(0.5, 1.1, 0.1); staff.rotation.z = 0.12; g.add(staff);
+    let g = null;
+    // Use a real humanoid model (Male/Female) when one is given and loaded.
+    if (def.model && LOADED[def.model]) {
+      g = cloneModel(def.model, 2.3);
+      if (g) g.rotation.y = def.yaw != null ? def.yaw : Math.PI;
+    }
+    if (!g) {
+      g = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.45, 0.9, 4, 8),
+        new THREE.MeshStandardMaterial({ color: def.tint || 0x8a5cc0, roughness: 0.6 }));
+      body.position.y = 0.95; body.castShadow = true; g.add(body);
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.34, 14, 10),
+        new THREE.MeshStandardMaterial({ color: 0xe8c9a0 }));
+      head.position.y = 1.8; head.castShadow = true; g.add(head);
+      const staff = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 2.2, 6), woodMat());
+      staff.position.set(0.5, 1.1, 0.1); staff.rotation.z = 0.12; g.add(staff);
+    }
     g.position.set(def.x, 0, def.z);
     g.traverse(o => {
       if (o.isMesh) {
@@ -1923,6 +1945,9 @@ const RIG_STYLE = {
   spider: 'spider', venom_spider: 'spider', crystal_spider: 'spider',
   cow: 'quad', chicken: 'bird', bat: 'flier',
   cave_giant: 'biped', crystal_giant: 'biped', cave_guardian: 'biped', broodmother: 'spider',
+  goblin_scavenger: 'biped', goblin_warrior: 'biped', goblin_archer: 'biped',
+  goblin_shaman: 'biped', goblin_miner: 'biped', goblin_chief: 'biped',
+  ember_dragon: 'quad', frost_dragon: 'quad', venom_dragon: 'quad',
 };
 // bob = vertical rise per step, roll = side-to-side sway, stride = metres per
 // step (drives cadence from real speed, so nothing moonwalks).
@@ -2699,12 +2724,8 @@ function hideContextMenu() { ctxEl.style.display = 'none'; }
 
 // ---- Click markers (RuneScape tile flag) ----
 const markers = [];
-function spawnMarker(x, z, color) {
-  const m = new THREE.Mesh(new THREE.RingGeometry(0.5, 0.8, 16),
-    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false }));
-  m.rotation.x = -Math.PI / 2; m.position.set(x, 0.12, z); scene.add(m);
-  markers.push({ mesh: m, t: 0 });
-}
+// Click-to-move / pickup / attack markers removed (the "click circles").
+function spawnMarker(_x, _z, _color) {}
 function updateMarkers(dt) {
   for (let i = markers.length - 1; i >= 0; i--) {
     const mk = markers[i]; mk.t += dt;

@@ -39,6 +39,34 @@ const ZONES = { darkwoods, hiddencave };
 const START_ZONE = 'darkwoods';
 function zoneOf(ent) { return ZONES[ent.zoneId]; }
 
+// Uniformly scale a zone's layout by k (linear). Everything the server and the
+// client read from the zone — bounds, boundary, POIs, paths, spawns, radii — is
+// multiplied in place, and content counts grow with area so density holds. Runs
+// once at startup before populate() so trees/scatter/monsters generate scaled.
+function scaleZone(zone, k) {
+  const A = k * k;
+  const sp = (o) => { if (!o) return; if (o.x != null) o.x *= k; if (o.z != null) o.z *= k; if (o.r != null) o.r *= k; };
+  const b = zone.bounds; if (b) { b.minX *= k; b.maxX *= k; b.minZ *= k; b.maxZ *= k; }
+  (zone.boundary || []).forEach(sp);
+  if (zone.spawn) { zone.spawn.x *= k; zone.spawn.z *= k; }
+  (zone.portals || []).forEach(p => { sp(p); if (p.spawn) { p.spawn.x *= k; p.spawn.z *= k; } });
+  (zone.pois || []).forEach(sp);
+  (zone.npcs || []).forEach(sp);
+  (zone.path || []).forEach(sp);
+  if (zone.river) { zone.river.width *= k; (zone.river.points || []).forEach(sp); if (zone.river.bridge) { zone.river.bridge.x *= k; zone.river.bridge.z *= k; zone.river.bridge.halfWidth *= k; } }
+  (zone.rocks || []).forEach(sp);
+  (zone.pools || []).forEach(sp);
+  (zone.chests || []).forEach(sp);
+  if (zone.safeSpawnRadius) zone.safeSpawnRadius *= k;
+  if (zone.boundaryInset) zone.boundaryInset *= k;
+  (zone.spawns || []).forEach(s => { s.cx *= k; s.cz *= k; s.r *= k; s.count = Math.max(1, Math.round(s.count * A)); });
+  (zone.elites || []).forEach(e => { e.cx *= k; e.cz *= k; });
+  (zone.scatter || []).forEach(s => { if (s.count) s.count = Math.max(1, Math.round(s.count * A)); });
+  if (zone.treeCount != null) zone.treeCount = Math.round(zone.treeCount * A);
+  zone._cen = null; // recompute the cached centroid lazily
+}
+scaleZone(darkwoods, 1.7); // "double the size" — a much roomier Dark Woods
+
 // ---------------------------------------------------------------------------
 // Tuning
 // ---------------------------------------------------------------------------
@@ -169,7 +197,7 @@ function makeMonster(spec) {
     x: pos.x, z: pos.z, home: { x: pos.x, z: pos.z }, yaw: rand(0, Math.PI * 2),
     hp: stats.hp, maxHp: stats.hp, dmg: stats.dmg, speed: stats.speed,
     aggro: stats.aggro, xp: stats.xp, passive: !!MONSTER_TEMPLATES[spec.type].passive,
-    respawn: MONSTER_TEMPLATES[spec.type].respawn || RESPAWN_TIME,
+    respawn: Math.round((MONSTER_TEMPLATES[spec.type].respawn || RESPAWN_TIME) * (zone.respawnMult || 1)),
     alive: true, state: 'idle', targetId: null, atkTimer: 0,
     wanderTimer: rand(1, 4), wanderDir: { x: 0, z: 0 }, respawnTimer: 0,
     spec,

@@ -11,15 +11,25 @@ export const darkwoods = {
   subtitle: 'Zone I',
   // Client assets this zone needs. Fetched on entry, cached after that.
   models: [
-    'Goblin', 'Bandit', 'Hill_Ogre', 'Cow', 'Chicken',
+    'Goblin', 'Bandit', 'Hill_Ogre', 'Cow', 'Chicken', 'Male', 'Female',
+    // Low-level goblin-kin variants
+    'Goblin_Scavenger', 'Goblin_Warrior', 'Goblin_Archer', 'Goblin_Shaman', 'Goblin_Miner',
+    // Every tree and bush species
     'Oak_Tree', 'Willow_Tree', 'Yew_Tree', 'Maple_Tree', 'Magic_Tree', 'Normal_Tree', 'Tree',
     'Normal_Bush', 'Berry_Bush', 'Flowering_Bush', 'Thorn_Bush', 'Darkroot_Bush', 'Dead_Bush',
+    // Campsite props (Abandoned Camp + goblin camps)
+    'props/Campfire', 'props/Unlit_Fire_Pit', 'props/Cooking_Tripod', 'props/Bedroll', 'props/Rolled_Bedroll',
+    'props/Camp_Stool', 'props/Camp_Lantern', 'props/Small_Canvas_Tent', 'props/Goblin_Hide_Tent',
+    'props/Supply_Crate', 'props/Supply_Pavilion', 'props/Water_Barrel',
     'cave/Copper_Ore_Vein', 'cave/Tin_Ore_Vein', 'cave/Iron_Ore_Vein',
     'items/Copper_Ore', 'items/Tin_Ore', 'items/Iron_Ore',
   ],
 
   treeSeed: 1337,
-  treeCount: 120, // thinned, well-spaced, and solid
+  treeCount: 120, // scaled up with the zone at load
+
+  // A low-level farming zone: mobs respawn quickly so grinding stays smooth.
+  respawnMult: 0.4,
 
   // Axis-aligned bounds (used for spawn sampling / grid sizing).
   bounds: { minX: -90, maxX: 90, minZ: -105, maxZ: 105 },
@@ -74,11 +84,11 @@ export const darkwoods = {
   // NPCs. `id` matches a quest's `giver`; the client builds a figure here and
   // floats a ! / ? marker over it when that giver has something for you.
   npcs: [
-    { id: 'alric',    name: 'Warden Alric',        x: 11,   z: -88, poi: 'entrance', tint: 0x5a6f4a,
+    { id: 'alric',    name: 'Warden Alric',        x: 11,   z: -88, poi: 'entrance', model: 'Male',
       idle: 'Keep to the path, and keep your blade where you can reach it.' },
-    { id: 'hermit',   name: 'Hermit of the Grove', x: 9,    z: 4,   poi: 'shrine',   tint: 0xb8a97a,
+    { id: 'hermit',   name: 'Hermit of the Grove', x: 9,    z: 4,   poi: 'shrine',   model: 'Male',
       idle: 'The shrine holds. Not much else out here does.' },
-    { id: 'merchant', name: 'Wandering Merchant',  x: -51.5, z: 9,  poi: 'camp',     tint: 0x8a5cc0, trade: true,
+    { id: 'merchant', name: 'Wandering Merchant',  x: -51.5, z: 9,  poi: 'camp',     model: 'Female', trade: true,
       idle: 'Wares? Aye, soon enough, traveller. Mind the woods.' },
   ],
 
@@ -127,6 +137,26 @@ export const darkwoods = {
     { model: 'Copper_Ore_Vein', count: 6, r: 0.8, scale: [0.9, 1.2], near: 'hunter' },
     { model: 'Tin_Ore_Vein',    count: 6, r: 0.8, scale: [0.9, 1.2], near: 'hunter' },
     { model: 'Iron_Ore_Vein',   count: 5, r: 0.8, scale: [0.9, 1.2], rare: true, near: 'ravine' },
+
+    // The Abandoned Camp — a proper little campsite dressed with props.
+    { model: 'Small_Canvas_Tent', count: 1, r: 3, scale: [1.0, 1.0], near: 'camp', c: 1.4 },
+    { model: 'Campfire',       count: 1, r: 2.5, scale: [0.9, 1.1], near: 'camp' },
+    { model: 'Cooking_Tripod', count: 1, r: 3,   scale: [0.9, 1.1], near: 'camp' },
+    { model: 'Bedroll',        count: 2, r: 4,   scale: [1.0, 1.0], near: 'camp' },
+    { model: 'Camp_Stool',     count: 2, r: 4,   scale: [1.0, 1.0], near: 'camp' },
+    { model: 'Camp_Lantern',   count: 1, r: 3.5, scale: [1.0, 1.0], near: 'camp' },
+    { model: 'Supply_Crate',   count: 2, r: 5,   scale: [0.9, 1.1], near: 'camp', c: 0.8 },
+    { model: 'Water_Barrel',   count: 1, r: 4.5, scale: [1.0, 1.0], near: 'camp', c: 0.7 },
+    { model: 'Supply_Pavilion', count: 1, r: 6,  scale: [1.0, 1.0], near: 'camp', c: 1.6 },
+    { model: 'Rolled_Bedroll', count: 1, r: 4,   scale: [1.0, 1.0], near: 'camp' },
+
+    // A goblin war-camp around the Wolf Den, dressed with goblin props.
+    { model: 'Goblin_Hide_Tent', count: 2, r: 8, scale: [1.0, 1.1], near: 'wolfden', c: 1.4 },
+    { model: 'Unlit_Fire_Pit',  count: 1, r: 6,  scale: [1.0, 1.0], near: 'wolfden' },
+    { model: 'Supply_Crate',    count: 3, r: 9,  scale: [0.9, 1.1], near: 'wolfden', c: 0.8 },
+    // A second fire pit + tents at the Rotfen bandit thicket.
+    { model: 'Goblin_Hide_Tent', count: 1, r: 6, scale: [1.0, 1.1], near: 'rotfen', c: 1.4 },
+    { model: 'Unlit_Fire_Pit',  count: 1, r: 5,  scale: [1.0, 1.0], near: 'rotfen' },
   ],
 
   // Monster spawn regions. Level rises toward the south. `hint` labels the area
@@ -145,11 +175,17 @@ export const darkwoods = {
     { type: 'bandit',  count: 6, cx: 62,  cz: 28,  r: 14, level: 4, expect: 5, hint: 'Wolf Den' },
     { type: 'guard',   count: 3, cx: -32, cz: 44,  r: 16, level: 5, expect: 6, hint: 'Root-Choked Ravine' },
     { type: 'guard',   count: 3, cx: 8,   cz: 82,  r: 18, level: 6, expect: 7, hint: 'South Gate approach' },
+    // --- Goblin-kin: scavengers on the trail, a war-camp at the Wolf Den ---
+    { type: 'goblin_scavenger', count: 5, cx: -8, cz: -46, r: 16, level: 2, expect: 2, hint: 'Trail scavengers' },
+    { type: 'goblin_miner',     count: 3, cx: -34, cz: 40, r: 14, level: 4, expect: 5, hint: 'Ravine miners' },
+    { type: 'goblin_warrior',   count: 5, cx: 62, cz: 28,  r: 15, level: 4, expect: 5, hint: 'Wolf Den camp' },
+    { type: 'goblin_archer',    count: 3, cx: 66, cz: 20,  r: 12, level: 4, expect: 5, hint: 'Wolf Den camp' },
+    { type: 'goblin_shaman',    count: 2, cx: 58, cz: 34,  r: 12, level: 5, expect: 6, hint: 'Wolf Den camp' },
   ],
 
-  // Named elite / boss encounter.
+  // A single low-level optional elite — the zone's capstone, nothing harder.
   elites: [
-    { type: 'guard', name: 'The Rootbound Guardian', cx: 24, cz: 36, level: 8, expect: 8 },
+    { type: 'guard', name: 'The Rootbound Guardian', cx: 24, cz: 36, level: 6, expect: 6 },
   ],
 
   // No environmental hazards — the poison damage areas (and their green circles)

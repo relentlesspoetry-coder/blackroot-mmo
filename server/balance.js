@@ -147,6 +147,26 @@ export const MONSTER_TEMPLATES = {
   // The Broodmother — the spiders' queen, guarding her nest.
   broodmother: { name: 'Broodmother', hp: 90, dmg: [6, 11], speed: 5.0, aggro: 14, xp: 110, respawn: 120, rolls: 1,
     loot: [ { item: 'Coins', min: 20, max: 60, w: 1 } ] },
+  // --- Goblin-kin variants that populate the deeper Dark Woods camps ---
+  goblin_scavenger: { name: 'Goblin Scavenger', hp: 28, dmg: [2, 5], speed: 6.0, aggro: 13, xp: 30, respawn: 22, rolls: 1,
+    loot: [ { item: 'Coins', min: 3, max: 15, w: 55 }, { item: 'Goblin Ear', w: 30 }, { item: 'Bones', w: 20 }, { item: null, w: 30 } ] },
+  goblin_warrior: { name: 'Goblin Warrior', hp: 62, dmg: [5, 9], speed: 4.8, aggro: 14, xp: 58, respawn: 30, rolls: 1,
+    loot: [ { item: 'Coins', min: 10, max: 35, w: 50 }, { item: 'Goblin Mail', w: 12 }, { item: 'Bronze Dagger', w: 12 }, { item: 'Goblin Ear', w: 24 }, { item: null, w: 26 } ] },
+  goblin_archer: { name: 'Goblin Archer', hp: 42, dmg: [5, 10], speed: 5.2, aggro: 16, xp: 52, respawn: 30, rolls: 1,
+    loot: [ { item: 'Coins', min: 8, max: 30, w: 50 }, { item: 'Goblin Ear', w: 28 }, { item: 'Feather', min: 3, max: 8, w: 20 }, { item: null, w: 28 } ] },
+  goblin_shaman: { name: 'Goblin Shaman', hp: 50, dmg: [6, 11], speed: 4.6, aggro: 15, xp: 66, respawn: 34, rolls: 1,
+    loot: [ { item: 'Coins', min: 12, max: 40, w: 48 }, { item: 'Stolen Pendant', w: 12 }, { item: 'Goblin Ear', w: 24 }, { item: 'Uncut Quartz', w: 8 }, { item: null, w: 26 } ] },
+  goblin_miner: { name: 'Goblin Miner', hp: 46, dmg: [3, 7], speed: 4.6, aggro: 12, xp: 48, respawn: 30, rolls: 2,
+    loot: [ { item: 'Coins', min: 8, max: 28, w: 45 }, { item: 'Iron Ore', w: 22 }, { item: 'Coal', w: 20 }, { item: 'Iron Pickaxe', w: 8 }, { item: 'Stone Fragment', w: 18 }, { item: null, w: 24 } ] },
+  goblin_chief: { name: 'Goblin Chief', hp: 130, dmg: [7, 13], speed: 4.4, aggro: 16, xp: 165, respawn: 60, rolls: 2,
+    loot: [ { item: 'Coins', min: 60, max: 160, w: 55 }, { item: 'Goblin Mail', w: 16 }, { item: 'Iron Sword', w: 12 }, { item: 'Stolen Pendant', w: 14 }, { item: 'Uncut Emerald', w: 5 }, { item: null, w: 20 } ] },
+  // Wyrms lairing at the edges of the woods — rare, dangerous elites.
+  ember_dragon: { name: 'Ember Dragon', hp: 420, dmg: [14, 26], speed: 5.0, aggro: 18, xp: 900, respawn: 240, rolls: 3,
+    loot: [ { item: 'Coins', min: 200, max: 500, w: 50 }, { item: 'Giant Bones', w: 24 }, { item: 'Crystal Heart', w: 14 }, { item: 'Uncut Emerald', w: 12 }, { item: 'Living Crystal Core', w: 6 }, { item: "Giant's Stone Maul", w: 3 } ] },
+  frost_dragon: { name: 'Frost Dragon', hp: 460, dmg: [12, 24], speed: 4.6, aggro: 18, xp: 940, respawn: 260, rolls: 3,
+    loot: [ { item: 'Coins', min: 220, max: 520, w: 50 }, { item: 'Giant Bones', w: 24 }, { item: 'Crystal Shard', w: 16 }, { item: 'Uncut Emerald', w: 12 }, { item: 'Living Crystal Core', w: 6 }, { item: 'Mithril Pickaxe', w: 3 } ] },
+  venom_dragon: { name: 'Venom Dragon', hp: 380, dmg: [15, 28], speed: 5.6, aggro: 19, xp: 880, respawn: 240, rolls: 3,
+    loot: [ { item: 'Coins', min: 180, max: 460, w: 50 }, { item: 'Venom Gland', w: 22 }, { item: 'Crystal Heart', w: 14 }, { item: 'Uncut Emerald', w: 12 }, { item: 'Living Crystal Core', w: 6 }, { item: "Giant's Stone Maul", w: 3 } ] },
 };
 
 // Independent drop tables for the cave creatures (see SPIDER_DROPS / GIANT_DROPS).
