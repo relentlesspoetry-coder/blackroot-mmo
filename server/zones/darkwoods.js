@@ -104,6 +104,9 @@ export const darkwoods = {
     { x: -48, z: -8, r: 3 }, { x: 20, z: -14, r: 2.5 }, { x: 40, z: 8, r: 3.5 },
     { x: -30, z: 30, r: 3 }, { x: 34, z: 48, r: 3 }, { x: 55, z: 40, r: 3.5 },
     { x: -20, z: 60, r: 2.5 }, { x: 26, z: 74, r: 3 }, { x: -46, z: 46, r: 3 },
+    // The Hidden Cave entrance is a solid rock mound; only the mouth (the
+    // portal at -60,58) lets you in. These block walking through the rock.
+    { x: -64, z: 60, r: 6 }, { x: -59, z: 64, r: 3 }, { x: -67, z: 56, r: 3 },
   ],
 
   // No aggressive mob may spawn within this radius of `spawn` — the first
