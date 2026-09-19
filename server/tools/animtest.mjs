@@ -46,7 +46,9 @@ const api = make(THREE, LOADED);
 
 // --- load the models --------------------------------------------------------
 const loader = new GLTFLoader();
-const MODELS = ['Male', 'Goblin', 'Bandit', 'Guard', 'Hill_Ogre', 'Spider', 'Cow', 'Chicken'];
+const MODELS = ['Male', 'Goblin', 'Bandit', 'Guard', 'Hill_Ogre', 'Spider', 'Cow', 'Chicken',
+  'Bat', 'Cave_Spider', 'Venom_Spider', 'Crystal_Spider',
+  'Moss_Cave_Giant', 'Crystal_Cave_Giant', 'Cave_Guardian'];
 async function load(name) {
   const buf = fs.readFileSync(path.join(ROOT, 'client', 'models', name + '.glb'));
   const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
@@ -63,7 +65,9 @@ check('none are skinned (procedural animation is the only option)', rigged.lengt
 // --- rigs -------------------------------------------------------------------
 console.log('\n--- rigs ---');
 const STYLE_FOR = { Male: 'biped', Goblin: 'biped', Bandit: 'biped', Guard: 'biped',
-  Hill_Ogre: 'ogre', Spider: 'spider', Cow: 'quad', Chicken: 'bird' };
+  Hill_Ogre: 'ogre', Spider: 'spider', Cow: 'quad', Chicken: 'bird',
+  Bat: 'flier', Cave_Spider: 'spider', Venom_Spider: 'spider', Crystal_Spider: 'spider',
+  Moss_Cave_Giant: 'biped', Crystal_Cave_Giant: 'biped', Cave_Guardian: 'biped' };
 const rigs = {};
 for (const n of MODELS) {
   const wrap = api.cloneModel(n, 2.0);
@@ -111,6 +115,86 @@ for (const n of MODELS) { rigs[n].rig.amp = 0; rigs[n].rig.speed = 0; rigs[n].wr
 const idleGoblin = run('Goblin', { walk: false, frames: 120 });
 check('idle motion is much smaller than walking', idleGoblin.span('y') < 0.03,
   'idle bob ' + idleGoblin.span('y').toFixed(4));
+
+console.log('\n--- split models have the parts the animator looks for ---');
+for (const n of ['Moss_Cave_Giant', 'Crystal_Cave_Giant', 'Cave_Guardian']) {
+  const r = rigs[n].rig;
+  check(`${n}: arms and legs found`, !!(r.armL && r.armR && r.legL && r.legR),
+    ['armL', 'armR', 'legL', 'legR'].filter(k => r[k]).join(','));
+  check(`${n}: weapon is parented to an arm`, !!r.swingArm,
+    r.weapon ? (r.swingArm ? r.swingArm.name : 'weapon found but not parented') : 'no weapon');
+}
+check('Cave_Guardian carries a shield', !!rigs.Cave_Guardian.rig.shield);
+check('Bat has both wings', !!(rigs.Bat.rig.wingL && rigs.Bat.rig.wingR));
+for (const n of ['Cave_Spider', 'Venom_Spider', 'Crystal_Spider']) {
+  check(`${n}: 8 legs found`, rigs[n].rig.legs.length === 8, rigs[n].rig.legs.length + '');
+  const offOrigin = rigs[n].rig.legs.filter(l => Math.hypot(l.baseP.x, l.baseP.y, l.baseP.z) > 0.05);
+  check(`${n}: legs pivot at the hip, not the body centre`, offOrigin.length === 8,
+    offOrigin.length + '/8 off-origin');
+}
+
+console.log('\n--- wings actually flap ---');
+rigs.Bat.rig.amp = 0; rigs.Bat.rig.speed = 0;
+{
+  const { wrap, rig } = rigs.Bat;
+  wrap.userData.rig = rig;
+  const rec = { mesh: wrap, ax: 0, az: 0 };
+  const zs = [], ys = [];
+  for (let i = 0; i < 60; i++) {
+    wrap.position.x += 5 / 60;
+    api.animateEntity(rec, { alive: true, moving: true }, 'monster', 1 / 60);
+    zs.push(rig.wingL.rotation.z); ys.push(rig.body.position.y);
+  }
+  const span = Math.max(...zs) - Math.min(...zs);
+  check('wings beat through a wide arc', span > 0.7, 'arc ' + span.toFixed(2) + ' rad');
+  check('wings beat in opposition', Math.sign(rig.wingL.rotation.z) !== Math.sign(rig.wingR.rotation.z),
+    `L ${rig.wingL.rotation.z.toFixed(2)} / R ${rig.wingR.rotation.z.toFixed(2)}`);
+  check('the body rides the wingbeat', Math.max(...ys) - Math.min(...ys) > 0.05,
+    'bob ' + (Math.max(...ys) - Math.min(...ys)).toFixed(3));
+}
+
+console.log('\n--- giants stride and swing ---');
+for (const n of ['Moss_Cave_Giant', 'Cave_Guardian']) {
+  const { wrap, rig } = rigs[n];
+  rig.amp = 0; rig.speed = 0; rig.atk = 0;
+  wrap.userData.rig = rig;
+  const rec = { mesh: wrap, ax: wrap.position.x, az: wrap.position.z };
+  const legs = [], arms = [];
+  for (let i = 0; i < 70; i++) {
+    wrap.position.x += 4 / 60;
+    api.animateEntity(rec, { alive: true, moving: true }, 'monster', 1 / 60);
+    legs.push(rig.legL.rotation.x); arms.push(rig.armL.rotation.x);
+  }
+  const legSpan = Math.max(...legs) - Math.min(...legs);
+  check(`${n}: legs stride`, legSpan > 0.3, 'stride ' + legSpan.toFixed(2) + ' rad');
+  check(`${n}: arms counter-swing the legs`,
+    Math.sign(rig.legL.rotation.x) !== Math.sign(rig.armL.rotation.x) ||
+    Math.abs(rig.legL.rotation.x) < 0.02,
+    `leg ${rig.legL.rotation.x.toFixed(2)} arm ${rig.armL.rotation.x.toFixed(2)}`);
+
+  // now swing the weapon
+  rig.atk = 1;
+  const swing = [];
+  const wpos = new THREE.Vector3();
+  wrap.updateMatrixWorld(true);
+  const before = rig.weapon.getWorldPosition(new THREE.Vector3()).clone();
+  // Track the furthest the weapon gets during the swing. Measuring only the
+  // final frame reports nothing: by then the arm has already returned to rest.
+  let peak = 0;
+  for (let i = 0; i < 24; i++) {
+    api.animateEntity(rec, { alive: true, moving: false }, 'monster', 1 / 60);
+    wrap.updateMatrixWorld(true);
+    swing.push(rig.swingArm.rotation.x);
+    rig.weapon.getWorldPosition(wpos);
+    peak = Math.max(peak, before.distanceTo(wpos));
+  }
+  const arc = Math.max(...swing) - Math.min(...swing);
+  check(`${n}: weapon arm swings overhead`, arc > 1.2, 'arc ' + arc.toFixed(2) + ' rad');
+  check(`${n}: the weapon travels with the arm`, peak > 0.5,
+    'weapon swept ' + peak.toFixed(2) + ' units');
+  check(`${n}: the weapon returns to rest`, before.distanceTo(wpos) < 0.15,
+    'ends ' + before.distanceTo(wpos).toFixed(3) + ' from rest');
+}
 
 console.log('\n--- spider legs & ogre club ---');
 rigs.Spider.rig.amp = 0; rigs.Spider.rig.speed = 0;
