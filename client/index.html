@@ -1612,11 +1612,108 @@ function makePlayerMesh(isSelf) {
   return fb;
 }
 
+// The Chicken is a handful of merged primitives with the legs baked into the
+// orange mesh (shared with the beak) and the head/neck spread across several
+// primitives (head-ball, comb, eyes, beak). Nothing can move on its own. Carve
+// the legs into two hip-pivoted meshes and the whole head/neck into one
+// neck-pivoted group, all named so the rig drives them; the torso stays put.
+function chickenPartGeo(bk, hasUV) {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(bk.p, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(bk.n, 3));
+  if (hasUV) g.setAttribute('uv', new THREE.Float32BufferAttribute(bk.u, 2));
+  return g;
+}
+function splitChickenParts(wrap) {
+  const collect = () => { const a = []; wrap.traverse(o => { if (o.isMesh) a.push(o); }); return a; };
+  const isLeg = m => m.name === 'Leg_L' || m.name === 'Leg_R';
+  let meshes = collect();
+  if (!meshes.length) return;
+  for (const m of meshes) m.geometry.computeBoundingBox();
+
+  // ---- Legs: the lowest-reaching primitive holds them below the torso base ----
+  let host = meshes[0];
+  for (const m of meshes) if (m.geometry.boundingBox.min.y < host.geometry.boundingBox.min.y) host = m;
+  let bodyBottom = Infinity;
+  for (const m of meshes) if (m !== host) bodyBottom = Math.min(bodyBottom, m.geometry.boundingBox.min.y);
+  const bbh = host.geometry.boundingBox;
+  if (!isFinite(bodyBottom)) bodyBottom = bbh.min.y + (bbh.max.y - bbh.min.y) * 0.3;
+  const legTop = bodyBottom + 0.02;
+  {
+    const geo = host.geometry, pa = geo.attributes.position, na = geo.attributes.normal, ua = geo.attributes.uv, idx = geo.index;
+    const P = i => [pa.getX(i), pa.getY(i), pa.getZ(i)];
+    const N = i => na ? [na.getX(i), na.getY(i), na.getZ(i)] : [0, 1, 0];
+    const U = i => ua ? [ua.getX(i), ua.getY(i)] : [0, 0];
+    const bucket = { rest: { p: [], n: [], u: [] }, L: { p: [], n: [], u: [] }, R: { p: [], n: [], u: [] } };
+    const triN = idx ? idx.count / 3 : pa.count / 3;
+    for (let t = 0; t < triN; t++) {
+      const i0 = idx ? idx.getX(t * 3) : t * 3, i1 = idx ? idx.getX(t * 3 + 1) : t * 3 + 1, i2 = idx ? idx.getX(t * 3 + 2) : t * 3 + 2;
+      const a = P(i0), b = P(i1), c = P(i2);
+      const cy = (a[1] + b[1] + c[1]) / 3, cx = (a[0] + b[0] + c[0]) / 3;
+      const bk = bucket[cy < legTop ? (cx < 0 ? 'L' : 'R') : 'rest'];
+      for (const i of [i0, i1, i2]) { bk.p.push(...P(i)); bk.n.push(...N(i)); bk.u.push(...U(i)); }
+    }
+    if (bucket.L.p.length && bucket.R.p.length) {
+      const parent = host.parent, mat = host.material, hasUV = !!ua;
+      parent.remove(host);
+      if (bucket.rest.p.length) { const rm = new THREE.Mesh(chickenPartGeo(bucket.rest, hasUV), mat); rm.name = host.name; rm.castShadow = rm.receiveShadow = true; parent.add(rm); }
+      for (const side of ['L', 'R']) {
+        const g2 = chickenPartGeo(bucket[side], hasUV);
+        g2.computeBoundingBox(); const lb = g2.boundingBox;
+        const hip = new THREE.Vector3((lb.min.x + lb.max.x) / 2, lb.max.y, (lb.min.z + lb.max.z) / 2);
+        g2.translate(-hip.x, -hip.y, -hip.z);
+        const leg = new THREE.Mesh(g2, mat); leg.name = 'Leg_' + side; leg.castShadow = leg.receiveShadow = true;
+        leg.position.copy(hip); parent.add(leg);
+      }
+    }
+  }
+
+  // ---- Head/neck: the upper-front column, gathered from every non-leg mesh ----
+  meshes = collect();
+  const HEAD_Y = 0.45, HEAD_Z = 0.10;
+  const anchor = (meshes.find(m => !isLeg(m)) || {}).parent;
+  if (!anchor) return;
+  const headParts = []; let hMinY = Infinity, hMinZ = Infinity;
+  for (const m of meshes) {
+    if (isLeg(m)) continue;
+    const geo = m.geometry, pa = geo.attributes.position, na = geo.attributes.normal, ua = geo.attributes.uv, idx = geo.index;
+    const P = i => [pa.getX(i), pa.getY(i), pa.getZ(i)];
+    const N = i => na ? [na.getX(i), na.getY(i), na.getZ(i)] : [0, 1, 0];
+    const U = i => ua ? [ua.getX(i), ua.getY(i)] : [0, 0];
+    const head = { p: [], n: [], u: [] }, body = { p: [], n: [], u: [] };
+    const triN = idx ? idx.count / 3 : pa.count / 3;
+    for (let t = 0; t < triN; t++) {
+      const i0 = idx ? idx.getX(t * 3) : t * 3, i1 = idx ? idx.getX(t * 3 + 1) : t * 3 + 1, i2 = idx ? idx.getX(t * 3 + 2) : t * 3 + 2;
+      const a = P(i0), b = P(i1), c = P(i2);
+      const cy = (a[1] + b[1] + c[1]) / 3, cz = (a[2] + b[2] + c[2]) / 3;
+      const dst = (cy > HEAD_Y && cz > HEAD_Z) ? head : body;
+      for (const i of [i0, i1, i2]) { const p = P(i); dst.p.push(...p); dst.n.push(...N(i)); dst.u.push(...U(i)); if (dst === head) { hMinY = Math.min(hMinY, p[1]); hMinZ = Math.min(hMinZ, p[2]); } }
+    }
+    if (head.p.length) {
+      headParts.push({ bk: head, hasUV: !!ua, material: m.material });
+      m.parent.remove(m);
+      if (body.p.length) { const bm = new THREE.Mesh(chickenPartGeo(body, !!ua), m.material); bm.name = m.name; bm.castShadow = bm.receiveShadow = true; anchor.add(bm); }
+    }
+  }
+  if (headParts.length) {
+    const pivot = new THREE.Vector3(0, isFinite(hMinY) ? hMinY : 0.4, isFinite(hMinZ) ? hMinZ : 0.1);
+    const headGroup = new THREE.Group(); headGroup.name = 'Head'; headGroup.position.copy(pivot);
+    for (const hp of headParts) {
+      const g2 = chickenPartGeo(hp.bk, hp.hasUV); g2.translate(-pivot.x, -pivot.y, -pivot.z);
+      const hm = new THREE.Mesh(g2, hp.material); hm.castShadow = hm.receiveShadow = true; headGroup.add(hm);
+    }
+    anchor.add(headGroup);
+  }
+}
+
 function makeMonsterMesh(type, elite) {
   const map = MOB_MODEL[type] || { model: 'Goblin', h: 2 };
   const g = cloneModel(map.model, map.h * (elite ? 1.4 : 1));
   if (g) {
-    g.userData.faceOffset = MODEL_YAW;
+    if (type === 'chicken') splitChickenParts(g);
+    // Most GLB characters face -Z (flip with MODEL_YAW); the Chicken faces +Z,
+    // so it needs no flip or it walks and pecks backwards.
+    g.userData.faceOffset = type === 'chicken' ? 0 : MODEL_YAW;
     g.userData.rig = buildRig(g, RIG_STYLE[type] || 'biped');
     if (elite) g.traverse(o => {
       if (o.isMesh && o.material) {
@@ -1702,6 +1799,7 @@ function buildRig(wrap, style) {
   rig.wingL = part(/^Wing_L$/); rig.wingR = part(/^Wing_R$/);
   rig.armL  = part(/^Arm_L$/);  rig.armR  = part(/^Arm_R$/);
   rig.legL  = part(/^Leg_L$/);  rig.legR  = part(/^Leg_R$/);
+  rig.head  = part(/^Head$/);   // chicken: neck-pivoted head for pecking/nodding
   rig.weapon = part(/^Weapon$/); rig.shield = part(/^Shield$/);
   // Which arm carries the weapon decides which one swings on an attack.
   rig.swingArm = null;
@@ -1807,11 +1905,22 @@ function animateEntity(rec, e, kind, dt) {
     const thrust = Math.sin(rig.gait - Math.PI / 2) * 0.06 * a; // head leads the step
     const breathe = (1 - a) * (Math.sin(rig.breath) * 0.5 + 0.5); // 0..1 idle only
 
-    b.position.y = rig.home.y + bob - pw * 0.16;               // dip beak on a peck
-    b.position.z = rig.home.z + thrust + pw * 0.10 - punch * 0.4;
-    b.rotation.x = -0.05 * a - pw * 0.95;                       // nose down to peck
+    b.position.y = rig.home.y + bob;                            // step-bob only
+    b.position.z = rig.home.z + thrust + punch * 0.4;
+    b.rotation.x = 0.04 * a;                                    // slight forward lean when walking
     b.rotation.y = Math.sin(rig.gait) * 0.12 * a;               // waddle turn
     b.rotation.z = Math.sin(rig.gait * 0.5) * g.roll * a;
+    // Real stepping: the split legs swing fore/aft in anti-phase while walking.
+    const sw = Math.sin(rig.gait) * 0.7 * a;
+    if (rig.legL) rig.legL.rotation.x = sw;
+    if (rig.legR) rig.legR.rotation.x = -sw;
+    // Head/neck does the pecking (dip to the ground) plus a walking head-bob.
+    // Fall back to a whole-body tip only if the head couldn't be split out.
+    if (rig.head) {
+      rig.head.rotation.x = pw * 1.15 + Math.sin(rig.gait) * 0.13 * a;
+    } else {
+      b.position.y -= pw * 0.16; b.rotation.x += pw * 0.95;
+    }
     // Breathing: subtle vertical swell that keeps volume roughly constant.
     const e = breathe * 0.05 * (1 - pw);
     b.scale.set(rig.baseScale.x * (1 - e * 0.5), rig.baseScale.y * (1 + e), rig.baseScale.z * (1 - e * 0.5));
