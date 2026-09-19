@@ -52,9 +52,12 @@ export const darkwoods = {
   // Rendering atmosphere — bright, readable, Old School RuneScape style.
   env: { bg: 0x9fc4dc, fogNear: 90, fogFar: 320, hemiSky: 0xcfe4f0, hemiGround: 0x5f6f3e, hemiInt: 1.25, sun: 0xfff3d6, sunInt: 1.2 },
 
-  // Zone transitions — step onto the cave mouth to descend.
+  // Zone transitions — step onto the cave mouth to descend, or the South Gate
+  // to cross into the Killing Fields. (Portal locations scale with the zone; the
+  // `spawn` destinations are in the other, unscaled zones and are left as-is.)
   portals: [
     { x: -60, z: 58, r: 5, to: 'hiddencave', spawn: { x: 0, z: -152, yaw: 0 } },
+    { x: 6, z: 98, r: 5, to: 'killingfields', spawn: { x: 0, z: -150, yaw: 0 } },
   ],
 
   // ------------------------------------------------------------------

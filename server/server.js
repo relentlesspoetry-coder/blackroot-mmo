@@ -10,6 +10,7 @@ import { fileURLToPath } from 'url';
 import { WebSocketServer } from 'ws';
 import { darkwoods } from './zones/darkwoods.js';
 import { hiddencave } from './zones/hiddencave.js';
+import { killingfields } from './zones/killingfields.js';
 import {
   PLAYER, ELITE, MONSTER, MONSTER_TEMPLATES,
   maxHpForLevel, xpForLevel, rollPlayerDamage, scaledMonster, rollLoot, mitigate, REGEN,
@@ -35,7 +36,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLIENT_DIR = path.join(__dirname, '..', 'client');
 const PORT = process.env.PORT || 8080;
 
-const ZONES = { darkwoods, hiddencave };
+const ZONES = { darkwoods, hiddencave, killingfields };
 const START_ZONE = 'darkwoods';
 function zoneOf(ent) { return ZONES[ent.zoneId]; }
 
@@ -49,7 +50,9 @@ function scaleZone(zone, k) {
   const b = zone.bounds; if (b) { b.minX *= k; b.maxX *= k; b.minZ *= k; b.maxZ *= k; }
   (zone.boundary || []).forEach(sp);
   if (zone.spawn) { zone.spawn.x *= k; zone.spawn.z *= k; }
-  (zone.portals || []).forEach(p => { sp(p); if (p.spawn) { p.spawn.x *= k; p.spawn.z *= k; } });
+  // Scale a portal's location in THIS zone, but NOT its `spawn` (a destination
+  // in another, unscaled zone).
+  (zone.portals || []).forEach(sp);
   (zone.pois || []).forEach(sp);
   (zone.npcs || []).forEach(sp);
   (zone.path || []).forEach(sp);
@@ -745,6 +748,7 @@ function respawnPlayer(p) {
 
 function transitionPlayer(p, toId, spawn) {
   const to = ZONES[toId];
+  if (!to) { p.portalCd = 2; return; } // destination zone not built yet — ignore
   p.zoneId = toId;
   p.x = spawn.x; p.z = spawn.z; p.yaw = spawn.yaw || 0;
   p.input = { f: 0, r: 0, yaw: 0 }; p.moving = false; p.hazardAccum = 0;
