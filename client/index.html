@@ -693,6 +693,66 @@ function distToPolyline(x, z, pts) {
 
 const poiWorld = []; // {name, x, z, kind, optional, hidden} for label projection
 
+// Ring an open-air zone's boundary with a low-poly mountain range. The peaks
+// sit in the void just outside the boundary polygon — the player is stopped at
+// the boundary (server collision) and the camera is clamped inside it, so the
+// range reads as an impassable wall you can neither cross nor climb.
+function buildMountains(poly) {
+  let cxs = 0, czs = 0;
+  for (const p of poly) { cxs += p.x; czs += p.z; }
+  const cen = { x: cxs / poly.length, z: czs / poly.length };
+  const rng = mulberry32(24601);
+  const palette = [0x6a6f74, 0x5b5f57, 0x746a5d, 0x565b52, 0x666b6e, 0x4f5348, 0x5a5148];
+  const group = new THREE.Group();
+  const N = poly.length;
+
+  const makePeak = (x, z, ring) => {
+    const height = ring === 0 ? 15 + rng() * 12 : 26 + rng() * 22;
+    const radius = ring === 0 ? 13 + rng() * 7 : 17 + rng() * 11;
+    const sides = 5 + Math.floor(rng() * 3); // 5–7 faceted sides
+    const geo = new THREE.ConeGeometry(radius, height, sides, 1);
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const y = pos.getY(i);
+      if (y < height / 2 - 0.01) {           // base ring — crag it
+        pos.setX(i, pos.getX(i) * (0.7 + rng() * 0.55));
+        pos.setZ(i, pos.getZ(i) * (0.7 + rng() * 0.55));
+        pos.setY(i, y + (rng() - 0.3) * height * 0.15);
+      } else {                                // apex — shove it off-centre
+        pos.setX(i, pos.getX(i) + (rng() - 0.5) * radius * 0.5);
+        pos.setZ(i, pos.getZ(i) + (rng() - 0.5) * radius * 0.5);
+        pos.setY(i, y + (rng() - 0.5) * height * 0.22);
+      }
+    }
+    geo.computeVertexNormals();
+    const mat = new THREE.MeshStandardMaterial({
+      color: palette[Math.floor(rng() * palette.length)], roughness: 1, flatShading: true });
+    const m = new THREE.Mesh(geo, mat);
+    m.rotation.y = rng() * Math.PI * 2;
+    m.position.set(x, height / 2 - 3, z); // sink the base below ground
+    m.castShadow = true; m.receiveShadow = true;
+    group.add(m);
+  };
+
+  for (let ring = 0; ring < 2; ring++) {
+    const spacing = ring === 0 ? 12 : 20;
+    const off = ring === 0 ? 4 : 22;
+    for (let i = 0; i < N; i++) {
+      const a = poly[i], b = poly[(i + 1) % N];
+      const ex = b.x - a.x, ez = b.z - a.z, len = Math.hypot(ex, ez);
+      const steps = Math.max(1, Math.round(len / spacing));
+      for (let s = 0; s < steps; s++) {
+        const t = (s + 0.5) / steps;
+        const x = a.x + ex * t, z = a.z + ez * t;
+        let nx = x - cen.x, nz = z - cen.z, nl = Math.hypot(nx, nz) || 1; nx /= nl; nz /= nl;
+        const o = off + (rng() - 0.5) * 6;
+        makePeak(x + nx * o, z + nz * o, ring);
+      }
+    }
+  }
+  scene.add(group);
+}
+
 function ribbon(points, width, y, color, opacity) {
   const g = new THREE.Group();
   const mat = new THREE.MeshStandardMaterial({ color, roughness: 1,
@@ -733,6 +793,8 @@ function buildZone() {
       wall.castShadow = true; wall.receiveShadow = true;
       wall.userData.camBlocker = true; camBlockers.push(wall); scene.add(wall);
     }
+    // Open-air zones get a mountain range ringing the boundary.
+    if (!enclosed) buildMountains(poly);
   } else {
     for (const [px, pz, sx, sz] of [
       [cx, b.minZ, W, 1.5], [cx, b.maxZ, W, 1.5], [b.minX, cz, 1.5, D], [b.maxX, cz, 1.5, D],
