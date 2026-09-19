@@ -974,12 +974,9 @@ function buildDetails() {
   // rubble, mushrooms and crystals all arrive through zone.scatter.
   if (zone.id === 'hiddencave') return;
 
-  // Little blades of grass across the whole zone.
+  // Little blades of grass across the whole zone. (This replaced the old solid
+  // cone "grass tufts" and "ferns", which read as weird green pyramids/blobs.)
   buildGrass();
-  // grass tufts (close to path OK)
-  instScatter(new THREE.ConeGeometry(0.28, 0.8, 4), stdMat(0x4a7a3a), gen(700, 1.2), p => 0.4 * p.s);
-  // ferns
-  instScatter(new THREE.ConeGeometry(0.7, 0.6, 5), stdMat(0x386b34), gen(260, 2), p => 0.3 * p.s, 0.5);
   // bushes (GLB models)
   instanceModels(gen(150), BUSH_SPECIES, 1.5, 1);
   // small rocks
