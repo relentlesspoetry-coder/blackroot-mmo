@@ -96,12 +96,12 @@
   .slot:hover .tip { display: block; position: absolute; bottom: 104%; left: 50%; transform: translateX(-50%);
     background: #000c; color: #ffe9b0; font-size: 11px; padding: 2px 6px; border-radius: 4px; white-space: nowrap; z-index: 2; }
   #bag .empty { color: #8a7d63; font-size: 12px; grid-column: 1 / -1; text-align: center; padding: 12px 0; }
-  #equipRow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin-bottom: 8px; }
+  #equipRow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-bottom: 8px; }
   .eslot { aspect-ratio: 1; background: #16130f; border: 1px solid #5a4a34; border-radius: 5px; position: relative;
     display: flex; align-items: center; justify-content: center; cursor: pointer; }
   .eslot.filled { border-color: #c9a44a; background: #221c14; }
   .eslot .ic { font-size: 19px; opacity: .3; } .eslot.filled .ic { opacity: 1; }
-  .eslot .lb { position: absolute; top: 1px; left: 4px; font-size: 8px; color: #6f6551; letter-spacing: .05em; text-transform: uppercase; }
+  .eslot .lb { position: absolute; top: 1px; left: 3px; font-size: 7px; color: #6f6551; letter-spacing: .04em; text-transform: uppercase; }
   .eslot:hover .tip { display: block; position: absolute; bottom: 104%; left: 50%; transform: translateX(-50%);
     background: #000d; color: #ffe9b0; font-size: 11px; padding: 3px 7px; border-radius: 4px; white-space: nowrap; z-index: 3; }
   .eslot .tip { display: none; }
@@ -379,7 +379,7 @@ function handle(m) {
       break;
     case 'bag':
       bag = { items: m.items || [], gold: m.gold || 0,
-        equipment: m.equipment || { weapon: null, body: null, trinket: null },
+        equipment: m.equipment || { weapon: null, offhand: null, body: null, trinket: null },
         stats: m.stats || { atk: 0, def: 0 } };
       renderBag();
       refreshDialogue(); // the merchant's sell list is built from the bag
@@ -2123,7 +2123,7 @@ function flyText(text, cls) {
 // ---------------------------------------------------------------------------
 // Bag / inventory
 // ---------------------------------------------------------------------------
-let bag = { items: [], gold: 0, equipment: { weapon: null, body: null, trinket: null }, stats: { atk: 0, def: 0 } };
+let bag = { items: [], gold: 0, equipment: { weapon: null, offhand: null, body: null, trinket: null }, stats: { atk: 0, def: 0 } };
 let bagOpen = false;
 // Mirrors server/items.js — used for tooltips and for deciding which actions a
 // bag slot offers. The server is still the authority on every equip.
@@ -2137,8 +2137,16 @@ const ITEM_META = {
   "Smuggler's Cache": { slot: 'trinket', def: 2, level: 2 },
   'Crystalline Relic': { slot: 'trinket', def: 6, level: 6 },
   "Guardian's Heartwood": { slot: 'trinket', atk: 4, def: 4, level: 8 },
+  "Giant's Stone Maul": { slot: 'weapon', atk: 10, level: 7 },
+  "Guardian's Iron Shield": { slot: 'offhand', def: 6, level: 6 },
+  'Living Crystal Core': { slot: 'trinket', atk: 3, def: 4, level: 8 },
+  "Ancient Giant's Signet": { slot: 'trinket', atk: 4, def: 3, level: 9 },
+  'Bronze Pickaxe': { slot: 'weapon', atk: 1, level: 1 },
+  'Iron Pickaxe': { slot: 'weapon', atk: 2, level: 1 },
+  'Steel Pickaxe': { slot: 'weapon', atk: 3, level: 3 },
+  'Mithril Pickaxe': { slot: 'weapon', atk: 5, level: 5 },
 };
-const SLOT_ICON = { weapon: '⚔️', body: '🛡️', trinket: '💍' };
+const SLOT_ICON = { weapon: '⚔️', offhand: '🛡️', body: '🥋', trinket: '💍' };
 function metaFor(name) { return ITEM_META[name] || null; }
 function statText(m) {
   if (!m) return '';
@@ -2155,6 +2163,10 @@ const ITEM_ICON = {
   'Bronze Pickaxe': '⛏️', 'Iron Pickaxe': '⛏️', 'Steel Pickaxe': '⛏️', 'Mithril Pickaxe': '⛏️',
   'Copper Ore': '🟠', 'Tin Ore': '⚪', 'Iron Ore': '🔴', 'Silver Ore': '⚫', 'Coal': '🪨',
   'Gold Ore': '🟡', 'Mithril Ore': '🔵', 'Adamantite Ore': '🟢', 'Runite Ore': '🟦',
+  'Giant Bones': '🦴', 'Giant Tusk': '🦷', 'Rough Hide': '🟫', 'Cave Moss': '🌿',
+  'Stone Fragment': '🪨', 'Leather Straps': '➰', 'Crystal Shard': '💠', 'Uncut Emerald': '💚',
+  'Cave Giant Pet Stone': '🗿', "Giant's Stone Maul": '🔨', "Guardian's Iron Shield": '🛡️',
+  'Living Crystal Core': '🔆', "Ancient Giant's Signet": '💍',
   "Smuggler's Cache": '📦', 'Crystalline Relic': '💎', 'Smuggler’s Trinket': '💍',
 };
 function iconFor(name) { return ITEM_ICON[name] || (/Trophy/.test(name) ? '🏆' : '📦'); }
@@ -2176,7 +2188,7 @@ function renderBag() {
   // Worn gear
   const eq = bag.equipment || {};
   const st = bag.stats || { atk: 0, def: 0 };
-  document.getElementById('equipRow').innerHTML = ['weapon', 'body', 'trinket'].map(s => {
+  document.getElementById('equipRow').innerHTML = ['weapon', 'offhand', 'body', 'trinket'].map(s => {
     const worn = eq[s];
     const m = metaFor(worn);
     return `<div class="eslot${worn ? ' filled' : ''}" data-slot="${s}">

@@ -5,7 +5,8 @@
 // `atk` is added to both ends of the player's damage roll, `def` is subtracted
 // from each incoming hit (never below 1, so armour can't make you immortal).
 
-export const SLOTS = ['weapon', 'body', 'trinket'];
+// A shield needs a hand of its own; everything else was already covered.
+export const SLOTS = ['weapon', 'offhand', 'body', 'trinket'];
 
 export const ITEMS = {
   // --- weapons ---
@@ -25,6 +26,13 @@ export const ITEMS = {
     desc: 'Properly tempered. Needs mining 25.' },
   'Mithril Pickaxe':      { slot: 'weapon',  atk: 5,  level: 5, value: 2200,
     desc: 'Light for its bite. Needs mining 45.' },
+
+  "Giant's Stone Maul":   { slot: 'weapon',  atk: 10, level: 7, value: 1400,
+    desc: 'A boulder lashed to a shaft. Swings like weather.' },
+
+  // --- offhand ---
+  "Guardian's Iron Shield": { slot: 'offhand', def: 6, level: 6, value: 900,
+    desc: 'Taller than most men. The Guardian carried it like a plate.' },
 
   // --- body ---
   'Goblin Mail':          { slot: 'body',    def: 2,  level: 1, value: 45,
@@ -46,6 +54,10 @@ export const ITEMS = {
     desc: 'It keeps a slow beat you can feel through your glove.' },
   "Broodmother's Signet": { slot: 'trinket', atk: 5, def: 2, level: 8, value: 850,
     desc: 'Taken from the deep chamber. The spiders give it a wide berth.' },
+  'Living Crystal Core':  { slot: 'trinket', atk: 3, def: 4, level: 8, value: 1100,
+    desc: 'Still growing. It is warm on the side facing your chest.' },
+  "Ancient Giant's Signet": { slot: 'trinket', atk: 4, def: 3, level: 9, value: 1600,
+    desc: 'Sized for a finger thicker than your wrist. It resizes itself.' },
   'Crystalline Relic':    { slot: 'trinket', def: 5,  level: 6, value: 600,
     desc: 'Cold to hold. The light inside it moves on its own.' },
   'Guardian\'s Heartwood': { slot: 'trinket', atk: 3, def: 3, level: 8, value: 900,
@@ -72,6 +84,16 @@ export const ITEMS = {
   'Uncut Quartz': { value: 30 },
   'Cave Mushroom': { value: 7 },
   'Spiderling Pet Egg': { value: 400 },
+  'Cave Giant Pet Stone': { value: 900 },
+  // --- cave giant materials ---
+  'Giant Bones':    { value: 26 },
+  'Giant Tusk':     { value: 85 },
+  'Rough Hide':     { value: 45 },
+  'Cave Moss':      { value: 9 },
+  'Stone Fragment': { value: 6 },
+  'Leather Straps': { value: 14 },
+  'Crystal Shard':  { value: 70 },
+  'Uncut Emerald':  { value: 180 },
   // --- ores (see server/mining.js for what yields them) ---
   'Copper Ore':     { value: 8 },
   'Tin Ore':        { value: 8 },
@@ -109,14 +131,23 @@ export function equipStats(equipment) {
 // naked one.
 export function expectedGear(level) {
   const eq = {};
-  if (level >= 6) eq.weapon = 'Ogre Club';
+  // Only gear a player could actually be holding at this level. The shield,
+  // the maul and both signets drop from the two elites, so listing them at the
+  // level of the fight they come from assumed the player had already won it --
+  // which made both bosses read a full point softer than they are.
+  if (level >= 9) eq.weapon = "Giant's Stone Maul";
+  else if (level >= 6) eq.weapon = 'Ogre Club';
   else if (level >= 3) eq.weapon = 'Iron Sword';
   else if (level >= 2) eq.weapon = 'Bronze Dagger';
   if (level >= 5) eq.body = 'Hardened Carapace';
   else if (level >= 3) eq.body = 'Leather Body';
   else if (level >= 2) eq.body = 'Goblin Mail';
-  if (level >= 8) eq.trinket = "Broodmother's Signet";
+  if (level >= 9) eq.offhand = "Guardian's Iron Shield";
+  // The Broodmother's signet comes off the Broodmother, so it cannot be part
+  // of the kit you bring to that fight.
+  if (level >= 10) eq.trinket = "Broodmother's Signet";
   else if (level >= 6) eq.trinket = 'Crystalline Relic';
-  else if (level >= 2) eq.trinket = 'Smuggler\'s Cache';
+  else if (level >= 2) eq.trinket = "Smuggler's Cache";
   return eq;
 }
+

@@ -47,7 +47,7 @@ to see real-time multiplayer (both players share one world).
   slay objectives, a quest log, NPC dialogue, and ! / ? markers over givers
 - **Procedural character animation** — stride-synced locomotion, attack lunges
   and death topples (see the caveat below)
-- **Equipment** — weapon / body / trinket slots, attack and defence bonuses,
+- **Equipment** — weapon / offhand / body / trinket slots, attack and defence bonuses,
   level requirements, and a merchant who buys what you're carrying
 - **Mining** — a separate skill with its own level, nine ore tiers, pickaxes
   that set your swing speed, and veins that deplete and respawn
@@ -69,6 +69,7 @@ Two flags change what it models:
 
 ```bash
 node tools/mining.mjs            # ore tiers, pickaxe value, time-to-level
+node tools/assets.mjs            # checks every declared model exists and every drop resolves
 BARE=1 node tools/balance.mjs    # an unequipped character
 REGEN=1 node tools/balance.mjs   # the old always-on regen
 ```
@@ -165,6 +166,7 @@ client/
 tools/
   balance.mjs      # prints the combat curve
   mining.mjs       # prints the mining curve
+  assets.mjs       # verifies model declarations and drop-model coverage
   worldgen.mjs     # prints what world generation places
   rig_split.mjs    # splits merged character meshes into animatable parts
 README.md

@@ -29,6 +29,14 @@ export const hiddencave = {
     'items/Sticky_Webbing', 'items/Hardened_Carapace', 'items/Uncut_Quartz',
     'items/Crystal_Heart', 'items/Cave_Mushroom', 'items/Broodmothers_Signet',
     'items/Spiderfang_Dagger', 'items/Spiderling_Pet_Egg',
+    // Ore, and what the giants leave behind.
+    'items/Copper_Ore', 'items/Tin_Ore', 'items/Iron_Ore', 'items/Silver_Ore',
+    'items/Coal', 'items/Gold_Ore', 'items/Mithril_Ore', 'items/Adamantite_Ore',
+    'items/Runite_Ore',
+    'items/Giant_Bones', 'items/Giant_Tusk', 'items/Rough_Hide', 'items/Cave_Moss',
+    'items/Stone_Fragment', 'items/Leather_Straps', 'items/Crystal_Shard',
+    'items/Uncut_Emerald', 'items/Living_Crystal_Core', 'items/Cave_Giant_Pet_Stone',
+    'items/Giants_Stone_Maul', 'items/Guardians_Iron_Shield', 'items/Ancient_Giants_Signet',
   ],
 
   bounds: { minX: -55, maxX: 55, minZ: -65, maxZ: 65 },
@@ -99,8 +107,9 @@ export const hiddencave = {
   // Spiders are squishy, so the Broodmother carries her own multipliers rather
   // than the generic elite ones — otherwise she dies faster than a Hill Ogre.
   elites: [
-    { type: 'spider', name: 'The Broodmother', cx: 6, cz: 52, level: 9, expect: 9, hpMult: 3.6, dmgMult: 1.9 },
-    { type: 'cave_giant', name: 'The Cave Guardian', cx: -30, cz: 40, level: 8, expect: 8, hpMult: 1.8, dmgMult: 0.95 },
+    { type: 'spider', name: 'The Broodmother', cx: 6, cz: 52, level: 9, expect: 9, hpMult: 4.3, dmgMult: 2.2 },
+    { type: 'cave_giant', name: 'The Cave Guardian', cx: -30, cz: 40, level: 8, expect: 8, hpMult: 1.8, dmgMult: 0.95,
+      drops: ["Guardian's Iron Shield", "Ancient Giant's Signet"] },
   ],
 
   // Scattered cave dressing. Generated deterministically on the server (like

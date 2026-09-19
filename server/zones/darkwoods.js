@@ -15,6 +15,7 @@ export const darkwoods = {
     'Oak_Tree', 'Willow_Tree', 'Yew_Tree', 'Maple_Tree', 'Magic_Tree', 'Normal_Tree', 'Tree',
     'Normal_Bush', 'Berry_Bush', 'Flowering_Bush', 'Thorn_Bush', 'Darkroot_Bush', 'Dead_Bush',
     'cave/Copper_Ore_Vein', 'cave/Tin_Ore_Vein', 'cave/Iron_Ore_Vein',
+    'items/Copper_Ore', 'items/Tin_Ore', 'items/Iron_Ore',
   ],
 
   treeSeed: 1337,

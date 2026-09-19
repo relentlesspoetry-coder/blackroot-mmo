@@ -194,6 +194,7 @@ function populate() {
 function populateElite(zoneId, e) {
   const elite = makeMonster({
     zoneId, type: e.type, level: e.level, name: e.name, elite: true,
+    drops: e.drops,
     region: { cx: e.cx, cz: e.cz, r: 3 },
   });
   // Elites are tankier and hit harder than a same-level normal. A zone entry
@@ -244,7 +245,11 @@ function killMonster(m, killer) {
 
   // Roll the loot table and drop items on the ground where it fell.
   const drops = rollLoot(m.type);
-  if (m.elite) { drops.push({ item: `${m.name} Trophy`, qty: 1 }); drops.push({ item: 'Coins', qty: Math.floor(rand(200, 400)) }); }
+  if (m.elite) {
+    // A named encounter can name its own reward; otherwise it leaves a trophy.
+    for (const item of (m.spec.drops || [`${m.name} Trophy`])) drops.push({ item, qty: 1 });
+    drops.push({ item: 'Coins', qty: Math.floor(rand(200, 400)) });
+  }
   for (const d of drops) {
     const ang = rand(0, Math.PI * 2), rr = rand(0, 1.4);
     dropItem(m.zoneId, m.x + Math.cos(ang) * rr, m.z + Math.sin(ang) * rr, d.item, d.qty, killer ? killer.id : null);
@@ -832,7 +837,7 @@ wss.on('connection', (ws) => {
           level: 1, xp: 0, gold: 0, openedChests: new Set(),
           // Everyone starts able to mine; better pickaxes are earned.
           inventory: ['Bronze Pickaxe'],
-          equipment: { weapon: null, body: null, trinket: null },
+          equipment: { weapon: null, offhand: null, body: null, trinket: null },
           miningXp: 0, pendingMine: null, mineTimer: 0,
           quests: new Map(), questDone: new Set(), questKills: {},
           questFlags: new Set(), questAnnounced: new Set(),
