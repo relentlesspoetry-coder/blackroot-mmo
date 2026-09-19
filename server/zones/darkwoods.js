@@ -58,6 +58,17 @@ export const darkwoods = {
     { key: 'southgate',  name: 'South Gate',           x: 6,   z: 98,  kind: 'gate', exit: true },
   ],
 
+  // NPCs. `id` matches a quest's `giver`; the client builds a figure here and
+  // floats a ! / ? marker over it when that giver has something for you.
+  npcs: [
+    { id: 'alric',    name: 'Warden Alric',        x: 11,   z: -88, poi: 'entrance', tint: 0x5a6f4a,
+      idle: 'Keep to the path, and keep your blade where you can reach it.' },
+    { id: 'hermit',   name: 'Hermit of the Grove', x: 9,    z: 4,   poi: 'shrine',   tint: 0xb8a97a,
+      idle: 'The shrine holds. Not much else out here does.' },
+    { id: 'merchant', name: 'Wandering Merchant',  x: -51.5, z: 9,  poi: 'camp',     tint: 0x8a5cc0, trade: true,
+      idle: 'Wares? Aye, soon enough, traveller. Mind the woods.' },
+  ],
+
   // Primary progression path (winding). Rendered as a dirt trail; also used to
   // keep the forest clear along the route.
   path: [
@@ -86,22 +97,31 @@ export const darkwoods = {
     { x: -20, z: 60, r: 2.5 }, { x: 26, z: 74, r: 3 }, { x: -46, z: 46, r: 3 },
   ],
 
-  // Monster spawn regions. Level rises toward the south. `hint` labels the area.
+  // No aggressive mob may spawn within this radius of `spawn` — the first
+  // thing a new character meets is livestock, not a goblin.
+  safeSpawnRadius: 30,
+
+  // Monster spawn regions. Level rises toward the south. `hint` labels the area
+  // and `expect` is the player level the area is tuned for (see tools/balance.mjs).
   spawns: [
-    { type: 'chicken', count: 4, cx: -48, cz: 12,  r: 8,  level: 1, hint: 'Abandoned Camp' },
-    { type: 'cow',     count: 5, cx: -20, cz: -74, r: 14, level: 2, hint: 'Entrance meadow' },
-    { type: 'goblin',  count: 5, cx: -22, cz: -60, r: 22, level: 1, hint: "Old Hunter's Trail" },
-    { type: 'goblin',  count: 4, cx: -34, cz: -22, r: 18, level: 2, hint: 'Blackroot Creek' },
-    { type: 'bandit',  count: 6, cx: 48,  cz: -30, r: 16, level: 3, hint: 'Rotfen Thicket' },
-    { type: 'bandit',  count: 4, cx: 24,  cz: 18,  r: 20, level: 3, hint: 'Central Woods' },
-    { type: 'bandit',  count: 6, cx: 62,  cz: 28,  r: 14, level: 4, hint: 'Wolf Den' },
-    { type: 'guard',   count: 3, cx: -32, cz: 44,  r: 16, level: 5, hint: 'Root-Choked Ravine' },
-    { type: 'guard',   count: 3, cx: 8,   cz: 82,  r: 18, level: 6, hint: 'South Gate approach' },
+    // --- Entrance: passive livestock only, inside the first 30m ---
+    { type: 'chicken', count: 6, cx: 16,  cz: -80, r: 11, level: 1, expect: 1, hint: 'Entrance Clearing' },
+    { type: 'cow',     count: 5, cx: -20, cz: -74, r: 14, level: 1, expect: 1, hint: 'Entrance meadow' },
+    { type: 'chicken', count: 4, cx: -48, cz: 12,  r: 8,  level: 1, expect: 5, hint: 'Abandoned Camp' },
+    // --- First real fights: lone level-1 goblins along the trail ---
+    { type: 'goblin',  count: 5, cx: -20, cz: -56, r: 16, level: 1, expect: 2, hint: "Old Hunter's Trail" },
+    { type: 'goblin',  count: 4, cx: -34, cz: -22, r: 18, level: 2, expect: 3, hint: 'Blackroot Creek' },
+    // --- The ramp proper ---
+    { type: 'bandit',  count: 6, cx: 48,  cz: -30, r: 16, level: 3, expect: 4, hint: 'Rotfen Thicket' },
+    { type: 'bandit',  count: 4, cx: 24,  cz: 18,  r: 20, level: 3, expect: 4, hint: 'Central Woods' },
+    { type: 'bandit',  count: 6, cx: 62,  cz: 28,  r: 14, level: 4, expect: 5, hint: 'Wolf Den' },
+    { type: 'guard',   count: 3, cx: -32, cz: 44,  r: 16, level: 5, expect: 6, hint: 'Root-Choked Ravine' },
+    { type: 'guard',   count: 3, cx: 8,   cz: 82,  r: 18, level: 6, expect: 7, hint: 'South Gate approach' },
   ],
 
   // Named elite / boss encounter.
   elites: [
-    { type: 'guard', name: 'The Rootbound Guardian', cx: 24, cz: 36, level: 8 },
+    { type: 'guard', name: 'The Rootbound Guardian', cx: 24, cz: 36, level: 8, expect: 8 },
   ],
 
   // Environmental hazards (damage-over-time areas). Intensity rises southward.

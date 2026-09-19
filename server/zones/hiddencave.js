@@ -60,16 +60,20 @@ export const hiddencave = {
     { id: 'deep', x: 6, z: 54, gold: 260, item: 'Crystalline Relic' },
   ],
 
+  safeSpawnRadius: 14, // the shaft floor stays clear so you aren't ambushed on arrival
+
   // Cave spiders; deeper = higher level.
   spawns: [
-    { type: 'spider', count: 4, cx: -30, cz: -8, r: 12, level: 4 },
-    { type: 'spider', count: 4, cx: 34,  cz: -10, r: 10, level: 5 },
-    { type: 'spider', count: 5, cx: -30, cz: 40, r: 12, level: 6 },
-    { type: 'spider', count: 4, cx: 6,   cz: 42, r: 12, level: 6 },
+    { type: 'spider', count: 4, cx: -30, cz: -8, r: 12, level: 4, expect: 5, hint: 'Echo Pool' },
+    { type: 'spider', count: 4, cx: 34,  cz: -10, r: 10, level: 5, expect: 6, hint: "Smuggler's Niche" },
+    { type: 'spider', count: 5, cx: -30, cz: 40, r: 12, level: 6, expect: 7, hint: 'Crystal Hollow' },
+    { type: 'spider', count: 4, cx: 6,   cz: 42, r: 12, level: 6, expect: 7, hint: 'Deep Chamber' },
   ],
 
+  // Spiders are squishy, so the Broodmother carries her own multipliers rather
+  // than the generic elite ones — otherwise she dies faster than a Hill Ogre.
   elites: [
-    { type: 'spider', name: 'The Broodmother', cx: 6, cz: 52, level: 9 },
+    { type: 'spider', name: 'The Broodmother', cx: 6, cz: 52, level: 9, expect: 9, hpMult: 3.6, dmgMult: 1.9 },
   ],
 
   portals: [
