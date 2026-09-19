@@ -62,7 +62,9 @@ function scaleZone(zone, k) {
   (zone.chests || []).forEach(sp);
   if (zone.safeSpawnRadius) zone.safeSpawnRadius *= k;
   if (zone.boundaryInset) zone.boundaryInset *= k;
-  (zone.spawns || []).forEach(s => { s.cx *= k; s.cz *= k; s.r *= k; s.count = Math.max(1, Math.round(s.count * A)); });
+  // Spread mobs out: regions grow with the zone (r*k) but counts grow only
+  // linearly, so a bigger zone is LESS densely packed, not more.
+  (zone.spawns || []).forEach(s => { s.cx *= k; s.cz *= k; s.r *= k; s.count = Math.max(1, Math.round(s.count * k)); });
   (zone.elites || []).forEach(e => { e.cx *= k; e.cz *= k; });
   (zone.scatter || []).forEach(s => { if (s.count) s.count = Math.max(1, Math.round(s.count * A)); });
   if (zone.treeCount != null) zone.treeCount = Math.round(zone.treeCount * A);

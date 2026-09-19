@@ -112,26 +112,27 @@ export const killingfields = {
   safeSpawnRadius: 26,
 
   scatterSeed: 5570,
+  // NOTE: `r` is the piece's collision radius (0 = decor), `nearR` its spread.
   scatter: [
     // Surface ore among the furrows.
-    { model: 'Copper_Ore_Vein', count: 8, r: 0.8, scale: [0.9, 1.2], near: 'millford' },
-    { model: 'Tin_Ore_Vein',    count: 8, r: 0.8, scale: [0.9, 1.2], near: 'threshing' },
-    { model: 'Iron_Ore_Vein',   count: 6, r: 0.8, scale: [0.9, 1.2], rare: true, near: 'gallows' },
+    { model: 'Copper_Ore_Vein', count: 8, r: 0.8, scale: [0.9, 1.2], near: 'millford', nearR: 24 },
+    { model: 'Tin_Ore_Vein',    count: 8, r: 0.8, scale: [0.9, 1.2], near: 'threshing', nearR: 24 },
+    { model: 'Iron_Ore_Vein',   count: 6, r: 0.8, scale: [0.9, 1.2], rare: true, near: 'gallows', nearR: 22 },
 
     // Raider war-camp at Blood Furrows.
-    { model: 'Goblin_Hide_Tent', count: 3, r: 10, scale: [1.0, 1.1], near: 'furrows', c: 1.4 },
-    { model: 'Unlit_Fire_Pit',  count: 2, r: 8, scale: [1.0, 1.0], near: 'furrows' },
-    { model: 'Supply_Crate',    count: 5, r: 11, scale: [0.9, 1.1], near: 'furrows', c: 0.8 },
-    { model: 'Supply_Pavilion', count: 1, r: 7, scale: [1.0, 1.0], near: 'furrows', c: 1.6 },
+    { model: 'Goblin_Hide_Tent', count: 3, r: 1.4, scale: [1.0, 1.1], near: 'furrows', nearR: 16 },
+    { model: 'Unlit_Fire_Pit',  count: 2, r: 0, scale: [1.0, 1.0], near: 'furrows', nearR: 12 },
+    { model: 'Supply_Crate',    count: 4, r: 0.8, scale: [0.9, 1.1], near: 'furrows', nearR: 16 },
+    { model: 'Supply_Pavilion', count: 1, r: 1.6, scale: [1.0, 1.0], near: 'furrows', nearR: 10 },
     // Ruined homestead dressing.
-    { model: 'Small_Canvas_Tent', count: 1, r: 4, scale: [1.0, 1.0], near: 'homestead', c: 1.4 },
-    { model: 'Campfire',    count: 1, r: 3, scale: [0.9, 1.1], near: 'homestead' },
-    { model: 'Water_Barrel', count: 2, r: 5, scale: [1.0, 1.0], near: 'homestead', c: 0.7 },
-    { model: 'Camp_Lantern', count: 1, r: 4, scale: [1.0, 1.0], near: 'homestead' },
-    { model: 'Cooking_Tripod', count: 1, r: 4, scale: [1.0, 1.0], near: 'homestead' },
+    { model: 'Small_Canvas_Tent', count: 1, r: 1.4, scale: [1.0, 1.0], near: 'homestead', nearR: 10 },
+    { model: 'Campfire',    count: 1, r: 0, scale: [0.9, 1.1], near: 'homestead', nearR: 8 },
+    { model: 'Water_Barrel', count: 2, r: 0.7, scale: [1.0, 1.0], near: 'homestead', nearR: 10 },
+    { model: 'Camp_Lantern', count: 1, r: 0, scale: [1.0, 1.0], near: 'homestead', nearR: 10 },
+    { model: 'Cooking_Tripod', count: 1, r: 0, scale: [1.0, 1.0], near: 'homestead', nearR: 10 },
     // A camp at the watch hut too.
-    { model: 'Goblin_Hide_Tent', count: 2, r: 7, scale: [1.0, 1.1], near: 'watchhut', c: 1.4 },
-    { model: 'Supply_Crate',    count: 3, r: 8, scale: [0.9, 1.1], near: 'watchhut', c: 0.8 },
+    { model: 'Goblin_Hide_Tent', count: 2, r: 1.4, scale: [1.0, 1.1], near: 'watchhut', nearR: 12 },
+    { model: 'Supply_Crate',    count: 3, r: 0.8, scale: [0.9, 1.1], near: 'watchhut', nearR: 12 },
   ],
 
   // Level 3-8, ramping toward the southern grave-fields.

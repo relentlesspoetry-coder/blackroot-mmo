@@ -857,6 +857,54 @@ function ribbon(points, width, y, color, opacity, texName) {
   return g;
 }
 
+// Catmull-Rom smoothing of a polyline into a dense, gently curving one.
+function smoothPoly(points, seg) {
+  if (points.length < 3) return points.map(p => ({ x: p.x, z: p.z }));
+  seg = seg || 8;
+  const pt = i => points[Math.max(0, Math.min(points.length - 1, i))];
+  const out = [];
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = pt(i - 1), p1 = pt(i), p2 = pt(i + 1), p3 = pt(i + 2);
+    for (let j = 0; j < seg; j++) {
+      const t = j / seg, t2 = t * t, t3 = t2 * t;
+      out.push({
+        x: 0.5 * ((2 * p1.x) + (-p0.x + p2.x) * t + (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 + (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3),
+        z: 0.5 * ((2 * p1.z) + (-p0.z + p2.z) * t + (2 * p0.z - 5 * p1.z + 4 * p2.z - p3.z) * t2 + (-p0.z + 3 * p1.z - 3 * p2.z + p3.z) * t3),
+      });
+    }
+  }
+  out.push({ x: points[points.length - 1].x, z: points[points.length - 1].z });
+  return out;
+}
+
+// A single continuous, smoothly-curving ribbon strip that follows a polyline
+// with a constant width (mitred at joints) — no disconnected rectangles. Used
+// for the dirt path and the river so both read as one connected feature.
+function buildStripRibbon(points, width, y, material, tile) {
+  const pts = smoothPoly(points, 8);
+  const hw = width / 2, T = tile || 5;
+  const pos = [], uv = [], idx = [];
+  let dist = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
+    let dx = b.x - a.x, dz = b.z - a.z; const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
+    const nx = -dz, nz = dx; // left normal
+    if (i > 0) dist += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z);
+    pos.push(pts[i].x + nx * hw, y, pts[i].z + nz * hw, pts[i].x - nx * hw, y, pts[i].z - nz * hw);
+    const v = dist / T;
+    uv.push(0, v, width / T, v);
+  }
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = i * 2, b = i * 2 + 1, c = (i + 1) * 2, d = (i + 1) * 2 + 1;
+    idx.push(a, b, c, b, d, c);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx); g.computeVertexNormals();
+  const m = new THREE.Mesh(g, material); m.receiveShadow = true; scene.add(m); return m;
+}
+
 function buildZone() {
   const b = zone.bounds;
   const W = b.maxX - b.minX, D = b.maxZ - b.minZ, cx = (b.minX + b.maxX) / 2, cz = (b.minZ + b.maxZ) / 2;
@@ -907,12 +955,16 @@ function buildZone() {
     // Hanging_Roots / Corner_Cobweb), placed server-side — see buildScatter().
   }
 
-  // Primary path (textured dirt trail)
-  if (zone.path) ribbon(zone.path, 4.2, 0.04, 0x6b5a3c, 1, 'dirt');
+  // Primary path — one continuous, smoothly-curving dirt trail.
+  if (zone.path) {
+    const dirtMat = new THREE.MeshStandardMaterial({ map: loadTexture('dirt', 1, 1), roughness: 1, side: THREE.DoubleSide });
+    buildStripRibbon(zone.path, 5, 0.05, dirtMat, 5);
+  }
 
-  // River (Blackroot Creek) + Mossy Bridge
+  // River (Blackroot Creek) — one continuous body of water + the Mossy Bridge.
   if (zone.river) {
-    ribbon(zone.river.points, zone.river.width, 0.06, 0x24506b, 0.85);
+    const waterMat = new THREE.MeshStandardMaterial({ color: 0x2f6f9c, roughness: 0.25, metalness: 0.15, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
+    buildStripRibbon(zone.river.points, zone.river.width, 0.08, waterMat, 6);
     const br = zone.river.bridge;
     // orient bridge across the river direction
     const near = nearestSeg(zone.river.points, br.x, br.z);

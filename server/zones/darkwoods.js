@@ -20,7 +20,10 @@ export const darkwoods = {
     // Campsite props (Abandoned Camp + goblin camps)
     'props/Campfire', 'props/Unlit_Fire_Pit', 'props/Cooking_Tripod', 'props/Bedroll', 'props/Rolled_Bedroll',
     'props/Camp_Stool', 'props/Camp_Lantern', 'props/Small_Canvas_Tent', 'props/Goblin_Hide_Tent',
-    'props/Supply_Crate', 'props/Supply_Pavilion', 'props/Water_Barrel',
+    'props/Supply_Crate', 'props/Water_Barrel',
+    // Dark Woods decor + goblin-camp dressing (new asset pack)
+    'Twisted_Dead_Tree', 'Hollow_Stump', 'Exposed_Roots', 'Dark_Fern', 'Poison_Mushrooms', 'Bone_Pile',
+    'Rough_Fence', 'Warning_Sign', 'Spike_Barricade', 'Goblin_Banner', 'Goblin_Totem',
     'cave/Copper_Ore_Vein', 'cave/Tin_Ore_Vein', 'cave/Iron_Ore_Vein',
     'items/Copper_Ore', 'items/Tin_Ore', 'items/Iron_Ore',
   ],
@@ -133,57 +136,72 @@ export const darkwoods = {
   // Surface ore, so mining can be started before the cave is survivable. The
   // richer seams are all underground.
   scatterSeed: 4412,
+  // NOTE: in generateScatter, `r` is the piece's COLLISION radius (0 = walk
+  // through / pure decor) and `nearR` is how far it spreads around its anchor.
   scatter: [
-    // Anchored on landmarks the player actually walks past. The creek reads as
-    // the obvious spot for surface ore, but its POI sits on the river itself,
-    // which is the one thing you cannot walk through.
-    { model: 'Copper_Ore_Vein', count: 6, r: 0.8, scale: [0.9, 1.2], near: 'hunter' },
-    { model: 'Tin_Ore_Vein',    count: 6, r: 0.8, scale: [0.9, 1.2], near: 'hunter' },
-    { model: 'Iron_Ore_Vein',   count: 5, r: 0.8, scale: [0.9, 1.2], rare: true, near: 'ravine' },
+    // Surface ore veins (small mineable-node collision).
+    { model: 'Copper_Ore_Vein', count: 6, r: 0.8, scale: [0.9, 1.2], near: 'hunter', nearR: 24 },
+    { model: 'Tin_Ore_Vein',    count: 6, r: 0.8, scale: [0.9, 1.2], near: 'hunter', nearR: 24 },
+    { model: 'Iron_Ore_Vein',   count: 5, r: 0.8, scale: [0.9, 1.2], rare: true, near: 'ravine', nearR: 22 },
 
-    // The Abandoned Camp — a proper little campsite dressed with props.
-    { model: 'Small_Canvas_Tent', count: 1, r: 3, scale: [1.0, 1.0], near: 'camp', c: 1.4 },
-    { model: 'Campfire',       count: 1, r: 2.5, scale: [0.9, 1.1], near: 'camp' },
-    { model: 'Cooking_Tripod', count: 1, r: 3,   scale: [0.9, 1.1], near: 'camp' },
-    { model: 'Bedroll',        count: 2, r: 4,   scale: [1.0, 1.0], near: 'camp' },
-    { model: 'Camp_Stool',     count: 2, r: 4,   scale: [1.0, 1.0], near: 'camp' },
-    { model: 'Camp_Lantern',   count: 1, r: 3.5, scale: [1.0, 1.0], near: 'camp' },
-    { model: 'Supply_Crate',   count: 2, r: 5,   scale: [0.9, 1.1], near: 'camp', c: 0.8 },
-    { model: 'Water_Barrel',   count: 1, r: 4.5, scale: [1.0, 1.0], near: 'camp', c: 0.7 },
-    { model: 'Supply_Pavilion', count: 1, r: 6,  scale: [1.0, 1.0], near: 'camp', c: 1.6 },
-    { model: 'Rolled_Bedroll', count: 1, r: 4,   scale: [1.0, 1.0], near: 'camp' },
+    // The Abandoned Camp — a little campsite of props (tight spread, light collision).
+    { model: 'Small_Canvas_Tent', count: 1, r: 1.4, scale: [1.0, 1.0], near: 'camp', nearR: 10 },
+    { model: 'Campfire',       count: 1, r: 0, scale: [0.9, 1.1], near: 'camp', nearR: 8 },
+    { model: 'Cooking_Tripod', count: 1, r: 0, scale: [0.9, 1.1], near: 'camp', nearR: 9 },
+    { model: 'Bedroll',        count: 2, r: 0, scale: [1.0, 1.0], near: 'camp', nearR: 10 },
+    { model: 'Camp_Stool',     count: 2, r: 0, scale: [1.0, 1.0], near: 'camp', nearR: 10 },
+    { model: 'Camp_Lantern',   count: 1, r: 0, scale: [1.0, 1.0], near: 'camp', nearR: 10 },
+    { model: 'Supply_Crate',   count: 2, r: 0.8, scale: [0.9, 1.1], near: 'camp', nearR: 11 },
+    { model: 'Water_Barrel',   count: 1, r: 0.7, scale: [1.0, 1.0], near: 'camp', nearR: 10 },
+    { model: 'Rolled_Bedroll', count: 1, r: 0, scale: [1.0, 1.0], near: 'camp', nearR: 10 },
 
-    // A goblin war-camp around the Wolf Den, dressed with goblin props.
-    { model: 'Goblin_Hide_Tent', count: 2, r: 8, scale: [1.0, 1.1], near: 'wolfden', c: 1.4 },
-    { model: 'Unlit_Fire_Pit',  count: 1, r: 6,  scale: [1.0, 1.0], near: 'wolfden' },
-    { model: 'Supply_Crate',    count: 3, r: 9,  scale: [0.9, 1.1], near: 'wolfden', c: 0.8 },
-    // A second fire pit + tents at the Rotfen bandit thicket.
-    { model: 'Goblin_Hide_Tent', count: 1, r: 6, scale: [1.0, 1.1], near: 'rotfen', c: 1.4 },
-    { model: 'Unlit_Fire_Pit',  count: 1, r: 5,  scale: [1.0, 1.0], near: 'rotfen' },
+    // Goblin war-camp at the Wolf Den — tents, totem, banners, crude defenses.
+    { model: 'Goblin_Hide_Tent', count: 2, r: 1.4, scale: [1.0, 1.1], near: 'wolfden', nearR: 14 },
+    { model: 'Goblin_Totem',    count: 1, r: 0.6, scale: [1.0, 1.1], near: 'wolfden', nearR: 8 },
+    { model: 'Goblin_Banner',   count: 2, r: 0.4, scale: [1.0, 1.1], near: 'wolfden', nearR: 14 },
+    { model: 'Unlit_Fire_Pit',  count: 1, r: 0, scale: [1.0, 1.0], near: 'wolfden', nearR: 9 },
+    { model: 'Supply_Crate',    count: 2, r: 0.8, scale: [0.9, 1.1], near: 'wolfden', nearR: 14 },
+    { model: 'Spike_Barricade', count: 3, r: 0.8, scale: [1.0, 1.1], near: 'wolfden', nearR: 16 },
+    { model: 'Rough_Fence',     count: 4, r: 0.5, scale: [1.0, 1.1], near: 'wolfden', nearR: 16 },
+    { model: 'Warning_Sign',    count: 1, r: 0, scale: [1.0, 1.0], near: 'wolfden', nearR: 16 },
+
+    // Rotfen bandit thicket — a small camp.
+    { model: 'Goblin_Hide_Tent', count: 1, r: 1.4, scale: [1.0, 1.1], near: 'rotfen', nearR: 12 },
+    { model: 'Unlit_Fire_Pit',  count: 1, r: 0, scale: [1.0, 1.0], near: 'rotfen', nearR: 10 },
+    { model: 'Rough_Fence',     count: 3, r: 0.5, scale: [1.0, 1.1], near: 'rotfen', nearR: 14 },
+
+    // Atmospheric flora & bones scattered zone-wide (no anchor).
+    { model: 'Twisted_Dead_Tree', count: 10, r: 0.9, scale: [0.9, 1.3] },
+    { model: 'Hollow_Stump',      count: 7,  r: 0.8, scale: [0.9, 1.2] },
+    { model: 'Exposed_Roots',     count: 10, r: 0,   scale: [0.9, 1.3] },
+    { model: 'Dark_Fern',         count: 16, r: 0,   scale: [0.9, 1.4] },
+    { model: 'Poison_Mushrooms',  count: 10, r: 0,   scale: [0.9, 1.3] },
+    { model: 'Bone_Pile',         count: 7,  r: 0,   scale: [0.9, 1.2] },
   ],
 
   // Monster spawn regions. Level rises toward the south. `hint` labels the area
   // and `expect` is the player level the area is tuned for (see tools/balance.mjs).
+  // Spawn regions — spread out and low-density (a farming zone, not a mosh pit).
+  // Counts are per-group before the zone scale; regions are wide so mobs are not
+  // packed together. Each area is its own creature so groups don't stack.
   spawns: [
-    // --- Entrance: passive livestock only, inside the first 30m ---
-    { type: 'chicken', count: 6, cx: 16,  cz: -80, r: 11, level: 1, expect: 1, hint: 'Entrance Clearing' },
-    { type: 'cow',     count: 5, cx: -20, cz: -74, r: 14, level: 1, expect: 1, hint: 'Entrance meadow' },
-    { type: 'chicken', count: 4, cx: -48, cz: 12,  r: 8,  level: 1, expect: 5, hint: 'Abandoned Camp' },
-    // --- First real fights: lone level-1 goblins along the trail ---
-    { type: 'goblin',  count: 5, cx: -20, cz: -56, r: 16, level: 1, expect: 2, hint: "Old Hunter's Trail" },
-    { type: 'goblin',  count: 4, cx: -34, cz: -22, r: 18, level: 2, expect: 3, hint: 'Blackroot Creek' },
-    // --- The ramp proper ---
-    { type: 'bandit',  count: 6, cx: 48,  cz: -30, r: 16, level: 3, expect: 4, hint: 'Rotfen Thicket' },
-    { type: 'bandit',  count: 4, cx: 24,  cz: 18,  r: 20, level: 3, expect: 4, hint: 'Central Woods' },
-    { type: 'bandit',  count: 6, cx: 62,  cz: 28,  r: 14, level: 4, expect: 5, hint: 'Wolf Den' },
-    { type: 'guard',   count: 3, cx: -32, cz: 44,  r: 16, level: 5, expect: 6, hint: 'Root-Choked Ravine' },
-    { type: 'guard',   count: 3, cx: 8,   cz: 82,  r: 18, level: 6, expect: 7, hint: 'South Gate approach' },
-    // --- Goblin-kin: scavengers on the trail, a war-camp at the Wolf Den ---
-    { type: 'goblin_scavenger', count: 5, cx: -8, cz: -46, r: 16, level: 2, expect: 2, hint: 'Trail scavengers' },
-    { type: 'goblin_miner',     count: 3, cx: -34, cz: 40, r: 14, level: 4, expect: 5, hint: 'Ravine miners' },
-    { type: 'goblin_warrior',   count: 5, cx: 62, cz: 28,  r: 15, level: 4, expect: 5, hint: 'Wolf Den camp' },
-    { type: 'goblin_archer',    count: 3, cx: 66, cz: 20,  r: 12, level: 4, expect: 5, hint: 'Wolf Den camp' },
-    { type: 'goblin_shaman',    count: 2, cx: 58, cz: 34,  r: 12, level: 5, expect: 6, hint: 'Wolf Den camp' },
+    // --- Entrance: passive livestock only ---
+    { type: 'chicken', count: 5, cx: 16,  cz: -78, r: 15, level: 1, expect: 1, hint: 'Entrance Clearing' },
+    { type: 'cow',     count: 4, cx: -26, cz: -70, r: 18, level: 1, expect: 1, hint: 'Entrance meadow' },
+    // --- Trail: lone goblins & scavengers, well spaced ---
+    { type: 'goblin',           count: 4, cx: -22, cz: -56, r: 20, level: 1, expect: 2, hint: "Old Hunter's Trail" },
+    { type: 'goblin_scavenger', count: 4, cx: 14,  cz: -40, r: 22, level: 2, expect: 2, hint: 'Trail scavengers' },
+    { type: 'goblin',           count: 3, cx: -38, cz: -18, r: 20, level: 2, expect: 3, hint: 'Blackroot Creek' },
+    // --- Bandits through the central woods ---
+    { type: 'bandit',  count: 4, cx: 50,  cz: -30, r: 22, level: 3, expect: 4, hint: 'Rotfen Thicket' },
+    { type: 'bandit',  count: 3, cx: 24,  cz: 18,  r: 24, level: 4, expect: 4, hint: 'Central Woods' },
+    // --- Ravine miners + a goblin camp out at the Wolf Den ---
+    { type: 'goblin_miner',   count: 3, cx: -34, cz: 42, r: 18, level: 4, expect: 5, hint: 'Ravine miners' },
+    { type: 'goblin_warrior', count: 4, cx: 62,  cz: 26, r: 20, level: 4, expect: 5, hint: 'Wolf Den camp' },
+    { type: 'goblin_archer',  count: 2, cx: 72,  cz: 36, r: 14, level: 5, expect: 5, hint: 'Wolf Den camp' },
+    // --- Guards toward the south gate ---
+    { type: 'guard',   count: 2, cx: -32, cz: 46,  r: 18, level: 5, expect: 6, hint: 'Root-Choked Ravine' },
+    { type: 'guard',   count: 2, cx: 10,  cz: 82,  r: 22, level: 6, expect: 7, hint: 'South Gate approach' },
   ],
 
   // A single low-level optional elite — the zone's capstone, nothing harder.
