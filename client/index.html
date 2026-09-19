@@ -1601,9 +1601,23 @@ function boxPart(w, h, d, color) {
   m.castShadow = true; return m;
 }
 
+// Bone segments for the Male model, in its own local space (see tools analysis).
+const MALE_BONES = {
+  spine: { a: [0, 0.90, 0], b: [0, 1.95, 0] },
+  armL: { a: [-0.20, 1.52, 0], b: [-0.40, 1.02, 0.0] },
+  armR: { a: [0.20, 1.52, 0], b: [0.40, 1.02, 0.0] },
+  legL: { a: [-0.11, 0.96, 0], b: [-0.11, 0.05, 0.02] },
+  legR: { a: [0.11, 0.96, 0], b: [0.11, 0.05, 0.02] },
+};
 function makePlayerMesh(isSelf) {
   const g = cloneModel('Male', 2.3);
-  if (g) { g.rotation.y = 0; g.userData.faceOffset = MODEL_YAW; g.userData.rig = buildRig(g, 'biped'); return g; }
+  if (g) {
+    splitHumanoid(g, MALE_BONES);
+    // The Male model faces +Z, so no yaw flip — otherwise it walks backwards.
+    g.rotation.y = 0; g.userData.faceOffset = 0;
+    g.userData.rig = buildRig(g, 'hero');
+    return g;
+  }
   // fallback if the model failed to load
   const fb = new THREE.Group();
   const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.5, 1.0, 4, 8),
@@ -1706,6 +1720,60 @@ function splitChickenParts(wrap) {
   }
 }
 
+// The player (Male) is a rigid merged mesh (no skeleton), so its arms and legs
+// can't move. Segment every triangle to the nearest "bone" — a robust way to
+// carve an A-pose humanoid into limbs — and rebuild the arms and legs as their
+// own joint-pivoted groups (named so the rig drives them). The torso and head
+// stay behind as the body. Bone coords are in the model's own local space.
+function d2segSq(px, py, pz, s) {
+  const ax = s.a[0], ay = s.a[1], az = s.a[2], bx = s.b[0], by = s.b[1], bz = s.b[2];
+  const abx = bx - ax, aby = by - ay, abz = bz - az;
+  const t = Math.max(0, Math.min(1, ((px - ax) * abx + (py - ay) * aby + (pz - az) * abz) / (abx * abx + aby * aby + abz * abz || 1)));
+  const dx = px - (ax + abx * t), dy = py - (ay + aby * t), dz = pz - (az + abz * t);
+  return dx * dx + dy * dy + dz * dz;
+}
+function splitHumanoid(wrap, bones) {
+  const meshes = []; wrap.traverse(o => { if (o.isMesh) meshes.push(o); });
+  if (!meshes.length) return;
+  const anchor = meshes[0].parent;
+  // Bias makes a borderline triangle prefer the torso, so the wide chest is not
+  // clawed into the arms.
+  const segs = { body: bones.spine, Arm_L: bones.armL, Arm_R: bones.armR, Leg_L: bones.legL, Leg_R: bones.legR };
+  const bias = { body: 1.0, Arm_L: 1.18, Arm_R: 1.18, Leg_L: 1.06, Leg_R: 1.06 };
+  const keys = Object.keys(segs);
+  const limbAcc = { Arm_L: [], Arm_R: [], Leg_L: [], Leg_R: [] };
+  for (const m of meshes) {
+    const geo = m.geometry, pa = geo.attributes.position, na = geo.attributes.normal, ua = geo.attributes.uv, idx = geo.index;
+    const P = i => [pa.getX(i), pa.getY(i), pa.getZ(i)];
+    const N = i => na ? [na.getX(i), na.getY(i), na.getZ(i)] : [0, 1, 0];
+    const U = i => ua ? [ua.getX(i), ua.getY(i)] : [0, 0];
+    const bk = {}; for (const k of keys) bk[k] = { p: [], n: [], u: [] };
+    const triN = idx ? idx.count / 3 : pa.count / 3;
+    for (let t = 0; t < triN; t++) {
+      const i0 = idx ? idx.getX(t * 3) : t * 3, i1 = idx ? idx.getX(t * 3 + 1) : t * 3 + 1, i2 = idx ? idx.getX(t * 3 + 2) : t * 3 + 2;
+      const a = P(i0), b = P(i1), c = P(i2);
+      const cx = (a[0] + b[0] + c[0]) / 3, cy = (a[1] + b[1] + c[1]) / 3, cz = (a[2] + b[2] + c[2]) / 3;
+      let best = 'body', bd = Infinity;
+      for (const k of keys) { const d = d2segSq(cx, cy, cz, segs[k]) * bias[k] * bias[k]; if (d < bd) { bd = d; best = k; } }
+      const dst = bk[best];
+      for (const i of [i0, i1, i2]) { dst.p.push(...P(i)); dst.n.push(...N(i)); dst.u.push(...U(i)); }
+    }
+    m.parent.remove(m);
+    if (bk.body.p.length) { const bm = new THREE.Mesh(chickenPartGeo(bk.body, !!ua), m.material); bm.name = m.name; bm.castShadow = bm.receiveShadow = true; anchor.add(bm); }
+    for (const k of ['Arm_L', 'Arm_R', 'Leg_L', 'Leg_R']) if (bk[k].p.length) limbAcc[k].push({ bk: bk[k], hasUV: !!ua, material: m.material });
+  }
+  for (const k of ['Arm_L', 'Arm_R', 'Leg_L', 'Leg_R']) {
+    const parts = limbAcc[k]; if (!parts.length) continue;
+    const j = segs[k].a, pivot = new THREE.Vector3(j[0], j[1], j[2]);
+    const grp = new THREE.Group(); grp.name = k; grp.position.copy(pivot);
+    for (const hp of parts) {
+      const g2 = chickenPartGeo(hp.bk, hp.hasUV); g2.translate(-pivot.x, -pivot.y, -pivot.z);
+      const mm = new THREE.Mesh(g2, hp.material); mm.castShadow = mm.receiveShadow = true; grp.add(mm);
+    }
+    anchor.add(grp);
+  }
+}
+
 function makeMonsterMesh(type, elite) {
   const map = MOB_MODEL[type] || { model: 'Goblin', h: 2 };
   const g = cloneModel(map.model, map.h * (elite ? 1.4 : 1));
@@ -1768,6 +1836,7 @@ const GAIT = {
   quad:   { bob: 0.07, roll: 0.045, lean: 0.04, stride: 1.40 },
   bird:   { bob: 0.09, roll: 0.090, lean: 0.06, stride: 0.55 },
   spider: { bob: 0.05, roll: 0.030, lean: 0.03, stride: 1.10 },
+  hero:   { bob: 0.06, roll: 0.050, lean: 0.10, stride: 1.70 }, // the player
   // The bat is one merged mesh with no wing nodes, so it can't flap. A fast
   // hover bob and a banked roll are the most that can be read as flight.
   flier:  { bob: 0.22, roll: 0.240, lean: 0.14, stride: 0.40 },
@@ -1926,6 +1995,52 @@ function animateEntity(rec, e, kind, dt) {
     b.scale.set(rig.baseScale.x * (1 - e * 0.5), rig.baseScale.y * (1 + e), rig.baseScale.z * (1 - e * 0.5));
     return;
   }
+  if (rig.style === 'hero') {
+    // The player: split arms/legs, faces +Z. Walk (leg stride + arm swing),
+    // idle breathing, a spacebar jump tuck, and alternating punch/kick attacks.
+    const bs = rig.baseScale;
+    rig.breath += dt * 2.0;
+    const isLocal = rec.mesh.userData.id === myId;
+    const jp = (isLocal && jump.active) ? Math.min(1, jump.t / 0.5) : 0;
+    const air = Math.sin(Math.PI * jp); // 0 → 1 (apex) → 0
+
+    // Body: step-bob, forward lean into a walk (+Z), gentle roll, breathing swell.
+    const br = (1 - a) * (Math.sin(rig.breath) * 0.5 + 0.5);
+    b.position.y = rig.home.y + Math.abs(Math.sin(rig.gait)) * g.bob * a;
+    b.position.z = rig.home.z + punch * 0.35;         // lunge forward (+Z) on a strike
+    b.rotation.x = 0.10 * a;                            // lean forward while moving
+    b.rotation.y = 0;
+    b.rotation.z = Math.sin(rig.gait * 0.5) * g.roll * a;
+    b.scale.set(bs.x * (1 - br * 0.02), bs.y * (1 + br * 0.03), bs.z * (1 - br * 0.02));
+
+    // Walk stride: legs anti-phase, arms counter-swing; a little idle arm sway.
+    const stride = Math.sin(rig.gait) * a;
+    const sway = (1 - a) * Math.sin(rig.breath * 0.7) * 0.05;
+    let lLeg = stride * 0.6, rLeg = -stride * 0.6;
+    let lArm = -stride * 0.5 + sway, rArm = stride * 0.5 + sway;
+    let lArmZ = 0.10 + 0.03 * a, rArmZ = -(0.10 + 0.03 * a);
+
+    // Jump: tuck the knees up and lift the arms while airborne.
+    lLeg -= air * 0.9; rLeg -= air * 0.9; lArm -= air * 0.7; rArm -= air * 0.7;
+
+    // Attack: alternate a straight punch and a front kick (forward is -rot.x).
+    if (punch > 0) {
+      if ((rig.atkKind || 0) === 0) {                  // punch: right jab, left guards
+        rArm = -1.7 * punch; rArmZ = -0.08;
+        lArm = 0.5 * punch;
+        b.rotation.y = -0.28 * punch;                  // twist the torso into it
+      } else {                                         // kick: right leg forward
+        rLeg = -1.5 * punch;
+        lArm = -0.4 * punch; rArm = 0.4 * punch;       // arms balance
+        b.rotation.x = 0.10 * a - 0.12 * punch;        // lean back a touch
+      }
+    }
+    if (rig.armL) rig.armL.rotation.set(lArm, 0, lArmZ);
+    if (rig.armR) rig.armR.rotation.set(rArm, 0, rArmZ);
+    if (rig.legL) rig.legL.rotation.set(lLeg, 0, 0);
+    if (rig.legR) rig.legR.rotation.set(rLeg, 0, 0);
+    return;
+  }
   // The model sits inside a group that carries the yaw, so -Z is forward here.
   b.position.y = rig.home.y + Math.abs(Math.sin(rig.gait)) * g.bob * a + idle;
   b.position.z = rig.home.z - punch * 0.5;
@@ -1978,7 +2093,7 @@ function animateEntity(rec, e, kind, dt) {
 function triggerAttackAnim(id) {
   const rec = entityMeshes.get(id);
   const rig = rec && rec.mesh.userData.rig;
-  if (rig) rig.atk = 1;
+  if (rig) { rig.atk = 1; rig.atkSeq = (rig.atkSeq || 0) + 1; rig.atkKind = rig.atkSeq % 2; }
 }
 
 function lerpAngle(a, b, t) {
