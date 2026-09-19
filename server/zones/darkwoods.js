@@ -14,6 +14,7 @@ export const darkwoods = {
     'Goblin', 'Bandit', 'Hill_Ogre', 'Cow', 'Chicken',
     'Oak_Tree', 'Willow_Tree', 'Yew_Tree', 'Maple_Tree', 'Magic_Tree', 'Normal_Tree', 'Tree',
     'Normal_Bush', 'Berry_Bush', 'Flowering_Bush', 'Thorn_Bush', 'Darkroot_Bush', 'Dead_Bush',
+    'cave/Copper_Ore_Vein', 'cave/Tin_Ore_Vein', 'cave/Iron_Ore_Vein',
   ],
 
   treeSeed: 1337,
@@ -107,6 +108,18 @@ export const darkwoods = {
   // No aggressive mob may spawn within this radius of `spawn` — the first
   // thing a new character meets is livestock, not a goblin.
   safeSpawnRadius: 30,
+
+  // Surface ore, so mining can be started before the cave is survivable. The
+  // richer seams are all underground.
+  scatterSeed: 4412,
+  scatter: [
+    // Anchored on landmarks the player actually walks past. The creek reads as
+    // the obvious spot for surface ore, but its POI sits on the river itself,
+    // which is the one thing you cannot walk through.
+    { model: 'Copper_Ore_Vein', count: 6, r: 0.8, scale: [0.9, 1.2], near: 'hunter' },
+    { model: 'Tin_Ore_Vein',    count: 6, r: 0.8, scale: [0.9, 1.2], near: 'hunter' },
+    { model: 'Iron_Ore_Vein',   count: 5, r: 0.8, scale: [0.9, 1.2], rare: true, near: 'ravine' },
+  ],
 
   // Monster spawn regions. Level rises toward the south. `hint` labels the area
   // and `expect` is the player level the area is tuned for (see tools/balance.mjs).

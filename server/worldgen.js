@@ -98,6 +98,10 @@ export function generateScatter(zone) {
       }
       if (zone.boundary && !pointInPoly(x, z, zone.boundary)) continue;
       if (zone.path && closestOnPolyline(x, z, zone.path).dist < (spec.r > 0 ? 4.5 : 2.2)) continue;
+      // Keep dressing out of the water. A solid piece in a river is worse than
+      // useless: an ore vein there is unreachable, because the river is the one
+      // thing the player cannot walk through.
+      if (zone.river && closestOnPolyline(x, z, zone.river.points).dist < zone.river.width / 2 + 2.5) continue;
       if ((zone.rocks || []).some(o => dist2(x, z, o.x, o.z) < (o.r + 1.5) ** 2)) continue;
       if ((zone.chests || []).some(c => dist2(x, z, c.x, c.z) < 16)) continue;
       if (dist2(x, z, zone.spawn.x, zone.spawn.z) < 64) continue;
@@ -105,6 +109,7 @@ export function generateScatter(zone) {
       if (out.some(o => dist2(x, z, o.x, o.z) < spacing * spacing)) continue;
       const lo = spec.scale ? spec.scale[0] : 1, hi = spec.scale ? spec.scale[1] : 1;
       out.push({
+        i: out.length,                      // stable id: veins are addressed by it
         m: spec.model, x: +x.toFixed(1), z: +z.toFixed(1),
         s: +(lo + rng() * (hi - lo)).toFixed(2), r: +(rng() * 6.28).toFixed(2),
         c: spec.r || 0,

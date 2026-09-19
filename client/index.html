@@ -107,6 +107,13 @@
   .eslot .tip { display: none; }
   #statline { color: #b9ad90; font-size: 11px; display: flex; gap: 10px; margin-bottom: 8px; }
   #statline b { color: #ffd24a; font-weight: 600; }
+  #skillline { color: #b9ad90; font-size: 11px; margin: -4px 0 8px; display: flex;
+    justify-content: space-between; align-items: center; gap: 8px; }
+  #skillline b { color: #8fd070; font-weight: 600; }
+  #skillline .xpbar { flex: 1; height: 4px; background: #1d1913; border: 1px solid #4a3d2a;
+    border-radius: 3px; overflow: hidden; }
+  #skillline .xpbar i { display: block; height: 100%; background: #6a9f4a; transform-origin: left; }
+  #skillline .pick { color: #8a7d63; }
   .slot { cursor: pointer; }
 
   /* ---- Quest log ---- */
@@ -214,6 +221,7 @@
     <h3><span>Bag</span><span class="g" id="bagGold">0 gp</span></h3>
     <div id="equipRow"></div>
     <div id="statline"></div>
+    <div id="skillline"></div>
     <div id="bagGrid"></div>
   </div>
   <div id="questlog">
@@ -363,6 +371,7 @@ function handle(m) {
       snapCur = m; snapCurT = performance.now();
       if (m.time != null) worldTime = m.time;
       if (m.weather) worldWeather = m.weather;
+      applyDepleted(m.depleted);
       updateHudFromSnapshot(m);
       break;
     case 'transition':
@@ -374,6 +383,10 @@ function handle(m) {
         stats: m.stats || { atk: 0, def: 0 } };
       renderBag();
       refreshDialogue(); // the merchant's sell list is built from the bag
+      break;
+    case 'skills':
+      skills = { ...skills, ...m };
+      renderSkills();
       break;
     case 'quests':
       questData = { active: m.active || [], available: m.available || [], completed: m.completed || [], markers: m.markers || {} };
@@ -1175,7 +1188,9 @@ function buildPoi(p) {
 // whole point is that they differ in size. Bake at native scale instead and
 // let the per-placement scale do the work.
 const NATIVE = 0; // sentinel: keep the model's own dimensions
+const oreMeshes = [];   // { mesh, veins: [placement,...] } for instance picking
 function buildScatter() {
+  oreMeshes.length = 0;
   const mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
   const place = (list, yOf) => {
     const byModel = {};
@@ -1194,6 +1209,13 @@ function buildScatter() {
           im.setMatrixAt(i, mtx);
         });
         im.instanceMatrix.needsUpdate = true;
+        // Ore veins are clickable. An InstancedMesh raycast gives back an
+        // instanceId, which indexes straight into this list.
+        if (/_Ore_Vein$/.test(model)) {
+          im.userData.pickKind = 'ore';
+          im.userData.oreName = model.replace(/_Ore_Vein$/, '');
+          oreMeshes.push({ mesh: im, veins: items });
+        }
         scene.add(im);
       }
     }
@@ -1748,6 +1770,14 @@ function pickAt(e) {
     }
     if (u.pickKind === 'chest' && u.pickId != null) return { kind: 'chest', id: u.pickId, point: h.point };
     if (u.pickKind === 'item' && u.pickId != null) { const r = itemMeshes.get(u.pickId); return { kind: 'item', id: u.pickId, name: r ? r.name : 'Item', qty: r ? r.qty : 1, point: h.point }; }
+    if (u.pickKind === 'ore' && h.instanceId != null) {
+      const rec = oreMeshes.find(o => o.mesh === h.object);
+      const vein = rec && rec.veins[h.instanceId];
+      if (vein && !depletedVeins.has(vein.i)) {
+        return { kind: 'ore', id: vein.i, ore: u.oreName, point: h.point };
+      }
+      continue; // a mined-out vein is not a target
+    }
     if (u.pickKind === 'npc') return { kind: 'npc', id: u.npcId, npcId: u.npcId, name: u.npcName, x: u.npcX, z: u.npcZ, point: h.point };
     if (u.isGround && !groundPt) groundPt = h.point;
   }
@@ -1777,6 +1807,16 @@ function optionsFor(pk) {
     return [
       { label: `Talk-to <b>${escapeHtml(pk.name)}</b>${tag}`, act: () => talkNpc(pk) },
       { label: `Examine ${escapeHtml(pk.name)}`, act: () => examineText(npcMeshes.get(pk.npcId)?.def.idle || 'A weathered traveller.') },
+    ];
+  }
+  if (pk.kind === 'ore') {
+    const req = ORE_LEVEL[pk.ore] || 1;
+    const can = skills.mining.level >= req;
+    return [
+      { label: `Mine <b>${escapeHtml(pk.ore)} vein</b>` +
+        (can ? '' : ` <span class="lvl">(needs Mining ${req})</span>`), act: () => mineVein(pk.id) },
+      { label: `Examine ${escapeHtml(pk.ore)} vein`, act: () =>
+        examineText(`A seam of ${pk.ore.toLowerCase()} running through the rock. Mining ${req}.`) },
     ];
   }
   if (pk.kind === 'ground') return [
@@ -1820,6 +1860,44 @@ function tabTarget() {
   mons.sort((a, b) => a.d - b.d);
   attackMonster(mons[0].id); // always the closest
 }
+// Mirrors server/mining.js; used only for menu labels and tooltips.
+const ORE_LEVEL = { Copper: 1, Tin: 1, Iron: 8, Silver: 12, Coal: 16, Gold: 22,
+  Mithril: 30, Adamantite: 38, Runite: 46 };
+let skills = { mining: { level: 1, xp: 0, into: 0, next: 70, pick: null } };
+const depletedVeins = new Set();
+
+function mineVein(id) {
+  ws?.send(JSON.stringify({ t: 'mine', id }));
+  const rec = oreMeshes.find(o => o.veins.some(v => v.i === id));
+  const v = rec && rec.veins.find(v => v.i === id);
+  if (v) spawnMarker(v.x, v.z, 0x9fd4ff);
+  targetId = null;
+}
+
+// Hide mined-out veins and bring them back when the server says so.
+const _mtx = new THREE.Matrix4(), _q = new THREE.Quaternion(), _v3 = new THREE.Vector3(), _s3 = new THREE.Vector3();
+function applyDepleted(list) {
+  const now = new Set(list || []);
+  let changed = false;
+  for (const id of now) if (!depletedVeins.has(id)) changed = true;
+  for (const id of depletedVeins) if (!now.has(id)) changed = true;
+  if (!changed) return;
+  depletedVeins.clear();
+  for (const id of now) depletedVeins.add(id);
+  for (const rec of oreMeshes) {
+    rec.veins.forEach((v, i) => {
+      const gone = depletedVeins.has(v.i);
+      _q.setFromAxisAngle(UP, v.r || 0);
+      const sVal = gone ? 0.0001 : (v.s || 1);   // scaled away, not removed
+      _s3.set(sVal, sVal, sVal);
+      _v3.set(v.x, 0, v.z);
+      _mtx.compose(_v3, _q, _s3);
+      rec.mesh.setMatrixAt(i, _mtx);
+    });
+    rec.mesh.instanceMatrix.needsUpdate = true;
+  }
+}
+
 function openChestAt(id) { ws?.send(JSON.stringify({ t: 'openchest', id })); }
 function takeItem(id) { const r = itemMeshes.get(id); if (r) spawnMarker(r.mesh.position.x, r.mesh.position.z, 0xffe14a); ws?.send(JSON.stringify({ t: 'pickup', id })); targetId = null; }
 function walkTo(point) { ws?.send(JSON.stringify({ t: 'move', x: +point.x.toFixed(2), z: +point.z.toFixed(2) })); targetId = null; spawnMarker(point.x, point.z, 0xffe14a); }
@@ -2021,6 +2099,21 @@ function onEvent(m) {
     case 'unequip': addChat('', `You remove the ${m.item}.`, true); break;
     case 'sold': addChat('Merchant', m.text, true); document.getElementById('cgold').textContent = m.gold; break;
     case 'notice': addChat('', m.text, true); flyText('Cannot equip', 'dmg'); break;
+    case 'mineswing': {
+      // A swing that produced nothing still needs to read as effort.
+      const rec = entityMeshes.get(myId);
+      if (rec && rec.mesh.userData.rig) rec.mesh.userData.rig.atk = 1;
+      break;
+    }
+    case 'mined':
+      addChat('Mining', `You get some ${m.item}.`, true);
+      flyText(`+${m.xp} Mining`, 'xp');
+      break;
+    case 'minexp': break;   // the skills payload carries the running total
+    case 'minelevel':
+      flyText(`Mining level ${m.level}!`, 'heal');
+      addChat('Mining', `You are now Mining level ${m.level}.`, true);
+      break;
     case 'hit': showHit(m); break;
     case 'death': showDeath(); break;
     case 'respawned': hideDeath(); break;
@@ -2096,11 +2189,24 @@ const ITEM_ICON = {
   Coins: '🪙', Cowhide: '🟫', 'Raw Beef': '🥩', 'Raw Chicken': '🍗', Feather: '🪶', Bones: '🦴',
   'Big Bones': '🦴', 'Spider Silk': '🕸️', 'Venom Sac': '🧪', 'Bronze Dagger': '🗡️', 'Iron Sword': '⚔️',
   'Goblin Mail': '🛡️', 'Leather Body': '🦺', 'Ogre Club': '🏏', Kebab: '🍢',
+  'Bronze Pickaxe': '⛏️', 'Iron Pickaxe': '⛏️', 'Steel Pickaxe': '⛏️', 'Mithril Pickaxe': '⛏️',
+  'Copper Ore': '🟠', 'Tin Ore': '⚪', 'Iron Ore': '🔴', 'Silver Ore': '⚫', 'Coal': '🪨',
+  'Gold Ore': '🟡', 'Mithril Ore': '🔵', 'Adamantite Ore': '🟢', 'Runite Ore': '🟦',
   "Smuggler's Cache": '📦', 'Crystalline Relic': '💎', 'Smuggler’s Trinket': '💍',
 };
 function iconFor(name) { return ITEM_ICON[name] || (/Trophy/.test(name) ? '🏆' : '📦'); }
 function bagButton() { return document.getElementById('bagBtn'); }
 function toggleBag(force) { bagOpen = force != null ? force : !bagOpen; document.getElementById('bag').style.display = bagOpen ? 'block' : 'none'; if (bagOpen) renderBag(); }
+function renderSkills() {
+  const el = document.getElementById('skillline');
+  if (!el) return;
+  const m = skills.mining || { level: 1, into: 0, next: 1, pick: null };
+  const pct = Math.max(0, Math.min(1, m.into / (m.next || 1)));
+  el.innerHTML = `<span>⛏ Mining <b>${m.level}</b></span>` +
+    `<span class="xpbar"><i style="transform:scaleX(${pct})"></i></span>` +
+    `<span class="pick">${m.pick ? escapeHtml(m.pick.replace(' Pickaxe', '')) : 'no pickaxe'}</span>`;
+}
+
 function renderBag() {
   document.getElementById('bagGold').textContent = bag.gold.toLocaleString() + ' gp';
   document.getElementById('bagCnt').textContent = bag.items.length || '';
@@ -2119,6 +2225,7 @@ function renderBag() {
   }).join('');
   document.getElementById('statline').innerHTML =
     `<span>Attack <b>+${st.atk || 0}</b></span><span>Defence <b>+${st.def || 0}</b></span>`;
+  renderSkills();
   document.querySelectorAll('#equipRow .eslot').forEach(el => {
     el.onclick = () => { if (eq[el.dataset.slot]) ws?.send(JSON.stringify({ t: 'unequip', slot: el.dataset.slot })); };
   });

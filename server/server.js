@@ -18,6 +18,10 @@ import { ITEMS, SLOTS, itemDef, slotOf, valueOf, equipStats } from './items.js';
 import {
   dist2, closestOnPolyline, pointInPoly, polyCentroid, generateTrees, generateScatter, generateHanging,
 } from './worldgen.js';
+import {
+  MINING, ORES, PICKAXES, oreFromModel, bestPickaxe, swingChance, swingTime,
+  miningLevelFromXp, canMine,
+} from './mining.js';
 
 function rand(min, max) { return min + Math.random() * (max - min); }
 function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
@@ -178,6 +182,12 @@ function populate() {
     zone._trees = generateTrees(zone);
     zone._scatter = generateScatter(zone);
     zone._hanging = generateHanging(zone);
+    // Any scattered ore vein becomes a minable node, addressed by its index.
+    zone._veins = new Map();
+    for (const o of zone._scatter) {
+      const ore = oreFromModel(o.m);
+      if (ore) zone._veins.set(o.i, { id: o.i, ore, x: o.x, z: o.z, depleted: 0 });
+    }
   }
 }
 
@@ -314,6 +324,93 @@ function sellItem(p, name) {
   p.gold += paid;
   send(p.ws, { t: 'event', kind: 'sold', text: `Sold ${name} for ${paid} gold.`, gold: p.gold });
   sendBag(p);
+}
+
+// ---------------------------------------------------------------------------
+// Mining
+// ---------------------------------------------------------------------------
+function minerStats(p) {
+  const prog = miningLevelFromXp(p.miningXp);
+  // A pickaxe counts whether it is equipped or just carried, so nobody has to
+  // choose between holding a weapon and being able to mine.
+  const carried = p.equipment.weapon ? [...p.inventory, p.equipment.weapon] : p.inventory;
+  const pick = bestPickaxe(carried, prog.level);
+  return { ...prog, pick, power: pick ? PICKAXES[pick].power : 0 };
+}
+
+function sendSkills(p) {
+  const st = minerStats(p);
+  send(p.ws, { t: 'skills', mining: { level: st.level, xp: p.miningXp, into: st.into, next: st.next,
+    pick: st.pick } });
+}
+
+function grantMiningXp(p, amount) {
+  const before = miningLevelFromXp(p.miningXp).level;
+  p.miningXp += amount;
+  const after = miningLevelFromXp(p.miningXp).level;
+  send(p.ws, { t: 'event', kind: 'minexp', amount });
+  if (after > before) {
+    send(p.ws, { t: 'event', kind: 'minelevel', level: after });
+    systemChat(`${p.name} reached Mining level ${after}.`);
+  }
+  sendSkills(p);
+}
+
+// One swing. Returns true when the vein gives up its ore.
+function mineSwing(p, vein) {
+  const st = minerStats(p);
+  if (!st.pick) {
+    send(p.ws, { t: 'event', kind: 'notice', text: 'You need a pickaxe to mine.' });
+    p.pendingMine = null; return false;
+  }
+  if (!canMine(vein.ore, st.level)) {
+    send(p.ws, { t: 'event', kind: 'notice',
+      text: `You need Mining level ${ORES[vein.ore].level} to mine ${vein.ore}.` });
+    p.pendingMine = null; return false;
+  }
+  send(p.ws, { t: 'event', kind: 'mineswing', id: vein.id });
+  if (Math.random() >= swingChance(vein.ore, st.level, st.power)) return false;
+
+  const ore = ORES[vein.ore];
+  p.inventory.push(ore.ore);
+  vein.depleted = ore.respawn;
+  send(p.ws, { t: 'event', kind: 'mined', id: vein.id, item: ore.ore, xp: ore.xp });
+  grantMiningXp(p, ore.xp);
+  sendBag(p);
+  return true;
+}
+
+function stepMining(p) {
+  if (p.pendingMine == null) return;
+  const zone = zoneOf(p);
+  const vein = zone._veins.get(p.pendingMine);
+  if (!vein || vein.depleted > 0) { p.pendingMine = null; return; }
+  const d = Math.hypot(vein.x - p.x, vein.z - p.z);
+  if (d > MINING.reach) return;   // stepPlayer walks us in
+  const st = minerStats(p);
+  p.mineTimer -= DT;
+  if (p.mineTimer <= 0) {
+    p.mineTimer = swingTime(st.power || 1);
+    if (mineSwing(p, vein)) p.pendingMine = null; // one ore per click, like the veins deplete
+  }
+}
+
+// Depleted veins come back on their own timer.
+function stepVeins() {
+  for (const zone of Object.values(ZONES)) {
+    for (const v of (zone._veins || new Map()).values()) {
+      if (v.depleted > 0) {
+        v.depleted -= DT;
+        if (v.depleted <= 0) v.depleted = 0;
+      }
+    }
+  }
+}
+
+function depletedIds(zone) {
+  const out = [];
+  for (const v of (zone._veins || new Map()).values()) if (v.depleted > 0) out.push(v.id);
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -501,7 +598,7 @@ function stepPlayer(p) {
 
   if (inp && (inp.f !== 0 || inp.r !== 0)) {
     // Manual WASD overrides click-to-move / combat.
-    p.moveTo = null; p.combatId = null; p.pendingChest = null; p.pendingPickup = null; p.pendingPickup = null;
+    p.moveTo = null; p.combatId = null; p.pendingChest = null; p.pendingPickup = null; p.pendingMine = null;
     const yaw = inp.yaw;
     const fx = Math.sin(yaw), fz = Math.cos(yaw);
     const rx = Math.sin(yaw - Math.PI / 2), rz = Math.cos(yaw - Math.PI / 2);
@@ -527,6 +624,11 @@ function stepPlayer(p) {
     if (!it || it.zoneId !== p.zoneId) { p.pendingPickup = null; }
     else if (step(it.x, it.z, 1.6)) { moved = true; }
     else { pickupItem(p, p.pendingPickup); p.pendingPickup = null; }
+  } else if (p.pendingMine != null) {
+    const v = zone._veins && zone._veins.get(p.pendingMine);
+    if (!v || v.depleted > 0) { p.pendingMine = null; }
+    else if (step(v.x, v.z, MINING.reach - 0.6)) { moved = true; }
+    else p.yaw = Math.atan2(v.x - p.x, v.z - p.z);
   } else if (p.moveTo) {
     if (step(p.moveTo.x, p.moveTo.z, 0.5)) moved = true;
     else p.moveTo = null;
@@ -544,6 +646,7 @@ function stepPlayer(p) {
     }
   }
 
+  stepMining(p);
   checkQuestReach(p);
 
   const safe = inSafeZone(zone, p.x, p.z);
@@ -594,7 +697,7 @@ function transitionPlayer(p, toId, spawn) {
   p.zoneId = toId;
   p.x = spawn.x; p.z = spawn.z; p.yaw = spawn.yaw || 0;
   p.input = { f: 0, r: 0, yaw: 0 }; p.moving = false; p.hazardAccum = 0;
-  p.moveTo = null; p.combatId = null; p.pendingChest = null; p.pendingPickup = null;
+  p.moveTo = null; p.combatId = null; p.pendingChest = null; p.pendingPickup = null; p.pendingMine = null;
   p.portalCd = 2; // don't immediately re-trigger the return portal
   send(p.ws, { t: 'transition', zone: zoneForClient(to) });
   sendQuests(p); // giver markers are per-zone
@@ -636,6 +739,7 @@ setInterval(() => {
     weather = WEATHER_POOL[Math.floor(Math.random() * WEATHER_POOL.length)];
     weatherTimer = 90 + Math.random() * 150;
   }
+  stepVeins();
   for (const m of monsters.values()) stepMonster(m);
   for (const p of players.values()) stepPlayer(p);
   for (const [id, it] of groundItems) { it.ttl -= DT; if (it.ttl <= 0) groundItems.delete(id); }
@@ -667,6 +771,7 @@ setInterval(() => {
         items.push({ id: it.id, name: it.name, qty: it.qty, x: +it.x.toFixed(2), z: +it.z.toFixed(2) });
       }
       return (byZone[zid] = JSON.stringify({ t: 'snapshot', now, players: ps, monsters: ms, items,
+        depleted: depletedIds(ZONES[zid]),
         time: +dayTime.toFixed(4), weather }));
     };
     for (const p of players.values()) {
@@ -724,8 +829,11 @@ wss.on('connection', (ws) => {
         player = {
           id, ws, kind: 'player', name, zoneId: START_ZONE,
           x: start.spawn.x, z: start.spawn.z, yaw: start.spawn.yaw, moving: false,
-          level: 1, xp: 0, gold: 0, inventory: [], openedChests: new Set(),
+          level: 1, xp: 0, gold: 0, openedChests: new Set(),
+          // Everyone starts able to mine; better pickaxes are earned.
+          inventory: ['Bronze Pickaxe'],
           equipment: { weapon: null, body: null, trinket: null },
+          miningXp: 0, pendingMine: null, mineTimer: 0,
           quests: new Map(), questDone: new Set(), questKills: {},
           questFlags: new Set(), questAnnounced: new Set(),
           maxHp: maxHpForLevel(1), hp: maxHpForLevel(1), alive: true,
@@ -735,6 +843,7 @@ wss.on('connection', (ws) => {
         players.set(id, player);
         send(ws, { t: 'welcome', id, tickRate: SNAPSHOT_HZ, zone: zoneForClient(start) });
         sendBag(player); // sends the quest payload too
+        sendSkills(player);
         systemChat(`${name} has entered ${start.name}.`);
         break;
       }
@@ -751,7 +860,7 @@ wss.on('connection', (ws) => {
         if (!player || !player.alive) break;
         const m = monsters.get(Number(msg.target));
         if (m && m.alive && m.zoneId === player.zoneId) {
-          player.combatId = m.id; player.moveTo = null; player.pendingChest = null; player.pendingPickup = null;
+          player.combatId = m.id; player.moveTo = null; player.pendingChest = null; player.pendingPickup = null; player.pendingMine = null;
         }
         break;
       }
@@ -759,22 +868,45 @@ wss.on('connection', (ws) => {
         if (!player || !player.alive) break;
         const b = zoneOf(player).bounds;
         player.moveTo = { x: clamp(Number(msg.x) || 0, b.minX, b.maxX), z: clamp(Number(msg.z) || 0, b.minZ, b.maxZ) };
-        player.combatId = null; player.pendingChest = null; player.pendingPickup = null;
+        player.combatId = null; player.pendingChest = null; player.pendingPickup = null; player.pendingMine = null;
         break;
       }
       case 'openchest': {
         if (!player || !player.alive) break;
-        player.pendingChest = String(msg.id || ''); player.combatId = null; player.moveTo = null; player.pendingPickup = null;
+        player.pendingChest = String(msg.id || ''); player.combatId = null; player.moveTo = null; player.pendingPickup = null; player.pendingMine = null;
         break;
       }
       case 'pickup': {
         if (!player || !player.alive) break;
-        player.pendingPickup = Number(msg.id); player.combatId = null; player.moveTo = null; player.pendingChest = null;
+        player.pendingPickup = Number(msg.id); player.combatId = null; player.moveTo = null; player.pendingChest = null; player.pendingMine = null;
         break;
       }
       case 'equip': if (player && player.alive) equipItem(player, String(msg.item || '')); break;
       case 'unequip': if (player && player.alive) unequipItem(player, String(msg.slot || '')); break;
       case 'sell': if (player && player.alive) sellItem(player, String(msg.item || '')); break;
+      case 'mine': {
+        if (!player || !player.alive) break;
+        const mz = zoneOf(player);
+        const id = Number(msg.id);
+        const v = mz._veins && mz._veins.get(id);
+        if (!v || v.depleted > 0) break;
+        // Answer now rather than after the player has walked the length of the
+        // zone to find out they cannot mine this.
+        const st = minerStats(player);
+        if (!st.pick) {
+          send(ws, { t: 'event', kind: 'notice', text: 'You need a pickaxe to mine.' });
+          break;
+        }
+        if (!canMine(v.ore, st.level)) {
+          send(ws, { t: 'event', kind: 'notice',
+            text: `You need Mining level ${ORES[v.ore].level} to mine ${v.ore}.` });
+          break;
+        }
+        player.pendingMine = id; player.mineTimer = 0;
+        player.combatId = null; player.moveTo = null;
+        player.pendingChest = null; player.pendingPickup = null;
+        break;
+      }
       case 'questaccept': if (player && player.alive) acceptQuest(player, String(msg.id || '')); break;
       case 'questturnin': if (player && player.alive) turnInQuest(player, String(msg.id || '')); break;
       case 'questsync': if (player) sendQuests(player); break;

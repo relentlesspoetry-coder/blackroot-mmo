@@ -49,6 +49,8 @@ to see real-time multiplayer (both players share one world).
   and death topples (see the caveat below)
 - **Equipment** — weapon / body / trinket slots, attack and defence bonuses,
   level requirements, and a merchant who buys what you're carrying
+- **Mining** — a separate skill with its own level, nine ore tiers, pickaxes
+  that set your swing speed, and veins that deplete and respawn
 
 ## Combat balance
 
@@ -66,6 +68,7 @@ mobs sit at a 4-15x survive/kill ratio; both bosses land near 2.0.
 Two flags change what it models:
 
 ```bash
+node tools/mining.mjs            # ore tiers, pickaxe value, time-to-level
 BARE=1 node tools/balance.mjs    # an unequipped character
 REGEN=1 node tools/balance.mjs   # the old always-on regen
 ```
@@ -87,6 +90,7 @@ cd server
 node server.js &            # or PORT=8099 node server.js &
 node tools/questtest.mjs    # plays the first quest end to end against the live server
 node tools/equiptest.mjs    # loots a weapon, equips it, checks the damage actually changes
+node tools/miningtest.mjs  # walks to a real vein, mines it, checks depletion and respawn
 node tools/animtest.mjs     # runs the client's animation code against the real GLBs
 
 cd ..
@@ -144,6 +148,8 @@ server/
   server.js        # authoritative game server + static file host
   balance.js       # combat & progression maths (no side effects)
   quests.js        # quest definitions + objective tracking
+  mining.js        # ore tiers, pickaxes, swing odds, mining xp curve
+  worldgen.js      # deterministic tree and cave-dressing placement
   items.js         # item table, equip slots, stat bonuses
   zones/
     darkwoods.js   # zone 1 layout, spawns, NPCs, hazards
@@ -151,11 +157,15 @@ server/
   tools/
     questtest.mjs  # end-to-end quest test against a live server
     equiptest.mjs  # end-to-end equipment test against a live server
+    miningtest.mjs # end-to-end mining test against a live server
     animtest.mjs   # headless test of the client's animation code
 client/
   index.html       # entire Three.js client (renderer, netcode, HUD, quests)
   models/*.glb     # characters, trees, bushes
 tools/
   balance.mjs      # prints the combat curve
+  mining.mjs       # prints the mining curve
+  worldgen.mjs     # prints what world generation places
+  rig_split.mjs    # splits merged character meshes into animatable parts
 README.md
 ```

@@ -16,6 +16,16 @@ export const ITEMS = {
   'Ogre Club':            { slot: 'weapon',  atk: 7, level: 6, value: 420,
     desc: 'A tree with a grip worn into it. Heavy going.' },
 
+  // --- pickaxes (weapon slot; mining checks the bag, so you can swap freely) ---
+  'Bronze Pickaxe':       { slot: 'weapon',  atk: 1,  level: 1, value: 60,
+    desc: 'Blunt, heavy, and the only thing between you and the rock.' },
+  'Iron Pickaxe':         { slot: 'weapon',  atk: 2,  level: 1, value: 220,
+    desc: 'Bites deeper than bronze. Needs mining 10.' },
+  'Steel Pickaxe':        { slot: 'weapon',  atk: 3,  level: 3, value: 700,
+    desc: 'Properly tempered. Needs mining 25.' },
+  'Mithril Pickaxe':      { slot: 'weapon',  atk: 5,  level: 5, value: 2200,
+    desc: 'Light for its bite. Needs mining 45.' },
+
   // --- body ---
   'Goblin Mail':          { slot: 'body',    def: 2,  level: 1, value: 45,
     desc: 'Scavenged scraps, lashed together. Smells of goblin.' },
@@ -62,6 +72,16 @@ export const ITEMS = {
   'Uncut Quartz': { value: 30 },
   'Cave Mushroom': { value: 7 },
   'Spiderling Pet Egg': { value: 400 },
+  // --- ores (see server/mining.js for what yields them) ---
+  'Copper Ore':     { value: 8 },
+  'Tin Ore':        { value: 8 },
+  'Iron Ore':       { value: 24 },
+  'Silver Ore':     { value: 60 },
+  'Coal':           { value: 45 },
+  'Gold Ore':       { value: 140 },
+  'Mithril Ore':    { value: 320 },
+  'Adamantite Ore': { value: 700 },
+  'Runite Ore':     { value: 2400 },
 };
 
 export function itemDef(name) { return ITEMS[name] || null; }
