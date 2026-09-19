@@ -129,10 +129,17 @@ export function generateHanging(zone) {
   const b = zone.bounds, rng = mulberry32((zone.scatterSeed || 7) + 991);
   const out = [];
   for (const spec of zone.hanging) {
+    const anchor = spec.near ? zone.pois.find(p => p.key === spec.near) : null;
     let placed = 0, guard = 0;
     while (placed < spec.count && guard++ < spec.count * 30) {
-      const x = +(b.minX + 2 + rng() * (b.maxX - b.minX - 4)).toFixed(1);
-      const z = +(b.minZ + 2 + rng() * (b.maxZ - b.minZ - 4)).toFixed(1);
+      let x, z;
+      if (anchor) {
+        const a = rng() * Math.PI * 2, rr = Math.sqrt(rng()) * (spec.nearR || 22);
+        x = +(anchor.x + Math.cos(a) * rr).toFixed(1); z = +(anchor.z + Math.sin(a) * rr).toFixed(1);
+      } else {
+        x = +(b.minX + 2 + rng() * (b.maxX - b.minX - 4)).toFixed(1);
+        z = +(b.minZ + 2 + rng() * (b.maxZ - b.minZ - 4)).toFixed(1);
+      }
       if (zone.boundary && !pointInPoly(x, z, zone.boundary)) continue;
       if (out.some(o => dist2(x, z, o.x, o.z) < 9)) continue;
       const lo = spec.scale ? spec.scale[0] : 1, hi = spec.scale ? spec.scale[1] : 1;

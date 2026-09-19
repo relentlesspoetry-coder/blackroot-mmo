@@ -14,9 +14,9 @@ export const hiddencave = {
   subtitle: 'Something dug these passages, and not recently',
 
   enclosed: true,
-  ceilingY: 15,
+  ceilingY: 8.5,
   bounds: { minX: -160, maxX: 160, minZ: -200, maxZ: 200 },
-  spawn: { x: 0, z: -152, yaw: 0 },
+  spawn: { x: 0, z: -146, yaw: 0 },
   safeSpawnRadius: 22,
 
   // Rooms are discs, tunnels are capsules between them. Everything else in this
@@ -53,8 +53,10 @@ export const hiddencave = {
   },
 
   models: [
-    'Cave_Spider', 'Venom_Spider', 'Crystal_Spider', 'Bat',
+    'Cave_Spider', 'Venom_Spider', 'Crystal_Spider', 'Bat', 'Cave_Broodmother',
     'Moss_Cave_Giant', 'Crystal_Cave_Giant', 'Cave_Guardian',
+    'cave/Brood_Nest', 'cave/Egg_Cluster', 'cave/Ground_Cocoon', 'cave/Webbed_Bones',
+    'cave/Floor_Web', 'cave/Round_Wall_Web', 'cave/Hanging_Cocoon', 'cave/Hanging_Web_Curtain',
     'cave/Stalagmite_Large', 'cave/Stalagmite_Cluster', 'cave/Stalagmite_Small',
     'cave/Stalactite_Single', 'cave/Stalactite_Cluster', 'cave/Cave_Column',
     'cave/Wall_Boulder_Tall', 'cave/Wall_Boulder_Wide', 'cave/Rock_Arch',
@@ -82,7 +84,7 @@ export const hiddencave = {
   ],
 
   pois: [
-    { key: 'entrance', name: 'Entrance Cavern',    x: 0,    z: -150, kind: 'exitup' },
+    { key: 'entrance', name: 'Entrance Cavern',    x: 0,    z: -172, kind: 'exitup' },
     // `art` overrides which visual the client builds; without it every 'deep'
     // room would grow the same altar and egg sacs.
     { key: 'fungal',   name: 'Fungal Gallery',     x: 0,    z: -62,  kind: 'deep', art: 'none' },
@@ -96,7 +98,7 @@ export const hiddencave = {
   ],
 
   portals: [
-    { x: 0, z: -166, r: 6, to: 'darkwoods', spawn: { x: -54, z: 52, yaw: 1.2 } },
+    { x: 0, z: -170, r: 6, to: 'darkwoods', spawn: { x: -54, z: 52, yaw: 1.2 } },
   ],
 
   pools: [
@@ -130,8 +132,8 @@ export const hiddencave = {
   ],
 
   elites: [
-    { type: 'spider', name: 'The Broodmother', cx: 8, cz: 154, level: 9, expect: 9,
-      hpMult: 4.3, dmgMult: 2.2 },
+    { type: 'broodmother', name: 'The Broodmother', cx: 8, cz: 154, level: 9, expect: 9,
+      hpMult: 4.3, dmgMult: 2.2, drops: ["Broodmother's Signet"] },
     { type: 'cave_guardian', name: 'The Cave Guardian', cx: 104, cz: 74, level: 8, expect: 8,
       hpMult: 1.8, dmgMult: 0.95,
       drops: ["Guardian's Iron Shield", "Ancient Giant's Signet"] },
@@ -163,6 +165,13 @@ export const hiddencave = {
     { model: 'Mithril_Ore_Vein',   count: 5,  r: 0.8,  scale: [1.0, 1.2], rare: true, near: 'workings' },
     { model: 'Adamantite_Ore_Vein', count: 4, r: 0.8,  scale: [1.0, 1.2], rare: true, near: 'workings' },
     { model: 'Runite_Ore_Vein',    count: 2,  r: 0.8,  scale: [1.1, 1.3], rare: true, near: 'nest' },
+    // The Broodmother's Nest — webbed and cocooned.
+    { model: 'Brood_Nest',    count: 1,  r: 2,  scale: [1.4, 1.7], near: 'nest', nearR: 8 },
+    { model: 'Egg_Cluster',   count: 10, r: 0.6, scale: [0.8, 1.3], near: 'nest' },
+    { model: 'Ground_Cocoon', count: 9,  r: 0,  scale: [0.8, 1.2], near: 'nest' },
+    { model: 'Webbed_Bones',  count: 6,  r: 0,  scale: [0.8, 1.2], near: 'nest' },
+    { model: 'Floor_Web',     count: 16, r: 0,  scale: [0.9, 1.5], near: 'nest' },
+    { model: 'Round_Wall_Web', count: 8, r: 0,  scale: [0.9, 1.4], near: 'nest' },
   ],
 
   hanging: [
@@ -170,5 +179,7 @@ export const hiddencave = {
     { model: 'Stalactite_Cluster', count: 50, scale: [0.9, 1.6] },
     { model: 'Hanging_Roots',      count: 30, scale: [0.9, 1.5] },
     { model: 'Corner_Cobweb',      count: 36, scale: [0.9, 1.8] },
+    { model: 'Hanging_Cocoon',       count: 10, scale: [0.9, 1.4], near: 'nest' },
+    { model: 'Hanging_Web_Curtain',  count: 8,  scale: [0.9, 1.5], near: 'nest' },
   ],
 };

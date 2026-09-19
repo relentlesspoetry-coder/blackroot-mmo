@@ -144,6 +144,9 @@ export const MONSTER_TEMPLATES = {
   // The Cave Guardian — a hulking variant that guards the Deep Chamber.
   cave_guardian: { name: 'Cave Guardian', hp: 210, dmg: [10, 18], speed: 3.6, aggro: 14, xp: 300, respawn: 80, rolls: 1,
     loot: [ { item: 'Coins', min: 40, max: 120, w: 1 } ] },
+  // The Broodmother — the spiders' queen, guarding her nest.
+  broodmother: { name: 'Broodmother', hp: 90, dmg: [6, 11], speed: 5.0, aggro: 14, xp: 110, respawn: 120, rolls: 1,
+    loot: [ { item: 'Coins', min: 20, max: 60, w: 1 } ] },
 };
 
 // Independent drop tables for the cave creatures (see SPIDER_DROPS / GIANT_DROPS).
@@ -153,6 +156,7 @@ MONSTER_TEMPLATES.crystal_spider.droptable = buildDropTable(SPIDER_DROPS, 2);
 MONSTER_TEMPLATES.cave_giant.droptable = buildDropTable(GIANT_DROPS, 0);
 MONSTER_TEMPLATES.crystal_giant.droptable = buildDropTable(GIANT_DROPS, 1);
 MONSTER_TEMPLATES.cave_guardian.droptable = buildDropTable(GIANT_DROPS, 2);
+MONSTER_TEMPLATES.broodmother.droptable = buildDropTable(SPIDER_DROPS, 0);
 
 export function scaledMonster(type, level) {
   const t = MONSTER_TEMPLATES[type];
