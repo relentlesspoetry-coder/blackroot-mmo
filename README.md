@@ -170,6 +170,7 @@ tools/
   mining.mjs       # prints the mining curve
   assets.mjs       # verifies model declarations and drop-model coverage
   worldgen.mjs     # prints what world generation places
+  map.mjs          # draws each zone's map from its own data
   rig_split.mjs    # splits merged character meshes into animatable parts
 README.md
 ```

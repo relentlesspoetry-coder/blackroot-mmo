@@ -1,4 +1,5 @@
 *.log
 .DS_Store
+maps/
 node_modules/
 shots/
