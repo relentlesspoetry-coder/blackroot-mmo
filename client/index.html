@@ -1205,11 +1205,49 @@ function buildForest() {
   // from GLB models, instanced per species for performance.
   const placements = zone.trees || [];
   if (!placements.length) return;
-  instanceModels(placements, TREE_SPECIES, 8.5, 1.0);
+  instanceModels(placements, TREE_SPECIES, 8.5, 1.0, true);
+}
+
+// A procedural bark texture: vertical ridges + cracks, greyscale so it multiplies
+// the trunk's own brown vertex colour.
+let _barkTex = null;
+function makeBarkTexture() {
+  if (_barkTex) return _barkTex;
+  const w = 64, h = 128, cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#8a8a8a'; ctx.fillRect(0, 0, w, h);
+  for (let x = 0; x < w; x += 1) {
+    const v = 120 + Math.floor(Math.sin(x * 0.5) * 20 + (Math.random() - 0.5) * 60);
+    ctx.fillStyle = `rgb(${v},${v},${v})`; ctx.fillRect(x, 0, 1, h);
+  }
+  // vertical ridges
+  for (let i = 0; i < 22; i++) {
+    const x = Math.random() * w, ww = 1 + Math.random() * 3;
+    ctx.fillStyle = `rgba(60,50,40,${0.15 + Math.random() * 0.3})`; ctx.fillRect(x, 0, ww, h);
+    ctx.fillStyle = `rgba(220,215,205,${0.1 + Math.random() * 0.2})`; ctx.fillRect(x + ww, 0, 1, h);
+  }
+  // horizontal cracks
+  for (let i = 0; i < 40; i++) {
+    const y = Math.random() * h, xx = Math.random() * w, l = 3 + Math.random() * 14;
+    ctx.strokeStyle = `rgba(40,32,26,${0.2 + Math.random() * 0.4})`; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(xx, y); ctx.lineTo(xx + l, y + (Math.random() - 0.5) * 3); ctx.stroke();
+  }
+  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; _barkTex = t; return t;
+}
+// Wrap a bark texture around a baked trunk part with cylindrical UVs.
+function applyBarkUV(geo) {
+  const pos = geo.attributes.position; const uv = new Float32Array(pos.count * 2);
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    uv[i * 2] = (Math.atan2(z, x) / (Math.PI * 2) + 0.5) * 2; // ~2 wraps around
+    uv[i * 2 + 1] = y / 2.5;                                   // tile every 2.5m of height
+  }
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
 }
 
 // Group placements by species and draw each species as one InstancedMesh.
-function instanceModels(placements, speciesList, targetH, baseScale) {
+function instanceModels(placements, speciesList, targetH, baseScale, bark) {
   const groups = {};
   for (const t of placements) {
     const sp = speciesFor(speciesList, t.x, t.z);
@@ -1221,6 +1259,15 @@ function instanceModels(placements, speciesList, targetH, baseScale) {
     const list = groups[sp];
     if (!parts) continue;
     for (const part of parts) {
+      // Bark the trunk parts (those that reach the ground); leaves float up top.
+      if (bark && !part._barked) {
+        part._barked = true;
+        part.geo.computeBoundingBox();
+        if (part.geo.boundingBox.min.y < targetH * 0.28) {
+          applyBarkUV(part.geo);
+          const m2 = part.mat.clone(); m2.map = makeBarkTexture(); m2.needsUpdate = true; part.mat = m2;
+        }
+      }
       const im = new THREE.InstancedMesh(part.geo, part.mat, list.length);
       im.castShadow = im.receiveShadow = true;
       list.forEach((t, i) => {
