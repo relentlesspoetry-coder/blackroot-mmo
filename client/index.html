@@ -501,13 +501,13 @@ function initThree() {
 // ---------------------------------------------------------------------------
 // Keyframe palette across the day (t: 0=midnight .. 0.5=noon .. 1=midnight).
 const SKY_STOPS = [
-  { t: 0.00, top: 0x05070d, hor: 0x0d1522, fog: 0x0a0f16, sun: 0x33406a, sunI: 0.10, hemi: 0.30, hemiSky: 0x22304a, hemiGr: 0x0a0c10, star: 1.0 },
-  { t: 0.23, top: 0x141d33, hor: 0x3a2c3c, fog: 0x281f2a, sun: 0x8a6a80, sunI: 0.40, hemi: 0.55, hemiSky: 0x3a4a66, hemiGr: 0x2c2c26, star: 0.5 },
+  { t: 0.00, top: 0x0a0f1c, hor: 0x18263e, fog: 0x1a2536, sun: 0x5265a0, sunI: 0.42, hemi: 0.72, hemiSky: 0x33456a, hemiGr: 0x1c2230, star: 1.0 },
+  { t: 0.23, top: 0x1a2740, hor: 0x453447, fog: 0x312635, sun: 0x9a7a90, sunI: 0.58, hemi: 0.82, hemiSky: 0x44567a, hemiGr: 0x323226, star: 0.5 },
   { t: 0.30, top: 0x2a3a54, hor: 0x8a5a44, fog: 0x4a3a38, sun: 0xd88a54, sunI: 0.85, hemi: 0.85, hemiSky: 0x6a7a8a, hemiGr: 0x4a4632, star: 0.0 },
   { t: 0.50, top: 0x2c4763, hor: 0x6f8c9c, fog: 0x56707e, sun: 0xfff2d0, sunI: 1.20, hemi: 1.05, hemiSky: 0xaecbe0, hemiGr: 0x5a6b3a, star: 0.0 },
   { t: 0.70, top: 0x281f38, hor: 0x82492f, fog: 0x3e2c2e, sun: 0xd8683a, sunI: 0.80, hemi: 0.72, hemiSky: 0x5a5066, hemiGr: 0x40382a, star: 0.0 },
-  { t: 0.77, top: 0x121a30, hor: 0x2c2338, fog: 0x201b28, sun: 0x5a4f7a, sunI: 0.32, hemi: 0.48, hemiSky: 0x30405a, hemiGr: 0x20242c, star: 0.6 },
-  { t: 1.00, top: 0x05070d, hor: 0x0d1522, fog: 0x0a0f16, sun: 0x33406a, sunI: 0.10, hemi: 0.30, hemiSky: 0x22304a, hemiGr: 0x0a0c10, star: 1.0 },
+  { t: 0.77, top: 0x18213a, hor: 0x372c44, fog: 0x2a2436, sun: 0x6a5f8e, sunI: 0.50, hemi: 0.66, hemiSky: 0x3b4c68, hemiGr: 0x2a2e38, star: 0.6 },
+  { t: 1.00, top: 0x0a0f1c, hor: 0x18263e, fog: 0x1a2536, sun: 0x5265a0, sunI: 0.42, hemi: 0.72, hemiSky: 0x33456a, hemiGr: 0x1c2230, star: 1.0 },
 ];
 const _cA = new THREE.Color(), _cB = new THREE.Color();
 function sampleSky(t) {
