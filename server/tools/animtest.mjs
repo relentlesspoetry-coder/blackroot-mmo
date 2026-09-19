@@ -172,12 +172,15 @@ for (const n of ['Moss_Cave_Giant', 'Cave_Guardian']) {
     Math.abs(rig.legL.rotation.x) < 0.02,
     `leg ${rig.legL.rotation.x.toFixed(2)} arm ${rig.armL.rotation.x.toFixed(2)}`);
 
-  // now swing the weapon
+  // Settle to a true rest pose first: the walk loop above leaves the arm
+  // mid-stride, and comparing against that measures the stride, not the swing.
+  for (let i = 0; i < 60; i++) api.animateEntity(rec, { alive: true, moving: false }, 'monster', 1 / 60);
+  wrap.updateMatrixWorld(true);
+  const wpos = new THREE.Vector3();
+  const before = rig.weapon.getWorldPosition(new THREE.Vector3()).clone();
+
   rig.atk = 1;
   const swing = [];
-  const wpos = new THREE.Vector3();
-  wrap.updateMatrixWorld(true);
-  const before = rig.weapon.getWorldPosition(new THREE.Vector3()).clone();
   // Track the furthest the weapon gets during the swing. Measuring only the
   // final frame reports nothing: by then the arm has already returned to rest.
   let peak = 0;
@@ -192,6 +195,11 @@ for (const n of ['Moss_Cave_Giant', 'Cave_Guardian']) {
   check(`${n}: weapon arm swings overhead`, arc > 1.2, 'arc ' + arc.toFixed(2) + ' rad');
   check(`${n}: the weapon travels with the arm`, peak > 0.5,
     'weapon swept ' + peak.toFixed(2) + ' units');
+  // Let the walk decay out before checking the rest pose, otherwise this is
+  // really measuring how far through its stride the arm happened to be.
+  for (let i = 0; i < 60; i++) api.animateEntity(rec, { alive: true, moving: false }, 'monster', 1 / 60);
+  wrap.updateMatrixWorld(true);
+  rig.weapon.getWorldPosition(wpos);
   check(`${n}: the weapon returns to rest`, before.distanceTo(wpos) < 0.15,
     'ends ' + before.distanceTo(wpos).toFixed(3) + ' from rest');
 }
