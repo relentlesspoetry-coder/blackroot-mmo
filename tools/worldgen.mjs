@@ -3,7 +3,7 @@
 // necessarily get 26 — this prints what it really managed, and checks that
 // nothing landed somewhere it shouldn't.
 
-import { generateTrees, generateScatter, generateHanging, pointInPoly, dist2, caveOutline, inCavern } from '../server/worldgen.js';
+import { generateTrees, generateScatter, generateHanging, pointInPoly, dist2, caveOutline, inCavern, tunnelSamples } from '../server/worldgen.js';
 import { darkwoods } from '../server/zones/darkwoods.js';
 import { hiddencave } from '../server/zones/hiddencave.js';
 
@@ -43,11 +43,11 @@ for (const zone of [darkwoods, hiddencave]) {
     }
     // Every room must be walkable from the arrival point; sample the tunnels.
     for (const t of cav.tunnels) {
-      const a = cav.rooms.find(r => r.key === t.from), b = cav.rooms.find(r => r.key === t.to);
-      for (let s = 0; s <= 1.0001; s += 0.05) {
-        const x = a.x + (b.x - a.x) * s, z = a.z + (b.z - a.z) * s;
-        if (!inCavern(cav, x, z) || !pointInPoly(x, z, zone.boundary)) {
-          flag(`tunnel ${t.from} -> ${t.to} is pinched off at ${x.toFixed(0)},${z.toFixed(0)}`);
+      // Follow the tunnel's own curve — tunnels bend, so the straight line
+      // between room centres runs through rock.
+      for (const q of tunnelSamples(cav, t, 40)) {
+        if (!inCavern(cav, q.x, q.z) || !pointInPoly(q.x, q.z, zone.boundary)) {
+          flag(`tunnel ${t.from} -> ${t.to} is pinched off at ${q.x.toFixed(0)},${q.z.toFixed(0)}`);
           break;
         }
       }
@@ -57,6 +57,19 @@ for (const zone of [darkwoods, hiddencave]) {
     }
     for (const sp of zone.spawns) {
       if (!pointInPoly(sp.cx, sp.cz, zone.boundary)) flag(`spawn "${sp.hint}" is centred outside the cave`);
+      // Rooms are lumpy now, so a spawn circle can poke well into rock. Sample
+      // it: if most of the area is solid, the mobs all crowd one lobe.
+      let inside = 0, total = 0;
+      for (let a = 0; a < 24; a++) {
+        for (let k = 1; k <= 4; k++) {
+          const rr = sp.r * Math.sqrt(k / 4), th = (a / 24) * Math.PI * 2;
+          total++;
+          if (pointInPoly(sp.cx + Math.cos(th) * rr, sp.cz + Math.sin(th) * rr, zone.boundary)) inside++;
+        }
+      }
+      const pct = inside / total;
+      if (pct < 0.55) flag(`spawn "${sp.hint}" is only ${(pct * 100).toFixed(0)}% walkable — mobs will pile into one lobe`);
+      else if (pct < 0.75) console.log(`  ${sp.hint.padEnd(22)} ${(pct * 100).toFixed(0)}% walkable`);
     }
   }
   const trees = generateTrees(zone);

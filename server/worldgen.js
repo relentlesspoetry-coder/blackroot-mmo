@@ -157,21 +157,99 @@ export function generateHanging(zone) {
 // grows a hole, and a hole is a second contour ring that this returns nothing
 // for and that pointInPoly could not represent anyway.
 
+// A room is a disc whose radius wobbles with angle, and a tunnel is a bent
+// capsule of varying width. Perfect circles and straight corridors read as
+// architecture; caves are lumpy. Every wobble is derived from the room or
+// tunnel's own name, so the shape is stable across server restarts and
+// identical for every client.
+function hash(str) {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return (h >>> 0) / 4294967296;
+}
+
+// Three harmonics: one big lobe, one medium, one fine. Sum of amplitudes stays
+// under `rough` so a room never pinches to nothing or balloons past its radius.
+function wobble(seed, angle, rough) {
+  const p1 = hash(seed + 'a') * 6.283, p2 = hash(seed + 'b') * 6.283, p3 = hash(seed + 'c') * 6.283;
+  const k2 = 3 + Math.floor(hash(seed + 'd') * 2);      // 3 or 4 lobes
+  const k3 = 6 + Math.floor(hash(seed + 'e') * 3);      // 6 to 8 ripples
+  return 1 + rough * (
+    0.50 * Math.sin(2 * angle + p1) +
+    0.34 * Math.sin(k2 * angle + p2) +
+    0.16 * Math.sin(k3 * angle + p3));
+}
+
+export function roomRadius(room, angle) {
+  return room.r * wobble(room.key || 'room', angle, room.rough != null ? room.rough : 0.34);
+}
+
+// Rooms are also stretched along an axis of their own. A circle with ripples
+// still reads as a circle; an elongated lumpy blob reads as a cave.
+export function roomShape(room) {
+  const seed = room.key || 'room';
+  return {
+    axis: hash(seed + 'x') * Math.PI,                    // orientation
+    stretch: 1.15 + hash(seed + 'y') * 0.45,             // 1.15 to 1.6 long axis
+  };
+}
+
+// A tunnel bends through a midpoint pushed off the straight line, so passages
+// curve instead of running dead straight between rooms.
+export function tunnelPath(cav, t) {
+  const a = cav.rooms.find(r => r.key === t.from), b = cav.rooms.find(r => r.key === t.to);
+  if (!a || !b) return null;
+  const mx = (a.x + b.x) / 2, mz = (a.z + b.z) / 2;
+  const dx = b.x - a.x, dz = b.z - a.z;
+  const len = Math.hypot(dx, dz) || 1;
+  const bend = (hash(t.from + t.to) - 0.5) * 2 * (t.bend != null ? t.bend : 0.3) * len;
+  return { a, b, c: { x: mx + (-dz / len) * bend, z: mz + (dx / len) * bend } };
+}
+
+function quadPoint(p, s) {
+  const u = 1 - s;
+  return {
+    x: u * u * p.a.x + 2 * u * s * p.c.x + s * s * p.b.x,
+    z: u * u * p.a.z + 2 * u * s * p.c.z + s * s * p.b.z,
+  };
+}
+
+// Points along a tunnel's actual curve — used by tools to verify a passage is
+// open end to end. Sampling the straight line between room centres tests rock.
+export function tunnelSamples(cav, t, n = 24) {
+  const p = tunnelPath(cav, t);
+  if (!p) return [];
+  const out = [];
+  for (let i = 0; i <= n; i++) out.push(quadPoint(p, i / n));
+  return out;
+}
+
 export function inCavern(cav, x, z) {
   for (const r of cav.rooms) {
-    const dx = x - r.x, dz = z - r.z;
-    if (dx * dx + dz * dz <= r.r * r.r) return true;
+    let dx = x - r.x, dz = z - r.z;
+    if (Math.abs(dx) > r.r * 2 || Math.abs(dz) > r.r * 2) continue;   // cheap reject
+    const sh = roomShape(r);
+    // Into the room's own frame, then squash the long axis so the radial test
+    // below describes an elongated blob rather than a disc.
+    const ca = Math.cos(-sh.axis), sa = Math.sin(-sh.axis);
+    const lx = (dx * ca - dz * sa) / sh.stretch, lz = dx * sa + dz * ca;
+    const d = Math.hypot(lx, lz);
+    if (d <= roomRadius(r, Math.atan2(lz, lx))) return true;
   }
   for (const t of cav.tunnels) {
-    const a = cav.rooms.find(r => r.key === t.from), b = cav.rooms.find(r => r.key === t.to);
-    if (!a || !b) continue;
-    const vx = b.x - a.x, vz = b.z - a.z;
-    const len2 = vx * vx + vz * vz || 1;
-    let s = ((x - a.x) * vx + (z - a.z) * vz) / len2;
-    s = s < 0 ? 0 : s > 1 ? 1 : s;
-    const dx = x - (a.x + vx * s), dz = z - (a.z + vz * s);
-    const w = (t.w || cav.tunnelWidth || 12) / 2;
-    if (dx * dx + dz * dz <= w * w) return true;
+    const p = tunnelPath(cav, t);
+    if (!p) continue;
+    const baseW = (t.w || cav.tunnelWidth || 12) / 2;
+    const steps = 14;
+    for (let i = 0; i <= steps; i++) {
+      const s = i / steps;
+      const q = quadPoint(p, s);
+      const dx = x - q.x, dz = z - q.z;
+      // Passages pinch and open along their length rather than running at one
+      // constant width.
+      const w = baseW * (0.7 + 0.5 * Math.abs(Math.sin(s * 5.1 + hash(t.from + t.to + 'w') * 6.283)));
+      if (dx * dx + dz * dz <= w * w) return true;
+    }
   }
   return false;
 }
@@ -244,7 +322,7 @@ export function caveOutline(cav, bounds, opts = {}) {
 
   // Ramer-Douglas-Peucker: the raw ring is thousands of 2.5-unit steps, and
   // the client turns every edge into a wall mesh.
-  const tol = opts.tolerance || 1.6;
+  const tol = opts.tolerance || 1.1;
   const simplify = (pts) => {
     if (pts.length < 3) return pts;
     const d2 = (p, a, b) => {
