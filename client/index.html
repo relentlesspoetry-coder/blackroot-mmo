@@ -96,6 +96,63 @@
   .slot:hover .tip { display: block; position: absolute; bottom: 104%; left: 50%; transform: translateX(-50%);
     background: #000c; color: #ffe9b0; font-size: 11px; padding: 2px 6px; border-radius: 4px; white-space: nowrap; z-index: 2; }
   #bag .empty { color: #8a7d63; font-size: 12px; grid-column: 1 / -1; text-align: center; padding: 12px 0; }
+  #equipRow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin-bottom: 8px; }
+  .eslot { aspect-ratio: 1; background: #16130f; border: 1px solid #5a4a34; border-radius: 5px; position: relative;
+    display: flex; align-items: center; justify-content: center; cursor: pointer; }
+  .eslot.filled { border-color: #c9a44a; background: #221c14; }
+  .eslot .ic { font-size: 19px; opacity: .3; } .eslot.filled .ic { opacity: 1; }
+  .eslot .lb { position: absolute; top: 1px; left: 4px; font-size: 8px; color: #6f6551; letter-spacing: .05em; text-transform: uppercase; }
+  .eslot:hover .tip { display: block; position: absolute; bottom: 104%; left: 50%; transform: translateX(-50%);
+    background: #000d; color: #ffe9b0; font-size: 11px; padding: 3px 7px; border-radius: 4px; white-space: nowrap; z-index: 3; }
+  .eslot .tip { display: none; }
+  #statline { color: #b9ad90; font-size: 11px; display: flex; gap: 10px; margin-bottom: 8px; }
+  #statline b { color: #ffd24a; font-weight: 600; }
+  .slot { cursor: pointer; }
+
+  /* ---- Quest log ---- */
+  #questBtn { position: absolute; right: 74px; bottom: 12px; width: 52px; height: 52px; pointer-events: auto;
+    background: #3f342a; border: 2px solid #1c150e; border-radius: 8px; color: #ffdf9e; font-size: 22px;
+    cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px #0007; }
+  #questBtn:hover { background: #57472f; }
+  #questBtn .cnt { position: absolute; bottom: 2px; right: 5px; font-size: 10px; color: #cfe; }
+  #questBtn.ready { border-color: #ffd24a; animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { box-shadow: 0 4px 12px #0007; } 50% { box-shadow: 0 0 14px 2px #ffd24a88; } }
+  #questlog { position: absolute; right: 12px; bottom: 74px; width: 290px; max-height: 58vh; overflow-y: auto;
+    pointer-events: auto; display: none; background: #2e2820; border: 2px solid #1c150e; border-radius: 8px;
+    padding: 10px; box-shadow: 0 8px 24px #000a; }
+  #questlog h3 { color: #ffdf9e; font-size: 13px; margin-bottom: 8px; display: flex; justify-content: space-between; }
+  .q-card { background: #1d1913; border: 1px solid #4a3d2a; border-radius: 6px; padding: 7px 9px; margin-bottom: 7px; }
+  .q-card.done { border-color: #6a8f4a; }
+  .q-card .q-name { color: #ffe9a8; font-size: 12px; font-weight: 700; margin-bottom: 3px; }
+  .q-card .q-text { color: #9d917a; font-size: 11px; line-height: 1.45; margin-bottom: 5px; }
+  .q-obj { color: #c8bda3; font-size: 11px; display: flex; justify-content: space-between; gap: 8px; padding: 1px 0; }
+  .q-obj.ok { color: #8fd070; }
+  .q-obj .n { color: #ffd24a; } .q-obj.ok .n { color: #8fd070; }
+  .q-hand { color: #ffd24a; font-size: 11px; margin-top: 4px; }
+  #questlog .empty { color: #8a7d63; font-size: 12px; text-align: center; padding: 12px 0; }
+  .q-section { color: #7e7358; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; margin: 6px 0 4px; }
+
+  /* ---- NPC dialogue ---- */
+  #dialogue { position: absolute; left: 50%; bottom: 96px; transform: translateX(-50%); width: min(560px, 86vw);
+    pointer-events: auto; display: none; background: #2e2820; border: 2px solid #1c150e; border-radius: 10px;
+    box-shadow: 0 10px 30px #000b; overflow: hidden; }
+  #dialogue .d-head { background: #5a4a34; color: #ffdf9e; padding: 7px 12px; font-weight: 700; font-size: 13px;
+    display: flex; justify-content: space-between; align-items: center; }
+  #dialogue .d-close { cursor: pointer; color: #e8d7ac; font-size: 15px; line-height: 1; }
+  #dialogue .d-body { padding: 12px 14px; }
+  #dialogue .d-say { color: #e6dcc4; font-size: 13px; line-height: 1.55; font-style: italic; margin-bottom: 10px; }
+  #dialogue .d-quest { background: #1d1913; border: 1px solid #4a3d2a; border-radius: 6px; padding: 9px 10px; margin-bottom: 8px; }
+  #dialogue .d-quest .q-name { color: #ffe9a8; font-size: 12px; font-weight: 700; margin-bottom: 4px; }
+  #dialogue .d-rew { color: #9d917a; font-size: 11px; margin: 5px 0 7px; }
+  #dialogue .d-rew b { color: #ffd24a; font-weight: 600; }
+  #dialogue button { pointer-events: auto; background: #5a4a34; border: 1px solid #1c150e; color: #ffe9b0;
+    padding: 6px 14px; border-radius: 5px; font-size: 12px; cursor: pointer; font-family: inherit; }
+  #dialogue button:hover { background: #6d5a3f; color: #fff; }
+  #dialogue button.go { background: #4a6a34; } #dialogue button.go:hover { background: #5f8544; }
+  #dialogue button:disabled { background: #3a342b; color: #7d735e; cursor: default; }
+  .npcmark { position: absolute; transform: translate(-50%,-50%); font-size: 20px; font-weight: 700;
+    text-shadow: 0 2px 4px #000; pointer-events: none; }
+  .npcmark.offer { color: #ffd24a; } .npcmark.turnin { color: #8fd070; }
 
   #help { position: absolute; top: 12px; right: 12px; text-align: right; color: #6f8199; font-size: 12px; line-height: 1.6; text-shadow: 0 1px 2px #000; }
   #help b { color: #b9c9dd; }
@@ -149,13 +206,25 @@
     <div class="bar"><i id="xpfill"></i><span id="xptext">XP 0%</span></div>
   </div>
   <div id="help">
-    <b>Walk</b> Left-click ground<br><b>Attack</b> Left-click monster<br><b>Target</b> Tab<br><b>Bag</b> I<br><b>Options</b> Right-click<br><b>Look</b> Arrows / Drag<br><b>Zoom</b> Scroll<br><b>Chat</b> Enter
+    <b>Walk</b> Left-click ground<br><b>Attack</b> Left-click monster<br><b>Target</b> Tab<br><b>Bag</b> I<br><b>Quests</b> Q<br><b>Options</b> Right-click<br><b>Look</b> Arrows / Drag<br><b>Zoom</b> Scroll<br><b>Chat</b> Enter
   </div>
   <button id="bagBtn" title="Bag (I)">🎒<span class="cnt" id="bagCnt"></span></button>
+  <button id="questBtn" title="Quest log (Q)">📜<span class="cnt" id="questCnt"></span></button>
   <div id="bag">
     <h3><span>Bag</span><span class="g" id="bagGold">0 gp</span></h3>
+    <div id="equipRow"></div>
+    <div id="statline"></div>
     <div id="bagGrid"></div>
   </div>
+  <div id="questlog">
+    <h3><span>Quest Log</span><span class="g" id="questDoneCnt"></span></h3>
+    <div id="questBody"></div>
+  </div>
+  <div id="dialogue">
+    <div class="d-head"><span id="dName">NPC</span><span class="d-close" id="dClose">✕</span></div>
+    <div class="d-body"><div class="d-say" id="dSay"></div><div id="dQuests"></div></div>
+  </div>
+  <div id="npcmarks"></div>
   <div id="poilabels"></div>
   <div id="nameplates"></div>
   <div id="hurt"></div>
@@ -289,8 +358,16 @@ function handle(m) {
       loadZone(m.zone);
       break;
     case 'bag':
-      bag = { items: m.items || [], gold: m.gold || 0 };
+      bag = { items: m.items || [], gold: m.gold || 0,
+        equipment: m.equipment || { weapon: null, body: null, trinket: null },
+        stats: m.stats || { atk: 0, def: 0 } };
       renderBag();
+      refreshDialogue(); // the merchant's sell list is built from the bag
+      break;
+    case 'quests':
+      questData = { active: m.active || [], available: m.available || [], completed: m.completed || [], markers: m.markers || {} };
+      renderQuestLog();
+      refreshDialogue();
       break;
     case 'chat':
       addChat(m.from, m.msg, m.sys);
@@ -318,6 +395,9 @@ const raycaster = new THREE.Raycaster();
 let ground;
 
 let camYaw = 0, camPitch = 0.55, camDist = 14;
+const camBlockers = [];          // walls the camera must not end up behind
+const camRay = new THREE.Raycaster();
+const _camHead = new THREE.Vector3(), _camWant = new THREE.Vector3(), _camDir = new THREE.Vector3();
 const jump = { active: false, t: 0 };
 const keys = {};
 let targetId = null;
@@ -460,11 +540,17 @@ function updateSky(dt) {
 // and on every zone transition.
 function loadZone(zdata) {
   zone = zdata;
+  // Sit the camera behind the character's spawn facing. Without this it
+  // defaulted to yaw 0 and every new player spawned staring at the north
+  // boundary wall with the entire zone behind them.
+  camYaw = (zone.spawn && zone.spawn.yaw != null ? zone.spawn.yaw : 0) + Math.PI;
   // Tear down the previous zone.
   while (scene.children.length) scene.remove(scene.children[0]);
   entityMeshes.clear();
   poiWorld.length = 0; poiLayer.innerHTML = ''; poiEls.length = 0;
-  chestMeshes.clear();
+  chestMeshes.clear(); npcMeshes.clear(); camBlockers.length = 0;
+  npcMarkLayer.innerHTML = ''; npcMarkEls.clear();
+  closeDialogue();
   fireflies = null; targetId = null;
 
   const e = zone.env || {};
@@ -568,14 +654,16 @@ function buildZone() {
       const wall = new THREE.Mesh(new THREE.BoxGeometry(len + 2, h, 3), wallMat);
       wall.position.set((a.x + bpt.x) / 2, h / 2, (a.z + bpt.z) / 2);
       wall.rotation.y = Math.atan2(-dz, dx);
-      wall.castShadow = true; wall.receiveShadow = true; scene.add(wall);
+      wall.castShadow = true; wall.receiveShadow = true;
+      wall.userData.camBlocker = true; camBlockers.push(wall); scene.add(wall);
     }
   } else {
     for (const [px, pz, sx, sz] of [
       [cx, b.minZ, W, 1.5], [cx, b.maxZ, W, 1.5], [b.minX, cz, 1.5, D], [b.maxX, cz, 1.5, D],
     ]) {
       const w = new THREE.Mesh(new THREE.BoxGeometry(sx, h, sz), wallMat);
-      w.position.set(px, h / 2, pz); w.castShadow = true; w.receiveShadow = true; scene.add(w);
+      w.position.set(px, h / 2, pz); w.castShadow = true; w.receiveShadow = true;
+      w.userData.camBlocker = true; camBlockers.push(w); scene.add(w);
     }
   }
   if (enclosed) {
@@ -636,6 +724,9 @@ function buildZone() {
 
   // Points of interest (structures + label data)
   for (const p of zone.pois) { buildPoi(p); poiWorld.push(p); }
+
+  // Quest givers / merchants
+  buildNpcs();
 
   // Treasure chests (clickable)
   for (const ch of (zone.chests || [])) buildChest(ch);
@@ -926,15 +1017,7 @@ function buildPoi(p) {
       // banner on a pole
       const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 4, 6), woodMat()); pole.position.set(5.5, 2, -1); g.add(pole);
       const banner = boxPart(0.06, 1.3, 1.0, 0x7a2f3a); banner.position.set(5.5, 2.9, -0.45); g.add(banner);
-      const npc = new THREE.Group();
-      const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.45, 0.9, 4, 8),
-        new THREE.MeshStandardMaterial({ color: 0x8a5cc0, roughness: 0.6 })); body.position.y = 0.95; body.castShadow = true; npc.add(body);
-      const head = new THREE.Mesh(new THREE.SphereGeometry(0.34, 14, 10),
-        new THREE.MeshStandardMaterial({ color: 0xe8c9a0 })); head.position.y = 1.8; npc.add(head);
-      npc.position.set(-1.5, 0, -3); g.add(npc);
-      npc.traverse(o => { if (o.isMesh) { o.userData.pickKind = 'npc'; o.userData.npcName = 'Wandering Merchant'; o.userData.npcX = p.x - 1.5; o.userData.npcZ = p.z - 3; } });
-      poiWorld.push({ name: 'Wandering Merchant', x: p.x - 1.5, z: p.z - 3, kind: 'merchant' });
-      break;
+      break; // the merchant themself is an NPC from zone.npcs — see buildNpcs()
     }
     case 'watchtower': {
       let y = 0;
@@ -1073,6 +1156,34 @@ function buildPoi(p) {
   scene.add(g);
 }
 
+// ---- NPCs (quest givers / merchants), placed from the zone data ----
+const npcMeshes = new Map(); // npcId -> { mesh, def }
+function buildNpcs() {
+  npcMeshes.clear();
+  for (const def of (zone.npcs || [])) {
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.45, 0.9, 4, 8),
+      new THREE.MeshStandardMaterial({ color: def.tint || 0x8a5cc0, roughness: 0.6 }));
+    body.position.y = 0.95; body.castShadow = true; g.add(body);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.34, 14, 10),
+      new THREE.MeshStandardMaterial({ color: 0xe8c9a0 }));
+    head.position.y = 1.8; head.castShadow = true; g.add(head);
+    // A staff so givers read as people at a distance, not as barrels.
+    const staff = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 2.2, 6), woodMat());
+    staff.position.set(0.5, 1.1, 0.1); staff.rotation.z = 0.12; g.add(staff);
+    g.position.set(def.x, 0, def.z);
+    g.traverse(o => {
+      if (o.isMesh) {
+        o.userData.pickKind = 'npc'; o.userData.npcId = def.id;
+        o.userData.npcName = def.name; o.userData.npcX = def.x; o.userData.npcZ = def.z;
+      }
+    });
+    scene.add(g);
+    npcMeshes.set(def.id, { mesh: g, def });
+    poiWorld.push({ name: def.name, x: def.x, z: def.z, kind: 'merchant' });
+  }
+}
+
 function buildChest(ch) {
   const g = new THREE.Group(); g.position.set(ch.x, 0, ch.z);
   const body = boxPart(1.2, 0.8, 0.9, 0x6b4a2a); body.position.y = 0.4; g.add(body);
@@ -1115,7 +1226,7 @@ function limbPivot(w, h, d, color, x, y, z) {
 
 function makePlayerMesh(isSelf) {
   const g = cloneModel('Male', 2.3);
-  if (g) { g.rotation.y = 0; g.userData.faceOffset = MODEL_YAW; return g; }
+  if (g) { g.rotation.y = 0; g.userData.faceOffset = MODEL_YAW; g.userData.rig = buildRig(g, 'biped'); return g; }
   // fallback if the model failed to load
   const fb = new THREE.Group();
   const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.5, 1.0, 4, 8),
@@ -1129,6 +1240,7 @@ function makeMonsterMesh(type, elite) {
   const g = cloneModel(map.model, map.h * (elite ? 1.4 : 1));
   if (g) {
     g.userData.faceOffset = MODEL_YAW;
+    g.userData.rig = buildRig(g, RIG_STYLE[type] || 'biped');
     if (elite) g.traverse(o => {
       if (o.isMesh && o.material) {
         o.material = Array.isArray(o.material) ? o.material.map(m => m.clone()) : o.material.clone();
@@ -1158,27 +1270,117 @@ function ensureMesh(ent, kind) {
 }
 
 // ---------------------------------------------------------------------------
-// Interpolated render of the world from snapshots
+// Procedural animation
 // ---------------------------------------------------------------------------
-// Walk animation — swing limbs based on whether the entity is moving.
-function animateParts(rec, e, kind, dt) {
-  const anim = rec.mesh.userData.anim;
-  if (!anim) return;
-  const px = rec.mesh.position.x, pz = rec.mesh.position.z;
-  const spd = Math.hypot(px - (rec.ax ?? px), pz - (rec.az ?? pz));
-  rec.ax = px; rec.az = pz;
-  const moving = kind === 'player' ? !!e.moving : spd > 0.008;
-  rec.amp = (rec.amp || 0) + ((moving ? 1 : 0) - (rec.amp || 0)) * Math.min(1, dt * 8);
-  rec.gait = (rec.gait || 0) + dt * 10;
-  const s = Math.sin(rec.gait) * 0.7 * rec.amp;
-  const p = anim.parts;
-  if (anim.kind === 'biped') {
-    p.larm.rotation.x = s; p.rarm.rotation.x = -s * 0.6;
-    p.lleg.rotation.x = -s; p.rleg.rotation.x = s;
-  } else {
-    p.fl.rotation.x = s; p.br.rotation.x = s;
-    p.fr.rotation.x = -s; p.bl.rotation.x = -s;
+// None of the character GLBs are rigged — no skins, no clips, and most are a
+// single merged mesh with no separable limbs. So locomotion is driven on the
+// whole body (stride-synced bob, roll, lean), and the two models that DO have
+// separate parts get real ones: the Spider's eight leg nodes and the Hill
+// Ogre's club. Swap this out for AnimationMixer the day the models are rigged.
+const RIG_STYLE = {
+  goblin: 'biped', bandit: 'biped', guard: 'ogre',
+  spider: 'spider', cow: 'quad', chicken: 'bird',
+};
+// bob = vertical rise per step, roll = side-to-side sway, stride = metres per
+// step (drives cadence from real speed, so nothing moonwalks).
+const GAIT = {
+  biped:  { bob: 0.11, roll: 0.055, lean: 0.09, stride: 1.55 },
+  ogre:   { bob: 0.16, roll: 0.075, lean: 0.07, stride: 2.20 },
+  quad:   { bob: 0.07, roll: 0.045, lean: 0.04, stride: 1.40 },
+  bird:   { bob: 0.09, roll: 0.090, lean: 0.06, stride: 0.55 },
+  spider: { bob: 0.05, roll: 0.030, lean: 0.03, stride: 1.10 },
+};
+
+function findByName(root, re) {
+  const out = [];
+  root.traverse(o => { if (o.name && re.test(o.name)) out.push(o); });
+  return out;
+}
+
+// Inspect a freshly cloned model and record what can actually be moved.
+function buildRig(wrap, style) {
+  const body = wrap.children[0];
+  if (!body) return null;
+  const rig = {
+    style, body,
+    home: body.position.clone(),
+    legs: [], club: null,
+    gait: Math.random() * Math.PI * 2, amp: 0, speed: 0, atk: 0, deathT: 0,
+  };
+  if (style === 'spider') {
+    // Leg nodes pivot about the model origin, so a Y-rotation sweeps them
+    // fore/aft around the body — which is how a spider leg actually moves.
+    for (const leg of findByName(body, /^Leg_[LR]_\d$/)) {
+      const m = leg.name.match(/^Leg_([LR])_(\d)$/);
+      const side = m[1], idx = +m[2];
+      // Alternating tripod: adjacent legs on a side are always out of phase.
+      const group = (side === 'L' ? idx : idx + 1) % 2;
+      rig.legs.push({ node: leg, group, baseY: leg.rotation.y, baseP: leg.position.clone() });
+    }
   }
+  if (style === 'ogre') rig.club = findByName(body, /Club/i)[0] || null;
+  return rig;
+}
+
+function animateEntity(rec, e, kind, dt) {
+  const rig = rec.mesh.userData.rig;
+  if (!rig || !rig.body) return;
+  const g = GAIT[rig.style] || GAIT.biped;
+  const b = rig.body;
+
+  // --- death: topple forward, then lie there until the corpse is cleaned up
+  if (!e.alive) {
+    rig.deathT = Math.min(1, rig.deathT + dt / 0.55);
+    const t = rig.deathT * rig.deathT * (3 - 2 * rig.deathT); // smoothstep
+    b.rotation.x = -1.5 * t;
+    b.rotation.z = 0;
+    b.position.set(rig.home.x, rig.home.y - 0.15 * t, rig.home.z);
+    return;
+  }
+  if (rig.deathT > 0) { rig.deathT = 0; b.rotation.set(0, 0, 0); b.position.copy(rig.home); }
+
+  // --- speed, measured from the interpolated mesh rather than trusted input
+  const px = rec.mesh.position.x, pz = rec.mesh.position.z;
+  const moved = Math.hypot(px - (rec.ax ?? px), pz - (rec.az ?? pz));
+  rec.ax = px; rec.az = pz;
+  const inst = dt > 0 ? moved / dt : 0;
+  rig.speed += (Math.min(inst, 14) - rig.speed) * Math.min(1, dt * 10);
+  const moving = kind === 'player' ? (!!e.moving || rig.speed > 0.4) : rig.speed > 0.4;
+  rig.amp += ((moving ? 1 : 0) - rig.amp) * Math.min(1, dt * 9);
+
+  // One full cycle = two steps, paced by distance covered.
+  if (moving) rig.gait += (Math.max(rig.speed, 1.2) / g.stride) * Math.PI * dt;
+  else rig.gait += dt * 1.5; // idle breathing keeps the same phase running
+
+  // --- attack lunge (triggered by the server's hit event)
+  if (rig.atk > 0) rig.atk = Math.max(0, rig.atk - dt / 0.36);
+  const u = rig.atk > 0 ? 1 - rig.atk : 0;
+  const punch = rig.atk > 0 ? Math.sin(Math.PI * u) : 0;
+
+  const a = rig.amp;
+  const idle = (1 - a) * Math.sin(rig.gait) * 0.012; // breathing when standing
+  // The model sits inside a group that carries the yaw, so -Z is forward here.
+  b.position.y = rig.home.y + Math.abs(Math.sin(rig.gait)) * g.bob * a + idle;
+  b.position.z = rig.home.z - punch * 0.5;
+  b.rotation.x = -g.lean * a - punch * 0.45;
+  b.rotation.z = Math.sin(rig.gait * 0.5) * g.roll * a;
+
+  // --- parts that genuinely exist on the model
+  if (rig.legs.length) {
+    for (const leg of rig.legs) {
+      const s = Math.sin(rig.gait + (leg.group ? Math.PI : 0));
+      leg.node.rotation.y = leg.baseY + s * 0.26 * a;
+      leg.node.position.y = leg.baseP.y + Math.max(0, s) * 0.1 * a;
+    }
+  }
+  if (rig.club) rig.club.rotation.x = -punch * 1.5 - Math.sin(rig.gait) * 0.12 * a;
+}
+
+// The server tells us who swung; the client plays the swing.
+function triggerAttackAnim(id) {
+  const rec = entityMeshes.get(id);
+  const rig = rec && rec.mesh.userData.rig;
+  if (rig) rig.atk = 1;
 }
 
 function lerpAngle(a, b, t) {
@@ -1204,11 +1406,14 @@ function renderWorld(dt) {
       const prev = a && a[kind === 'player' ? 'players' : 'monsters']?.find(x => x.id === e.id);
       let x = e.x, z = e.z, yaw = e.yaw;
       if (prev) { x = prev.x + (e.x - prev.x) * t; z = prev.z + (e.z - prev.z) * t; yaw = lerpAngle(prev.yaw, e.yaw, t); }
-      rec.mesh.visible = e.alive;
+      // Corpses stay up briefly so the topple can play, then vanish.
+      if (e.alive) rec.deadFor = 0;
+      else rec.deadFor = (rec.deadFor || 0) + dt;
+      rec.mesh.visible = e.alive || rec.deadFor < 2.2;
       rec.mesh.position.x = x; rec.mesh.position.z = z;
       rec.mesh.rotation.y = yaw + (rec.mesh.userData.faceOffset || 0);
       rec.data = e;
-      if (e.alive) animateParts(rec, e, kind, dt);
+      if (rec.mesh.visible) animateEntity(rec, e, kind, dt);
     }
   };
   blend(b.players, 'player');
@@ -1277,9 +1482,44 @@ function updateControls(dt) {
     else rec.mesh.position.y = Math.sin(Math.PI * prog) * 1.7;
   } else rec.mesh.position.y = 0;
   const px = rec.mesh.position.x, pz = rec.mesh.position.z;
-  const cx = px + Math.sin(camYaw) * Math.cos(camPitch) * camDist;
-  const cy = 2 + Math.sin(camPitch) * camDist;
-  const cz = pz + Math.cos(camYaw) * Math.cos(camPitch) * camDist;
+  let cx = px + Math.sin(camYaw) * Math.cos(camPitch) * camDist;
+  let cy = 2 + Math.sin(camPitch) * camDist;
+  let cz = pz + Math.cos(camYaw) * Math.cos(camPitch) * camDist;
+
+  // Pull the camera in if a boundary wall would end up between it and the
+  // player. Standing near the zone edge used to park the camera inside the
+  // wall, which filled half the screen with black.
+  _camHead.set(px, 1.8, pz);
+  _camWant.set(cx, cy, cz);
+  _camDir.copy(_camWant).sub(_camHead);
+  const want = _camDir.length();
+  if (want > 0.01 && camBlockers.length) {
+    _camDir.divideScalar(want);
+    camRay.set(_camHead, _camDir);
+    camRay.far = want;
+    const hit = camRay.intersectObjects(camBlockers, false)[0];
+    if (hit) {
+      const back = Math.max(2.5, hit.distance - 0.8);
+      cx = px + _camDir.x * back;
+      cy = 1.8 + _camDir.y * back;
+      cz = pz + _camDir.z * back;
+    }
+  }
+  // Keep the camera inside the zone. Near an edge the desired position lands
+  // outside the boundary, where it looks over the top of the wall and the wall
+  // eats the bottom of the frame — a sightline test never catches that because
+  // nothing is between the camera and the player.
+  if (zone.boundary && !inBoundary(cx, cz)) {
+    let placed = false;
+    for (let pull = 0.8; pull >= 0.2; pull -= 0.15) {
+      const tx = px + (cx - px) * pull, tz = pz + (cz - pz) * pull;
+      if (inBoundary(tx, tz)) {
+        cx = tx; cz = tz; cy = 1.8 + (cy - 1.8) * pull; placed = true; break;
+      }
+    }
+    // Nothing along the line was inside: look straight down at the player.
+    if (!placed) { cx = px; cz = pz; cy = Math.max(cy, 8); }
+  }
   camera.position.set(cx, cy, cz);
   camera.lookAt(px, 1.6, pz);
 
@@ -1356,6 +1596,8 @@ function addEventListeners() {
     if (e.key === 'Enter') { chatInput.focus(); e.preventDefault(); return; }
     if (e.key === 'Tab') { e.preventDefault(); tabTarget(); return; }
     if (e.key.toLowerCase() === 'i') { toggleBag(); return; }
+    if (e.key.toLowerCase() === 'q') { toggleQuests(); return; }
+    if (e.key === 'Escape') { closeDialogue(); hideContextMenu(); return; }
     if (e.key === ' ' || e.code === 'Space') { e.preventDefault(); if (!jump.active) { jump.active = true; jump.t = 0; } return; }
     const k = e.key.toLowerCase();
     if (k.startsWith('arrow')) e.preventDefault();
@@ -1386,7 +1628,7 @@ function pickAt(e) {
     }
     if (u.pickKind === 'chest' && u.pickId != null) return { kind: 'chest', id: u.pickId, point: h.point };
     if (u.pickKind === 'item' && u.pickId != null) { const r = itemMeshes.get(u.pickId); return { kind: 'item', id: u.pickId, name: r ? r.name : 'Item', qty: r ? r.qty : 1, point: h.point }; }
-    if (u.pickKind === 'npc') return { kind: 'npc', name: u.npcName, x: u.npcX, z: u.npcZ, point: h.point };
+    if (u.pickKind === 'npc') return { kind: 'npc', id: u.npcId, npcId: u.npcId, name: u.npcName, x: u.npcX, z: u.npcZ, point: h.point };
     if (u.isGround && !groundPt) groundPt = h.point;
   }
   if (groundPt) return { kind: 'ground', point: groundPt };
@@ -1408,11 +1650,15 @@ function optionsFor(pk) {
     { label: `Take <b>${escapeHtml(pk.qty > 1 ? pk.qty + ' ' + pk.name : pk.name)}</b>`, act: () => takeItem(pk.id) },
     { label: 'Examine', act: () => examineText(`${pk.name} — dropped loot.`) },
   ];
-  if (pk.kind === 'npc') return [
-    { label: `Talk-to <b>${escapeHtml(pk.name)}</b>`, act: () => talkNpc(pk) },
-    { label: `Trade ${escapeHtml(pk.name)}`, act: () => examineText('The merchant isn’t ready to trade yet.') },
-    { label: `Examine ${escapeHtml(pk.name)}`, act: () => examineText('A weathered travelling merchant.') },
-  ];
+  if (pk.kind === 'npc') {
+    const mark = questData.markers[pk.npcId];
+    const tag = mark === 'turnin' ? ' <span class="lvl">(quest complete)</span>'
+      : mark === 'offer' ? ' <span class="lvl">(has work)</span>' : '';
+    return [
+      { label: `Talk-to <b>${escapeHtml(pk.name)}</b>${tag}`, act: () => talkNpc(pk) },
+      { label: `Examine ${escapeHtml(pk.name)}`, act: () => examineText(npcMeshes.get(pk.npcId)?.def.idle || 'A weathered traveller.') },
+    ];
+  }
   if (pk.kind === 'ground') return [
     { label: 'Walk here', act: () => walkTo(pk.point) },
   ];
@@ -1457,7 +1703,28 @@ function tabTarget() {
 function openChestAt(id) { ws?.send(JSON.stringify({ t: 'openchest', id })); }
 function takeItem(id) { const r = itemMeshes.get(id); if (r) spawnMarker(r.mesh.position.x, r.mesh.position.z, 0xffe14a); ws?.send(JSON.stringify({ t: 'pickup', id })); targetId = null; }
 function walkTo(point) { ws?.send(JSON.stringify({ t: 'move', x: +point.x.toFixed(2), z: +point.z.toFixed(2) })); targetId = null; spawnMarker(point.x, point.z, 0xffe14a); }
-function talkNpc(pk) { walkTo({ x: pk.x, z: pk.z }); examineText(`${pk.name}: "Wares? Aye, soon enough, traveller. Mind the woods."`); }
+// Walk over, then open the dialogue once we're actually standing there — the
+// server refuses accepts and hand-ins from across the map, so the UI shouldn't
+// pretend otherwise.
+let pendingTalk = null;
+function talkNpc(pk) {
+  if (!pk.npcId) return;
+  const rec = npcMeshes.get(pk.npcId);
+  if (!rec) return;
+  const selfRec = entityMeshes.get(myId);
+  const near = selfRec && Math.hypot(selfRec.mesh.position.x - pk.x, selfRec.mesh.position.z - pk.z) < 8;
+  if (near) { openDialogue(pk.npcId); return; }
+  pendingTalk = pk.npcId;
+  walkTo({ x: pk.x + 1.6, z: pk.z + 1.6 });
+}
+function updatePendingTalk() {
+  if (!pendingTalk) return;
+  const rec = npcMeshes.get(pendingTalk), selfRec = entityMeshes.get(myId);
+  if (!rec || !selfRec) { pendingTalk = null; return; }
+  if (Math.hypot(selfRec.mesh.position.x - rec.def.x, selfRec.mesh.position.z - rec.def.z) < 8) {
+    openDialogue(pendingTalk); pendingTalk = null;
+  }
+}
 function examineText(txt) { addChat('', txt, true); }
 
 // ---- Right-click context menu ----
@@ -1505,12 +1772,18 @@ const platePool = [];
 const nameplatesEl = document.getElementById('nameplates');
 const tmpV = new THREE.Vector3();
 
+const PLATE_RANGE = 45; // metres; beyond this the plates just pile up
 function updateNameplates() {
   let i = 0;
+  const selfRec = entityMeshes.get(myId);
+  const sx = selfRec ? selfRec.mesh.position.x : 0, sz = selfRec ? selfRec.mesh.position.z : 0;
   const all = [...entityMeshes.entries()];
   for (const [id, rec] of all) {
     if (!rec.data || !rec.data.alive) continue;
     if (id === myId) continue; // no plate over self (HUD shows it)
+    // Without this every mob in the zone drew a plate and the top of the
+    // screen became an unreadable stack of overlapping names.
+    if (Math.hypot(rec.mesh.position.x - sx, rec.mesh.position.z - sz) > PLATE_RANGE) continue;
     tmpV.set(rec.mesh.position.x, rec.mesh.position.y + (rec.kind === 'monster' ? 2.6 : 2.6), rec.mesh.position.z);
     tmpV.project(camera);
     if (tmpV.z > 1) continue;
@@ -1607,6 +1880,27 @@ function onEvent(m) {
       if (cm && !cm.opened) { cm.opened = true; cm.lid.rotation.x = -1.3; }
       break;
     }
+    case 'questaccepted':
+      addChat('Quest', `Started: ${m.name}`, true); flyText('Quest started', 'heal'); break;
+    case 'questprogress':
+      if (m.text) addChat('Quest', `${m.name} — ${m.text}`, true); break;
+    case 'questready':
+      addChat('Quest', `${m.name} — ready to hand in.`, true); flyText('Quest complete', 'heal'); break;
+    case 'questcomplete': {
+      addChat('Quest', `Completed: ${m.name}`, true);
+      const bits = [];
+      if (m.xp) bits.push(`${m.xp} xp`);
+      if (m.gold) bits.push(`${m.gold} gold`);
+      for (const it of (m.items || [])) bits.push(it);
+      if (bits.length) addChat('Reward', bits.join(', '), true);
+      if (m.text) addChat('', m.text, true);
+      closeDialogue();
+      break;
+    }
+    case 'equip': addChat('', `You equip the ${m.item}.`, true); break;
+    case 'unequip': addChat('', `You remove the ${m.item}.`, true); break;
+    case 'sold': addChat('Merchant', m.text, true); document.getElementById('cgold').textContent = m.gold; break;
+    case 'notice': addChat('', m.text, true); flyText('Cannot equip', 'dmg'); break;
     case 'hit': showHit(m); break;
     case 'death': showDeath(); break;
     case 'respawned': hideDeath(); break;
@@ -1625,6 +1919,7 @@ function hurtFlash(color) {
 }
 
 function showHit(m) {
+  triggerAttackAnim(m.by);
   if (m.target === myId && m.dmg > 0) hurtFlash('#c0392b');
   const rec = entityMeshes.get(m.target);
   if (!rec) return;
@@ -1652,8 +1947,31 @@ function flyText(text, cls) {
 // ---------------------------------------------------------------------------
 // Bag / inventory
 // ---------------------------------------------------------------------------
-let bag = { items: [], gold: 0 };
+let bag = { items: [], gold: 0, equipment: { weapon: null, body: null, trinket: null }, stats: { atk: 0, def: 0 } };
 let bagOpen = false;
+// Mirrors server/items.js — used for tooltips and for deciding which actions a
+// bag slot offers. The server is still the authority on every equip.
+const ITEM_META = {
+  'Bronze Dagger': { slot: 'weapon', atk: 3, level: 1 },
+  'Iron Sword': { slot: 'weapon', atk: 7, level: 3 },
+  'Ogre Club': { slot: 'weapon', atk: 12, level: 6 },
+  'Goblin Mail': { slot: 'body', def: 2, level: 1 },
+  'Leather Body': { slot: 'body', def: 4, level: 3 },
+  'Smuggler\u2019s Trinket': { slot: 'trinket', atk: 1, def: 1, level: 1 },
+  "Smuggler's Cache": { slot: 'trinket', def: 2, level: 2 },
+  'Crystalline Relic': { slot: 'trinket', def: 6, level: 6 },
+  "Guardian's Heartwood": { slot: 'trinket', atk: 4, def: 4, level: 8 },
+};
+const SLOT_ICON = { weapon: '⚔️', body: '🛡️', trinket: '💍' };
+function metaFor(name) { return ITEM_META[name] || null; }
+function statText(m) {
+  if (!m) return '';
+  const bits = [];
+  if (m.atk) bits.push(`+${m.atk} atk`);
+  if (m.def) bits.push(`+${m.def} def`);
+  if (m.level > 1) bits.push(`lv ${m.level}`);
+  return bits.length ? ' (' + bits.join(', ') + ')' : '';
+}
 const ITEM_ICON = {
   Coins: '🪙', Cowhide: '🟫', 'Raw Beef': '🥩', 'Raw Chicken': '🍗', Feather: '🪶', Bones: '🦴',
   'Big Bones': '🦴', 'Spider Silk': '🕸️', 'Venom Sac': '🧪', 'Bronze Dagger': '🗡️', 'Iron Sword': '⚔️',
@@ -1665,15 +1983,187 @@ function bagButton() { return document.getElementById('bagBtn'); }
 function toggleBag(force) { bagOpen = force != null ? force : !bagOpen; document.getElementById('bag').style.display = bagOpen ? 'block' : 'none'; if (bagOpen) renderBag(); }
 function renderBag() {
   document.getElementById('bagGold').textContent = bag.gold.toLocaleString() + ' gp';
+  document.getElementById('bagCnt').textContent = bag.items.length || '';
+
+  // Worn gear
+  const eq = bag.equipment || {};
+  const st = bag.stats || { atk: 0, def: 0 };
+  document.getElementById('equipRow').innerHTML = ['weapon', 'body', 'trinket'].map(s => {
+    const worn = eq[s];
+    const m = metaFor(worn);
+    return `<div class="eslot${worn ? ' filled' : ''}" data-slot="${s}">
+      <span class="lb">${s.slice(0, 3)}</span>
+      <span class="ic">${worn ? iconFor(worn) : SLOT_ICON[s]}</span>
+      ${worn ? `<span class="tip">${escapeHtml(worn)}${statText(m)} — click to remove</span>` : ''}
+    </div>`;
+  }).join('');
+  document.getElementById('statline').innerHTML =
+    `<span>Attack <b>+${st.atk || 0}</b></span><span>Defence <b>+${st.def || 0}</b></span>`;
+  document.querySelectorAll('#equipRow .eslot').forEach(el => {
+    el.onclick = () => { if (eq[el.dataset.slot]) ws?.send(JSON.stringify({ t: 'unequip', slot: el.dataset.slot })); };
+  });
+
+  // Carried items
   const counts = {};
   for (const it of bag.items) counts[it] = (counts[it] || 0) + 1;
   const names = Object.keys(counts);
-  document.getElementById('bagCnt').textContent = bag.items.length || '';
   const grid = document.getElementById('bagGrid');
   if (!names.length) { grid.innerHTML = '<div class="empty">Your bag is empty.</div>'; return; }
-  grid.innerHTML = names.map(n =>
-    `<div class="slot"><span class="ic">${iconFor(n)}</span>${counts[n] > 1 ? `<span class="n">${counts[n]}</span>` : ''}<span class="tip">${escapeHtml(n)}</span></div>`
-  ).join('');
+  grid.innerHTML = names.map(n => {
+    const m = metaFor(n);
+    const hint = m ? ' — click to equip' : '';
+    return `<div class="slot" data-item="${escapeHtml(n)}"><span class="ic">${iconFor(n)}</span>` +
+      `${counts[n] > 1 ? `<span class="n">${counts[n]}</span>` : ''}` +
+      `<span class="tip">${escapeHtml(n)}${statText(m)}${hint}</span></div>`;
+  }).join('');
+  grid.querySelectorAll('.slot').forEach(el => {
+    el.onclick = () => {
+      const name = el.dataset.item;
+      if (metaFor(name)) ws?.send(JSON.stringify({ t: 'equip', item: name }));
+    };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Quests — log panel, giver dialogue, and the ! / ? markers over NPCs
+// ---------------------------------------------------------------------------
+let questData = { active: [], available: [], completed: [], markers: {} };
+let questOpen = false;
+let dialogueNpc = null;
+
+function toggleQuests(force) {
+  questOpen = force != null ? force : !questOpen;
+  document.getElementById('questlog').style.display = questOpen ? 'block' : 'none';
+  if (questOpen) renderQuestLog();
+}
+
+function renderQuestLog() {
+  const btn = document.getElementById('questBtn');
+  const anyReady = questData.active.some(q => q.complete);
+  btn.classList.toggle('ready', anyReady);
+  document.getElementById('questCnt').textContent = questData.active.length || '';
+  document.getElementById('questDoneCnt').textContent =
+    questData.completed.length ? `${questData.completed.length} done` : '';
+  if (!questOpen) return;
+
+  const body = document.getElementById('questBody');
+  if (!questData.active.length && !questData.completed.length) {
+    body.innerHTML = '<div class="empty">No quests yet. Look for an NPC with a <b style="color:#ffd24a">!</b> above them.</div>';
+    return;
+  }
+  let html = '';
+  if (questData.active.length) {
+    html += '<div class="q-section">In progress</div>';
+    for (const q of questData.active) {
+      html += `<div class="q-card${q.complete ? ' done' : ''}">
+        <div class="q-name">${escapeHtml(q.name)}</div>
+        <div class="q-text">${escapeHtml(q.summary || '')}</div>` +
+        q.objectives.map(o => `<div class="q-obj${o.done ? ' ok' : ''}"><span>${o.done ? '✔ ' : '• '}${escapeHtml(o.label)}</span><span class="n">${o.have}/${o.need}</span></div>`).join('') +
+        (q.complete ? '<div class="q-hand">Ready to hand in.</div>' : '') +
+        '</div>';
+    }
+  }
+  if (questData.completed.length) {
+    html += '<div class="q-section">Completed</div>';
+    html += questData.completed.map(q =>
+      `<div class="q-obj ok"><span>✔ ${escapeHtml(q.name)}</span><span></span></div>`).join('');
+  }
+  body.innerHTML = html;
+}
+
+// ---- Giver dialogue ----
+const dialogueEl = document.getElementById('dialogue');
+function rewardLine(r) {
+  if (!r) return '';
+  const bits = [];
+  if (r.xp) bits.push(`<b>${r.xp}</b> xp`);
+  if (r.gold) bits.push(`<b>${r.gold}</b> gold`);
+  for (const it of (r.items || [])) bits.push(`<b>${escapeHtml(it)}</b>`);
+  return bits.length ? 'Reward: ' + bits.join(', ') : '';
+}
+
+function openDialogue(npcId) {
+  const rec = npcMeshes.get(npcId);
+  if (!rec) return;
+  dialogueNpc = npcId;
+  document.getElementById('dName').textContent = rec.def.name;
+
+  const offers = questData.available.filter(q => q.giver === npcId);
+  const mine = questData.active.filter(q => q.giver === npcId);
+  const ready = mine.filter(q => q.complete);
+
+  document.getElementById('dSay').textContent =
+    ready.length ? ready[0].text
+    : offers.length ? offers[0].intro
+    : mine.length ? mine[0].text
+    : (rec.def.idle || '…');
+
+  let html = '';
+  for (const q of ready) {
+    html += `<div class="d-quest"><div class="q-name">${escapeHtml(q.name)}</div>
+      <div class="d-rew">${rewardLine(q.reward)}</div>
+      <button class="go" data-turnin="${q.id}">Hand in</button></div>`;
+  }
+  for (const q of offers) {
+    html += `<div class="d-quest"><div class="q-name">${escapeHtml(q.name)}</div>
+      <div class="q-text" style="color:#9d917a;font-size:11px;line-height:1.45;margin-bottom:4px">${escapeHtml(q.summary || '')}</div>` +
+      q.objectives.map(o => `<div class="q-obj"><span>• ${escapeHtml(o.label)}</span><span class="n">0/${o.need}</span></div>`).join('') +
+      `<div class="d-rew">${rewardLine(q.reward)}</div>
+      <button data-accept="${q.id}">Accept</button></div>`;
+  }
+  for (const q of mine.filter(q => !q.complete)) {
+    html += `<div class="d-quest"><div class="q-name">${escapeHtml(q.name)}</div>` +
+      q.objectives.map(o => `<div class="q-obj${o.done ? ' ok' : ''}"><span>${o.done ? '✔ ' : '• '}${escapeHtml(o.label)}</span><span class="n">${o.have}/${o.need}</span></div>`).join('') +
+      '</div>';
+  }
+  // Traders buy whatever you're carrying (worn gear isn't in the bag list).
+  if (rec.def.trade) {
+    const counts = {};
+    for (const it of bag.items) counts[it] = (counts[it] || 0) + 1;
+    const names = Object.keys(counts);
+    html += '<div class="d-quest"><div class="q-name">Sell</div>';
+    html += names.length
+      ? names.map(n => `<div class="q-obj"><span>${iconFor(n)} ${escapeHtml(n)}${counts[n] > 1 ? ' ×' + counts[n] : ''}</span>` +
+          `<button data-sell="${escapeHtml(n)}" style="padding:1px 8px;font-size:11px">Sell</button></div>`).join('')
+      : '<div class="q-obj"><span>Nothing to sell.</span><span></span></div>';
+    html += '</div>';
+  }
+  document.getElementById('dQuests').innerHTML = html;
+  dialogueEl.querySelectorAll('[data-sell]').forEach(b => {
+    b.onclick = () => ws?.send(JSON.stringify({ t: 'sell', item: b.dataset.sell }));
+  });
+  dialogueEl.querySelectorAll('[data-accept]').forEach(b => {
+    b.onclick = () => { ws?.send(JSON.stringify({ t: 'questaccept', id: b.dataset.accept })); b.disabled = true; b.textContent = 'Accepted'; };
+  });
+  dialogueEl.querySelectorAll('[data-turnin]').forEach(b => {
+    b.onclick = () => { ws?.send(JSON.stringify({ t: 'questturnin', id: b.dataset.turnin })); b.disabled = true; };
+  });
+  dialogueEl.style.display = 'block';
+}
+function closeDialogue() { dialogueEl.style.display = 'none'; dialogueNpc = null; }
+document.getElementById('dClose').onclick = closeDialogue;
+
+// Redraw an open dialogue when the server sends new quest state.
+function refreshDialogue() { if (dialogueNpc) openDialogue(dialogueNpc); }
+
+// ---- ! / ? markers floating over quest givers ----
+const npcMarkLayer = document.getElementById('npcmarks');
+const npcMarkEls = new Map();
+function updateNpcMarkers() {
+  for (const [id, rec] of npcMeshes) {
+    const state = questData.markers[id];
+    let el = npcMarkEls.get(id);
+    if (!state) { if (el) el.style.display = 'none'; continue; }
+    if (!el) { el = document.createElement('div'); el.className = 'npcmark'; npcMarkLayer.appendChild(el); npcMarkEls.set(id, el); }
+    el.className = 'npcmark ' + state;
+    el.textContent = state === 'turnin' ? '?' : '!';
+    tmpV.set(rec.mesh.position.x, 2.9 + Math.sin(performance.now() / 400) * 0.12, rec.mesh.position.z);
+    tmpV.project(camera);
+    if (tmpV.z > 1) { el.style.display = 'none'; continue; }
+    el.style.display = 'block';
+    el.style.left = (tmpV.x * 0.5 + 0.5) * innerWidth + 'px';
+    el.style.top = (-tmpV.y * 0.5 + 0.5) * innerHeight + 'px';
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1715,6 +2205,37 @@ respawnBtn.onclick = () => ws?.send(JSON.stringify({ t: 'respawn' }));
 // ---------------------------------------------------------------------------
 // Main loop
 // ---------------------------------------------------------------------------
+// A handle for automated visual tests (tools/render.mjs). Only attached when
+// the page is opened with ?debug=1, so it never exists in normal play.
+if (location.search.includes('debug')) {
+  window.__bk = {
+    THREE,
+    get scene() { return scene; },
+    get camera() { return camera; },
+    get zone() { return zone; },
+    get quests() { return questData; },
+    get entities() { return entityMeshes; },
+    get npcs() { return npcMeshes; },
+    get self() { return entityMeshes.get(myId); },
+    get camYaw() { return camYaw; },
+    get camDist() { return camDist; },
+    openDialogue: (id) => openDialogue(id),
+    // What is drawn at this normalised screen point, nearest first?
+    pick(nx = 0, ny = 0, limit = 6) {
+      const rc = new THREE.Raycaster();
+      rc.setFromCamera(new THREE.Vector2(nx, ny), camera);
+      return rc.intersectObjects(scene.children, true).slice(0, limit).map(h => ({
+        name: h.object.name || '(unnamed)',
+        type: h.object.type,
+        dist: +h.distance.toFixed(2),
+        point: [+h.point.x.toFixed(1), +h.point.y.toFixed(1), +h.point.z.toFixed(1)],
+        parent: h.object.parent?.name || '',
+        userData: Object.keys(h.object.userData || {}),
+      }));
+    },
+  };
+}
+
 function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(0.05, clock.getDelta());
@@ -1724,6 +2245,8 @@ function animate() {
   updateMarkers(dt);
   updatePoiLabels();
   updateNameplates();
+  updateNpcMarkers();
+  updatePendingTalk();
   // flicker campfires
   scene.traverse(o => { if (o.userData && o.userData.flame) o.userData.flame.scale.y = 0.85 + Math.sin(performance.now() / 90 + o.id) * 0.15; });
   // drifting fireflies / motes
@@ -1746,6 +2269,7 @@ function startGame() {
   document.getElementById('login').style.display = 'none';
   document.getElementById('hud').style.display = 'block';
   document.getElementById('bagBtn').onclick = () => toggleBag();
+  document.getElementById('questBtn').onclick = () => toggleQuests();
   initThree();
 }
 
