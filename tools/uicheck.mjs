@@ -179,9 +179,29 @@ const eq = await page.evaluate(() => {
     slots: cells.length,
     names: cells.map(c => c.dataset.slot),
     labels: cells.map(c => c.querySelector('.lb') && c.querySelector('.lb').textContent).filter(Boolean).length,
-    left: win.querySelectorAll('#dollLeft .eslot').length,
-    right: win.querySelectorAll('#dollRight .eslot').length,
-    bottom: win.querySelectorAll('#dollBottom .eslot').length,
+    figure: !!win.querySelector('#doll .figure'),
+    // Slots must not sit on top of each other now that they are positioned.
+    overlaps: (() => {
+      const bs = cells.map(c => c.getBoundingClientRect());
+      let n = 0;
+      for (let i = 0; i < bs.length; i++) for (let j = i + 1; j < bs.length; j++) {
+        const a = bs[i], b = bs[j];
+        if (a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1) n++;
+      }
+      return n;
+    })(),
+    // Head above hands above feet: the arrangement has to read as a body.
+    anatomy: (() => {
+      const at = (n) => {
+        const el = win.querySelector(`.eslot[data-slot="${n}"]`);
+        return el ? el.getBoundingClientRect() : null;
+      };
+      const helmet = at('helmet'), chest = at('chest'), boots = at('boots');
+      const gloves = at('gloves'), offhand = at('offhand'), necklace = at('necklace');
+      if (!helmet || !chest || !boots || !gloves || !offhand || !necklace) return 'missing';
+      return (helmet.top < necklace.top && necklace.top < chest.top && chest.top < boots.top
+        && gloves.left < chest.left && offhand.left > chest.left) ? 'ok' : 'wrong order';
+    })(),
     stats: document.getElementById('equipStats').textContent.replace(/\s+/g, ' ').trim(),
     width: Math.round(r.width),
     onScreen: r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight,
@@ -194,8 +214,9 @@ check('the slots the brief asked for are present',
   ['helmet', 'shoulders', 'chest', 'gloves', 'legs', 'boots', 'cape', 'necklace',
    'earring_l', 'earring_r', 'ring_l', 'ring_r'].every(n => eq.names.includes(n)),
   eq.names.join(', '));
-check('laid out as a paper doll', eq.left === 6 && eq.right === 6 && eq.bottom === 2,
-  eq.left + ' left / ' + eq.right + ' right / ' + eq.bottom + ' bottom');
+check('a character figure sits behind the slots', eq.figure);
+check('no two slots overlap', eq.overlaps === 0, eq.overlaps + ' overlapping pairs');
+check('slots are arranged as a body', eq.anatomy === 'ok', eq.anatomy);
 check('every slot is labelled', eq.labels === eq.slots, eq.labels + '/' + eq.slots);
 check('no slot spills out of the window', eq.overflowing === 0, eq.overflowing + ' overflowing');
 check('the window fits on screen', eq.onScreen, eq.width + 'px wide');

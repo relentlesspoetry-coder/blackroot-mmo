@@ -7,21 +7,27 @@
 
 // Full equipment layout. `col` and `row` place the slot in the client's
 // paper-doll window; the server itself only cares about the list.
+// Full equipment layout. `x`/`y` place the slot on the paper doll, in a
+// 300x328 stage the client draws the character silhouette behind — helmet at
+// the head, gloves and rings out at the hands, boots at the feet. The server
+// only cares about the list; the coordinates are here so the layout stays one
+// authored thing rather than being half in the client.
+export const DOLL = { w: 300, h: 328, slot: 50 };
 export const SLOT_INFO = {
-  helmet:   { label: 'Helmet',    icon: '\u26d1',  col: 'left',   row: 0 },
-  shoulders:{ label: 'Shoulders', icon: '\ud83c\udff0', col: 'left', row: 1 },
-  chest:    { label: 'Chest',     icon: '\ud83e\udd7c', col: 'left', row: 2 },
-  gloves:   { label: 'Gloves',    icon: '\ud83e\udde4', col: 'left', row: 3 },
-  legs:     { label: 'Legs',      icon: '\ud83d\udc56', col: 'left', row: 4 },
-  boots:    { label: 'Boots',     icon: '\ud83e\udd7e', col: 'left', row: 5 },
-  cape:     { label: 'Cape',      icon: '\ud83e\udde3', col: 'right',  row: 0 },
-  necklace: { label: 'Necklace',  icon: '\ud83d\udcff', col: 'right',  row: 1 },
-  earring_l:{ label: 'L Earring', icon: '\ud83d\udc8e', col: 'right',  row: 2 },
-  earring_r:{ label: 'R Earring', icon: '\ud83d\udc8e', col: 'right',  row: 3 },
-  ring_l:   { label: 'L Ring',    icon: '\ud83d\udc8d', col: 'right',  row: 4 },
-  ring_r:   { label: 'R Ring',    icon: '\ud83d\udc8d', col: 'right',  row: 5 },
-  weapon:   { label: 'Weapon',    icon: '\u2694\ufe0f',  col: 'bottom', row: 0 },
-  offhand:  { label: 'Offhand',   icon: '\ud83d\udee1\ufe0f', col: 'bottom', row: 1 },
+  helmet:   { label: 'Helmet',    x: 125, y: 0 },
+  necklace: { label: 'Necklace',  x: 125, y: 58 },
+  chest:    { label: 'Chest',     x: 125, y: 116 },
+  legs:     { label: 'Legs',      x: 125, y: 190 },
+  boots:    { label: 'Boots',     x: 125, y: 248 },
+  earring_l:{ label: 'L Earring', x: 48,  y: 14 },
+  shoulders:{ label: 'Shoulders', x: 48,  y: 104 },
+  gloves:   { label: 'Gloves',    x: 48,  y: 162 },
+  ring_l:   { label: 'L Ring',    x: 48,  y: 220 },
+  weapon:   { label: 'Weapon',    x: 48,  y: 278 },
+  earring_r:{ label: 'R Earring', x: 202, y: 14 },
+  cape:     { label: 'Cape',      x: 202, y: 104 },
+  ring_r:   { label: 'R Ring',    x: 202, y: 162 },
+  offhand:  { label: 'Offhand',   x: 202, y: 220 },
 };
 export const SLOTS = Object.keys(SLOT_INFO);
 

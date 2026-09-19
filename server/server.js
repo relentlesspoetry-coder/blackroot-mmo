@@ -14,7 +14,7 @@ import {
   PLAYER, ELITE, MONSTER, MONSTER_TEMPLATES,
   maxHpForLevel, xpForLevel, rollPlayerDamage, scaledMonster, rollLoot, mitigate, REGEN,
 } from './balance.js';
-import { ITEMS, SLOTS, SLOT_INFO, itemDef, slotOf, valueOf, equipStats, slotsFor, emptySlots } from './items.js';
+import { ITEMS, SLOTS, SLOT_INFO, DOLL, itemDef, slotOf, valueOf, equipStats, slotsFor, emptySlots } from './items.js';
 import {
   dist2, closestOnPolyline, pointInPoly, polyCentroid, generateTrees, generateScatter, generateHanging,
 } from './worldgen.js';
@@ -280,7 +280,7 @@ function pickupItem(p, itemId) {
 
 function sendBag(p) {
   send(p.ws, { t: 'bag', items: p.inventory, gold: p.gold,
-    equipment: p.equipment, stats: equipStats(p.equipment), slots: SLOT_INFO });
+    equipment: p.equipment, stats: equipStats(p.equipment), slots: SLOT_INFO, doll: DOLL });
   // A 'collect' objective reads straight off the inventory, so any bag change
   // can complete (or un-complete) a quest.
   sendQuests(p);
