@@ -1636,7 +1636,10 @@ function ensureMesh(ent, kind) {
   let rec = entityMeshes.get(ent.id);
   if (!rec) {
     const mesh = kind === 'player' ? makePlayerMesh(ent.id === myId) : makeMonsterMesh(ent.type, ent.elite);
-    mesh.userData = { id: ent.id, kind, type: ent.type };
+    // Merge, don't replace: makePlayer/MonsterMesh already stored the rig and
+    // faceOffset on userData, and a fresh object would wipe them out (which
+    // silently disabled all procedural animation).
+    Object.assign(mesh.userData, { id: ent.id, kind, type: ent.type });
     scene.add(mesh);
     // clickable pieces carry the id
     mesh.traverse(o => { if (o.isMesh) o.userData.pickId = ent.id; o.userData.pickKind = kind; });
@@ -1686,8 +1689,12 @@ function buildRig(wrap, style) {
   const rig = {
     style, body,
     home: body.position.clone(),
+    baseScale: body.scale.clone(),
     legs: [], club: null,
     gait: Math.random() * Math.PI * 2, amp: 0, speed: 0, atk: 0, deathT: 0,
+    // Chicken idle behaviour: a slow breathing phase and a peck it fires on a
+    // random cooldown so a flock never pecks in unison.
+    breath: Math.random() * Math.PI * 2, peckT: 0, peckCd: 1 + Math.random() * 3,
   };
   // Parts produced by tools/rig_split.mjs. Whatever exists gets driven; a model
   // without them still animates on the body alone.
@@ -1731,6 +1738,7 @@ function animateEntity(rec, e, kind, dt) {
     b.rotation.x = -1.5 * t;
     b.rotation.z = 0;
     b.position.set(rig.home.x, rig.home.y - 0.15 * t, rig.home.z);
+    if (rig.baseScale) b.scale.copy(rig.baseScale);
     return;
   }
   if (rig.deathT > 0) { rig.deathT = 0; b.rotation.set(0, 0, 0); b.position.copy(rig.home); }
@@ -1774,6 +1782,39 @@ function animateEntity(rec, e, kind, dt) {
     b.position.z = rig.home.z - punch * 0.6;
     b.rotation.x = -g.lean * a - punch * 0.4;
     b.rotation.z = Math.sin(rig.gait * 1.1) * g.roll * (0.3 + 0.7 * a);
+    return;
+  }
+  if (rig.style === 'bird') {
+    // A chicken: head-bob waddle when walking, a beak-to-ground peck and a
+    // gentle breathing swell when it stands still. The model is a single mesh,
+    // so all three are driven on the whole body about its own origin (-Z fwd).
+    rig.breath += dt * 2.2;
+
+    // Peck: run one down-and-up dip whenever a scheduled idle peck comes due,
+    // or when the server reports an attack. Movement cancels a pending peck.
+    if (rig.atk > 0) { rig.peckT = Math.max(rig.peckT, 0.45); rig.atk = 0; }
+    if (rig.peckT > 0) {
+      rig.peckT = Math.max(0, rig.peckT - dt);
+    } else if (a < 0.35) {
+      rig.peckCd -= dt;
+      if (rig.peckCd <= 0) { rig.peckT = 0.45; rig.peckCd = 1.4 + Math.random() * 3.2; }
+    }
+    const pw = rig.peckT > 0 ? Math.sin(Math.PI * (1 - rig.peckT / 0.45)) : 0; // 0→1→0
+
+    // Walk: quick vertical step-bob, a fore/aft head thrust and a side waddle.
+    const step = Math.sin(rig.gait);
+    const bob = Math.abs(step) * g.bob * a;
+    const thrust = Math.sin(rig.gait - Math.PI / 2) * 0.06 * a; // head leads the step
+    const breathe = (1 - a) * (Math.sin(rig.breath) * 0.5 + 0.5); // 0..1 idle only
+
+    b.position.y = rig.home.y + bob - pw * 0.16;               // dip beak on a peck
+    b.position.z = rig.home.z + thrust + pw * 0.10 - punch * 0.4;
+    b.rotation.x = -0.05 * a - pw * 0.95;                       // nose down to peck
+    b.rotation.y = Math.sin(rig.gait) * 0.12 * a;               // waddle turn
+    b.rotation.z = Math.sin(rig.gait * 0.5) * g.roll * a;
+    // Breathing: subtle vertical swell that keeps volume roughly constant.
+    const e = breathe * 0.05 * (1 - pw);
+    b.scale.set(rig.baseScale.x * (1 - e * 0.5), rig.baseScale.y * (1 + e), rig.baseScale.z * (1 - e * 0.5));
     return;
   }
   // The model sits inside a group that carries the yaw, so -Z is forward here.
