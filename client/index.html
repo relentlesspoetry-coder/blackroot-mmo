@@ -747,16 +747,58 @@ function buildMountains(poly) {
         let nx = x - cen.x, nz = z - cen.z, nl = Math.hypot(nx, nz) || 1; nx /= nl; nz /= nl;
         const height = ring === 0 ? 15 + rng() * 12 : 26 + rng() * 22;
         const radius = ring === 0 ? 13 + rng() * 7 : 17 + rng() * 11;
-        // The front row's foot overlaps INWARD onto the grass, to ~BOUNDARY_INSET
-        // units inside the border: the feet sit on the ground (no see-through
-        // gap) and the collision inset stops the player right at the rock. The
-        // back row sits behind for a layered silhouette.
-        const o = (ring === 0 ? radius - 9 : radius) + rng() * 2;
+        // The peaks sit OUTSIDE the boundary, behind the continuous rock wall
+        // (buildMountainWall), rising above it for a layered mountain silhouette.
+        const o = (ring === 0 ? radius + 2 : radius + 14) + rng() * 3;
         makePeak(x + nx * o, z + nz * o, height, radius);
       }
     }
   }
   scene.add(group);
+}
+
+// A continuous jagged rock wall whose foot sits exactly on the boundary line, so
+// the player (stopped at the boundary) always meets solid rock — no gaps between
+// the discrete peaks, and no strip of grass before the wall. The cone peaks from
+// buildMountains rise behind it for a layered silhouette.
+function buildMountainWall(poly) {
+  const rng = mulberry32(555);
+  const N = poly.length;
+  let cxs = 0, czs = 0; for (const p of poly) { cxs += p.x; czs += p.z; }
+  const cen = { x: cxs / N, z: czs / N };
+  const palette = [[0.42, 0.44, 0.47], [0.36, 0.37, 0.34], [0.46, 0.42, 0.37], [0.33, 0.35, 0.31], [0.4, 0.4, 0.42]];
+  const V = poly.map(p => { let dx = p.x - cen.x, dz = p.z - cen.z, d = Math.hypot(dx, dz) || 1; return { x: p.x, z: p.z, nx: dx / d, nz: dz / d, h: 16 + rng() * 16, out: 7 + rng() * 7 }; });
+  const positions = [], colors = [];
+  const c = new THREE.Color();
+  const tri = (a, b, cc) => { const col = palette[Math.floor(rng() * palette.length)]; for (const v of [a, b, cc]) { positions.push(v[0], v[1], v[2]); colors.push(col[0], col[1], col[2]); } };
+  for (let i = 0; i < N; i++) {
+    const A = V[i], B = V[(i + 1) % N];
+    const elen = Math.hypot(B.x - A.x, B.z - A.z);
+    const SEG = Math.max(3, Math.round(elen / 5)); // ~5m facets for a craggy ridge
+    let prevFoot = null, prevTop = null, prevMid = null;
+    for (let s = 0; s <= SEG; s++) {
+      const t = s / SEG;
+      const fx = A.x + (B.x - A.x) * t, fz = A.z + (B.z - A.z) * t;
+      let nx = A.nx + (B.nx - A.nx) * t, nz = A.nz + (B.nz - A.nz) * t; const nl = Math.hypot(nx, nz) || 1; nx /= nl; nz /= nl;
+      const h = (A.h + (B.h - A.h) * t) + (rng() - 0.5) * 14;
+      const out = (A.out + (B.out - A.out) * t) + rng() * 5;
+      const foot = [fx, 0, fz];                                          // on the boundary line
+      // A mid ledge kicked out at a jittered height breaks up the flat face.
+      const mid = [fx + nx * out * 0.5, h * (0.35 + rng() * 0.25), fz + nz * out * 0.5];
+      const top = [fx + nx * out, h, fz + nz * out];                     // pushed out and raised
+      if (s > 0) {
+        tri(prevFoot, foot, mid); tri(prevFoot, mid, prevMid);          // lower band
+        tri(prevMid, mid, top); tri(prevMid, top, prevTop);             // upper band
+      }
+      prevFoot = foot; prevTop = top; prevMid = mid;
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  g.computeVertexNormals();
+  const wall = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: true, side: THREE.DoubleSide }));
+  wall.castShadow = true; wall.receiveShadow = true; scene.add(wall);
 }
 
 function ribbon(points, width, y, color, opacity) {
@@ -803,8 +845,9 @@ function buildZone() {
       wall.castShadow = wall.receiveShadow = enclosed;
       wall.userData.camBlocker = true; camBlockers.push(wall); scene.add(wall);
     }
-    // Open-air zones get a mountain range ringing the boundary.
-    if (!enclosed) buildMountains(poly);
+    // Open-air zones get a continuous rock wall on the boundary line (so the
+    // player always stops at solid rock) plus a peak range behind it.
+    if (!enclosed) { buildMountainWall(poly); buildMountains(poly); }
   } else {
     for (const [px, pz, sx, sz] of [
       [cx, b.minZ, W, 1.5], [cx, b.maxZ, W, 1.5], [b.minX, cz, 1.5, D], [b.maxX, cz, 1.5, D],
@@ -2837,7 +2880,20 @@ function showHit(m) {
   el.style.left = x + 'px'; el.style.top = y + 'px';
   document.getElementById('toast').appendChild(el);
   setTimeout(() => el.remove(), 800);
-  if (m.dmg > 0) rec.mesh.traverse(o => { if (o.isMesh && o.material && o.material.color) { const c = o.material.color.clone(); o.material.color.set(0xffffff); setTimeout(() => o.material.color.copy(c), 90); } });
+  if (m.dmg > 0) {
+    // Flash white per unique material, capturing each original colour exactly
+    // once — split limbs share a material across several meshes, so a naive
+    // per-mesh flash would read the already-white colour as the "original" and
+    // leave the model stuck white.
+    const seen = new Set(), restore = [];
+    rec.mesh.traverse(o => {
+      if (!o.isMesh || !o.material) return;
+      for (const mm of (Array.isArray(o.material) ? o.material : [o.material])) {
+        if (mm.color && !seen.has(mm)) { seen.add(mm); restore.push([mm, mm.color.clone()]); mm.color.set(0xffffff); }
+      }
+    });
+    setTimeout(() => { for (const [mm, col] of restore) mm.color.copy(col); }, 90);
+  }
 }
 
 function flyText(text, cls) {
