@@ -10,6 +10,15 @@ import { fileURLToPath } from 'url';
 import { WebSocketServer } from 'ws';
 import { darkwoods } from './zones/darkwoods.js';
 import { hiddencave } from './zones/hiddencave.js';
+import {
+  PLAYER, ELITE, MONSTER, MONSTER_TEMPLATES,
+  maxHpForLevel, xpForLevel, rollPlayerDamage, scaledMonster, rollLoot, mitigate, REGEN,
+} from './balance.js';
+import { ITEMS, SLOTS, itemDef, slotOf, valueOf, equipStats } from './items.js';
+import {
+  QUESTS, questPayload, questProgress, canStart, recordKill, recordReach,
+  consumeQuestItems,
+} from './quests.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLIENT_DIR = path.join(__dirname, '..', 'client');
@@ -25,59 +34,13 @@ function zoneOf(ent) { return ZONES[ent.zoneId]; }
 const TICK_HZ = 20;
 const SNAPSHOT_HZ = 12;
 const DT = 1 / TICK_HZ;
-const PLAYER_SPEED = 8;
-const PLAYER_RADIUS = 0.6;
-const ATTACK_RANGE = 3.0;
-const ATTACK_COOLDOWN = 0.8;
-const PLAYER_ATTACK_DMG = () => 6 + Math.floor(Math.random() * 5); // 6-10
-const RESPAWN_TIME = 5;
-
-// Bestiary. `passive` mobs never initiate combat (classic cows/chickens);
-// `respawn` is seconds; `loot` is a weighted table rolled on death (an entry
-// with item 'Coins' drops a coin pile; item null = nothing that roll).
-const MONSTER_TEMPLATES = {
-  goblin: { name: 'Goblin', hp: 35, dmg: [2, 5], speed: 4.5, aggro: 12, xp: 28, respawn: 25, rolls: 1,
-    loot: [ { item: 'Coins', min: 5, max: 20, w: 55 }, { item: 'Bronze Dagger', w: 10 }, { item: 'Goblin Mail', w: 6 }, { item: null, w: 40 } ] },
-  bandit: { name: 'Bandit', hp: 55, dmg: [4, 9], speed: 5.5, aggro: 15, xp: 48, respawn: 35, rolls: 1,
-    loot: [ { item: 'Coins', min: 15, max: 60, w: 55 }, { item: 'Leather Body', w: 10 }, { item: 'Iron Sword', w: 7 }, { item: 'Kebab', w: 12 }, { item: null, w: 30 } ] },
-  guard: { name: 'Hill Ogre', hp: 130, dmg: [8, 15], speed: 4.0, aggro: 14, xp: 130, respawn: 55, rolls: 2,
-    loot: [ { item: 'Coins', min: 40, max: 120, w: 55 }, { item: 'Ogre Club', w: 8 }, { item: 'Big Bones', w: 30 }, { item: null, w: 25 } ] },
-  spider: { name: 'Cave Spider', hp: 40, dmg: [3, 7], speed: 5.5, aggro: 13, xp: 45, respawn: 35, rolls: 1,
-    loot: [ { item: 'Coins', min: 5, max: 25, w: 45 }, { item: 'Spider Silk', w: 22 }, { item: 'Venom Sac', w: 12 }, { item: null, w: 30 } ] },
-  cow: { name: 'Cow', hp: 40, dmg: [1, 3], speed: 3, aggro: 0, xp: 20, respawn: 25, passive: true, rolls: 2,
-    loot: [ { item: 'Cowhide', w: 70 }, { item: 'Raw Beef', w: 60 }, { item: 'Coins', min: 1, max: 8, w: 20 } ] },
-  chicken: { name: 'Chicken', hp: 12, dmg: [1, 1], speed: 3, aggro: 0, xp: 8, respawn: 18, passive: true, rolls: 2,
-    loot: [ { item: 'Feather', min: 5, max: 15, w: 80 }, { item: 'Raw Chicken', w: 60 }, { item: 'Bones', w: 80 } ] },
-};
-
-function rollLoot(type) {
-  const t = MONSTER_TEMPLATES[type]; const drops = [];
-  const rolls = t.rolls || 1;
-  for (let n = 0; n < rolls; n++) {
-    let total = 0; for (const e of t.loot) total += e.w;
-    let r = Math.random() * total, pick = null;
-    for (const e of t.loot) { r -= e.w; if (r <= 0) { pick = e; break; } }
-    if (!pick || pick.item == null) continue;
-    const qty = pick.min != null ? Math.floor(rand(pick.min, pick.max + 1)) : 1;
-    drops.push({ item: pick.item, qty });
-  }
-  return drops;
-}
-
-function xpForLevel(level) { return Math.floor(50 * Math.pow(level, 1.6)); }
-function maxHpForLevel(level) { return 80 + (level - 1) * 20; }
-
-// Monster stat scaling by level (level 1 = base template).
-function scaledMonster(type, level) {
-  const t = MONSTER_TEMPLATES[type];
-  const f = 1 + 0.28 * (level - 1);
-  return {
-    hp: Math.round(t.hp * f),
-    dmg: [Math.round(t.dmg[0] * f), Math.round(t.dmg[1] * f)],
-    speed: t.speed, aggro: t.aggro,
-    xp: Math.round(t.xp * (1 + 0.35 * (level - 1))),
-  };
-}
+const PLAYER_SPEED = PLAYER.speed;
+const PLAYER_RADIUS = PLAYER.radius;
+const ATTACK_RANGE = PLAYER.attackRange;
+const ATTACK_COOLDOWN = PLAYER.attackCooldown;
+const RESPAWN_TIME = PLAYER.respawnTime;
+const QUEST_REACH_RADIUS = 9;   // how close you must stand to satisfy a 'reach'
+const NPC_TALK_RADIUS = 10;     // how close you must stand to accept/turn in
 
 // ---------------------------------------------------------------------------
 // Geometry helpers
@@ -209,26 +172,40 @@ let nextId = 1;
 const players = new Map();
 const monsters = new Map();
 
-function spawnInRegion(zone, region) {
-  for (let i = 0; i < 30; i++) {
+function spawnInRegion(zone, region, opts = {}) {
+  // Aggressive mobs are kept out of the ring around the zone's arrival point,
+  // so a fresh character is never in combat before they can look around.
+  const keepOut = opts.passive ? 0 : (zone.safeSpawnRadius || 0);
+  for (let i = 0; i < 40; i++) {
     const a = rand(0, Math.PI * 2), rr = Math.sqrt(Math.random()) * region.r;
     const x = region.cx + Math.cos(a) * rr, z = region.cz + Math.sin(a) * rr;
     const b = zone.bounds;
     if (x < b.minX + 3 || x > b.maxX - 3 || z < b.minZ + 3 || z > b.maxZ - 3) continue;
     if (zone.boundary && !pointInPoly(x, z, zone.boundary)) continue;
     if (inSafeZone(zone, x, z)) continue;
+    if (keepOut && dist2(x, z, zone.spawn.x, zone.spawn.z) < keepOut * keepOut) continue;
     if ((zone.rocks || []).some(o => dist2(x, z, o.x, o.z) < (o.r + 2) ** 2)) continue;
     if (zone.river && closestOnPolyline(x, z, zone.river.points).dist < zone.river.width / 2 + 1) continue;
     return { x, z };
   }
-  return { x: region.cx, z: region.cz };
+  // Fallback: the region centre, pushed clear of the keep-out ring if needed.
+  let fx = region.cx, fz = region.cz;
+  if (keepOut) {
+    const dx = fx - zone.spawn.x, dz = fz - zone.spawn.z, d = Math.hypot(dx, dz);
+    if (d < keepOut) {
+      const ux = d > 1e-4 ? dx / d : 1, uz = d > 1e-4 ? dz / d : 0;
+      fx = zone.spawn.x + ux * keepOut; fz = zone.spawn.z + uz * keepOut;
+    }
+  }
+  return { x: fx, z: fz };
 }
 
 function makeMonster(spec) {
   // spec: {zoneId, type, level, region:{cx,cz,r}, elite?, name?}
   const zone = ZONES[spec.zoneId];
   const stats = scaledMonster(spec.type, spec.level);
-  const pos = spawnInRegion(zone, spec.region);
+  const passive = !!MONSTER_TEMPLATES[spec.type].passive;
+  const pos = spawnInRegion(zone, spec.region, { passive });
   const id = nextId++;
   const m = {
     id, kind: 'monster', zoneId: spec.zoneId, type: spec.type,
@@ -260,17 +237,18 @@ function populate() {
 }
 
 function populateElite(zoneId, e) {
-  {
-    const elite = makeMonster({
-      zoneId, type: e.type, level: e.level, name: e.name, elite: true,
-      region: { cx: e.cx, cz: e.cz, r: 3 },
-    });
-    // Elites are tankier and hit harder than a same-level normal.
-    elite.maxHp = Math.round(elite.maxHp * 3.5); elite.hp = elite.maxHp;
-    elite.dmg = [Math.round(elite.dmg[0] * 1.3), Math.round(elite.dmg[1] * 1.3)];
-    elite.xp = Math.round(elite.xp * 4);
-    elite.aggro = 10; // shorter leash; guards its circle
-  }
+  const elite = makeMonster({
+    zoneId, type: e.type, level: e.level, name: e.name, elite: true,
+    region: { cx: e.cx, cz: e.cz, r: 3 },
+  });
+  // Elites are tankier and hit harder than a same-level normal. A zone entry
+  // may override the multipliers when the base creature is unusually squishy
+  // (the Broodmother would otherwise die faster than a Hill Ogre).
+  const hpM = e.hpMult || ELITE.hp, dmgM = e.dmgMult || ELITE.dmg;
+  elite.maxHp = Math.round(elite.maxHp * hpM); elite.hp = elite.maxHp;
+  elite.dmg = [Math.round(elite.dmg[0] * dmgM), Math.round(elite.dmg[1] * dmgM)];
+  elite.xp = Math.round(elite.xp * ELITE.xp);
+  elite.aggro = 10; // shorter leash; guards its circle
 }
 populate();
 
@@ -304,7 +282,10 @@ function killMonster(m, killer) {
   m.alive = false; m.state = 'dead';
   m.respawnTimer = m.elite ? Math.max(90, m.respawn * 2) : m.respawn;
   m.hp = 0;
-  if (killer) grantXp(killer, m.xp);
+  if (killer) {
+    grantXp(killer, m.xp);
+    notifyQuestProgress(killer, recordKill(killer, m));
+  }
 
   // Roll the loot table and drop items on the ground where it fell.
   const drops = rollLoot(m.type);
@@ -337,14 +318,144 @@ function pickupItem(p, itemId) {
   sendBag(p);
 }
 
-function sendBag(p) { send(p.ws, { t: 'bag', items: p.inventory, gold: p.gold }); }
+function sendBag(p) {
+  send(p.ws, { t: 'bag', items: p.inventory, gold: p.gold,
+    equipment: p.equipment, stats: equipStats(p.equipment) });
+  // A 'collect' objective reads straight off the inventory, so any bag change
+  // can complete (or un-complete) a quest.
+  sendQuests(p);
+}
+
+// ---------------------------------------------------------------------------
+// Equipment
+// ---------------------------------------------------------------------------
+function equipItem(p, name) {
+  const def = itemDef(name);
+  const slot = slotOf(name);
+  if (!def || !slot) return;
+  const idx = p.inventory.indexOf(name);
+  if (idx < 0) return;                                  // must actually hold it
+  if ((def.level || 1) > p.level) {
+    send(p.ws, { t: 'event', kind: 'notice', text: `You need level ${def.level} to use the ${name}.` });
+    return;
+  }
+  p.inventory.splice(idx, 1);
+  const previous = p.equipment[slot];
+  if (previous) p.inventory.push(previous);             // swap, never destroy
+  p.equipment[slot] = name;
+  send(p.ws, { t: 'event', kind: 'equip', slot, item: name });
+  sendBag(p);
+}
+
+function unequipItem(p, slot) {
+  if (!SLOTS.includes(slot)) return;
+  const name = p.equipment[slot];
+  if (!name) return;
+  p.equipment[slot] = null;
+  p.inventory.push(name);
+  send(p.ws, { t: 'event', kind: 'unequip', slot, item: name });
+  sendBag(p);
+}
+
+// Sell to a merchant NPC you're standing next to. Equipped gear is never sold.
+function sellItem(p, name) {
+  const merchant = (zoneOf(p).npcs || []).find(n => n.trade);
+  if (!merchant) return;
+  if (dist2(p.x, p.z, merchant.x, merchant.z) > NPC_TALK_RADIUS * NPC_TALK_RADIUS) return;
+  const idx = p.inventory.indexOf(name);
+  if (idx < 0) return;
+  p.inventory.splice(idx, 1);
+  const paid = Math.max(1, Math.round(valueOf(name) * 0.4)); // merchants buy low
+  p.gold += paid;
+  send(p.ws, { t: 'event', kind: 'sold', text: `Sold ${name} for ${paid} gold.`, gold: p.gold });
+  sendBag(p);
+}
+
+// ---------------------------------------------------------------------------
+// Quests
+// ---------------------------------------------------------------------------
+function sendQuests(p) {
+  const payload = questPayload(p);
+  send(p.ws, payload);
+  // Announce "ready to hand in" exactly once per quest.
+  for (const a of payload.active) {
+    if (a.complete && !p.questAnnounced.has(a.id)) {
+      p.questAnnounced.add(a.id);
+      send(p.ws, { t: 'event', kind: 'questready', id: a.id, name: a.name });
+    } else if (!a.complete) p.questAnnounced.delete(a.id);
+  }
+}
+
+function notifyQuestProgress(p, ids) {
+  if (!ids || !ids.length) return;
+  for (const id of new Set(ids)) {
+    const q = QUESTS[id]; if (!q) continue;
+    const pr = questProgress(p, q);
+    const line = pr.objectives.filter(o => !o.done || o.need > 1)
+      .map(o => `${o.label} ${o.have}/${o.need}`).join(', ');
+    send(p.ws, { t: 'event', kind: 'questprogress', id, name: q.name, text: line });
+  }
+  sendQuests(p);
+}
+
+function npcFor(zone, giverId) { return (zone.npcs || []).find(n => n.id === giverId); }
+
+// The giver must actually be standing next to you — the client asking nicely
+// isn't enough.
+function nearGiver(p, q) {
+  const npc = npcFor(zoneOf(p), q.giver);
+  if (!npc) return false;
+  return dist2(p.x, p.z, npc.x, npc.z) <= NPC_TALK_RADIUS * NPC_TALK_RADIUS;
+}
+
+function acceptQuest(p, id) {
+  const q = QUESTS[id];
+  if (!q || !canStart(p, q) || !nearGiver(p, q)) return;
+  p.quests.set(id, true);
+  p.questKills[id] = p.questKills[id] || {};
+  send(p.ws, { t: 'event', kind: 'questaccepted', id, name: q.name });
+  systemChat(`${p.name} started "${q.name}".`);
+  sendQuests(p);
+}
+
+function turnInQuest(p, id) {
+  const q = QUESTS[id];
+  if (!q || !p.quests.has(id) || !nearGiver(p, q)) return;
+  if (!questProgress(p, q).complete) return;
+
+  consumeQuestItems(p, q);
+  p.quests.delete(id);
+  p.questDone.add(id);
+  p.questAnnounced.delete(id);
+  delete p.questKills[id];
+
+  const r = q.reward || {};
+  if (r.gold) p.gold += r.gold;
+  for (const it of (r.items || [])) p.inventory.push(it);
+  send(p.ws, { t: 'event', kind: 'questcomplete', id, name: q.name,
+    text: q.done, xp: r.xp || 0, gold: r.gold || 0, items: r.items || [] });
+  if (r.xp) grantXp(p, r.xp);          // may level the player up
+  systemChat(`${p.name} completed "${q.name}".`);
+  sendBag(p);                           // also re-sends the quest payload
+}
+
+// Called each tick: satisfy 'reach' objectives by standing near the POI.
+function checkQuestReach(p) {
+  if (!p.quests.size) return;
+  const zone = zoneOf(p);
+  for (const poi of zone.pois) {
+    if (dist2(p.x, p.z, poi.x, poi.z) > QUEST_REACH_RADIUS * QUEST_REACH_RADIUS) continue;
+    const moved = recordReach(p, zone.id, poi.key);
+    if (moved.length) notifyQuestProgress(p, moved);
+  }
+}
 
 // Called from the movement state machine once the player is in melee range.
 function doPlayerAttack(p, m) {
   if (p.atkTimer > 0) return;
   p.atkTimer = ATTACK_COOLDOWN;
   m.state = 'combat'; m.targetId = p.id; // monster fights back even on a miss
-  const dmg = Math.random() < 0.85 ? PLAYER_ATTACK_DMG() : 0; // 15% miss
+  const dmg = rollPlayerDamage(p.level, equipStats(p.equipment).atk); // 0 on a miss
   if (dmg > 0) m.hp -= dmg;
   broadcast({ t: 'event', kind: 'hit', by: p.id, target: m.id, dmg, targetKind: 'monster' });
   if (m.hp <= 0) killMonster(m, p);
@@ -358,7 +469,7 @@ function stepMonster(m) {
   if (!m.alive) {
     m.respawnTimer -= DT;
     if (m.respawnTimer <= 0) {
-      const pos = spawnInRegion(zone, m.spec.region);
+      const pos = spawnInRegion(zone, m.spec.region, { passive: m.passive });
       m.x = pos.x; m.z = pos.z; m.home = { x: pos.x, z: pos.z };
       m.hp = m.maxHp; m.alive = true; m.state = 'idle'; m.targetId = null; m.atkTimer = 0;
     }
@@ -380,7 +491,10 @@ function stepMonster(m) {
 
   if (target) {
     const d = Math.hypot(target.x - m.x, target.z - m.z);
-    const leash = (m.elite ? 14 : m.aggro * 2.2);
+    // Passive mobs have aggro 0, which used to give them a zero-length leash:
+    // one step from home and they reset to full health, so a cow could almost
+    // never be killed. Every mob gets a real minimum.
+    const leash = m.elite ? ELITE.leash : Math.max(12, m.aggro * 2.2);
     if (dist2(m.x, m.z, m.home.x, m.home.z) > leash ** 2 || inSafeZone(zone, target.x, target.z)) {
       m.targetId = null; m.state = 'return';
     } else {
@@ -390,8 +504,9 @@ function stepMonster(m) {
         m.z += Math.cos(m.yaw) * m.speed * DT;
       } else if (m.atkTimer <= 0) {
         m.atkTimer = 1.2;
-        const dmg = Math.random() < 0.8 ? Math.floor(rand(m.dmg[0], m.dmg[1] + 1)) : 0; // 20% miss
-        if (dmg > 0) target.hp -= dmg;
+        const raw = Math.random() < MONSTER.hitChance ? Math.floor(rand(m.dmg[0], m.dmg[1] + 1)) : 0;
+        const dmg = mitigate(raw, equipStats(target.equipment).def); // armour, min 1
+        if (dmg > 0) { target.hp -= dmg; target.combatTimer = REGEN.combatLockout; }
         broadcast({ t: 'event', kind: 'hit', by: m.id, target: target.id, dmg, targetKind: 'player' });
         if (target.hp <= 0) {
           target.hp = 0; target.alive = false; target.deathTimer = RESPAWN_TIME;
@@ -484,6 +599,8 @@ function stepPlayer(p) {
     }
   }
 
+  checkQuestReach(p);
+
   const safe = inSafeZone(zone, p.x, p.z);
 
   // Environmental hazards (damage over time), disabled inside safe zones.
@@ -497,6 +614,7 @@ function stepPlayer(p) {
       if (p.hazardAccum >= 1) {
         const d = Math.floor(p.hazardAccum); p.hazardAccum -= d;
         p.hp -= d;
+        p.combatTimer = REGEN.combatLockout;
         send(p.ws, { t: 'event', kind: 'hazard', dmg: d, hazard: inHazard.type });
         if (p.hp <= 0) {
           p.hp = 0; p.alive = false; p.deathTimer = RESPAWN_TIME;
@@ -507,8 +625,11 @@ function stepPlayer(p) {
     } else p.hazardAccum = 0;
   }
 
-  // Regen: faster inside safe zones.
-  if (p.hp < p.maxHp) {
+  // Regen: faster inside safe zones, and locked out for a few seconds after
+  // taking a hit. Without the lockout it ticked all the way through a fight and
+  // quietly paid for roughly a third of the incoming damage.
+  p.combatTimer = Math.max(0, (p.combatTimer || 0) - DT);
+  if (p.hp < p.maxHp && (safe || p.combatTimer <= 0)) {
     p.regen += DT;
     const rate = safe ? 0.35 : 1.0; // seconds per tick of healing
     if (p.regen >= rate) { p.regen = 0; p.hp = Math.min(p.maxHp, p.hp + (safe ? 6 : 2)); }
@@ -531,6 +652,7 @@ function transitionPlayer(p, toId, spawn) {
   p.moveTo = null; p.combatId = null; p.pendingChest = null; p.pendingPickup = null;
   p.portalCd = 2; // don't immediately re-trigger the return portal
   send(p.ws, { t: 'transition', zone: zoneForClient(to) });
+  sendQuests(p); // giver markers are per-zone
   systemChat(`${p.name} entered ${to.name}.`);
 }
 
@@ -548,6 +670,9 @@ function openChest(p, chestId) {
   p.inventory.push(item);
   send(p.ws, { t: 'event', kind: 'chest', id: chestId, text: `${gold} gold and a ${item}`, gold: p.gold });
   sendBag(p);
+  // A 'chest' objective reads p.openedChests, so just re-announce progress.
+  notifyQuestProgress(p, [...p.quests.keys()].filter(id =>
+    QUESTS[id].objectives.some(o => o.type === 'chest' && o.zone === p.zoneId && o.chest === chestId)));
 }
 
 // World clock + weather (shared by all players).
@@ -627,10 +752,11 @@ const httpServer = http.createServer((req, res) => {
 
 function zoneForClient(zone) {
   return {
-    id: zone.id, name: zone.name, subtitle: zone.subtitle,
+    id: zone.id, name: zone.name, subtitle: zone.subtitle, spawn: zone.spawn,
     bounds: zone.bounds, boundary: zone.boundary, pois: zone.pois, path: zone.path, river: zone.river,
     rocks: zone.rocks, hazards: zone.hazards, pools: zone.pools, chests: zone.chests,
     env: zone.env, enclosed: !!zone.enclosed, ceilingY: zone.ceilingY,
+    npcs: zone.npcs || [],
     trees: zone._trees || [],
   };
 }
@@ -651,13 +777,16 @@ wss.on('connection', (ws) => {
           id, ws, kind: 'player', name, zoneId: START_ZONE,
           x: start.spawn.x, z: start.spawn.z, yaw: start.spawn.yaw, moving: false,
           level: 1, xp: 0, gold: 0, inventory: [], openedChests: new Set(),
+          equipment: { weapon: null, body: null, trinket: null },
+          quests: new Map(), questDone: new Set(), questKills: {},
+          questFlags: new Set(), questAnnounced: new Set(),
           maxHp: maxHpForLevel(1), hp: maxHpForLevel(1), alive: true,
-          atkTimer: 0, regen: 0, deathTimer: 0, portalCd: 0, inSafe: true,
+          atkTimer: 0, regen: 0, combatTimer: 0, deathTimer: 0, portalCd: 0, inSafe: true,
           moveTo: null, combatId: null, pendingChest: null, pendingPickup: null, input: { f: 0, r: 0, yaw: 0 },
         };
         players.set(id, player);
         send(ws, { t: 'welcome', id, tickRate: SNAPSHOT_HZ, zone: zoneForClient(start) });
-        sendBag(player);
+        sendBag(player); // sends the quest payload too
         systemChat(`${name} has entered ${start.name}.`);
         break;
       }
@@ -695,6 +824,12 @@ wss.on('connection', (ws) => {
         player.pendingPickup = Number(msg.id); player.combatId = null; player.moveTo = null; player.pendingChest = null;
         break;
       }
+      case 'equip': if (player && player.alive) equipItem(player, String(msg.item || '')); break;
+      case 'unequip': if (player && player.alive) unequipItem(player, String(msg.slot || '')); break;
+      case 'sell': if (player && player.alive) sellItem(player, String(msg.item || '')); break;
+      case 'questaccept': if (player && player.alive) acceptQuest(player, String(msg.id || '')); break;
+      case 'questturnin': if (player && player.alive) turnInQuest(player, String(msg.id || '')); break;
+      case 'questsync': if (player) sendQuests(player); break;
       case 'respawn': if (player && !player.alive && player.deathTimer <= 0) respawnPlayer(player); break;
       case 'chat': {
         if (!player) return;
