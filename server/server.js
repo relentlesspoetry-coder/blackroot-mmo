@@ -101,14 +101,21 @@ function resolveCollision(zone, ent, radius) {
     if (d < min && d > 1e-4) { ent.x = t.x + (dx / d) * min; ent.z = t.z + (dz / d) * min; }
   }
 
-  // Organic boundary: keep the entity inside the zone's polygon shape.
+  // Organic boundary: keep the entity inside the zone's polygon shape, and at
+  // least `boundaryInset` from the edge so it stops at the mountain range that
+  // rings the border rather than walking into the rock.
   if (zone.boundary) {
-    if (!pointInPoly(ent.x, ent.z, zone.boundary)) {
+    const inset = zone.boundaryInset || 0;
+    const inside = pointInPoly(ent.x, ent.z, zone.boundary);
+    if (!inside || inset > 0) {
       const closed = zone.boundary.concat([zone.boundary[0]]);
       const c = closestOnPolyline(ent.x, ent.z, closed);
-      if (!zone._cen) zone._cen = polyCentroid(zone.boundary);
-      let dx = zone._cen.x - c.x, dz = zone._cen.z - c.z, d = Math.hypot(dx, dz) || 1;
-      ent.x = c.x + (dx / d) * radius; ent.z = c.z + (dz / d) * radius;
+      if (!inside || c.dist < inset) {
+        if (!zone._cen) zone._cen = polyCentroid(zone.boundary);
+        let dx = zone._cen.x - c.x, dz = zone._cen.z - c.z, d = Math.hypot(dx, dz) || 1;
+        const push = Math.max(inset, radius);
+        ent.x = c.x + (dx / d) * push; ent.z = c.z + (dz / d) * push;
+      }
     }
   }
 }

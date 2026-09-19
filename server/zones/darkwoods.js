@@ -33,6 +33,10 @@ export const darkwoods = {
     { x: -78, z: -30 }, { x: -86, z: -60 }, { x: -58, z: -84 },
   ],
 
+  // Keep entities this far inside the boundary so they stop at the foot of the
+  // mountain range that rings the border, not inside the rock.
+  boundaryInset: 6,
+
   spawn: { x: 5, z: -92, yaw: 0 }, // Entrance Clearing, facing south
 
   // Rendering atmosphere — bright, readable, Old School RuneScape style.

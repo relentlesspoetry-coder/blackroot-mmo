@@ -475,6 +475,9 @@ let camFrozen = false;           // set only through the ?debug=1 hook
 const camRay = new THREE.Raycaster();
 const _camHead = new THREE.Vector3(), _camWant = new THREE.Vector3(), _camDir = new THREE.Vector3();
 const jump = { active: false, t: 0 };
+// Jump phases (seconds): a quick knee-bend crouch, the airborne hop, then a
+// knee-bend landing absorb.
+const JUMP_CROUCH = 0.14, JUMP_AIR = 0.52, JUMP_LAND = 0.16, JUMP_TOTAL = JUMP_CROUCH + JUMP_AIR + JUMP_LAND;
 const keys = {};
 let targetId = null;
 let attackTimer = 0;
@@ -706,9 +709,7 @@ function buildMountains(poly) {
   const group = new THREE.Group();
   const N = poly.length;
 
-  const makePeak = (x, z, ring) => {
-    const height = ring === 0 ? 15 + rng() * 12 : 26 + rng() * 22;
-    const radius = ring === 0 ? 13 + rng() * 7 : 17 + rng() * 11;
+  const makePeak = (x, z, height, radius) => {
     const sides = 5 + Math.floor(rng() * 3); // 5–7 faceted sides
     const geo = new THREE.ConeGeometry(radius, height, sides, 1);
     const pos = geo.attributes.position;
@@ -736,7 +737,6 @@ function buildMountains(poly) {
 
   for (let ring = 0; ring < 2; ring++) {
     const spacing = ring === 0 ? 12 : 20;
-    const off = ring === 0 ? 4 : 22;
     for (let i = 0; i < N; i++) {
       const a = poly[i], b = poly[(i + 1) % N];
       const ex = b.x - a.x, ez = b.z - a.z, len = Math.hypot(ex, ez);
@@ -745,8 +745,14 @@ function buildMountains(poly) {
         const t = (s + 0.5) / steps;
         const x = a.x + ex * t, z = a.z + ez * t;
         let nx = x - cen.x, nz = z - cen.z, nl = Math.hypot(nx, nz) || 1; nx /= nl; nz /= nl;
-        const o = off + (rng() - 0.5) * 6;
-        makePeak(x + nx * o, z + nz * o, ring);
+        const height = ring === 0 ? 15 + rng() * 12 : 26 + rng() * 22;
+        const radius = ring === 0 ? 13 + rng() * 7 : 17 + rng() * 11;
+        // Push each peak out so its inner face sits at (front) or just beyond
+        // (back) the boundary — the peaks ring the edge instead of flooding the
+        // play area, so the boundary collision (with its inset) stops the player
+        // right at the rock foot rather than deep inside the range.
+        const o = (ring === 0 ? radius - 2 : radius + 8) + rng() * 3;
+        makePeak(x + nx * o, z + nz * o, height, radius);
       }
     }
   }
@@ -2001,14 +2007,21 @@ function animateEntity(rec, e, kind, dt) {
     const bs = rig.baseScale;
     rig.breath += dt * 2.0;
     const isLocal = rec.mesh.userData.id === myId;
-    const jp = (isLocal && jump.active) ? Math.min(1, jump.t / 0.5) : 0;
-    const air = Math.sin(Math.PI * jp); // 0 → 1 (apex) → 0
+    // Jump knee-bend: crouch as it launches, straighten mid-air, bend to absorb
+    // the landing. crouch is 0 in the air, ~1 during the two knee-bends.
+    let crouch = 0;
+    if (isLocal && jump.active) {
+      const t = jump.t;
+      if (t < JUMP_CROUCH) crouch = t / JUMP_CROUCH;                       // 0 → 1 dip
+      else if (t < JUMP_CROUCH + JUMP_AIR) crouch = Math.max(0, 1 - (t - JUMP_CROUCH) / (JUMP_AIR * 0.22)); // extend to straight
+      else { const lt = (t - JUMP_CROUCH - JUMP_AIR) / JUMP_LAND; crouch = lt < 0.5 ? lt * 2 : (1 - lt) * 2; } // absorb, recover
+    }
 
     // Body: step-bob, forward lean into a walk (+Z), gentle roll, breathing swell.
     const br = (1 - a) * (Math.sin(rig.breath) * 0.5 + 0.5);
-    b.position.y = rig.home.y + Math.abs(Math.sin(rig.gait)) * g.bob * a;
+    b.position.y = rig.home.y + Math.abs(Math.sin(rig.gait)) * g.bob * a - crouch * 0.18;
     b.position.z = rig.home.z + punch * 0.35;         // lunge forward (+Z) on a strike
-    b.rotation.x = 0.10 * a;                            // lean forward while moving
+    b.rotation.x = 0.10 * a + crouch * 0.12;           // lean forward while moving / crouching
     b.rotation.y = 0;
     b.rotation.z = Math.sin(rig.gait * 0.5) * g.roll * a;
     b.scale.set(bs.x * (1 - br * 0.02), bs.y * (1 + br * 0.03), bs.z * (1 - br * 0.02));
@@ -2020,8 +2033,9 @@ function animateEntity(rec, e, kind, dt) {
     let lArm = -stride * 0.5 + sway, rArm = stride * 0.5 + sway;
     let lArmZ = 0.10 + 0.03 * a, rArmZ = -(0.10 + 0.03 * a);
 
-    // Jump: tuck the knees up and lift the arms while airborne.
-    lLeg -= air * 0.9; rLeg -= air * 0.9; lArm -= air * 0.7; rArm -= air * 0.7;
+    // Jump: bend both knees (legs forward) and bring the arms forward for balance
+    // during the crouch and the landing absorb; legs stay straight in the air.
+    lLeg -= crouch * 0.7; rLeg -= crouch * 0.7; lArm -= crouch * 0.4; rArm -= crouch * 0.4;
 
     // Attack: alternate a straight punch and a front kick (forward is -rot.x).
     if (punch > 0) {
@@ -2192,11 +2206,14 @@ function updateControls(dt) {
 
   // Camera follows player position
   const rec = entityMeshes.get(myId);
-  // Spacebar jump (visual hop on the local player).
+  // Spacebar jump (visual hop on the local player): crouch, then hop, then land.
+  // The mesh only leaves the ground during the airborne phase; the crouch and
+  // landing knee-bends are played on the rig (see the 'hero' branch).
   if (jump.active) {
-    jump.t += dt; const dur = 0.5, prog = jump.t / dur;
-    if (prog >= 1) { jump.active = false; rec.mesh.position.y = 0; }
-    else rec.mesh.position.y = Math.sin(Math.PI * prog) * 1.7;
+    jump.t += dt;
+    if (jump.t >= JUMP_TOTAL) { jump.active = false; rec.mesh.position.y = 0; }
+    else if (jump.t < JUMP_CROUCH || jump.t >= JUMP_CROUCH + JUMP_AIR) rec.mesh.position.y = 0;
+    else rec.mesh.position.y = Math.sin(Math.PI * ((jump.t - JUMP_CROUCH) / JUMP_AIR)) * 1.7;
   } else rec.mesh.position.y = 0;
   const px = rec.mesh.position.x, pz = rec.mesh.position.z;
   let cx = px + Math.sin(camYaw) * Math.cos(camPitch) * camDist;
