@@ -67,8 +67,14 @@ console.log('\n--- camera collision ---');
 // follows the yaw, not the wall-clock rate.
 const before = await page.evaluate(() => ({ z: window.__bk.camera.position.z, yaw: window.__bk.camYaw }));
 const camBefore = before.z;
+// Hold the key until the page has actually rendered some frames. Under
+// software rendering a fixed wall-clock hold can span zero frames, and a
+// camera that did not move because nothing was drawn is not a bug.
 await page.keyboard.down('ArrowLeft');
-await page.waitForTimeout(1500);   // ROT is 2.2 rad/s, so ~pi radians
+const startFrames = await page.evaluate(() => window.__bk.frames);
+await page.waitForFunction(
+  (f) => window.__bk.frames > f + 6, startFrames, { timeout: 30000 }).catch(() => {});
+const heldFrames = (await page.evaluate(() => window.__bk.frames)) - startFrames;
 await page.keyboard.up('ArrowLeft');
 await page.waitForTimeout(600);
 const orbit = await page.evaluate(() => {
@@ -100,7 +106,7 @@ const orbit = await page.evaluate(() => {
 check('boundary walls are registered as camera blockers', orbit.blockerCount > 0,
   orbit.blockerCount + ' walls');
 check('arrow keys reach the camera', Math.abs(orbit.yaw - before.yaw) > 0.05,
-  `yaw ${before.yaw.toFixed(2)} -> ${orbit.yaw} (rate is frame-bound; see note)`);
+  `yaw ${before.yaw.toFixed(2)} -> ${orbit.yaw} over ${heldFrames} rendered frames`);
 check('camera position follows the yaw', orbit.bearingError < 0.15,
   `bearing off by ${orbit.bearingError.toFixed(3)} rad` +
   (orbit.clamped ? ' (clamped inside the boundary)' : ''));

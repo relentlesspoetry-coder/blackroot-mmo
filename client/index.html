@@ -275,7 +275,7 @@ const LOADED = {};
 // Only the player model is always needed; everything else is declared by the
 // zone (server/zones/*.js) and fetched on entry. Loading all 73 models up front
 // doubled the wait on the login button for assets most players never see.
-const CORE_MODELS = ['Male'];
+const CORE_MODELS = ['Male', 'items/Coins'];
 const MOB_MODEL = {
   goblin: { model: 'Goblin', h: 2.0 }, bandit: { model: 'Bandit', h: 2.3 }, guard: { model: 'Hill_Ogre', h: 3.0 },
   spider: { model: 'Cave_Spider', h: 1.6 }, cow: { model: 'Cow', h: 2.0 }, chicken: { model: 'Chicken', h: 1.1 },
@@ -694,16 +694,8 @@ function buildZone() {
     const cy = zone.ceilingY || 13;
     const ceil = new THREE.Mesh(new THREE.PlaneGeometry(W, D), new THREE.MeshStandardMaterial({ color: 0x15171c, roughness: 1 }));
     ceil.rotation.x = Math.PI / 2; ceil.position.set(cx, cy, cz); scene.add(ceil);
-    // stalactites hanging from the ceiling
-    const stMat = new THREE.MeshStandardMaterial({ color: 0x2a2d34, roughness: 1, flatShading: true });
-    const srng = mulberry32(55);
-    for (let i = 0; i < 90; i++) {
-      const sx = b.minX + srng() * W, sz = b.minZ + srng() * D;
-      if (zone.boundary && !inBoundary(sx, sz)) continue;
-      const st = new THREE.Mesh(new THREE.ConeGeometry(0.5 + srng() * 0.6, 2 + srng() * 3, 5), stMat);
-      st.position.set(sx, cy - (1 + srng() * 1.5), sz);
-      st.rotation.x = Math.PI; scene.add(st);
-    }
+    // Stalactites come from zone.hanging now (Stalactite_Single / _Cluster /
+    // Hanging_Roots / Corner_Cobweb), placed server-side — see buildScatter().
   }
 
   // Primary path (dirt trail)
@@ -819,22 +811,6 @@ function buildLowPolyGround(W, D, cx, cz) {
   ground.position.set(cx, 0, cz); ground.receiveShadow = true; ground.userData.isGround = true; scene.add(ground);
 }
 
-function makeGroundTexture() {
-  const s = 256, cv = document.createElement('canvas'); cv.width = cv.height = s;
-  const ctx = cv.getContext('2d');
-  const base = (zone.id === 'hiddencave') ? ['#2b2e33', '#22252a', '#33373d', '#3a3020']
-    : ['#3c5230', '#445e39', '#35492a', '#4f6b3c', '#5c4a2e'];
-  ctx.fillStyle = base[1]; ctx.fillRect(0, 0, s, s);
-  const rng = mulberry32(7);
-  for (let i = 0; i < 2600; i++) {
-    ctx.fillStyle = base[Math.floor(rng() * base.length)];
-    ctx.globalAlpha = 0.15 + rng() * 0.4;
-    const x = rng() * s, y = rng() * s, r = 1 + rng() * 6;
-    ctx.beginPath(); ctx.arc(x, y, r, 0, 6.3); ctx.fill();
-  }
-  ctx.globalAlpha = 1;
-  const tex = new THREE.CanvasTexture(cv); tex.anisotropy = 4; return tex;
-}
 
 // Scatter a geometry as an InstancedMesh over given placements.
 function instScatter(geo, mat, places, yFn, squash = 1) {
@@ -867,14 +843,9 @@ function buildDetails() {
     return a;
   };
 
-  if (zone.id === 'hiddencave') {
-    // mineral clusters + small stalagmites instead of plants
-    instScatter(new THREE.ConeGeometry(0.4, 1.4, 5), stdMat(0x3b3f47), gen(220, 1.5), p => 0.7 * p.s);
-    instScatter(new THREE.IcosahedronGeometry(0.5, 0), stdMat(0x50555c), gen(160), p => 0.3 * p.s);
-    const cry = new THREE.MeshStandardMaterial({ color: 0x7fd0ff, emissive: 0x2f6fff, emissiveIntensity: 0.7, flatShading: true });
-    instScatter(new THREE.ConeGeometry(0.22, 1.1, 4), cry, gen(120, 1.5), p => 0.55 * p.s);
-    return;
-  }
+  // The cave's floor detail is authored geometry now — stalagmites, boulders,
+  // rubble, mushrooms and crystals all arrive through zone.scatter.
+  if (zone.id === 'hiddencave') return;
 
   // grass tufts (close to path OK)
   instScatter(new THREE.ConeGeometry(0.28, 0.8, 4), stdMat(0x4a7a3a), gen(700, 1.2), p => 0.4 * p.s);
@@ -1140,10 +1111,8 @@ function buildPoi(p) {
       break;
     }
     case 'echo': {
+      // Boulders around the pool come from the scatter pack.
       const light = new THREE.PointLight(0x5fa8d0, 0.9, 20); light.position.y = 2; g.add(light);
-      for (const [rx, rz, r] of [[-6, 2, 1.2], [5, -3, 1.0], [3, 5, 0.9]]) {
-        const rk = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 0), stoneMat()); rk.position.set(rx, r * 0.5, rz); g.add(rk);
-      }
       break;
     }
     case 'smuggler': {
@@ -1154,13 +1123,8 @@ function buildPoi(p) {
       break;
     }
     case 'crystal': {
-      const cmat = new THREE.MeshStandardMaterial({ color: 0x8fe0ff, emissive: 0x2f8fff, emissiveIntensity: 1.3, flatShading: true, roughness: 0.3 });
-      for (let i = 0; i < 9; i++) {
-        const a = (i / 9) * Math.PI * 2, rr = 1 + (i % 3);
-        const cr = new THREE.Mesh(new THREE.ConeGeometry(0.4 + Math.random() * 0.3, 2 + Math.random() * 2.5, 5), cmat);
-        cr.position.set(Math.cos(a) * rr, 1.2, Math.sin(a) * rr); cr.rotation.z = (Math.random() - 0.5) * 0.5; cr.castShadow = true; g.add(cr);
-      }
-      const big = new THREE.Mesh(new THREE.ConeGeometry(0.8, 5, 6), cmat); big.position.y = 2.5; g.add(big);
+      // The crystals themselves are authored models, clustered here by the
+      // scatter spec's `near: 'crystal'`. This just lights them.
       const light = new THREE.PointLight(0x5fb0ff, 2.0, 30); light.position.y = 3; g.add(light);
       break;
     }
@@ -1288,11 +1252,6 @@ function stdMat(color, flat = true, rough = 0.85) {
 function boxPart(w, h, d, color) {
   const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), stdMat(color));
   m.castShadow = true; return m;
-}
-// A limb that pivots at its top joint (rotate the returned group to swing it).
-function limbPivot(w, h, d, color, x, y, z) {
-  const g = new THREE.Group(); g.position.set(x, y, z);
-  const m = boxPart(w, h, d, color); m.position.y = -h / 2; g.add(m); return g;
 }
 
 function makePlayerMesh(isSelf) {
@@ -1568,18 +1527,22 @@ function renderWorld(dt) {
   updateGroundItems(b.items);
 }
 
+// Ground loot uses the authored drop models where one exists. Items without a
+// model (hides, bones, ores) still fall back to a glinting shard, which also
+// keeps loot visible if a model fails to load.
+function itemModelName(name) {
+  return name.replace(/['\u2019]/g, '').replace(/\s+/g, '_');
+}
 function makeItemMesh(it) {
   const g = new THREE.Group();
-  let m;
-  if (it.name === 'Coins') {
-    m = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.12, 12),
-      new THREE.MeshStandardMaterial({ color: 0xffcf3a, emissive: 0x6a4a00, emissiveIntensity: 0.5, metalness: 0.5, roughness: 0.4 }));
-    m.rotation.x = Math.PI / 2;
+  const model = cloneModel(itemModelName(it.name), 0.55);
+  if (model) {
+    g.add(model);
   } else {
-    m = new THREE.Mesh(new THREE.OctahedronGeometry(0.3, 0),
+    const m = new THREE.Mesh(new THREE.OctahedronGeometry(0.3, 0),
       new THREE.MeshStandardMaterial({ color: 0x8fe0ff, emissive: 0x2f8fff, emissiveIntensity: 0.7 }));
+    g.add(m);
   }
-  g.add(m);
   g.traverse(o => { if (o.isMesh) { o.userData.pickKind = 'item'; o.userData.pickId = it.id; } });
   return g;
 }
@@ -2195,7 +2158,6 @@ const ITEM_ICON = {
   "Smuggler's Cache": '📦', 'Crystalline Relic': '💎', 'Smuggler’s Trinket': '💍',
 };
 function iconFor(name) { return ITEM_ICON[name] || (/Trophy/.test(name) ? '🏆' : '📦'); }
-function bagButton() { return document.getElementById('bagBtn'); }
 function toggleBag(force) { bagOpen = force != null ? force : !bagOpen; document.getElementById('bag').style.display = bagOpen ? 'block' : 'none'; if (bagOpen) renderBag(); }
 function renderSkills() {
   const el = document.getElementById('skillline');
@@ -2446,6 +2408,7 @@ if (location.search.includes('debug')) {
     get self() { return entityMeshes.get(myId); },
     get camYaw() { return camYaw; },
     get camDist() { return camDist; },
+    get frames() { return frameCount; },
     openDialogue: (id) => openDialogue(id),
     // What is drawn at this normalised screen point, nearest first?
     pick(nx = 0, ny = 0, limit = 6) {
@@ -2463,8 +2426,10 @@ if (location.search.includes('debug')) {
   };
 }
 
+let frameCount = 0;
 function animate() {
   requestAnimationFrame(animate);
+  frameCount++;
   const dt = Math.min(0.05, clock.getDelta());
   renderWorld(dt);
   updateSky(dt);

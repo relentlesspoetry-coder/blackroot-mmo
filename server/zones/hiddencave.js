@@ -23,6 +23,12 @@ export const hiddencave = {
     'cave/Iron_Ore_Vein', 'cave/Coal_Ore_Vein', 'cave/Copper_Ore_Vein',
     'cave/Tin_Ore_Vein', 'cave/Silver_Ore_Vein', 'cave/Gold_Ore_Vein',
     'cave/Mithril_Ore_Vein', 'cave/Adamantite_Ore_Vein', 'cave/Runite_Ore_Vein',
+    // Drop models for what dies down here.
+    'items/Chitin_Fragment', 'items/Spider_Fang', 'items/Venomous_Fang',
+    'items/Venom_Gland', 'items/Spider_Silk', 'items/Pristine_Silk',
+    'items/Sticky_Webbing', 'items/Hardened_Carapace', 'items/Uncut_Quartz',
+    'items/Crystal_Heart', 'items/Cave_Mushroom', 'items/Broodmothers_Signet',
+    'items/Spiderfang_Dagger', 'items/Spiderling_Pet_Egg',
   ],
 
   bounds: { minX: -55, maxX: 55, minZ: -65, maxZ: 65 },
