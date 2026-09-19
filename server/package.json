@@ -1,0 +1,13 @@
+{
+  "name": "blackroot-server",
+  "version": "0.1.0",
+  "description": "Blackroot — authoritative 3D browser MMO server",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
