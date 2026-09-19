@@ -22,11 +22,20 @@ export const ITEMS = {
   'Leather Body':         { slot: 'body',    def: 4,  level: 3, value: 190,
     desc: 'Boiled leather. Turns a blade more often than not.' },
 
+  'Spiderfang Dagger':    { slot: 'weapon',  atk: 5,  level: 4, value: 260,
+    desc: 'A fang the length of a forearm, bound to a grip. Still weeps.' },
+
   // --- trinkets ---
   'Smuggler\u2019s Trinket': { slot: 'trinket', def: 1, atk: 1, level: 1, value: 80,
     desc: 'Someone wanted this badly enough to hide it.' },
   'Smuggler\'s Cache':    { slot: 'trinket', def: 2,  level: 2, value: 140,
     desc: 'The contents of a niche nobody came back for.' },
+  'Hardened Carapace':    { slot: 'body',    def: 5,  level: 5, value: 300,
+    desc: 'Spider plate, boiled and strapped. Lighter than it looks.' },
+  'Crystal Heart':        { slot: 'trinket', atk: 2, def: 2, level: 5, value: 380,
+    desc: 'It keeps a slow beat you can feel through your glove.' },
+  "Broodmother's Signet": { slot: 'trinket', atk: 5, def: 2, level: 8, value: 850,
+    desc: 'Taken from the deep chamber. The spiders give it a wide berth.' },
   'Crystalline Relic':    { slot: 'trinket', def: 5,  level: 6, value: 600,
     desc: 'Cold to hold. The light inside it moves on its own.' },
   'Guardian\'s Heartwood': { slot: 'trinket', atk: 3, def: 3, level: 8, value: 900,
@@ -44,6 +53,15 @@ export const ITEMS = {
   'Goblin Ear':   { value: 4 },
   'Stolen Pendant': { value: 35 },
   'Kebab':        { value: 8 },
+  'Chitin Fragment': { value: 12 },
+  'Spider Fang':  { value: 22 },
+  'Venomous Fang': { value: 40 },
+  'Venom Gland':  { value: 34 },
+  'Pristine Silk': { value: 55 },
+  'Sticky Webbing': { value: 14 },
+  'Uncut Quartz': { value: 30 },
+  'Cave Mushroom': { value: 7 },
+  'Spiderling Pet Egg': { value: 400 },
 };
 
 export function itemDef(name) { return ITEMS[name] || null; }
@@ -74,9 +92,11 @@ export function expectedGear(level) {
   if (level >= 6) eq.weapon = 'Ogre Club';
   else if (level >= 3) eq.weapon = 'Iron Sword';
   else if (level >= 2) eq.weapon = 'Bronze Dagger';
-  if (level >= 3) eq.body = 'Leather Body';
+  if (level >= 5) eq.body = 'Hardened Carapace';
+  else if (level >= 3) eq.body = 'Leather Body';
   else if (level >= 2) eq.body = 'Goblin Mail';
-  if (level >= 6) eq.trinket = 'Crystalline Relic';
+  if (level >= 8) eq.trinket = "Broodmother's Signet";
+  else if (level >= 6) eq.trinket = 'Crystalline Relic';
   else if (level >= 2) eq.trinket = 'Smuggler\'s Cache';
   return eq;
 }

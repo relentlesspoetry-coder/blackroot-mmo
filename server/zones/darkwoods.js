@@ -9,6 +9,13 @@ export const darkwoods = {
   id: 'darkwoods',
   name: 'The Dark Woods',
   subtitle: 'Zone I',
+  // Client assets this zone needs. Fetched on entry, cached after that.
+  models: [
+    'Goblin', 'Bandit', 'Hill_Ogre', 'Cow', 'Chicken',
+    'Oak_Tree', 'Willow_Tree', 'Yew_Tree', 'Maple_Tree', 'Magic_Tree', 'Normal_Tree', 'Tree',
+    'Normal_Bush', 'Berry_Bush', 'Flowering_Bush', 'Thorn_Bush', 'Darkroot_Bush', 'Dead_Bush',
+  ],
+
   treeSeed: 1337,
   treeCount: 120, // thinned, well-spaced, and solid
 

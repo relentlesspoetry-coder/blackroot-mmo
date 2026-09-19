@@ -59,12 +59,12 @@ for (const [name, d] of Object.entries(ITEMS)) {
 
 for (const zone of [darkwoods, hiddencave]) {
   console.log(`\n=== ${zone.name} — expected fights ===`);
-  console.log(pad('area', 26) + pad('mob', 12) + pad('mLv', 5) + pad('pLv', 5) +
+  console.log(pad('area', 26) + pad('mob', 19) + pad('mLv', 5) + pad('pLv', 5) +
               pad('mobHP', 7) + pad('kill s', 8) + pad('die s', 8) + pad('ratio', 7) + 'verdict');
   for (const s of zone.spawns) {
     const pLv = s.expect || s.level + 1;
     const r = fight(s.type, s.level, pLv);
-    console.log(pad(s.hint || '—', 26) + pad(MONSTER_TEMPLATES[s.type].name, 12) +
+    console.log(pad(s.hint || '—', 26) + pad(MONSTER_TEMPLATES[s.type].name, 19) +
       pad(s.level, 5) + pad(pLv, 5) + pad(r.hp, 7) + num(r.ttk, 7) + '' +
       pad(r.ttd === Infinity ? '  never' : num(r.ttd, 7), 8) +
       pad(r.ttd === Infinity ? '   —' : num(r.ratio, 5, 1), 7) +
@@ -73,7 +73,7 @@ for (const zone of [darkwoods, hiddencave]) {
   for (const e of (zone.elites || [])) {
     const pLv = e.expect || e.level;
     const r = fight(e.type, e.level, pLv, true, e);
-    console.log(pad('★ ' + e.name, 26) + pad(MONSTER_TEMPLATES[e.type].name, 12) +
+    console.log(pad('★ ' + e.name, 26) + pad(MONSTER_TEMPLATES[e.type].name, 19) +
       pad(e.level, 5) + pad(pLv, 5) + pad(r.hp, 7) + num(r.ttk, 7) + '' +
       pad(num(r.ttd, 7), 8) + pad(num(r.ratio, 5, 1), 7) + verdict(r, true));
   }
