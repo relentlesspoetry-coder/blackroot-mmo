@@ -12,6 +12,10 @@
 // the head, gloves and rings out at the hands, boots at the feet. The server
 // only cares about the list; the coordinates are here so the layout stays one
 // authored thing rather than being half in the client.
+//
+// The doll faces the viewer, so the character's left is on the viewer's right:
+// the L slots sit in the right-hand column. Mirror x about 125 to turn it
+// around again.
 export const DOLL = { w: 300, h: 328, slot: 50 };
 export const SLOT_INFO = {
   helmet:   { label: 'Helmet',    x: 125, y: 0 },
@@ -19,15 +23,15 @@ export const SLOT_INFO = {
   chest:    { label: 'Chest',     x: 125, y: 116 },
   legs:     { label: 'Legs',      x: 125, y: 190 },
   boots:    { label: 'Boots',     x: 125, y: 248 },
-  earring_l:{ label: 'L Earring', x: 48,  y: 14 },
-  shoulders:{ label: 'Shoulders', x: 48,  y: 104 },
-  ring_l:   { label: 'L Ring',    x: 48,  y: 162 },
-  gloves:   { label: 'Gloves',    x: 48,  y: 220 },
-  weapon:   { label: 'Weapon',    x: 48,  y: 278 },
-  earring_r:{ label: 'R Earring', x: 202, y: 14 },
-  cape:     { label: 'Cape',      x: 202, y: 104 },
-  ring_r:   { label: 'R Ring',    x: 202, y: 162 },
-  offhand:  { label: 'Offhand',   x: 202, y: 220 },
+  earring_l:{ label: 'L Earring', x: 202, y: 14 },
+  shoulders:{ label: 'Shoulders', x: 202, y: 104 },
+  ring_l:   { label: 'L Ring',    x: 202, y: 162 },
+  gloves:   { label: 'Gloves',    x: 202, y: 220 },
+  weapon:   { label: 'Weapon',    x: 202, y: 278 },
+  earring_r:{ label: 'R Earring', x: 48,  y: 14 },
+  cape:     { label: 'Cape',      x: 48,  y: 104 },
+  ring_r:   { label: 'R Ring',    x: 48,  y: 162 },
+  offhand:  { label: 'Offhand',   x: 48,  y: 220 },
 };
 export const SLOTS = Object.keys(SLOT_INFO);
 

@@ -190,6 +190,20 @@ const eq = await page.evaluate(() => {
       }
       return n;
     })(),
+    // The doll faces the viewer, so the character's left is on the viewer's
+    // right: every L slot must sit right of its R counterpart.
+    facing: (() => {
+      const x = (n) => {
+        const el = win.querySelector(`.eslot[data-slot="${n}"]`);
+        return el ? el.getBoundingClientRect().left : null;
+      };
+      const pairs = [['earring_l', 'earring_r'], ['ring_l', 'ring_r']];
+      for (const [l, r] of pairs) {
+        if (x(l) === null || x(r) === null) return 'missing';
+        if (x(l) < x(r)) return `${l} is left of ${r} — doll is back-to-front`;
+      }
+      return 'ok';
+    })(),
     // Head above hands above feet: the arrangement has to read as a body.
     anatomy: (() => {
       const at = (n) => {
@@ -199,8 +213,9 @@ const eq = await page.evaluate(() => {
       const helmet = at('helmet'), chest = at('chest'), boots = at('boots');
       const gloves = at('gloves'), offhand = at('offhand'), necklace = at('necklace');
       if (!helmet || !chest || !boots || !gloves || !offhand || !necklace) return 'missing';
-      return (helmet.top < necklace.top && necklace.top < chest.top && chest.top < boots.top
-        && gloves.left < chest.left && offhand.left > chest.left) ? 'ok' : 'wrong order';
+      const stacked = helmet.top < necklace.top && necklace.top < chest.top && chest.top < boots.top;
+      const armed = Math.sign(gloves.left - chest.left) !== Math.sign(offhand.left - chest.left);
+      return (stacked && armed) ? 'ok' : 'wrong order';
     })(),
     stats: document.getElementById('equipStats').textContent.replace(/\s+/g, ' ').trim(),
     width: Math.round(r.width),
@@ -217,6 +232,7 @@ check('the slots the brief asked for are present',
 check('a character figure sits behind the slots', eq.figure);
 check('no two slots overlap', eq.overlaps === 0, eq.overlaps + ' overlapping pairs');
 check('slots are arranged as a body', eq.anatomy === 'ok', eq.anatomy);
+check('the doll faces the viewer', eq.facing === 'ok', eq.facing);
 check('every slot is labelled', eq.labels === eq.slots, eq.labels + '/' + eq.slots);
 check('no slot spills out of the window', eq.overflowing === 0, eq.overflowing + ' overflowing');
 check('the window fits on screen', eq.onScreen, eq.width + 'px wide');
