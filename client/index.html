@@ -96,7 +96,39 @@
   .slot:hover .tip { display: block; position: absolute; bottom: 104%; left: 50%; transform: translateX(-50%);
     background: #000c; color: #ffe9b0; font-size: 11px; padding: 2px 6px; border-radius: 4px; white-space: nowrap; z-index: 2; }
   #bag .empty { color: #8a7d63; font-size: 12px; grid-column: 1 / -1; text-align: center; padding: 12px 0; }
-  #equipRow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-bottom: 8px; }
+  /* ---- Equipment window ---- */
+  #equipBtn { position: absolute; right: 136px; bottom: 12px; width: 52px; height: 52px; pointer-events: auto;
+    background: #3f342a; border: 2px solid #1c150e; border-radius: 8px; color: #ffdf9e; font-size: 22px;
+    cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px #0007; }
+  #equipBtn:hover { background: #57472f; }
+  /* Six slots stacked is a tall panel: cap it to the viewport and let it
+     scroll, or it runs off the top of a short window. */
+  #equipwin { position: absolute; right: 12px; bottom: 74px; width: 272px; pointer-events: auto; display: none;
+    max-height: calc(100vh - 96px); overflow-y: auto;
+    background: #2e2820; border: 2px solid #1c150e; border-radius: 8px; padding: 10px; box-shadow: 0 8px 24px #000a; }
+  #equipwin h3 { color: #ffdf9e; font-size: 13px; margin-bottom: 8px; display: flex; justify-content: space-between; }
+  #doll { display: grid; grid-template-columns: 50px 1fr 50px; gap: 5px; align-items: start; }
+  #dollLeft, #dollRight { display: flex; flex-direction: column; gap: 5px; }
+  #dollMid { display: flex; flex-direction: column; align-items: center; justify-content: space-between;
+    min-height: 180px; padding: 4px 0; }
+  #dollMid .fig { font-size: 46px; line-height: 1; opacity: .35; filter: grayscale(1); }
+  #dollBottom { display: flex; gap: 5px; justify-content: center; margin-top: 4px; }
+  .eslot { width: 50px; height: 50px; background: #16130f; border: 1px solid #5a4a34; border-radius: 5px;
+    position: relative; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+  .eslot.filled { border-color: #c9a44a; background: #221c14; }
+  .eslot.empty { cursor: default; }
+  .eslot .ic { font-size: 22px; opacity: .28; } .eslot.filled .ic { opacity: 1; }
+  .eslot .lb { position: absolute; bottom: 1px; left: 0; right: 0; text-align: center; font-size: 7px;
+    color: #6f6551; letter-spacing: .03em; text-transform: uppercase; }
+  .eslot:hover { border-color: #ffd24a; }
+  .eslot:hover .tip { display: block; position: absolute; bottom: 104%; left: 50%; transform: translateX(-50%);
+    background: #000d; color: #ffe9b0; font-size: 11px; padding: 3px 7px; border-radius: 4px;
+    white-space: nowrap; z-index: 5; }
+  .eslot .tip { display: none; }
+  #equipStats { color: #b9ad90; font-size: 11px; display: flex; gap: 12px; margin-top: 10px;
+    border-top: 1px solid #4a3d2a; padding-top: 8px; }
+  #equipStats b { color: #ffd24a; font-weight: 600; }
+  #equipHint { color: #7e7358; font-size: 10px; margin-top: 6px; }
   .eslot { aspect-ratio: 1; background: #16130f; border: 1px solid #5a4a34; border-radius: 5px; position: relative;
     display: flex; align-items: center; justify-content: center; cursor: pointer; }
   .eslot.filled { border-color: #c9a44a; background: #221c14; }
@@ -105,8 +137,6 @@
   .eslot:hover .tip { display: block; position: absolute; bottom: 104%; left: 50%; transform: translateX(-50%);
     background: #000d; color: #ffe9b0; font-size: 11px; padding: 3px 7px; border-radius: 4px; white-space: nowrap; z-index: 3; }
   .eslot .tip { display: none; }
-  #statline { color: #b9ad90; font-size: 11px; display: flex; gap: 10px; margin-bottom: 8px; }
-  #statline b { color: #ffd24a; font-weight: 600; }
   #skillline { color: #b9ad90; font-size: 11px; margin: -4px 0 8px; display: flex;
     justify-content: space-between; align-items: center; gap: 8px; }
   #skillline b { color: #8fd070; font-weight: 600; }
@@ -213,16 +243,26 @@
     <div class="bar"><i id="xpfill"></i><span id="xptext">XP 0%</span></div>
   </div>
   <div id="help">
-    <b>Walk</b> Left-click ground<br><b>Attack</b> Left-click monster<br><b>Target</b> Tab<br><b>Bag</b> I<br><b>Quests</b> Q<br><b>Options</b> Right-click<br><b>Look</b> Arrows / Drag<br><b>Zoom</b> Scroll<br><b>Chat</b> Enter
+    <b>Walk</b> Left-click ground<br><b>Attack</b> Left-click monster<br><b>Target</b> Tab<br><b>Bag</b> I<br><b>Equipment</b> E<br><b>Quests</b> Q<br><b>Options</b> Right-click<br><b>Look</b> Arrows / Drag<br><b>Zoom</b> Scroll<br><b>Chat</b> Enter
   </div>
   <button id="bagBtn" title="Bag (I)">🎒<span class="cnt" id="bagCnt"></span></button>
   <button id="questBtn" title="Quest log (Q)">📜<span class="cnt" id="questCnt"></span></button>
+  <button id="equipBtn" title="Equipment (E)">🧍<span class="cnt" id="equipCnt"></span></button>
   <div id="bag">
     <h3><span>Bag</span><span class="g" id="bagGold">0 gp</span></h3>
-    <div id="equipRow"></div>
-    <div id="statline"></div>
     <div id="skillline"></div>
     <div id="bagGrid"></div>
+  </div>
+  <div id="equipwin">
+    <h3><span>Equipment</span><span class="g" id="equipCount"></span></h3>
+    <div id="doll">
+      <div id="dollLeft"></div>
+      <div id="dollMid"><div class="fig">🧍</div></div>
+      <div id="dollRight"></div>
+    </div>
+    <div id="dollBottom"></div>
+    <div id="equipStats"></div>
+    <div id="equipHint"></div>
   </div>
   <div id="questlog">
     <h3><span>Quest Log</span><span class="g" id="questDoneCnt"></span></h3>
@@ -379,8 +419,9 @@ function handle(m) {
       break;
     case 'bag':
       bag = { items: m.items || [], gold: m.gold || 0,
-        equipment: m.equipment || { weapon: null, offhand: null, body: null, trinket: null },
+        equipment: m.equipment || {},
         stats: m.stats || { atk: 0, def: 0 } };
+      if (m.slots) slotInfo = m.slots;
       renderBag();
       refreshDialogue(); // the merchant's sell list is built from the bag
       break;
@@ -1702,6 +1743,7 @@ function addEventListeners() {
     if (e.key === 'Tab') { e.preventDefault(); tabTarget(); return; }
     if (e.key.toLowerCase() === 'i') { toggleBag(); return; }
     if (e.key.toLowerCase() === 'q') { toggleQuests(); return; }
+    if (e.key.toLowerCase() === 'e') { toggleEquip(); return; }
     if (e.key === 'Escape') { closeDialogue(); hideContextMenu(); return; }
     if (e.key === ' ' || e.code === 'Space') { e.preventDefault(); if (!jump.active) { jump.active = true; jump.t = 0; } return; }
     const k = e.key.toLowerCase();
@@ -2123,7 +2165,7 @@ function flyText(text, cls) {
 // ---------------------------------------------------------------------------
 // Bag / inventory
 // ---------------------------------------------------------------------------
-let bag = { items: [], gold: 0, equipment: { weapon: null, offhand: null, body: null, trinket: null }, stats: { atk: 0, def: 0 } };
+let bag = { items: [], gold: 0, equipment: {}, stats: { atk: 0, def: 0 } };
 let bagOpen = false;
 // Mirrors server/items.js — used for tooltips and for deciding which actions a
 // bag slot offers. The server is still the authority on every equip.
@@ -2146,7 +2188,6 @@ const ITEM_META = {
   'Steel Pickaxe': { slot: 'weapon', atk: 3, level: 3 },
   'Mithril Pickaxe': { slot: 'weapon', atk: 5, level: 5 },
 };
-const SLOT_ICON = { weapon: '⚔️', offhand: '🛡️', body: '🥋', trinket: '💍' };
 function metaFor(name) { return ITEM_META[name] || null; }
 function statText(m) {
   if (!m) return '';
@@ -2181,30 +2222,67 @@ function renderSkills() {
     `<span class="pick">${m.pick ? escapeHtml(m.pick.replace(' Pickaxe', '')) : 'no pickaxe'}</span>`;
 }
 
+// The slot layout is authored on the server (items.js SLOT_INFO) and arrives
+// with the bag, so adding a slot does not need a client change.
+let slotInfo = null;
+let equipOpen = false;
+
+function toggleEquip(force) {
+  equipOpen = force != null ? force : !equipOpen;
+  document.getElementById('equipwin').style.display = equipOpen ? 'block' : 'none';
+  if (equipOpen) renderEquipment();
+}
+
+function slotCell(slot, info) {
+  const worn = (bag.equipment || {})[slot];
+  const meta = metaFor(worn);
+  return `<div class="eslot${worn ? ' filled' : ' empty'}" data-slot="${slot}">` +
+    `<span class="ic">${worn ? iconFor(worn) : (info.icon || '\u25cb')}</span>` +
+    `<span class="lb">${escapeHtml(info.label)}</span>` +
+    `<span class="tip">${worn ? escapeHtml(worn) + statText(meta) + ' \u2014 click to remove'
+      : escapeHtml(info.label) + ' \u2014 empty'}</span></div>`;
+}
+
+function renderEquipment() {
+  const btn = document.getElementById('equipBtn');
+  const eq = bag.equipment || {};
+  const wornCount = Object.values(eq).filter(Boolean).length;
+  document.getElementById('equipCnt').textContent = wornCount || '';
+  if (!equipOpen) return;
+  if (!slotInfo) { document.getElementById('dollLeft').innerHTML = ''; return; }
+
+  const cols = { left: [], right: [], bottom: [] };
+  for (const [slot, info] of Object.entries(slotInfo)) {
+    (cols[info.col] || cols.left).push([slot, info]);
+  }
+  for (const c of Object.values(cols)) c.sort((a, b) => a[1].row - b[1].row);
+
+  document.getElementById('dollLeft').innerHTML = cols.left.map(([s, i]) => slotCell(s, i)).join('');
+  document.getElementById('dollRight').innerHTML = cols.right.map(([s, i]) => slotCell(s, i)).join('');
+  document.getElementById('dollBottom').innerHTML = cols.bottom.map(([s, i]) => slotCell(s, i)).join('');
+
+  const st = bag.stats || { atk: 0, def: 0 };
+  document.getElementById('equipStats').innerHTML =
+    `<span>Attack <b>+${st.atk || 0}</b></span><span>Defence <b>+${st.def || 0}</b></span>` +
+    `<span>Worn <b>${wornCount}</b>/${Object.keys(slotInfo).length}</span>`;
+  document.getElementById('equipCount').textContent = '';
+  document.getElementById('equipHint').textContent =
+    wornCount ? 'Click a worn slot to take it off. Equip from the bag.' : 'Equip things from your bag (I).';
+
+  document.querySelectorAll('#equipwin .eslot').forEach(el => {
+    el.onclick = () => {
+      const slot = el.dataset.slot;
+      if ((bag.equipment || {})[slot]) ws?.send(JSON.stringify({ t: 'unequip', slot }));
+    };
+  });
+}
+
 function renderBag() {
   document.getElementById('bagGold').textContent = bag.gold.toLocaleString() + ' gp';
   document.getElementById('bagCnt').textContent = bag.items.length || '';
-
-  // Worn gear
-  const eq = bag.equipment || {};
-  const st = bag.stats || { atk: 0, def: 0 };
-  document.getElementById('equipRow').innerHTML = ['weapon', 'offhand', 'body', 'trinket'].map(s => {
-    const worn = eq[s];
-    const m = metaFor(worn);
-    return `<div class="eslot${worn ? ' filled' : ''}" data-slot="${s}">
-      <span class="lb">${s.slice(0, 3)}</span>
-      <span class="ic">${worn ? iconFor(worn) : SLOT_ICON[s]}</span>
-      ${worn ? `<span class="tip">${escapeHtml(worn)}${statText(m)} — click to remove</span>` : ''}
-    </div>`;
-  }).join('');
-  document.getElementById('statline').innerHTML =
-    `<span>Attack <b>+${st.atk || 0}</b></span><span>Defence <b>+${st.def || 0}</b></span>`;
   renderSkills();
-  document.querySelectorAll('#equipRow .eslot').forEach(el => {
-    el.onclick = () => { if (eq[el.dataset.slot]) ws?.send(JSON.stringify({ t: 'unequip', slot: el.dataset.slot })); };
-  });
+  renderEquipment();
 
-  // Carried items
   const counts = {};
   for (const it of bag.items) counts[it] = (counts[it] || 0) + 1;
   const names = Object.keys(counts);
@@ -2212,7 +2290,7 @@ function renderBag() {
   if (!names.length) { grid.innerHTML = '<div class="empty">Your bag is empty.</div>'; return; }
   grid.innerHTML = names.map(n => {
     const m = metaFor(n);
-    const hint = m ? ' — click to equip' : '';
+    const hint = m ? ' \u2014 click to equip' : '';
     return `<div class="slot" data-item="${escapeHtml(n)}"><span class="ic">${iconFor(n)}</span>` +
       `${counts[n] > 1 ? `<span class="n">${counts[n]}</span>` : ''}` +
       `<span class="tip">${escapeHtml(n)}${statText(m)}${hint}</span></div>`;
@@ -2474,6 +2552,7 @@ function startGame() {
   document.getElementById('hud').style.display = 'block';
   document.getElementById('bagBtn').onclick = () => toggleBag();
   document.getElementById('questBtn').onclick = () => toggleQuests();
+  document.getElementById('equipBtn').onclick = () => toggleEquip();
   initThree();
 }
 

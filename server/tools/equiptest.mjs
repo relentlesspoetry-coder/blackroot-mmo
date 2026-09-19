@@ -6,13 +6,14 @@
 
 import WebSocket from 'ws';
 import { playerDamageRange, mitigate, damageReduction } from '../balance.js';
-import { ITEMS, equipStats } from '../items.js';
+import { ITEMS, SLOTS, SLOT_PAIRS, slotsFor, equipStats } from '../items.js';
 
 const PORT = process.env.PORT || 8080;
 const ws = new WebSocket(`ws://localhost:${PORT}`);
 
 let me = null, myId = null, snapshot = null;
 let bag = { items: [], gold: 0, equipment: {}, stats: { atk: 0, def: 0 } };
+let bagSlots = null;
 const events = [];
 let failures = 0;
 
@@ -29,13 +30,24 @@ ws.on('message', (raw) => {
   const m = JSON.parse(raw);
   if (m.t === 'welcome') myId = m.id;
   else if (m.t === 'snapshot') { snapshot = m; me = m.players.find(p => p.id === myId) || me; }
-  else if (m.t === 'bag') bag = { items: m.items, gold: m.gold, equipment: m.equipment || {}, stats: m.stats || {} };
+  else if (m.t === 'bag') {
+    bag = { items: m.items, gold: m.gold, equipment: m.equipment || {}, stats: m.stats || {} };
+    if (m.slots) bagSlots = m.slots;
+  }
   else if (m.t === 'event') events.push(m);
 });
 
 ws.on('open', async () => {
   send({ t: 'join', name: 'GearBot' });
   await sleep(900);
+
+  console.log('\n--- slot model ---');
+  check('the server ships the slot layout', !!bagSlots && Object.keys(bagSlots).length === SLOTS.length,
+    bagSlots ? Object.keys(bagSlots).length + ' slots' : 'none');
+  check('rings and earrings are paired', slotsFor('ring').length === 2 && slotsFor('earring').length === 2,
+    slotsFor('ring').join(' + ') + ', ' + slotsFor('earring').join(' + '));
+  check('every slot has a label and a place in the window',
+    !!bagSlots && Object.values(bagSlots).every(i => i.label && i.col && i.row != null));
 
   console.log('\n--- maths ---');
   check('defence has diminishing returns',
@@ -82,7 +94,8 @@ ws.on('open', async () => {
   const gear = earned();
   check('a wearable item dropped and was looted', !!gear, (gear || 'nothing') + ' after ' + tries + ' goblins');
   if (!gear) { console.log('\ncannot continue without gear\n'); ws.close(); process.exit(1); }
-  const slot = ITEMS[gear].slot;
+  const base = ITEMS[gear].slot;
+  const slot = slotsFor(base)[0];
   const bonusKey = ITEMS[gear].atk ? 'atk' : 'def';
 
   console.log('\n--- equip ---');

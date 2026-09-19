@@ -30,6 +30,7 @@ to see real-time multiplayer (both players share one world).
 | Look | Drag mouse |
 | Zoom | Scroll wheel |
 | Attack | Click a monster (auto-attacks while in range) |
+| Equipment | E |
 | Chat | Enter |
 
 ## What's implemented
@@ -47,7 +48,8 @@ to see real-time multiplayer (both players share one world).
   slay objectives, a quest log, NPC dialogue, and ! / ? markers over givers
 - **Procedural character animation** — stride-synced locomotion, attack lunges
   and death topples (see the caveat below)
-- **Equipment** — weapon / offhand / body / trinket slots, attack and defence bonuses,
+- **Equipment** — a fourteen-slot paper-doll window (helmet, shoulders, chest,
+  gloves, legs, boots, cape, necklace, two earrings, two rings, weapon, offhand), attack and defence bonuses,
   level requirements, and a merchant who buys what you're carrying
 - **Mining** — a separate skill with its own level, nine ore tiers, pickaxes
   that set your swing speed, and veins that deplete and respawn

@@ -5,8 +5,35 @@
 // `atk` is added to both ends of the player's damage roll, `def` is subtracted
 // from each incoming hit (never below 1, so armour can't make you immortal).
 
-// A shield needs a hand of its own; everything else was already covered.
-export const SLOTS = ['weapon', 'offhand', 'body', 'trinket'];
+// Full equipment layout. `col` and `row` place the slot in the client's
+// paper-doll window; the server itself only cares about the list.
+export const SLOT_INFO = {
+  helmet:   { label: 'Helmet',    icon: '\u26d1',  col: 'left',   row: 0 },
+  shoulders:{ label: 'Shoulders', icon: '\ud83c\udff0', col: 'left', row: 1 },
+  chest:    { label: 'Chest',     icon: '\ud83e\udd7c', col: 'left', row: 2 },
+  gloves:   { label: 'Gloves',    icon: '\ud83e\udde4', col: 'left', row: 3 },
+  legs:     { label: 'Legs',      icon: '\ud83d\udc56', col: 'left', row: 4 },
+  boots:    { label: 'Boots',     icon: '\ud83e\udd7e', col: 'left', row: 5 },
+  cape:     { label: 'Cape',      icon: '\ud83e\udde3', col: 'right',  row: 0 },
+  necklace: { label: 'Necklace',  icon: '\ud83d\udcff', col: 'right',  row: 1 },
+  earring_l:{ label: 'L Earring', icon: '\ud83d\udc8e', col: 'right',  row: 2 },
+  earring_r:{ label: 'R Earring', icon: '\ud83d\udc8e', col: 'right',  row: 3 },
+  ring_l:   { label: 'L Ring',    icon: '\ud83d\udc8d', col: 'right',  row: 4 },
+  ring_r:   { label: 'R Ring',    icon: '\ud83d\udc8d', col: 'right',  row: 5 },
+  weapon:   { label: 'Weapon',    icon: '\u2694\ufe0f',  col: 'bottom', row: 0 },
+  offhand:  { label: 'Offhand',   icon: '\ud83d\udee1\ufe0f', col: 'bottom', row: 1 },
+};
+export const SLOTS = Object.keys(SLOT_INFO);
+
+// Paired slots: an item declaring the base slot may go in either side, and
+// equipping picks the empty one. Rings and earrings come in twos.
+export const SLOT_PAIRS = { ring: ['ring_l', 'ring_r'], earring: ['earring_l', 'earring_r'] };
+export function slotsFor(slot) { return SLOT_PAIRS[slot] || [slot]; }
+export function emptySlots() {
+  const eq = {};
+  for (const s of SLOTS) eq[s] = null;
+  return eq;
+}
 
 export const ITEMS = {
   // --- weapons ---
@@ -35,32 +62,32 @@ export const ITEMS = {
     desc: 'Taller than most men. The Guardian carried it like a plate.' },
 
   // --- body ---
-  'Goblin Mail':          { slot: 'body',    def: 2,  level: 1, value: 45,
+  'Goblin Mail':          { slot: 'chest',    def: 2,  level: 1, value: 45,
     desc: 'Scavenged scraps, lashed together. Smells of goblin.' },
-  'Leather Body':         { slot: 'body',    def: 4,  level: 3, value: 190,
+  'Leather Body':         { slot: 'chest',    def: 4,  level: 3, value: 190,
     desc: 'Boiled leather. Turns a blade more often than not.' },
 
   'Spiderfang Dagger':    { slot: 'weapon',  atk: 5,  level: 4, value: 260,
     desc: 'A fang the length of a forearm, bound to a grip. Still weeps.' },
 
-  // --- trinkets ---
-  'Smuggler\u2019s Trinket': { slot: 'trinket', def: 1, atk: 1, level: 1, value: 80,
+  // --- jewellery & cape ---
+  'Smuggler\u2019s Trinket': { slot: 'ring',    def: 1, atk: 1, level: 1, value: 80,
     desc: 'Someone wanted this badly enough to hide it.' },
-  'Smuggler\'s Cache':    { slot: 'trinket', def: 2,  level: 2, value: 140,
+  'Smuggler\'s Cache':    { slot: 'necklace', def: 2,  level: 2, value: 140,
     desc: 'The contents of a niche nobody came back for.' },
-  'Hardened Carapace':    { slot: 'body',    def: 5,  level: 5, value: 300,
+  'Hardened Carapace':    { slot: 'chest',   def: 5,  level: 5, value: 300,
     desc: 'Spider plate, boiled and strapped. Lighter than it looks.' },
-  'Crystal Heart':        { slot: 'trinket', atk: 2, def: 2, level: 5, value: 380,
+  'Crystal Heart':        { slot: 'necklace', atk: 2, def: 2, level: 5, value: 380,
     desc: 'It keeps a slow beat you can feel through your glove.' },
-  "Broodmother's Signet": { slot: 'trinket', atk: 5, def: 2, level: 8, value: 850,
+  "Broodmother's Signet": { slot: 'ring',    atk: 5, def: 2, level: 8, value: 850,
     desc: 'Taken from the deep chamber. The spiders give it a wide berth.' },
-  'Living Crystal Core':  { slot: 'trinket', atk: 3, def: 4, level: 8, value: 1100,
+  'Living Crystal Core':  { slot: 'necklace', atk: 3, def: 4, level: 8, value: 1100,
     desc: 'Still growing. It is warm on the side facing your chest.' },
-  "Ancient Giant's Signet": { slot: 'trinket', atk: 4, def: 3, level: 9, value: 1600,
+  "Ancient Giant's Signet": { slot: 'ring',  atk: 4, def: 3, level: 9, value: 1600,
     desc: 'Sized for a finger thicker than your wrist. It resizes itself.' },
-  'Crystalline Relic':    { slot: 'trinket', def: 5,  level: 6, value: 600,
+  'Crystalline Relic':    { slot: 'necklace', def: 5,  level: 6, value: 600,
     desc: 'Cold to hold. The light inside it moves on its own.' },
-  'Guardian\'s Heartwood': { slot: 'trinket', atk: 3, def: 3, level: 8, value: 900,
+  'Guardian\'s Heartwood': { slot: 'cape', atk: 3, def: 3, level: 8, value: 900,
     desc: 'Rootbound heartwood, still warm. It remembers being a man.' },
 
   // --- materials & trash (no slot) ---
@@ -143,11 +170,13 @@ export function expectedGear(level) {
   else if (level >= 3) eq.body = 'Leather Body';
   else if (level >= 2) eq.body = 'Goblin Mail';
   if (level >= 9) eq.offhand = "Guardian's Iron Shield";
+  if (level >= 8) eq.cape = "Guardian's Heartwood";
   // The Broodmother's signet comes off the Broodmother, so it cannot be part
   // of the kit you bring to that fight.
-  if (level >= 10) eq.trinket = "Broodmother's Signet";
-  else if (level >= 6) eq.trinket = 'Crystalline Relic';
-  else if (level >= 2) eq.trinket = "Smuggler's Cache";
+  if (level >= 10) eq.ring_l = "Broodmother's Signet";
+  else if (level >= 2) eq.ring_l = 'Smuggler\u2019s Trinket';
+  if (level >= 6) eq.necklace = 'Crystalline Relic';
+  else if (level >= 2) eq.necklace = "Smuggler's Cache";
   return eq;
 }
 

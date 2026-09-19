@@ -156,16 +156,51 @@ await page.keyboard.press('i');
 await page.waitForTimeout(400);
 const bagUi = await page.evaluate(() => ({
   open: getComputedStyle(document.getElementById('bag')).display === 'block',
-  slots: document.querySelectorAll('#equipRow .eslot').length,
-  stat: document.getElementById('statline').textContent.replace(/\s+/g, ' ').trim(),
+  skills: document.getElementById('skillline').textContent.replace(/\s+/g, ' ').trim(),
   width: document.getElementById('bag').getBoundingClientRect().width,
-  overflows: document.getElementById('equipRow').scrollWidth >
-             document.getElementById('equipRow').clientWidth + 1,
 }));
-check('bag opens with three equipment slots', bagUi.open && bagUi.slots === 3, bagUi.slots + ' slots');
-check('the equipment row fits its panel', !bagUi.overflows, `panel ${Math.round(bagUi.width)}px`);
-check('stat line renders', /Attack/.test(bagUi.stat) && /Defence/.test(bagUi.stat), bagUi.stat);
+check('bag opens', bagUi.open);
+check('mining skill line renders', /Mining/.test(bagUi.skills), bagUi.skills);
 await page.keyboard.press('i');
+
+console.log('\n--- equipment window ---');
+await page.keyboard.press('e');
+await page.waitForTimeout(500);
+const eq = await page.evaluate(() => {
+  const win = document.getElementById('equipwin');
+  const cells = [...win.querySelectorAll('.eslot')];
+  const r = win.getBoundingClientRect();
+  const overflowing = cells.filter(c => {
+    const b = c.getBoundingClientRect();
+    return b.left < r.left - 1 || b.right > r.right + 1 || b.width < 20;
+  });
+  return {
+    open: getComputedStyle(win).display === 'block',
+    slots: cells.length,
+    names: cells.map(c => c.dataset.slot),
+    labels: cells.map(c => c.querySelector('.lb') && c.querySelector('.lb').textContent).filter(Boolean).length,
+    left: win.querySelectorAll('#dollLeft .eslot').length,
+    right: win.querySelectorAll('#dollRight .eslot').length,
+    bottom: win.querySelectorAll('#dollBottom .eslot').length,
+    stats: document.getElementById('equipStats').textContent.replace(/\s+/g, ' ').trim(),
+    width: Math.round(r.width),
+    onScreen: r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight,
+    overflowing: overflowing.length,
+  };
+});
+check('equipment window opens on E', eq.open);
+check('all fourteen slots are drawn', eq.slots === 14, eq.slots + ' slots');
+check('the slots the brief asked for are present',
+  ['helmet', 'shoulders', 'chest', 'gloves', 'legs', 'boots', 'cape', 'necklace',
+   'earring_l', 'earring_r', 'ring_l', 'ring_r'].every(n => eq.names.includes(n)),
+  eq.names.join(', '));
+check('laid out as a paper doll', eq.left === 6 && eq.right === 6 && eq.bottom === 2,
+  eq.left + ' left / ' + eq.right + ' right / ' + eq.bottom + ' bottom');
+check('every slot is labelled', eq.labels === eq.slots, eq.labels + '/' + eq.slots);
+check('no slot spills out of the window', eq.overflowing === 0, eq.overflowing + ' overflowing');
+check('the window fits on screen', eq.onScreen, eq.width + 'px wide');
+check('it totals the bonuses', /Attack/.test(eq.stats) && /Worn/.test(eq.stats), eq.stats);
+await page.keyboard.press('e');
 
 console.log('\n--- npc dialogue ---');
 const dlg = await page.evaluate(() => {

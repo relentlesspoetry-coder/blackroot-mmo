@@ -14,7 +14,7 @@ import {
   PLAYER, ELITE, MONSTER, MONSTER_TEMPLATES,
   maxHpForLevel, xpForLevel, rollPlayerDamage, scaledMonster, rollLoot, mitigate, REGEN,
 } from './balance.js';
-import { ITEMS, SLOTS, itemDef, slotOf, valueOf, equipStats } from './items.js';
+import { ITEMS, SLOTS, SLOT_INFO, itemDef, slotOf, valueOf, equipStats, slotsFor, emptySlots } from './items.js';
 import {
   dist2, closestOnPolyline, pointInPoly, polyCentroid, generateTrees, generateScatter, generateHanging,
 } from './worldgen.js';
@@ -280,7 +280,7 @@ function pickupItem(p, itemId) {
 
 function sendBag(p) {
   send(p.ws, { t: 'bag', items: p.inventory, gold: p.gold,
-    equipment: p.equipment, stats: equipStats(p.equipment) });
+    equipment: p.equipment, stats: equipStats(p.equipment), slots: SLOT_INFO });
   // A 'collect' objective reads straight off the inventory, so any bag change
   // can complete (or un-complete) a quest.
   sendQuests(p);
@@ -289,16 +289,21 @@ function sendBag(p) {
 // ---------------------------------------------------------------------------
 // Equipment
 // ---------------------------------------------------------------------------
-function equipItem(p, name) {
+function equipItem(p, name, wanted) {
   const def = itemDef(name);
-  const slot = slotOf(name);
-  if (!def || !slot) return;
+  const base = slotOf(name);
+  if (!def || !base) return;
   const idx = p.inventory.indexOf(name);
   if (idx < 0) return;                                  // must actually hold it
   if ((def.level || 1) > p.level) {
     send(p.ws, { t: 'event', kind: 'notice', text: `You need level ${def.level} to use the ${name}.` });
     return;
   }
+  // Rings and earrings come in pairs: honour an explicitly chosen side,
+  // otherwise fill an empty one before displacing anything.
+  const choices = slotsFor(base);
+  let slot = (wanted && choices.includes(wanted)) ? wanted : choices.find(s => !p.equipment[s]) || choices[0];
+
   p.inventory.splice(idx, 1);
   const previous = p.equipment[slot];
   if (previous) p.inventory.push(previous);             // swap, never destroy
@@ -837,7 +842,7 @@ wss.on('connection', (ws) => {
           level: 1, xp: 0, gold: 0, openedChests: new Set(),
           // Everyone starts able to mine; better pickaxes are earned.
           inventory: ['Bronze Pickaxe'],
-          equipment: { weapon: null, offhand: null, body: null, trinket: null },
+          equipment: emptySlots(),
           miningXp: 0, pendingMine: null, mineTimer: 0,
           quests: new Map(), questDone: new Set(), questKills: {},
           questFlags: new Set(), questAnnounced: new Set(),
@@ -886,7 +891,7 @@ wss.on('connection', (ws) => {
         player.pendingPickup = Number(msg.id); player.combatId = null; player.moveTo = null; player.pendingChest = null; player.pendingMine = null;
         break;
       }
-      case 'equip': if (player && player.alive) equipItem(player, String(msg.item || '')); break;
+      case 'equip': if (player && player.alive) equipItem(player, String(msg.item || ''), msg.slot ? String(msg.slot) : null); break;
       case 'unequip': if (player && player.alive) unequipItem(player, String(msg.slot || '')); break;
       case 'sell': if (player && player.alive) sellItem(player, String(msg.item || '')); break;
       case 'mine': {
