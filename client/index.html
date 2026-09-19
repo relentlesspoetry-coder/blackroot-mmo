@@ -242,11 +242,12 @@
     <div class="bar"><i id="xpfill"></i><span id="xptext">XP 0%</span></div>
   </div>
   <div id="help">
-    <b>Walk</b> Left-click ground<br><b>Attack</b> Left-click monster<br><b>Target</b> Tab<br><b>Bag</b> I<br><b>Equipment</b> E<br><b>Quests</b> Q<br><b>Options</b> Right-click<br><b>Look</b> Arrows / Drag<br><b>Zoom</b> Scroll<br><b>Chat</b> Enter
+    <b>Walk</b> Left-click ground<br><b>Attack</b> Left-click monster<br><b>Target</b> Tab<br><b>Bag</b> I<br><b>Equipment</b> E<br><b>Quests</b> Q<br><b>Map</b> M<br><b>Options</b> Right-click<br><b>Look</b> Arrows / Drag<br><b>Zoom</b> Scroll<br><b>Chat</b> Enter
   </div>
   <button id="bagBtn" title="Bag (I)">🎒<span class="cnt" id="bagCnt"></span></button>
   <button id="questBtn" title="Quest log (Q)">📜<span class="cnt" id="questCnt"></span></button>
   <button id="equipBtn" title="Equipment (E)">🧍<span class="cnt" id="equipCnt"></span></button>
+  <button id="mapBtn" title="Map (M)" style="position:absolute; right:198px; bottom:12px; width:52px; height:52px; pointer-events:auto; background:#3f342a; border:2px solid #1c150e; border-radius:8px; color:#ffdf9e; font-size:22px; cursor:pointer;">🗺️</button>
   <div id="bag">
     <h3><span>Bag</span><span class="g" id="bagGold">0 gp</span></h3>
     <div id="skillline"></div>
@@ -274,6 +275,13 @@
   <div id="chat">
     <div id="chatlog"></div>
     <input id="chatinput" placeholder="Press Enter to chat…" maxlength="200" />
+  </div>
+  <div id="mapwin" style="display:none; position:absolute; inset:0; z-index:40; align-items:center; justify-content:center; background:rgba(5,9,16,0.9); pointer-events:auto;">
+    <div style="position:relative;">
+      <canvas id="mapCanvas" width="820" height="820" style="display:block; background:#0b1730; border:2px solid #3a5170; border-radius:12px; box-shadow:0 12px 48px #000b; max-width:92vw; max-height:86vh;"></canvas>
+      <div id="mapTitle" style="position:absolute; top:12px; left:0; right:0; text-align:center; color:#d8bd76; font-family:Georgia,'Times New Roman',serif; font-size:24px; letter-spacing:3px; text-shadow:0 2px 8px #000; pointer-events:none;">ZONE MAP</div>
+      <div style="position:absolute; bottom:10px; left:0; right:0; text-align:center; color:#7f93ad; font-size:12px; pointer-events:none;">Press M or Esc to close</div>
+    </div>
   </div>
 </div>
 
@@ -2564,7 +2572,8 @@ function addEventListeners() {
     if (e.key.toLowerCase() === 'i') { toggleBag(); return; }
     if (e.key.toLowerCase() === 'q') { toggleQuests(); return; }
     if (e.key.toLowerCase() === 'e') { toggleEquip(); return; }
-    if (e.key === 'Escape') { closeDialogue(); hideContextMenu(); return; }
+    if (e.key.toLowerCase() === 'm') { toggleMap(); return; }
+    if (e.key === 'Escape') { closeDialogue(); hideContextMenu(); closeMap(); return; }
     if (e.key === ' ' || e.code === 'Space') { e.preventDefault(); if (!jump.active) { jump.active = true; jump.t = 0; } return; }
     const k = e.key.toLowerCase();
     if (k.startsWith('arrow')) e.preventDefault();
@@ -3371,6 +3380,82 @@ if (location.search.includes('debug')) {
 }
 
 let frameCount = 0;
+// ---------------------------------------------------------------------------
+// Zone map (M) — a blueprint-style top-down layout drawn from the zone data.
+// ---------------------------------------------------------------------------
+let mapOpen = false;
+const mapWin = document.getElementById('mapwin');
+const mapCanvas = document.getElementById('mapCanvas');
+const mapTitle = document.getElementById('mapTitle');
+const POI_STYLE = {
+  safe: ['#6fe0a0', 'Rest'], boss: ['#e0524d', 'Elite'], gate: ['#d8bd76', 'Gate'],
+  cave: ['#b79cff', 'Cave'], merchant: ['#e0c060', 'Trader'], landmark: ['#b9c6d6', ''],
+};
+function toggleMap() { if (mapOpen) closeMap(); else openMap(); }
+function openMap() { if (!zone) return; mapOpen = true; mapWin.style.display = 'flex'; if (mapTitle) mapTitle.textContent = (zone.name || 'Zone').toUpperCase(); drawMap(); }
+function closeMap() { mapOpen = false; mapWin.style.display = 'none'; }
+function drawMap() {
+  if (!mapOpen || !zone || !zone.bounds) return;
+  const ctx = mapCanvas.getContext('2d');
+  const W = mapCanvas.width, H = mapCanvas.height, pad = 56;
+  const b = zone.bounds;
+  const s = Math.min((W - 2 * pad) / (b.maxX - b.minX), (H - 2 * pad) / (b.maxZ - b.minZ));
+  const offx = (W - (b.maxX - b.minX) * s) / 2, offz = (H - (b.maxZ - b.minZ) * s) / 2;
+  const px = x => offx + (x - b.minX) * s;   // world +X -> right
+  const pz = z => offz + (z - b.minZ) * s;   // world -Z (north) -> top
+  const line = (pts, close) => { ctx.beginPath(); pts.forEach((p, i) => { const X = px(p.x), Y = pz(p.z); i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); }); if (close) ctx.closePath(); };
+
+  ctx.clearRect(0, 0, W, H);
+  const poly = zone.boundary;
+  if (poly) {
+    line(poly, true); ctx.fillStyle = '#12233f'; ctx.fill();
+    ctx.strokeStyle = '#3a5170'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.save(); line(poly, true); ctx.clip();
+  }
+  // river
+  if (zone.river && zone.river.points) { line(zone.river.points); ctx.strokeStyle = '#2f6f9c'; ctx.lineWidth = Math.max(3, zone.river.width * s * 0.6); ctx.lineJoin = ctx.lineCap = 'round'; ctx.stroke(); }
+  // path (dashed trail)
+  if (zone.path) { line(zone.path); ctx.strokeStyle = '#c9a86a'; ctx.lineWidth = 3; ctx.setLineDash([7, 5]); ctx.lineJoin = 'round'; ctx.stroke(); ctx.setLineDash([]); }
+  // rocks (faint)
+  ctx.fillStyle = '#33425a'; for (const o of (zone.rocks || [])) { ctx.beginPath(); ctx.arc(px(o.x), pz(o.z), Math.max(2, o.r * s * 0.5), 0, 7); ctx.fill(); }
+  // live mobs (red) and other players (blue)
+  for (const [id, rec] of entityMeshes) {
+    if (id === myId || !rec.mesh) continue;
+    const mp = rec.mesh.position;
+    if (rec.kind === 'monster') { ctx.fillStyle = '#c0453a'; ctx.beginPath(); ctx.arc(px(mp.x), pz(mp.z), 2.2, 0, 7); ctx.fill(); }
+    else if (rec.kind === 'player') { ctx.fillStyle = '#5aa0e0'; ctx.beginPath(); ctx.arc(px(mp.x), pz(mp.z), 3, 0, 7); ctx.fill(); }
+  }
+  if (poly) ctx.restore();
+  // NPCs
+  for (const def of (zone.npcs || [])) { ctx.fillStyle = '#e0c060'; ctx.beginPath(); ctx.arc(px(def.x), pz(def.z), 3.5, 0, 7); ctx.fill(); }
+  // POIs + labels
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  for (const p of (zone.pois || [])) {
+    if (p.hidden) continue;
+    const st = POI_STYLE[p.kind] || POI_STYLE.landmark;
+    const X = px(p.x), Y = pz(p.z);
+    ctx.fillStyle = st[0]; ctx.beginPath(); ctx.arc(X, Y, 4.5, 0, 7); ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.font = '11px system-ui'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+    ctx.strokeText(p.name, X, Y - 8); ctx.fillStyle = '#e7eef7'; ctx.fillText(p.name, X, Y - 8);
+  }
+  // player marker (facing arrow)
+  const me = entityMeshes.get(myId);
+  if (me && me.mesh) {
+    const mp = me.mesh.position, ry = me.mesh.rotation.y;
+    const X = px(mp.x), Y = pz(mp.z), fx = Math.sin(ry), fz = Math.cos(ry);
+    ctx.save(); ctx.translate(X, Y); ctx.rotate(Math.atan2(fx, -fz));
+    ctx.fillStyle = '#ffe14a'; ctx.strokeStyle = '#000'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(0, -9); ctx.lineTo(6, 7); ctx.lineTo(0, 3); ctx.lineTo(-6, 7); ctx.closePath();
+    ctx.fill(); ctx.stroke(); ctx.restore();
+  }
+  // compass
+  ctx.fillStyle = '#8fa3bd'; ctx.font = '13px Georgia, serif'; ctx.textAlign = 'center';
+  ctx.fillText('N', W / 2, 46);
+}
+document.getElementById('mapBtn').addEventListener('click', toggleMap);
+mapWin.addEventListener('click', (e) => { if (e.target === mapWin) closeMap(); });
+
 function animate() {
   requestAnimationFrame(animate);
   frameCount++;
@@ -3383,6 +3468,7 @@ function animate() {
   updateNameplates();
   updateNpcMarkers();
   updatePendingTalk();
+  if (mapOpen) drawMap();
   // flicker campfires
   scene.traverse(o => { if (o.userData && o.userData.flame) o.userData.flame.scale.y = 0.85 + Math.sin(performance.now() / 90 + o.id) * 0.15; });
   // drifting fireflies / motes
