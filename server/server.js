@@ -119,6 +119,29 @@ function segDirAt(pts, x, z) {
 // How far the flooded channel reaches beyond the river's nominal half-width
 // (must match RIVER_BANK on the client, which floods the whole carved channel).
 const RIVER_BANK = 4;
+// Multi-storey walking: how tall a ledge you can step onto, and body height.
+const STEP_UP = 0.7, PLAYER_TALL = 2.2;
+// True if (x,z) is inside a placed primitive's rotated footprint; returns its
+// walkable top there (ramps slope along their run), else null.
+function primTopAt(o, x, z) {
+  const s = o.s || 1, hw = (o.w || 1) * s / 2, hd = (o.d || 1) * s / 2;
+  const c = Math.cos(o.yaw || 0), sn = Math.sin(o.yaw || 0), rx = x - o.x, rz = z - o.z;
+  const lx = rx * c + rz * sn, lz = -rx * sn + rz * c;
+  if (Math.abs(lx) > hw || Math.abs(lz) > hd) return null;
+  const rise = (o.h || 1) * s;
+  if (o.m === 'prim:ramp') { const t = Math.max(0, Math.min(1, (lz + hd) / (2 * hd))); return (o.y || 0) + rise * t; }
+  return (o.y || 0) + rise;
+}
+// The walkable floor height under (x,z), reachable from fromY (ground = 0).
+function floorHeightAt(zone, x, z, fromY) {
+  let best = 0;
+  for (const o of (zone._editObjects || [])) {
+    if (typeof o.m !== 'string' || !o.m.startsWith('prim:')) continue;
+    const top = primTopAt(o, x, z);
+    if (top != null && top <= fromY + STEP_UP && top > best) best = top;
+  }
+  return best;
+}
 // Collision: keep an entity inside bounds, out of rocks, and out of the river
 // (except at the bridge, where solid rails keep it on the deck).
 // ---------------------------------------------------------------------------
@@ -211,8 +234,13 @@ function resolveCollision(zone, ent, radius) {
   // props use a simple collision radius.
   for (const o of (zone._editObjects || [])) {
     if (!o.c) continue;
-    if ((o.y || 0) >= 2.2) continue; // raised above head height (upper storey) — walk under it
-    if (typeof o.m === 'string' && o.m.startsWith('prim:')) {
+    const isPrim = typeof o.m === 'string' && o.m.startsWith('prim:');
+    if (o.m === 'prim:ramp') continue; // a ramp is a walkable slope, never a wall
+    // Height gate: only block if the piece spans the entity's body — you step
+    // onto anything within a step, and walk under anything above your head.
+    const ey = ent.y || 0, base = o.y || 0, top = base + (isPrim ? (o.h || 1) * (o.s || 1) : 3);
+    if (top <= ey + STEP_UP || base >= ey + PLAYER_TALL) continue;
+    if (isPrim) {
       const s = o.s || 1, hw = (o.w || 1) * s / 2 + radius, hd = (o.d || 1) * s / 2 + radius;
       const c = Math.cos(o.yaw || 0), sn = Math.sin(o.yaw || 0);
       const rx = ent.x - o.x, rz = ent.z - o.z;
@@ -935,6 +963,9 @@ function stepPlayer(p) {
   }
   p.moving = moved;
   resolveCollision(zone, p, PLAYER_RADIUS);
+  // Stand on the floor beneath us: step/ramp up onto surfaces, fall off ledges.
+  const floor = floorHeightAt(zone, p.x, p.z, p.y || 0);
+  if (floor >= (p.y || 0) - 0.01) p.y = floor; else p.y = Math.max(floor, (p.y || 0) - 16 * DT);
 
   // Zone transitions (cave mouth / exit portal).
   if (p.portalCd <= 0 && zone.portals) {
@@ -1056,7 +1087,7 @@ setInterval(() => {
       const ps = [], ms = [];
       for (const p of players.values()) {
         if (p.zoneId !== zid) continue;
-        ps.push({ id: p.id, name: p.name, x: +p.x.toFixed(2), z: +p.z.toFixed(2),
+        ps.push({ id: p.id, name: p.name, x: +p.x.toFixed(2), z: +p.z.toFixed(2), y: +(p.y || 0).toFixed(2),
           yaw: +p.yaw.toFixed(2), hp: Math.round(p.hp), maxHp: p.maxHp, level: p.level,
           xp: p.xp, xpNext: xpForLevel(p.level), gold: p.gold, alive: p.alive,
           moving: p.moving, inSafe: !!p.inSafe });
@@ -1136,7 +1167,7 @@ wss.on('connection', (ws) => {
         const start = ZONES[START_ZONE];
         player = {
           id, ws, kind: 'player', name, zoneId: START_ZONE,
-          x: start.spawn.x, z: start.spawn.z, yaw: start.spawn.yaw, moving: false,
+          x: start.spawn.x, z: start.spawn.z, y: 0, yaw: start.spawn.yaw, moving: false,
           level: 1, xp: 0, gold: 0, openedChests: new Set(),
           // Everyone starts able to mine; better pickaxes are earned.
           inventory: ['Bronze Pickaxe'],

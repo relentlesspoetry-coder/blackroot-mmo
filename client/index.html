@@ -2052,19 +2052,37 @@ const spawnMeshes = new Map(); // spawn region id -> THREE.Group (ring + pole + 
 (function () { const p = new URLSearchParams(location.search).get('edit'); if (p) { EDIT.on = true; EDIT.key = p; } })();
 const editMeshes = new Map(); // id -> THREE.Group
 
-const PRIM_DEF = { floor: { w: 4, h: 0.3, d: 4, c: 0 }, wall: { w: 4, h: 3, d: 0.4, c: 1 }, block: { w: 2, h: 2, d: 2, c: 1 } };
+const PRIM_DEF = { floor: { w: 4, h: 0.3, d: 4, c: 0 }, wall: { w: 4, h: 3, d: 0.4, c: 1 }, block: { w: 2, h: 2, d: 2, c: 1 }, ramp: { w: 4, h: 3, d: 6, c: 0 } };
+// A wedge: flat bottom, a slope rising from the low (z-) edge to the high (z+)
+// edge. The sloped face is what the player walks up.
+function makeRampGeom(w, h, d) {
+  const hw = w / 2, hd = d / 2;
+  const v = [
+    -hw, 0, -hd, hw, 0, -hd, hw, h, hd, -hw, 0, -hd, hw, h, hd, -hw, h, hd,   // slope (top)
+    -hw, 0, -hd, -hw, 0, hd, hw, 0, hd, -hw, 0, -hd, hw, 0, hd, hw, 0, -hd,   // bottom
+    -hw, 0, hd, -hw, h, hd, hw, h, hd, -hw, 0, hd, hw, h, hd, hw, 0, hd,      // back (z+)
+    -hw, 0, -hd, -hw, h, hd, -hw, 0, hd,                                       // left side
+    hw, 0, -hd, hw, 0, hd, hw, h, hd,                                          // right side
+  ];
+  const uv = []; for (let i = 0; i < v.length; i += 3) uv.push((v[i] + hw) / w, (v[i + 2] + hd) / d);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.computeVertexNormals();
+  return g;
+}
 function makePrimMesh(o) {
   const kind = o.m.slice(5), def = PRIM_DEF[kind] || PRIM_DEF.block;
   const w = o.w || def.w, h = o.h || def.h, d = o.d || def.d;
-  const col = kind === 'floor' ? 0x8a8f98 : kind === 'wall' ? 0x9a9aa2 : 0x8f8a7e;
-  const mat = new THREE.MeshStandardMaterial({ color: col, roughness: 0.92 });
+  const col = kind === 'floor' ? 0x8a8f98 : kind === 'wall' ? 0x9a9aa2 : kind === 'ramp' ? 0x8f9298 : 0x8f8a7e;
+  const mat = new THREE.MeshStandardMaterial({ color: col, roughness: 0.92, side: kind === 'ramp' ? THREE.DoubleSide : THREE.FrontSide });
   if (o.tex && o.tex[0]) {
     const tx = editTexture(o.tex[0]);
     tx.repeat.set(Math.max(1, Math.round(w / 3)), Math.max(1, Math.round((kind === 'wall' ? h : d) / 3)));
     mat.map = tx; mat.needsUpdate = true;
   }
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-  mesh.castShadow = mesh.receiveShadow = true; mesh.position.y = h / 2;
+  const mesh = kind === 'ramp' ? new THREE.Mesh(makeRampGeom(w, h, d), mat) : new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  mesh.castShadow = mesh.receiveShadow = true; mesh.position.y = kind === 'ramp' ? 0 : h / 2;
   mesh.userData.pickKind = 'editobj'; mesh.userData.editId = o.id;
   const wrap = new THREE.Group(); wrap.add(mesh);
   wrap.scale.setScalar(o.s || 1);
@@ -2326,7 +2344,7 @@ function editBuildPalette() {
     return;
   }
   // Builder primitives first (floor / wall / block).
-  for (const kind of ['floor', 'wall', 'block']) {
+  for (const kind of ['floor', 'wall', 'block', 'ramp']) {
     if (q && !kind.includes(q)) continue;
     const mm = 'prim:' + kind, active = EDIT.placing && EDIT.placing.m === mm, def = PRIM_DEF[kind];
     const b = document.createElement('button'); b.textContent = '▦ ' + kind[0].toUpperCase() + kind.slice(1);
@@ -3180,7 +3198,11 @@ function renderWorld(dt) {
       else rec.deadFor = (rec.deadFor || 0) + dt;
       rec.mesh.visible = e.alive || rec.deadFor < 2.2;
       rec.mesh.position.x = x; rec.mesh.position.z = z;
-      rec.mesh.position.y = groundY(x, z); // follow the terrain / ride the bridge
+      // Players ride the server's floor height (walk up onto placed floors/ramps);
+      // monsters just follow the terrain.
+      let py = groundY(x, z);
+      if (kind === 'player' && e.y != null) py += (prev && prev.y != null) ? prev.y + (e.y - prev.y) * t : e.y;
+      rec.mesh.position.y = py;
       rec.mesh.rotation.y = yaw + (rec.mesh.userData.faceOffset || 0);
       rec.data = e;
       if (rec.mesh.visible) animateEntity(rec, e, kind, dt);
@@ -3325,27 +3347,27 @@ function updateControls(dt) {
 
   // Camera follows player position
   const rec = entityMeshes.get(myId);
-  // Base height = terrain under the player (bridge deck / carved riverbank / 0).
-  const lift = groundY(rec.mesh.position.x, rec.mesh.position.z);
-  // Spacebar jump (visual hop): crouch, then hop, then land — added on top of
-  // the bridge lift so the player walks up and over the arch.
+  // renderWorld has already placed the player this frame at terrain height plus
+  // the authoritative floor height (ramps / raised editor floors). Add the jump
+  // hop on top of that base rather than recomputing from terrain alone, so the
+  // player still rides ramps and upper storeys instead of snapping to ground.
   let hop = 0;
   if (jump.active) {
     jump.t += dt;
     if (jump.t >= JUMP_TOTAL) jump.active = false;
     else if (jump.t >= JUMP_CROUCH && jump.t < JUMP_CROUCH + JUMP_AIR) hop = Math.sin(Math.PI * ((jump.t - JUMP_CROUCH) / JUMP_AIR)) * 1.7;
   }
-  rec.mesh.position.y = lift + hop;
-  const px = rec.mesh.position.x, pz = rec.mesh.position.z;
+  rec.mesh.position.y += hop;
+  const px = rec.mesh.position.x, pz = rec.mesh.position.z, py = rec.mesh.position.y;
   let cx = px + Math.sin(camYaw) * Math.cos(camPitch) * camDist;
-  let cy = 2 + Math.sin(camPitch) * camDist;
+  let cy = py + 2 + Math.sin(camPitch) * camDist;
   let cz = pz + Math.cos(camYaw) * Math.cos(camPitch) * camDist;
 
   // Pull the camera in if a boundary wall would end up between it and the
   // player. Standing near the zone edge used to park the camera inside the
   // wall, which filled half the screen with black.
   if (camFrozen) return;         // a test has parked the camera somewhere
-  _camHead.set(px, 1.8, pz);
+  _camHead.set(px, py + 1.8, pz);
   _camWant.set(cx, cy, cz);
   _camDir.copy(_camWant).sub(_camHead);
   const want = _camDir.length();
@@ -3357,7 +3379,7 @@ function updateControls(dt) {
     if (hit) {
       const back = Math.max(2.5, hit.distance - 0.8);
       cx = px + _camDir.x * back;
-      cy = 1.8 + _camDir.y * back;
+      cy = py + 1.8 + _camDir.y * back;
       cz = pz + _camDir.z * back;
     }
   }
@@ -3370,14 +3392,14 @@ function updateControls(dt) {
     for (let pull = 0.8; pull >= 0.2; pull -= 0.15) {
       const tx = px + (cx - px) * pull, tz = pz + (cz - pz) * pull;
       if (inBoundary(tx, tz)) {
-        cx = tx; cz = tz; cy = 1.8 + (cy - 1.8) * pull; placed = true; break;
+        cx = tx; cz = tz; cy = py + 1.8 + (cy - (py + 1.8)) * pull; placed = true; break;
       }
     }
     // Nothing along the line was inside: look straight down at the player.
-    if (!placed) { cx = px; cz = pz; cy = Math.max(cy, 8); }
+    if (!placed) { cx = px; cz = pz; cy = Math.max(cy, py + 8); }
   }
   camera.position.set(cx, cy, cz);
-  camera.lookAt(px, 1.6, pz);
+  camera.lookAt(px, py + 1.6, pz);
 
   // Movement relative to camera yaw
   let f = 0, r = 0;
