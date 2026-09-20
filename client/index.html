@@ -137,8 +137,17 @@
     background: #000d; color: #ffe9b0; font-size: 11px; padding: 3px 7px; border-radius: 4px; white-space: nowrap; z-index: 3; }
   .eslot .tip { display: none; }
   #skillline { color: #b9ad90; font-size: 11px; margin: -4px 0 8px; display: flex;
-    justify-content: space-between; align-items: center; gap: 8px; }
+    flex-direction: column; gap: 5px; }
   #skillline b { color: #8fd070; font-weight: 600; }
+  #skillline .cskills { display: flex; flex-wrap: wrap; gap: 6px; }
+  #skillline .cskill { background: #241d13; border: 1px solid #4a3d2a; border-radius: 4px;
+    padding: 1px 6px; color: #cbb892; }
+  #skillline .cskill b { color: #ffd47a; }
+  #skillline .styles { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; color: #8a7d63; }
+  #skillline .stylebtn { pointer-events: auto; cursor: pointer; font-size: 10px; padding: 2px 7px;
+    background: #1a2436; color: #cfe0f5; border: 1px solid #3a4c68; border-radius: 4px; }
+  #skillline .stylebtn.on { background: #2f5aa0; border-color: #5a86c8; color: #fff; }
+  #skillline .miningrow { display: flex; align-items: center; gap: 8px; }
   #skillline .xpbar { flex: 1; height: 4px; background: #1d1913; border: 1px solid #4a3d2a;
     border-radius: 3px; overflow: hidden; }
   #skillline .xpbar i { display: block; height: 100%; background: #6a9f4a; transform-origin: left; }
@@ -4070,7 +4079,7 @@ function updateHudFromSnapshot(snap) {
   const me = snap.players.find(p => p.id === myId);
   if (!me) return;
   document.getElementById('cname').textContent = me.name;
-  document.getElementById('clevel').textContent = me.level;
+  document.getElementById('clevel').textContent = me.combat != null ? me.combat : me.level;
   document.getElementById('hpfill').style.transform = `scaleX(${Math.max(0, me.hp / me.maxHp)})`;
   document.getElementById('hptext').textContent = `${me.hp} / ${me.maxHp}`;
   if (me.gold != null) document.getElementById('cgold').textContent = me.gold;
@@ -4091,8 +4100,10 @@ function onEvent(m) {
   switch (m.kind) {
     case 'xp': flyText(`+${m.amount} XP`, 'xp'); break;
     case 'levelup':
-      document.getElementById('clevel').textContent = m.level;
       flyText(`Level ${m.level}!`, 'heal'); break;
+    case 'skilllevel':
+      flyText(`${m.skill[0].toUpperCase() + m.skill.slice(1)} level ${m.level}!`, 'heal');
+      addChat('Skills', `Your ${m.skill} level is now ${m.level}.`, true); break;
     case 'loot':
       document.getElementById('cgold').textContent = m.gold;
       addChat('Loot', m.text, true); break;
@@ -4266,9 +4277,22 @@ function renderSkills() {
   if (!el) return;
   const m = skills.mining || { level: 1, into: 0, next: 1, pick: null };
   const pct = Math.max(0, Math.min(1, m.into / (m.next || 1)));
-  el.innerHTML = `<span>⛏ Mining <b>${m.level}</b></span>` +
+  const cs = skills.combat || {};
+  const label = { attack: 'Atk', strength: 'Str', defence: 'Def', hitpoints: 'HP' };
+  const chip = (k) => `<span class="cskill">${label[k]} <b>${(cs[k] || {}).level || 1}</b></span>`;
+  const chips = ['attack', 'strength', 'defence', 'hitpoints'].map(chip).join('') +
+    `<span class="cskill">⚔ Combat <b>${skills.combatLevel || 3}</b></span>`;
+  const cur = skills.style || 'controlled';
+  const slabel = { accurate: 'Accurate', aggressive: 'Aggressive', defensive: 'Defensive', controlled: 'Controlled' };
+  const styleBtns = ['accurate', 'aggressive', 'defensive', 'controlled']
+    .map(s => `<button class="stylebtn${s === cur ? ' on' : ''}" data-style="${s}">${slabel[s]}</button>`).join('');
+  el.innerHTML =
+    `<div class="cskills">${chips}</div>` +
+    `<div class="styles"><span>Style:</span> ${styleBtns}</div>` +
+    `<div class="miningrow"><span>⛏ Mining <b>${m.level}</b></span>` +
     `<span class="xpbar"><i style="transform:scaleX(${pct})"></i></span>` +
-    `<span class="pick">${m.pick ? escapeHtml(m.pick.replace(' Pickaxe', '')) : 'no pickaxe'}</span>`;
+    `<span class="pick">${m.pick ? escapeHtml(m.pick.replace(' Pickaxe', '')) : 'no pickaxe'}</span></div>`;
+  el.querySelectorAll('.stylebtn').forEach(b => b.onclick = () => ws?.send(JSON.stringify({ t: 'style', style: b.dataset.style })));
 }
 
 // The slot layout is authored on the server (items.js SLOT_INFO) and arrives

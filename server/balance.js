@@ -17,6 +17,55 @@ export const PLAYER = {
 export function maxHpForLevel(level) { return 80 + (level - 1) * 28; }
 export function xpForLevel(level) { return Math.floor(50 * Math.pow(level, 1.6)); }
 
+// ---------------------------------------------------------------------------
+// OSRS-style combat maths
+// ---------------------------------------------------------------------------
+export const TICK = 0.6;               // one game tick, seconds (OSRS)
+export const DEFAULT_ATTACK_SPEED = 4; // ticks between swings for a typical weapon
+// Attack-style stances: each grants a hidden +bonus to a stat and trains a skill.
+export const STYLES = {
+  accurate:   { atk: 3, str: 0, def: 0, train: 'attack' },
+  aggressive: { atk: 0, str: 3, def: 0, train: 'strength' },
+  defensive:  { atk: 0, str: 0, def: 3, train: 'defence' },
+  controlled: { atk: 1, str: 1, def: 1, train: 'shared' },
+};
+export const COMBAT_SKILLS = ['attack', 'strength', 'defence', 'hitpoints'];
+// Hitpoints starts at level 10 (like OSRS); HP scales from there.
+export function hpForHitpoints(hpLevel) { return 80 + (hpLevel - 10) * 10; }
+export function combatLevel(sk) {
+  return Math.floor(0.25 * (sk.defence.level + sk.hitpoints.level) + 0.325 * (sk.attack.level + sk.strength.level));
+}
+// Max hit from strength. The divisor is tuned (vs OSRS's 640) so this game's
+// HP pools die at a similar pace to the old damage model.
+export function maxHit(strLevel, strBonus, styleStr) {
+  const eff = strLevel + styleStr + 8;
+  return Math.max(1, Math.floor(0.5 + eff * (strBonus + 64) / 120));
+}
+export function attackRoll(atkLevel, atkBonus, styleAtk) {
+  return (atkLevel + styleAtk + 8) * (atkBonus + 64);
+}
+export function defenceRoll(defLevel, defBonus) {
+  return (defLevel + 8) * (defBonus + 64);
+}
+// Chance a swing lands, given the attacker's roll vs the defender's roll.
+export function hitChance(atkRoll, defRoll) {
+  return atkRoll > defRoll ? 1 - (defRoll + 2) / (2 * (atkRoll + 1)) : atkRoll / (2 * (defRoll + 1));
+}
+// One swing. Returns damage (0 = a miss / blocked hit -> blue "0" splat).
+export function rollSwing(atk, str, atkBonus, strBonus, style, defLevel, defBonus) {
+  const s = STYLES[style] || STYLES.controlled;
+  const ar = attackRoll(atk, atkBonus, s.atk);
+  const dr = defenceRoll(defLevel, defBonus);
+  if (Math.random() >= hitChance(ar, dr)) return 0;
+  return Math.floor(Math.random() * (maxHit(str, strBonus, s.str) + 1));
+}
+// A monster's swing: accuracy from its levels/bonuses, damage 0..its max hit.
+export function rollMonsterSwing(atkLevel, atkBonus, mh, defLevel, defBonus) {
+  const ar = attackRoll(atkLevel, atkBonus, 0), dr = defenceRoll(defLevel, defBonus);
+  if (Math.random() >= hitChance(ar, dr)) return 0;
+  return Math.floor(Math.random() * (mh + 1));
+}
+
 // Damage scales with level — without this the player's dps is frozen at level 1
 // while monsters keep scaling, which makes everything past the creek unwinnable.
 // A weapon's `atk` shifts the whole roll up.
@@ -215,11 +264,21 @@ export function scaledMonster(type, level) {
   const t = MONSTER_TEMPLATES[type];
   const fh = 1 + MONSTER.hpScale * (level - 1);
   const fd = 1 + MONSTER.dmgScale * (level - 1);
+  const dmg = [Math.max(1, Math.round(t.dmg[0] * fd)), Math.max(1, Math.round(t.dmg[1] * fd))];
   return {
     hp: Math.round(t.hp * fh),
-    dmg: [Math.max(1, Math.round(t.dmg[0] * fd)), Math.max(1, Math.round(t.dmg[1] * fd))],
+    dmg,
     speed: t.speed, aggro: t.aggro,
     xp: Math.round(t.xp * (1 + MONSTER.xpScale * (level - 1))),
+    // OSRS-style combat stats: attack/defence levels & bonuses scale with level;
+    // maxHit comes from the template's top-end damage. Kept modest so a fresh
+    // player still lands blows reliably on low-level foes.
+    atkLevel: Math.round(1 + level * 1.2),
+    defLevel: level,
+    atkBonus: Math.round(level * 1.2),
+    defBonus: Math.round(level * 1.2),
+    maxHit: dmg[1],
+    attackSpeed: t.attackSpeed || 4, // ticks
   };
 }
 

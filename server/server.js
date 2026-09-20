@@ -14,6 +14,8 @@ import { killingfields } from './zones/killingfields.js';
 import {
   PLAYER, ELITE, MONSTER, MONSTER_TEMPLATES,
   maxHpForLevel, xpForLevel, rollPlayerDamage, scaledMonster, rollLoot, mitigate, REGEN,
+  TICK, DEFAULT_ATTACK_SPEED, STYLES, COMBAT_SKILLS, hpForHitpoints, combatLevel,
+  maxHit, rollSwing, rollMonsterSwing,
 } from './balance.js';
 import { ITEMS, SLOTS, SLOT_INFO, DOLL, itemDef, slotOf, valueOf, equipStats, slotsFor, emptySlots } from './items.js';
 import {
@@ -331,6 +333,9 @@ function makeMonster(spec) {
     x: pos.x, z: pos.z, home: { x: pos.x, z: pos.z }, yaw: rand(0, Math.PI * 2),
     hp: stats.hp, maxHp: stats.hp, dmg: stats.dmg, speed: stats.speed,
     aggro: stats.aggro, xp: stats.xp, passive: !!MONSTER_TEMPLATES[spec.type].passive,
+    // OSRS combat stats (accuracy rolls + max hit).
+    atkLevel: stats.atkLevel, defLevel: stats.defLevel, atkBonus: stats.atkBonus,
+    defBonus: stats.defBonus, maxHit: stats.maxHit, attackSpeed: stats.attackSpeed,
     respawn: spec.respawn != null ? spec.respawn : Math.round((MONSTER_TEMPLATES[spec.type].respawn || RESPAWN_TIME) * (zone.respawnMult || 1)),
     alive: true, state: 'idle', targetId: null, atkTimer: 0,
     wanderTimer: rand(1, 4), wanderDir: { x: 0, z: 0 }, respawnTimer: 0,
@@ -518,6 +523,8 @@ function populateElite(zoneId, e) {
   const hpM = e.hpMult || ELITE.hp, dmgM = e.dmgMult || ELITE.dmg;
   elite.maxHp = Math.round(elite.maxHp * hpM); elite.hp = elite.maxHp;
   elite.dmg = [Math.round(elite.dmg[0] * dmgM), Math.round(elite.dmg[1] * dmgM)];
+  elite.maxHit = Math.max(1, Math.round(elite.maxHit * dmgM)); // scale OSRS max hit too
+  elite.atkBonus = Math.round(elite.atkBonus * 1.5); elite.defBonus = Math.round(elite.defBonus * 1.5);
   elite.xp = Math.round(elite.xp * ELITE.xp);
   elite.aggro = 10; // shorter leash; guards its circle
 }
@@ -542,8 +549,8 @@ function grantXp(p, amount) {
   while (p.xp >= xpForLevel(p.level)) {
     p.xp -= xpForLevel(p.level);
     p.level++;
-    p.maxHp = maxHpForLevel(p.level);
-    p.hp = p.maxHp;
+    // HP is driven by the Hitpoints skill now, so leveling the adventure track
+    // no longer overrides it.
     send(p.ws, { t: 'event', kind: 'levelup', level: p.level });
     systemChat(`${p.name} reached level ${p.level}!`);
   }
@@ -665,8 +672,10 @@ function minerStats(p) {
 
 function sendSkills(p) {
   const st = minerStats(p);
-  send(p.ws, { t: 'skills', mining: { level: st.level, xp: p.miningXp, into: st.into, next: st.next,
-    pick: st.pick } });
+  const cs = {};
+  for (const s of COMBAT_SKILLS) cs[s] = { level: p.skills[s].level, xp: Math.floor(p.skills[s].xp), next: xpForLevel(p.skills[s].level) };
+  send(p.ws, { t: 'skills', mining: { level: st.level, xp: p.miningXp, into: st.into, next: st.next, pick: st.pick },
+    combat: cs, combatLevel: p.combat || combatLevel(p.skills), style: p.style });
 }
 
 function grantMiningXp(p, amount) {
@@ -818,12 +827,47 @@ function checkQuestReach(p) {
 }
 
 // Called from the movement state machine once the player is in melee range.
+// Per-weapon attack speed (ticks). Fast blades swing more often; heavy weapons
+// hit harder but slower. Anything not listed uses the default (4 ticks).
+const WEAPON_SPEED = {
+  'Bronze Dagger': 3, 'Spiderfang Dagger': 3, 'Rusty Dagger': 3,
+  'Iron Sword': 4, 'Goblin Shortbow': 3,
+  'Ogre Club': 6, "Giant's Stone Maul": 7,
+};
+function playerAttackSpeed(p) {
+  const w = p.equipment && p.equipment.weapon;
+  return (WEAPON_SPEED[w] || DEFAULT_ATTACK_SPEED) * TICK;
+}
+// Combat XP: 4 per damage to the style's skill (split for controlled) + 1.33 to
+// hitpoints. Levels the skill, grows max HP off hitpoints, tracks combat level.
+function addSkillXp(p, skill, amount) {
+  const sk = p.skills[skill]; if (!sk) return;
+  sk.xp += amount; let leveled = false;
+  while (sk.xp >= xpForLevel(sk.level)) { sk.xp -= xpForLevel(sk.level); sk.level++; leveled = true; }
+  if (leveled) {
+    if (skill === 'hitpoints') { const old = p.maxHp; p.maxHp = hpForHitpoints(sk.level); p.hp = Math.min(p.maxHp, p.hp + (p.maxHp - old)); }
+    p.combat = combatLevel(p.skills);
+    send(p.ws, { t: 'event', kind: 'skilllevel', skill, level: sk.level });
+  }
+}
+function awardCombatXp(p, dmg) {
+  if (dmg <= 0) return;
+  const s = STYLES[p.style] || STYLES.controlled;
+  if (s.train === 'shared') { addSkillXp(p, 'attack', 1.33 * dmg); addSkillXp(p, 'strength', 1.33 * dmg); addSkillXp(p, 'defence', 1.33 * dmg); }
+  else addSkillXp(p, s.train, 4 * dmg);
+  addSkillXp(p, 'hitpoints', 1.33 * dmg);
+  sendSkills(p);
+}
 function doPlayerAttack(p, m) {
   if (p.atkTimer > 0) return;
-  p.atkTimer = ATTACK_COOLDOWN;
+  p.atkTimer = playerAttackSpeed(p);
   m.state = 'combat'; m.targetId = p.id; // monster fights back even on a miss
-  const dmg = rollPlayerDamage(p.level, equipStats(p.equipment).atk); // 0 on a miss
-  if (dmg > 0) m.hp -= dmg;
+  // OSRS accuracy: our attack roll vs the monster's defence roll; damage 0..maxHit.
+  // A flat competence (+6 effective) keeps early, gear-less combat from being a
+  // miss-fest against low-level foes while still scaling with skills and gear.
+  const eq = equipStats(p.equipment), bonus = eq.atk || 0, COMP = 6;
+  const dmg = rollSwing(p.skills.attack.level + COMP, p.skills.strength.level + COMP, bonus, bonus, p.style, m.defLevel || 1, m.defBonus || 0);
+  if (dmg > 0) { m.hp -= dmg; awardCombatXp(p, dmg); }
   broadcast({ t: 'event', kind: 'hit', by: p.id, target: m.id, dmg, targetKind: 'monster' });
   if (m.hp <= 0) killMonster(m, p);
 }
@@ -870,10 +914,14 @@ function stepMonster(m) {
         m.x += Math.sin(m.yaw) * m.speed * DT;
         m.z += Math.cos(m.yaw) * m.speed * DT;
       } else if (m.atkTimer <= 0) {
-        m.atkTimer = 2.4; // slower, more deliberate monster swings
-        const raw = Math.random() < MONSTER.hitChance ? Math.floor(rand(m.dmg[0], m.dmg[1] + 1)) : 0;
-        const dmg = mitigate(raw, equipStats(target.equipment).def); // armour, min 1
+        m.atkTimer = (m.attackSpeed || 4) * TICK;
+        // OSRS accuracy: monster attack roll vs the player's defence roll (level
+        // + armour), damage 0..monster maxHit.
+        const eq = equipStats(target.equipment);
+        const dmg = rollMonsterSwing(m.atkLevel || 1, m.atkBonus || 0, m.maxHit || 1, target.skills.defence.level, eq.def || 0);
         if (dmg > 0) { target.hp -= dmg; target.combatTimer = REGEN.combatLockout; }
+        // Auto-retaliate: if the player isn't already fighting, strike back.
+        if (target.alive && target.combatId == null && !target.pendingMine) { target.combatId = m.id; target.moveTo = null; }
         broadcast({ t: 'event', kind: 'hit', by: m.id, target: target.id, dmg, targetKind: 'player' });
         if (target.hp <= 0) {
           target.hp = 0; target.alive = false; target.deathTimer = RESPAWN_TIME;
@@ -1092,6 +1140,7 @@ setInterval(() => {
         if (p.zoneId !== zid) continue;
         ps.push({ id: p.id, name: p.name, x: +p.x.toFixed(2), z: +p.z.toFixed(2), y: +(p.y || 0).toFixed(2),
           yaw: +p.yaw.toFixed(2), hp: Math.round(p.hp), maxHp: p.maxHp, level: p.level,
+          combat: p.combat || combatLevel(p.skills),
           xp: p.xp, xpNext: xpForLevel(p.level), gold: p.gold, alive: p.alive,
           moving: p.moving, inSafe: !!p.inSafe });
       }
@@ -1172,16 +1221,21 @@ wss.on('connection', (ws) => {
           id, ws, kind: 'player', name, zoneId: START_ZONE,
           x: start.spawn.x, z: start.spawn.z, y: 0, yaw: start.spawn.yaw, moving: false,
           level: 1, xp: 0, gold: 0, openedChests: new Set(),
+          // OSRS-style combat skills. Hitpoints starts at 10 (=> 80 HP).
+          skills: { attack: { level: 1, xp: 0 }, strength: { level: 1, xp: 0 },
+            defence: { level: 1, xp: 0 }, hitpoints: { level: 10, xp: 0 } },
+          style: 'controlled',
           // Everyone starts able to mine; better pickaxes are earned.
           inventory: ['Bronze Pickaxe'],
           equipment: emptySlots(),
           miningXp: 0, pendingMine: null, mineTimer: 0,
           quests: new Map(), questDone: new Set(), questKills: {},
           questFlags: new Set(), questAnnounced: new Set(),
-          maxHp: maxHpForLevel(1), hp: maxHpForLevel(1), alive: true,
+          maxHp: hpForHitpoints(10), hp: hpForHitpoints(10), alive: true,
           atkTimer: 0, regen: 0, combatTimer: 0, deathTimer: 0, portalCd: 0, inSafe: true,
           moveTo: null, combatId: null, pendingChest: null, pendingPickup: null, pendingGate: false, input: { f: 0, r: 0, yaw: 0 },
         };
+        player.combat = combatLevel(player.skills);
         players.set(id, player);
         send(ws, { t: 'welcome', id, tickRate: SNAPSHOT_HZ, zone: zoneForClient(start) });
         sendBag(player); // sends the quest payload too
@@ -1204,6 +1258,11 @@ wss.on('connection', (ws) => {
         if (m && m.alive && m.zoneId === player.zoneId) {
           player.combatId = m.id; player.moveTo = null; player.pendingChest = null; player.pendingPickup = null; player.pendingMine = null;
         }
+        break;
+      }
+      case 'style': {
+        if (!player) break;
+        if (STYLES[msg.style]) { player.style = msg.style; sendSkills(player); }
         break;
       }
       case 'move': {
