@@ -2227,6 +2227,21 @@ function updateFarmGate(dt) {
 const EDIT = { on: false, key: '', models: [], mobs: [], items: [], loot: {}, lootType: null, tab: 'objects', placing: null, selId: null, selPart: 0, placingMob: null, selSpawn: null };
 const spawnMeshes = new Map(); // spawn region id -> THREE.Group (ring + pole + label)
 (function () { const p = new URLSearchParams(location.search).get('edit'); if (p) { EDIT.on = true; EDIT.key = p; } })();
+// Toggle the world editor in-game (F3). Edits are still server-gated by the edit
+// key, so if none was supplied via ?edit=<key> we ask for it once.
+function toggleEditor() {
+  if (EDIT.on) {
+    EDIT.on = false; EDIT.placing = null; EDIT.placingMob = null;
+    if (typeof editSelect === 'function') { editSelect(null); editSelectSpawn(null); }
+    const el = document.getElementById('editor'); if (el) el.style.display = 'none';
+    return;
+  }
+  if (!EDIT.key) { const k = prompt('World editor access key:'); if (!k) return; EDIT.key = k; }
+  EDIT.on = true;
+  editInit();
+  ws?.send(JSON.stringify({ t: 'edit:list', key: EDIT.key }));
+  if (typeof editSetMode === 'function') editSetMode();
+}
 const editMeshes = new Map(); // id -> THREE.Group
 
 const PRIM_DEF = { floor: { w: 4, h: 0.3, d: 4, c: 0 }, wall: { w: 4, h: 3, d: 0.4, c: 1 }, block: { w: 2, h: 2, d: 2, c: 1 }, ramp: { w: 4, h: 3, d: 6, c: 0 }, stairs: { w: 4, h: 3, d: 6, c: 0 } };
@@ -2432,8 +2447,11 @@ function editSetTexture(name) {
 }
 
 let editDrag = null, editHL = null, _edUpdT = 0;
+let _editInited = false;
 function editInit() {
   document.getElementById('editor').style.display = 'block';
+  if (_editInited) return; // listeners bind once; later calls just re-show the panel
+  _editInited = true;
   const $ = id => document.getElementById(id);
   $('edSearch').addEventListener('input', editBuildPalette);
   $('edYaw').addEventListener('input', e => editEditSel({ yaw: +e.target.value }));
@@ -3859,6 +3877,7 @@ function addEventListeners() {
   addEventListener('keydown', (e) => {
     if (document.activeElement === chatInput) return;
     if (e.key === 'Enter') { chatInput.focus(); e.preventDefault(); return; }
+    if (e.key === 'F3') { e.preventDefault(); toggleEditor(); return; }
     if (e.key === 'Tab') { e.preventDefault(); tabTarget(); return; }
     if (e.key.toLowerCase() === 'i') { toggleBag(); return; }
     if (e.key.toLowerCase() === 'q') { toggleQuests(); return; }
