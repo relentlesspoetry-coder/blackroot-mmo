@@ -276,8 +276,12 @@
     <div style="padding:8px 10px; border-bottom:1px solid #2b3852; font-weight:700; color:#9fd0ff; letter-spacing:1px; display:flex; justify-content:space-between; align-items:center;">
       <span>WORLD EDITOR</span><span id="edMode" style="font-size:10px; color:#7f8ba0;">place</span>
     </div>
+    <div style="display:flex; border-bottom:1px solid #2b3852;">
+      <button id="edTabObjects" style="flex:1; background:#22314a; border:0; color:#f0f5ff; padding:7px; cursor:pointer; font-size:12px; font-weight:700;">Objects</button>
+      <button id="edTabSpawns" style="flex:1; background:#141d2c; border:0; color:#9fb0c4; padding:7px; cursor:pointer; font-size:12px; font-weight:700;">Mob Spawns</button>
+    </div>
     <div style="padding:8px 10px;">
-      <input id="edSearch" placeholder="search models…" style="width:100%; box-sizing:border-box; background:#0c111b; border:1px solid #2b3852; color:#e6edf6; border-radius:6px; padding:5px 7px; font-size:12px;" />
+      <input id="edSearch" placeholder="search…" style="width:100%; box-sizing:border-box; background:#0c111b; border:1px solid #2b3852; color:#e6edf6; border-radius:6px; padding:5px 7px; font-size:12px;" />
       <div id="edPalette" style="margin-top:6px; max-height:34vh; overflow-y:auto;"></div>
     </div>
     <div id="edInspector" style="display:none; padding:8px 10px; border-top:1px solid #2b3852;">
@@ -297,8 +301,18 @@
         <button id="edDelete" style="flex:1; background:#5a2330; border:1px solid #7a3040; color:#ffd0d0; border-radius:6px; padding:6px; cursor:pointer;">Delete</button>
       </div>
     </div>
+    <div id="edSpawnInspector" style="display:none; padding:8px 10px; border-top:1px solid #2b3852;">
+      <div id="edSpawnName" style="font-weight:700; color:#ffb98a; margin-bottom:6px;"></div>
+      <label style="display:block; margin:4px 0;">Mob type
+        <select id="edSpType" style="width:100%; box-sizing:border-box; background:#0c111b; border:1px solid #2b3852; color:#e6edf6; border-radius:6px; padding:4px; font-size:12px;"></select></label>
+      <label style="display:block; margin:4px 0;">Count <input id="edSpCount" type="number" min="1" max="20" style="width:56px; background:#0c111b; border:1px solid #2b3852; color:#e6edf6; border-radius:5px; padding:3px 5px;"></label>
+      <label style="display:block; margin:4px 0;">Level <input id="edSpLevel" type="number" min="1" max="20" style="width:56px; background:#0c111b; border:1px solid #2b3852; color:#e6edf6; border-radius:5px; padding:3px 5px;"></label>
+      <label style="display:block; margin:4px 0;">Radius <input id="edSpR" type="range" min="1" max="40" step="0.5" style="width:100%;"> <span id="edSpRV"></span></label>
+      <label style="display:block; margin:4px 0;">Respawn (s) <input id="edSpRespawn" type="number" min="2" max="600" style="width:64px; background:#0c111b; border:1px solid #2b3852; color:#e6edf6; border-radius:5px; padding:3px 5px;"></label>
+      <button id="edSpDelete" style="width:100%; margin-top:6px; background:#5a2330; border:1px solid #7a3040; color:#ffd0d0; border-radius:6px; padding:6px; cursor:pointer;">Delete spawn</button>
+    </div>
     <div style="padding:7px 10px; border-top:1px solid #2b3852; font-size:10px; color:#7f8ba0; line-height:1.5;">
-      Pick a model, then <b>left-click ground</b> to place. Click a placed object to select. Drag to move. <b>Esc</b> cancels placing.
+      <b>Objects:</b> pick a model, left-click ground to place; click one to select, drag to move. <b>Spawns:</b> pick a mob, click ground to drop a spawn ring; click a ring to edit its count/level/radius/timer. <b>Esc</b> cancels/deselects.
     </div>
   </div>
   <div id="chat">
@@ -474,7 +488,7 @@ function handle(m) {
       enterZone(m.zone);
       break;
     case 'models':
-      EDIT.models = m.models || []; editBuildPalette();
+      EDIT.models = m.models || []; EDIT.mobs = m.mobs || []; editBuildPalette();
       break;
     case 'edit':
       applyEdit(m);
@@ -1155,6 +1169,7 @@ function buildZone() {
 
   // World-editor objects (player-built props), as individual meshes.
   buildEditObjects();
+  buildEditSpawns();
 
   // Treasure chests (clickable)
   for (const ch of (zone.chests || [])) buildChest(ch);
@@ -2014,7 +2029,8 @@ function updateFarmGate(dt) {
 // World editor — place/move/rotate/scale/delete GLB props, saved server-side.
 // Activated with ?edit=<key>; the value is the auth key sent with every edit.
 // ---------------------------------------------------------------------------
-const EDIT = { on: false, key: '', models: [], placing: null, selId: null, selPart: 0 };
+const EDIT = { on: false, key: '', models: [], mobs: [], tab: 'objects', placing: null, selId: null, selPart: 0, placingMob: null, selSpawn: null };
+const spawnMeshes = new Map(); // spawn region id -> THREE.Group (ring + pole + label)
 (function () { const p = new URLSearchParams(location.search).get('edit'); if (p) { EDIT.on = true; EDIT.key = p; } })();
 const editMeshes = new Map(); // id -> THREE.Group
 
@@ -2078,9 +2094,52 @@ async function applyEdit(m) {
     zone.editObjects = zone.editObjects.filter(e => e.id !== m.id);
     removeEditMesh(m.id);
     if (EDIT.selId === m.id) editSelect(null);
+  } else if (m.op === 'spawn') {
+    zone.editSpawns = zone.editSpawns || [];
+    const i = zone.editSpawns.findIndex(s => s.id === m.sp.id);
+    if (i >= 0) zone.editSpawns[i] = m.sp; else zone.editSpawns.push(m.sp);
+    if (EDIT.on) { removeSpawnMesh(m.sp.id); makeSpawnMesh(m.sp); }
+    if (EDIT.selSpawn === m.sp.id) editSyncSpawn();
+  } else if (m.op === 'spawn:delete') {
+    zone.editSpawns = (zone.editSpawns || []).filter(s => s.id !== m.id);
+    removeSpawnMesh(m.id);
+    if (EDIT.selSpawn === m.id) editSelectSpawn(null);
   }
 }
 function sendEdit(obj) { obj.key = EDIT.key; ws?.send(JSON.stringify(obj)); }
+
+// ---- Spawn-region visuals (edit mode only): a ground ring + pole + label. ----
+function makeSpawnLabel(sp) {
+  const cv = document.createElement('canvas'); cv.width = 256; cv.height = 64;
+  const ctx = cv.getContext('2d');
+  ctx.font = 'bold 26px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(10,14,20,0.8)'; ctx.fillRect(0, 0, 256, 64);
+  ctx.fillStyle = '#ffd98a'; ctx.fillText(`${sp.type} x${sp.count}`, 128, 22);
+  ctx.fillStyle = '#cfe0ff'; ctx.font = '20px sans-serif'; ctx.fillText(`Lv ${sp.level} · ${sp.respawn}s`, 128, 46);
+  const tx = new THREE.CanvasTexture(cv); tx.colorSpace = THREE.SRGBColorSpace;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tx, depthTest: false, transparent: true }));
+  sprite.scale.set(4, 1, 1); return sprite;
+}
+function makeSpawnMesh(sp) {
+  const g = new THREE.Group(); g.position.set(sp.cx, 0, sp.cz);
+  const col = 0xff7a3c;
+  const disc = new THREE.Mesh(new THREE.CircleGeometry(sp.r, 44), new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.12, side: THREE.DoubleSide, depthWrite: false }));
+  disc.rotation.x = -Math.PI / 2; disc.position.y = 0.12; g.add(disc);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(Math.max(0.2, sp.r - 0.4), sp.r, 44), new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false }));
+  ring.rotation.x = -Math.PI / 2; ring.position.y = 0.14; g.add(ring);
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 2.4, 6), new THREE.MeshBasicMaterial({ color: col }));
+  pole.position.y = 1.2; g.add(pole);
+  g.traverse(o => { if (o.isMesh) { o.userData.pickKind = 'spawn'; o.userData.spawnId = sp.id; } });
+  const lab = makeSpawnLabel(sp); lab.position.y = 2.9; g.add(lab);
+  scene.add(g); spawnMeshes.set(sp.id, g); return g;
+}
+function removeSpawnMesh(id) { const g = spawnMeshes.get(id); if (g) { scene.remove(g); spawnMeshes.delete(id); } }
+function buildEditSpawns() {
+  for (const g of spawnMeshes.values()) scene.remove(g);
+  spawnMeshes.clear();
+  if (!EDIT.on) return; // spawn rings are an editor aid, not a game visual
+  for (const sp of (zone.editSpawns || [])) makeSpawnMesh(sp);
+}
 
 // Every texture available to the editor (client/textures/*.png).
 const EDIT_TEX = [
@@ -2129,6 +2188,17 @@ function editInit() {
     EDIT.placing = { m: o.m, s: o.s || 1, yaw: o.yaw || 0, c: o.c || 0, tex: Object.assign({}, o.tex) };
     editSetMode(); editBuildPalette();
   });
+  // Tabs
+  $('edTabObjects').addEventListener('click', () => editSetTab('objects'));
+  $('edTabSpawns').addEventListener('click', () => editSetTab('spawns'));
+  // Spawn inspector
+  $('edSpType').addEventListener('change', e => editSpawnUpdate({ type: e.target.value }));
+  $('edSpCount').addEventListener('change', e => editSpawnUpdate({ count: +e.target.value }));
+  $('edSpLevel').addEventListener('change', e => editSpawnUpdate({ level: +e.target.value }));
+  $('edSpR').addEventListener('input', e => { $('edSpRV').textContent = e.target.value; const g = spawnMeshes.get(EDIT.selSpawn); });
+  $('edSpR').addEventListener('change', e => editSpawnUpdate({ r: +e.target.value }));
+  $('edSpRespawn').addEventListener('change', e => editSpawnUpdate({ respawn: +e.target.value }));
+  $('edSpDelete').addEventListener('click', () => { if (EDIT.selSpawn) sendEdit({ t: 'edit:spawn:delete', id: EDIT.selSpawn }); });
   // Texture palette: a "none" swatch plus every available texture.
   const row = $('edTexRow');
   for (const name of ['none', ...EDIT_TEX]) {
@@ -2138,20 +2208,46 @@ function editInit() {
     row.appendChild(b);
   }
 }
+function editSetTab(tab) {
+  EDIT.tab = tab; EDIT.placing = null; EDIT.placingMob = null;
+  const on = '#22314a', off = '#141d2c';
+  document.getElementById('edTabObjects').style.background = tab === 'objects' ? on : off;
+  document.getElementById('edTabObjects').style.color = tab === 'objects' ? '#f0f5ff' : '#9fb0c4';
+  document.getElementById('edTabSpawns').style.background = tab === 'spawns' ? on : off;
+  document.getElementById('edTabSpawns').style.color = tab === 'spawns' ? '#f0f5ff' : '#9fb0c4';
+  document.getElementById('edSearch').placeholder = tab === 'objects' ? 'search models…' : 'search mobs…';
+  editSelect(null); editSelectSpawn(null); editSetMode(); editBuildPalette();
+}
 function editBuildPalette() {
   const wrap = document.getElementById('edPalette'); if (!wrap) return;
   const q = (document.getElementById('edSearch').value || '').toLowerCase();
   wrap.innerHTML = '';
+  const rowStyle = (active) => 'display:block; width:100%; box-sizing:border-box; margin:0 0 4px 0; text-align:left; background:' + (active ? '#2f5aa0' : '#1a2436') + '; border:1px solid #3a4c68; color:#f0f5ff; border-radius:5px; padding:6px 9px; cursor:pointer; font-size:13px; line-height:1.25; height:30px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-family:inherit;';
+  if (EDIT.tab === 'spawns') {
+    for (const t of EDIT.mobs) {
+      if (q && !t.toLowerCase().includes(q)) continue;
+      const b = document.createElement('button'); b.textContent = t;
+      b.style.cssText = rowStyle(EDIT.placingMob === t);
+      b.onclick = () => { EDIT.placingMob = EDIT.placingMob === t ? null : t; editSetMode(); editBuildPalette(); };
+      wrap.appendChild(b);
+    }
+    return;
+  }
   for (const m of EDIT.models) {
     if (q && !m.toLowerCase().includes(q)) continue;
     const b = document.createElement('button'); b.textContent = modelKey(m); b.title = m;
     const active = EDIT.placing && EDIT.placing.m === m;
-    b.style.cssText = 'display:block; width:100%; box-sizing:border-box; margin:0 0 4px 0; text-align:left; background:' + (active ? '#2f5aa0' : '#1a2436') + '; border:1px solid #3a4c68; color:#f0f5ff; border-radius:5px; padding:6px 9px; cursor:pointer; font-size:13px; line-height:1.25; height:30px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-family:inherit;';
+    b.style.cssText = rowStyle(active);
     b.onclick = () => { EDIT.placing = active ? null : { m, s: 1, yaw: 0, c: 0, tex: {} }; editSetMode(); editBuildPalette(); };
     wrap.appendChild(b);
   }
 }
-function editSetMode() { const el = document.getElementById('edMode'); if (el) el.textContent = EDIT.placing ? 'place: ' + modelKey(EDIT.placing.m) : (EDIT.selId ? 'select' : 'idle'); }
+function editSetMode() {
+  const el = document.getElementById('edMode'); if (!el) return;
+  el.textContent = EDIT.placing ? 'place: ' + modelKey(EDIT.placing.m)
+    : EDIT.placingMob ? 'spawn: ' + EDIT.placingMob
+    : (EDIT.selId || EDIT.selSpawn) ? 'select' : 'idle';
+}
 function editSelect(id, part) {
   EDIT.selId = id; EDIT.selPart = part || 0;
   if (editHL) { scene.remove(editHL); editHL = null; }
@@ -2208,8 +2304,41 @@ function editClick(e) {
     if (gp) sendEdit({ t: 'edit:place', m: p.m, x: +gp.x.toFixed(2), z: +gp.z.toFixed(2), yaw: p.yaw || 0, s: p.s || 1, c: p.c || 0, tex: p.tex || {} });
     return;
   }
+  if (EDIT.placingMob) {
+    const gp = groundPointAt(e);
+    if (gp) sendEdit({ t: 'edit:spawn:place', type: EDIT.placingMob, x: +gp.x.toFixed(2), z: +gp.z.toFixed(2) });
+    return;
+  }
   const pk = pickAt(e);
-  editSelect(pk && pk.kind === 'editobj' ? pk.id : null);
+  if (pk && pk.kind === 'spawn') { editSelect(null); editSelectSpawn(pk.id); return; }
+  if (pk && pk.kind === 'editobj') { editSelectSpawn(null); editSelect(pk.id); return; }
+  editSelect(null); editSelectSpawn(null);
+}
+// --- spawn region selection / inspector ---
+let spawnHL = null;
+function editSelectSpawn(id) {
+  EDIT.selSpawn = id;
+  if (spawnHL) { spawnHL.material.opacity = 0.55; spawnHL = null; }
+  const g = id && spawnMeshes.get(id);
+  if (g) { g.traverse(o => { if (o.isMesh && o.geometry.type === 'RingGeometry') { o.material.opacity = 1; spawnHL = o; } }); }
+  document.getElementById('edSpawnInspector').style.display = id ? 'block' : 'none';
+  if (id) editSyncSpawn();
+  editSetMode();
+}
+function editSyncSpawn() {
+  const sp = (zone.editSpawns || []).find(s => s.id === EDIT.selSpawn); if (!sp) return;
+  const $ = i => document.getElementById(i);
+  const sel = $('edSpType');
+  if (sel.options.length !== EDIT.mobs.length) { sel.innerHTML = ''; for (const t of EDIT.mobs) { const o = document.createElement('option'); o.value = o.textContent = t; sel.appendChild(o); } }
+  sel.value = sp.type;
+  $('edSpawnName').textContent = 'Spawn: ' + sp.type;
+  $('edSpCount').value = sp.count; $('edSpLevel').value = sp.level;
+  $('edSpR').value = sp.r; $('edSpRV').textContent = sp.r;
+  $('edSpRespawn').value = sp.respawn;
+}
+function editSpawnUpdate(patch) {
+  const sp = (zone.editSpawns || []).find(s => s.id === EDIT.selSpawn); if (!sp) return;
+  sendEdit(Object.assign({ t: 'edit:spawn:update', id: sp.id }, patch));
 }
 
 // ---- NPCs (quest givers / merchants), placed from the zone data ----
@@ -3151,16 +3280,21 @@ function addEventListeners() {
   cv.addEventListener('mousedown', (e) => {
     if (e.button !== 0) return;
     dragMoved = false; lastMX = downMX = e.clientX; lastMY = downMY = e.clientY;
-    // Edit mode: grabbing a placed object drags it instead of the camera.
-    if (EDIT.on && !EDIT.placing) {
+    // Edit mode: grabbing a placed object or spawn ring drags it, not the camera.
+    if (EDIT.on && !EDIT.placing && !EDIT.placingMob) {
       const pk = pickAt(e);
-      if (pk && pk.kind === 'editobj') { editSelect(pk.id); editDrag = pk.id; dragging = false; return; }
+      if (pk && pk.kind === 'editobj') { editSelectSpawn(null); editSelect(pk.id); editDrag = { kind: 'obj', id: pk.id }; dragging = false; return; }
+      if (pk && pk.kind === 'spawn') { editSelect(null); editSelectSpawn(pk.id); editDrag = { kind: 'spawn', id: pk.id }; dragging = false; return; }
     }
     dragging = true;
   });
   addEventListener('mouseup', (e) => {
     if (e.button !== 0) return;
-    if (editDrag) { editFlush(); editDrag = null; dragging = false; return; }
+    if (editDrag) {
+      if (editDrag.kind === 'obj') editFlush();
+      else { const sp = (zone.editSpawns || []).find(x => x.id === editDrag.id); if (sp) editSpawnUpdate({ cx: sp.cx, cz: sp.cz }); }
+      editDrag = null; dragging = false; return;
+    }
     const wasDragging = dragging;
     dragging = false;
     if (!dragMoved && wasDragging && e.target === cv) handleLeftClick(e);
@@ -3168,15 +3302,17 @@ function addEventListeners() {
   cv.addEventListener('contextmenu', (e) => { e.preventDefault(); openContextMenu(e); });
   addEventListener('mousedown', (e) => { if (e.button === 0 && !e.target.closest('#ctxmenu')) hideContextMenu(); });
   addEventListener('mousemove', (e) => {
-    // Dragging a placed object across the ground.
+    // Dragging a placed object or spawn ring across the ground.
     if (editDrag) {
       const gp = groundPointAt(e);
-      const o = (zone.editObjects || []).find(x => x.id === editDrag), g = editMeshes.get(editDrag);
-      if (gp && o && g) {
-        o.x = +gp.x.toFixed(2); o.z = +gp.z.toFixed(2);
-        g.position.set(o.x, groundY ? groundY(o.x, o.z) : 0, o.z);
-        if (editHL) editHL.update();
+      if (gp && editDrag.kind === 'obj') {
+        const o = (zone.editObjects || []).find(x => x.id === editDrag.id), g = editMeshes.get(editDrag.id);
+        if (o && g) { o.x = +gp.x.toFixed(2); o.z = +gp.z.toFixed(2); g.position.set(o.x, groundY ? groundY(o.x, o.z) : 0, o.z); if (editHL) editHL.update(); }
         const now = performance.now(); if (now - _edUpdT > 140) { _edUpdT = now; editFlush(); }
+      } else if (gp && editDrag.kind === 'spawn') {
+        const sp = (zone.editSpawns || []).find(x => x.id === editDrag.id), g = spawnMeshes.get(editDrag.id);
+        if (sp && g) { sp.cx = +gp.x.toFixed(2); sp.cz = +gp.z.toFixed(2); g.position.set(sp.cx, 0, sp.cz); }
+        const now = performance.now(); if (now - _edUpdT > 140) { _edUpdT = now; if (sp) editSpawnUpdate({ cx: sp.cx, cz: sp.cz }); }
       }
       dragMoved = true; return;
     }
@@ -3200,9 +3336,12 @@ function addEventListeners() {
     if (e.key.toLowerCase() === 'q') { toggleQuests(); return; }
     if (e.key.toLowerCase() === 'e') { toggleEquip(); return; }
     if (e.key.toLowerCase() === 'm') { toggleMap(); return; }
-    if (EDIT.on && e.key === 'Escape' && EDIT.placing) { EDIT.placing = null; editSetMode(); editBuildPalette(); return; }
-    if (EDIT.on && (e.key === 'Delete' || e.key === 'Backspace') && EDIT.selId) { sendEdit({ t: 'edit:delete', id: EDIT.selId }); return; }
-    if (e.key === 'Escape') { closeDialogue(); hideContextMenu(); closeMap(); if (EDIT.on) editSelect(null); return; }
+    if (EDIT.on && e.key === 'Escape' && (EDIT.placing || EDIT.placingMob)) { EDIT.placing = null; EDIT.placingMob = null; editSetMode(); editBuildPalette(); return; }
+    if (EDIT.on && (e.key === 'Delete' || e.key === 'Backspace')) {
+      if (EDIT.selId) { sendEdit({ t: 'edit:delete', id: EDIT.selId }); return; }
+      if (EDIT.selSpawn) { sendEdit({ t: 'edit:spawn:delete', id: EDIT.selSpawn }); return; }
+    }
+    if (e.key === 'Escape') { closeDialogue(); hideContextMenu(); closeMap(); if (EDIT.on) { editSelect(null); editSelectSpawn(null); } return; }
     if (e.key === ' ' || e.code === 'Space') { e.preventDefault(); if (!jump.active) { jump.active = true; jump.t = 0; } return; }
     const k = e.key.toLowerCase();
     if (k.startsWith('arrow')) e.preventDefault();
@@ -3244,6 +3383,7 @@ function pickAt(e) {
     if (u.pickKind === 'npc') return { kind: 'npc', id: u.npcId, npcId: u.npcId, name: u.npcName, x: u.npcX, z: u.npcZ, point: h.point };
     if (u.pickKind === 'gate') return { kind: 'gate', point: h.point };
     if (u.pickKind === 'editobj') return { kind: 'editobj', id: u.editId, point: h.point };
+    if (u.pickKind === 'spawn') return { kind: 'spawn', id: u.spawnId, point: h.point };
     if (u.isGround && !groundPt) groundPt = h.point;
   }
   if (groundPt) return { kind: 'ground', point: groundPt };

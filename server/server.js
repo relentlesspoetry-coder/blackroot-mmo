@@ -288,9 +288,10 @@ function makeMonster(spec) {
     x: pos.x, z: pos.z, home: { x: pos.x, z: pos.z }, yaw: rand(0, Math.PI * 2),
     hp: stats.hp, maxHp: stats.hp, dmg: stats.dmg, speed: stats.speed,
     aggro: stats.aggro, xp: stats.xp, passive: !!MONSTER_TEMPLATES[spec.type].passive,
-    respawn: Math.round((MONSTER_TEMPLATES[spec.type].respawn || RESPAWN_TIME) * (zone.respawnMult || 1)),
+    respawn: spec.respawn != null ? spec.respawn : Math.round((MONSTER_TEMPLATES[spec.type].respawn || RESPAWN_TIME) * (zone.respawnMult || 1)),
     alive: true, state: 'idle', targetId: null, atkTimer: 0,
     wanderTimer: rand(1, 4), wanderDir: { x: 0, z: 0 }, respawnTimer: 0,
+    editSpawnId: spec.editSpawnId || null, // links back to an editor-placed spawn region
     spec,
   };
   monsters.set(id, m);
@@ -379,17 +380,33 @@ const EDIT_KEY = process.env.BLACKROOT_EDIT_KEY || 'letmebuild';
 let editSeq = 1;
 function overridesPath(zone) { return path.join(__dirname, 'zones', zone.id + '.overrides.json'); }
 function loadOverrides(zone) {
-  zone._editObjects = [];
+  zone._editObjects = []; zone._editSpawns = [];
   try {
     const data = JSON.parse(fs.readFileSync(overridesPath(zone), 'utf8'));
     if (Array.isArray(data.objects)) zone._editObjects = data.objects;
-    for (const o of zone._editObjects) { const n = parseInt(String(o.id).replace(/\D/g, ''), 10); if (n >= editSeq) editSeq = n + 1; }
+    if (Array.isArray(data.spawns)) zone._editSpawns = data.spawns;
+    for (const o of [...zone._editObjects, ...zone._editSpawns]) { const n = parseInt(String(o.id).replace(/\D/g, ''), 10); if (n >= editSeq) editSeq = n + 1; }
   } catch { /* no overrides yet */ }
+  for (const sp of zone._editSpawns) spawnEditorRegion(zone, sp); // populate its monsters
 }
 function saveOverrides(zone) {
-  try { fs.writeFileSync(overridesPath(zone), JSON.stringify({ objects: zone._editObjects }, null, 2)); }
+  try { fs.writeFileSync(overridesPath(zone), JSON.stringify({ objects: zone._editObjects, spawns: zone._editSpawns }, null, 2)); }
   catch (e) { console.error('saveOverrides failed:', e.message); }
 }
+// Spawn the monsters for one editor spawn region.
+function spawnEditorRegion(zone, sp) {
+  if (!MONSTER_TEMPLATES[sp.type]) return;
+  for (let i = 0; i < (sp.count || 1); i++) {
+    makeMonster({ zoneId: zone.id, type: sp.type, level: sp.level || 1,
+      region: { cx: sp.cx, cz: sp.cz, r: sp.r || 6 }, respawn: sp.respawn, editSpawnId: sp.id });
+  }
+}
+// Remove all monsters that belong to an editor spawn region.
+function despawnEditorRegion(id) {
+  for (const [mid, m] of monsters) if (m.editSpawnId === id) monsters.delete(mid);
+}
+// Mob types offered in the spawn palette.
+const MOB_TYPES = Object.keys(MONSTER_TEMPLATES);
 function broadcastZone(zoneId, obj) {
   const s = JSON.stringify(obj);
   for (const p of players.values()) if (p.zoneId === zoneId && p.ws.readyState === p.ws.OPEN) p.ws.send(s);
@@ -1050,6 +1067,7 @@ function zoneForClient(zone) {
     farmBox: zone._farmBox || null,
     gate: zone.farm && zone.farm.gate ? { x: zone.farm.gate.x, z: zone.farm.gate.z, yaw: zone.farm.gate.yaw || 0, s: zone.farm.gate.s || 1 } : null,
     editObjects: zone._editObjects || [],
+    editSpawns: zone._editSpawns || [],
   };
 }
 
@@ -1127,7 +1145,38 @@ wss.on('connection', (ws) => {
       }
       // --- World editor (gated by EDIT_KEY) ---
       case 'edit:list': {
-        if (msg.key === EDIT_KEY) send(ws, { t: 'models', models: MODEL_MANIFEST });
+        if (msg.key === EDIT_KEY) send(ws, { t: 'models', models: MODEL_MANIFEST, mobs: MOB_TYPES });
+        break;
+      }
+      case 'edit:spawn:place': {
+        if (!player || msg.key !== EDIT_KEY || !MONSTER_TEMPLATES[msg.type]) break;
+        const z = zoneOf(player);
+        const sp = { id: 's' + (editSeq++), type: String(msg.type), cx: +(+msg.x).toFixed(2), cz: +(+msg.z).toFixed(2),
+          r: +(+(msg.r || 8)).toFixed(1), count: Math.max(1, Math.min(20, +(msg.count || 3) | 0)),
+          level: Math.max(1, Math.min(20, +(msg.level || 1) | 0)), respawn: Math.max(2, Math.min(600, +(msg.respawn || 20) | 0)) };
+        (z._editSpawns = z._editSpawns || []).push(sp);
+        spawnEditorRegion(z, sp); saveOverrides(z); broadcastZone(player.zoneId, { t: 'edit', op: 'spawn', sp });
+        break;
+      }
+      case 'edit:spawn:update': {
+        if (!player || msg.key !== EDIT_KEY) break;
+        const z = zoneOf(player); const sp = (z._editSpawns || []).find(s => s.id === msg.id); if (!sp) break;
+        if (msg.type != null && MONSTER_TEMPLATES[msg.type]) sp.type = String(msg.type);
+        if (msg.cx != null) sp.cx = +(+msg.cx).toFixed(2);
+        if (msg.cz != null) sp.cz = +(+msg.cz).toFixed(2);
+        if (msg.r != null) sp.r = Math.max(1, Math.min(60, +(+msg.r).toFixed(1)));
+        if (msg.count != null) sp.count = Math.max(1, Math.min(20, +msg.count | 0));
+        if (msg.level != null) sp.level = Math.max(1, Math.min(20, +msg.level | 0));
+        if (msg.respawn != null) sp.respawn = Math.max(2, Math.min(600, +msg.respawn | 0));
+        despawnEditorRegion(sp.id); spawnEditorRegion(z, sp); // re-roll the region with new settings
+        saveOverrides(z); broadcastZone(player.zoneId, { t: 'edit', op: 'spawn', sp });
+        break;
+      }
+      case 'edit:spawn:delete': {
+        if (!player || msg.key !== EDIT_KEY) break;
+        const z = zoneOf(player); const i = (z._editSpawns || []).findIndex(s => s.id === msg.id); if (i < 0) break;
+        const [sp] = z._editSpawns.splice(i, 1); despawnEditorRegion(sp.id);
+        saveOverrides(z); broadcastZone(player.zoneId, { t: 'edit', op: 'spawn:delete', id: sp.id });
         break;
       }
       case 'edit:place': {
