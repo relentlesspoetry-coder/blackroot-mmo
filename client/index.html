@@ -1524,6 +1524,10 @@ function makeCritter(name, size, flapRate) {
   const ref = Math.max(box.max.x - box.min.x, box.max.y - box.min.y, box.max.z - box.min.z) || 1;
   root.scale.setScalar(size / ref);
   root.traverse(o => { if (o.isMesh) { o.castShadow = o.receiveShadow = false; if (o.material) { o.material = o.material.clone(); o.material.transparent = true; } } });
+  // The models are authored "standing" (wings in a vertical plane), so in flight
+  // they'd glide edge-on. Pitch them flat so the wings lie horizontal, blue side
+  // up toward the sky. The wrap still owns heading (yaw) and position.
+  root.rotation.x = -Math.PI / 2;
   const wrap = new THREE.Group(); wrap.add(root);
   let mixer = null;
   const clips = LOADED_ANIM[name];
@@ -1586,7 +1590,9 @@ function updateCritters(dt) {
     const z = c.hz + Math.sin(a * 0.9) * c.r + Math.cos(a * 1.3) * c.r2;
     const y = (groundY ? groundY(x, z) : 0) + c.yb + Math.sin(a * 3.1) * 0.35;
     const dx = x - c.px, dz = z - c.pz;
-    if (dx * dx + dz * dz > 1e-5) c.wrap.rotation.y = Math.atan2(dx, dz);
+    // Head-first: the model's head is +Y (-> world -Z after the flat pitch), so
+    // aim that at the travel direction (hence the +PI vs a +Z-forward model).
+    if (dx * dx + dz * dz > 1e-5) c.wrap.rotation.y = Math.atan2(dx, dz) + Math.PI;
     c.wrap.position.set(x, y, z); c.px = x; c.pz = z;
     c.root.traverse(o => { if (o.isMesh && o.material) o.material.opacity = op; });
   }
