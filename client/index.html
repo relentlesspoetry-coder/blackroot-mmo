@@ -1272,7 +1272,19 @@ function buildZone() {
   buildDetails();
   buildFireflies();
   buildCritters();
+
+  // Texture preview toggle: strip every texture map in Dark Woods so the world
+  // renders in flat vertex/base colours. Flip STRIP_DARKWOODS_TEXTURES to false
+  // to bring the textures back.
+  if (STRIP_DARKWOODS_TEXTURES && zone.id === 'darkwoods') {
+    scene.traverse(o => {
+      if (!o.isMesh && !o.isInstancedMesh) return;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      for (const m of mats) { if (m && m.map) { m.map = null; m.needsUpdate = true; } }
+    });
+  }
 }
+const STRIP_DARKWOODS_TEXTURES = true;
 
 function nearestSeg(pts, x, z) {
   let best = null, bestD = Infinity;
