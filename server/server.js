@@ -1135,7 +1135,8 @@ wss.on('connection', (ws) => {
         const z = zoneOf(player);
         const o = { id: 'e' + (editSeq++), m: String(msg.m), x: +(+msg.x).toFixed(2), z: +(+msg.z).toFixed(2),
           yaw: +(+(msg.yaw || 0)).toFixed(3), s: +(+(msg.s || 1)).toFixed(3), c: +(+(msg.c || 0)).toFixed(2),
-          tex: {} }; // per-part texture map: { partIndex: textureName }
+          // per-part texture map { partIndex: textureName }; carried over by Duplicate
+          tex: (msg.tex && typeof msg.tex === 'object' && !Array.isArray(msg.tex)) ? msg.tex : {} };
         z._editObjects.push(o); saveOverrides(z); broadcastZone(player.zoneId, { t: 'edit', op: 'place', obj: o });
         break;
       }

@@ -292,7 +292,10 @@
       </div>
       <div style="margin:6px 0 3px; color:#9fb0c4;">Texture <span style="color:#7f8ba0; font-size:10px;">(applies to selected part)</span></div>
       <div id="edTexRow" style="display:flex; flex-wrap:wrap; gap:3px; margin-bottom:4px; max-height:20vh; overflow-y:auto;"></div>
-      <button id="edDelete" style="width:100%; margin-top:6px; background:#5a2330; border:1px solid #7a3040; color:#ffd0d0; border-radius:6px; padding:6px; cursor:pointer;">Delete</button>
+      <div style="display:flex; gap:6px; margin-top:6px;">
+        <button id="edDuplicate" style="flex:1; background:#234a5a; border:1px solid #356075; color:#cdeeff; border-radius:6px; padding:6px; cursor:pointer;">Duplicate</button>
+        <button id="edDelete" style="flex:1; background:#5a2330; border:1px solid #7a3040; color:#ffd0d0; border-radius:6px; padding:6px; cursor:pointer;">Delete</button>
+      </div>
     </div>
     <div style="padding:7px 10px; border-top:1px solid #2b3852; font-size:10px; color:#7f8ba0; line-height:1.5;">
       Pick a model, then <b>left-click ground</b> to place. Click a placed object to select. Drag to move. <b>Esc</b> cancels placing.
@@ -2119,6 +2122,13 @@ function editInit() {
   $('edColR').addEventListener('input', e => { $('edColRV').textContent = (+e.target.value).toFixed(1); if ($('edColOn').checked) editEditSel({ c: +e.target.value }); });
   for (const id of ['edYaw', 'edScale', 'edColR']) $(id).addEventListener('change', () => editFlush());
   $('edDelete').addEventListener('click', () => { if (EDIT.selId) sendEdit({ t: 'edit:delete', id: EDIT.selId }); });
+  // Duplicate: enter placing mode carrying this object's scale/rotation/collision
+  // /textures, so every click stamps another fully-configured copy.
+  $('edDuplicate').addEventListener('click', () => {
+    const o = (zone.editObjects || []).find(e => e.id === EDIT.selId); if (!o) return;
+    EDIT.placing = { m: o.m, s: o.s || 1, yaw: o.yaw || 0, c: o.c || 0, tex: Object.assign({}, o.tex) };
+    editSetMode(); editBuildPalette();
+  });
   // Texture palette: a "none" swatch plus every available texture.
   const row = $('edTexRow');
   for (const name of ['none', ...EDIT_TEX]) {
@@ -2135,12 +2145,13 @@ function editBuildPalette() {
   for (const m of EDIT.models) {
     if (q && !m.toLowerCase().includes(q)) continue;
     const b = document.createElement('button'); b.textContent = modelKey(m); b.title = m;
-    b.style.cssText = 'display:block; width:100%; box-sizing:border-box; margin:0 0 4px 0; text-align:left; background:' + (EDIT.placing === m ? '#2f5aa0' : '#1a2436') + '; border:1px solid #3a4c68; color:#f0f5ff; border-radius:5px; padding:6px 9px; cursor:pointer; font-size:13px; line-height:1.25; height:30px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-family:inherit;';
-    b.onclick = () => { EDIT.placing = (EDIT.placing === m ? null : m); editSetMode(); editBuildPalette(); };
+    const active = EDIT.placing && EDIT.placing.m === m;
+    b.style.cssText = 'display:block; width:100%; box-sizing:border-box; margin:0 0 4px 0; text-align:left; background:' + (active ? '#2f5aa0' : '#1a2436') + '; border:1px solid #3a4c68; color:#f0f5ff; border-radius:5px; padding:6px 9px; cursor:pointer; font-size:13px; line-height:1.25; height:30px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-family:inherit;';
+    b.onclick = () => { EDIT.placing = active ? null : { m, s: 1, yaw: 0, c: 0, tex: {} }; editSetMode(); editBuildPalette(); };
     wrap.appendChild(b);
   }
 }
-function editSetMode() { const el = document.getElementById('edMode'); if (el) el.textContent = EDIT.placing ? 'place: ' + modelKey(EDIT.placing) : (EDIT.selId ? 'select' : 'idle'); }
+function editSetMode() { const el = document.getElementById('edMode'); if (el) el.textContent = EDIT.placing ? 'place: ' + modelKey(EDIT.placing.m) : (EDIT.selId ? 'select' : 'idle'); }
 function editSelect(id, part) {
   EDIT.selId = id; EDIT.selPart = part || 0;
   if (editHL) { scene.remove(editHL); editHL = null; }
@@ -2193,8 +2204,8 @@ function groundPointAt(e) {
 // Left-click while editing: place, or select/deselect.
 function editClick(e) {
   if (EDIT.placing) {
-    const gp = groundPointAt(e);
-    if (gp) sendEdit({ t: 'edit:place', m: EDIT.placing, x: +gp.x.toFixed(2), z: +gp.z.toFixed(2), yaw: 0, s: 1, c: 0 });
+    const gp = groundPointAt(e); const p = EDIT.placing;
+    if (gp) sendEdit({ t: 'edit:place', m: p.m, x: +gp.x.toFixed(2), z: +gp.z.toFixed(2), yaw: p.yaw || 0, s: p.s || 1, c: p.c || 0, tex: p.tex || {} });
     return;
   }
   const pk = pickAt(e);
