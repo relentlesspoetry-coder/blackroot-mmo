@@ -9,6 +9,11 @@ function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
 // Extra flooded width beyond the river's nominal half-width (matches the client
 // and server collision, so nothing is placed in the widened water).
 const RIVER_BANK = 4;
+// Inside the farmyard keep-out box (plus margin m)? Keeps forest/scatter out.
+function inFarm(zone, x, z, m = 0) {
+  const b = zone._farmBox; if (!b) return false;
+  return x > b.minX - m && x < b.maxX + m && z > b.minZ - m && z < b.maxZ + m;
+}
 export function dist2(ax, az, bx, bz) { const dx = ax - bx, dz = az - bz; return dx * dx + dz * dz; }
 
 export function closestOnSeg(px, pz, ax, az, bx, bz) {
@@ -70,6 +75,7 @@ export function generateTrees(zone) {
     if (closestOnPolyline(x, z, zone.path).dist < 6) continue;
     if (zone.river && closestOnPolyline(x, z, zone.river.points).dist < zone.river.width / 2 + RIVER_BANK + 3) continue;
     if (zone.river && zone.river.bridge && dist2(x, z, zone.river.bridge.x, zone.river.bridge.z) < 15 * 15) continue;
+    if (inFarm(zone, x, z, 3)) continue;
     if (zone.pois.some(p => dist2(x, z, p.x, p.z) < clearRadiusS(p) ** 2)) continue;
     if ((zone.rocks || []).some(o => dist2(x, z, o.x, o.z) < (o.r + 2) ** 2)) continue;
     if (trees.some(t => dist2(x, z, t.x, t.z) < minSpace * minSpace)) continue;
@@ -110,6 +116,7 @@ export function generateScatter(zone) {
       // useless: an ore vein there is unreachable, because the river is the one
       // thing the player cannot walk through.
       if (zone.river && closestOnPolyline(x, z, zone.river.points).dist < zone.river.width / 2 + RIVER_BANK + 2.5) continue;
+      if (inFarm(zone, x, z, 2)) continue;
       if ((zone.rocks || []).some(o => dist2(x, z, o.x, o.z) < (o.r + 1.5) ** 2)) continue;
       if ((zone.chests || []).some(c => dist2(x, z, c.x, c.z) < 16)) continue;
       if (dist2(x, z, zone.spawn.x, zone.spawn.z) < 64) continue;

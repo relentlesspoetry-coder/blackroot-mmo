@@ -1212,8 +1212,11 @@ function instScatter(geo, mat, places, yFn, squash = 1) {
 
 function buildDetails() {
   const b = zone.bounds, rng = mulberry32((zone.treeSeed || 1) + 99);
+  const fb = zone.farmBox;
+  const inFarmYard = (x, z, m) => fb && x > fb.minX - m && x < fb.maxX + m && z > fb.minZ - m && z < fb.maxZ + m;
   const clearOK = (x, z, pathClear) =>
     (!zone.boundary || inBoundary(x, z)) &&
+    !inFarmYard(x, z, 2) &&
     distToPolyline(x, z, zone.path) >= pathClear &&
     (!zone.river || distToPolyline(x, z, zone.river.points) >= riverWaterHalf(zone.river.width) + RIVER_LIP) &&
     !zone.pois.some(p => Math.hypot(x - p.x, z - p.z) < Math.max(3, clearRadius(p) - 3)) &&

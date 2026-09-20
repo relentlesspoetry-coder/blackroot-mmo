@@ -67,6 +67,16 @@ function scaleZone(zone, k) {
   (zone.spawns || []).forEach(s => { s.cx *= k; s.cz *= k; s.r *= k; s.count = Math.max(1, Math.round(s.count * k)); });
   (zone.elites || []).forEach(e => { e.cx *= k; e.cz *= k; });
   (zone.scatter || []).forEach(s => { if (s.count) s.count = Math.max(1, Math.round(s.count * A)); });
+  // Farm layout: scale positions only (prop SIZES stay native meter-scale).
+  if (zone.farm) {
+    (zone.farm.fences || []).forEach(f => { f.x1 *= k; f.z1 *= k; f.x2 *= k; f.z2 *= k; });
+    if (zone.farm.gate) { zone.farm.gate.x *= k; zone.farm.gate.z *= k; }
+    (zone.farm.props || []).forEach(sp);
+    // Keep-out box so the forest/scatter don't grow through the farmyard.
+    let mnx = 1e9, mxx = -1e9, mnz = 1e9, mxz = -1e9;
+    for (const f of (zone.farm.fences || [])) { mnx = Math.min(mnx, f.x1, f.x2); mxx = Math.max(mxx, f.x1, f.x2); mnz = Math.min(mnz, f.z1, f.z2); mxz = Math.max(mxz, f.z1, f.z2); }
+    zone._farmBox = { minX: mnx, maxX: mxx, minZ: mnz, maxZ: mxz };
+  }
   if (zone.treeCount != null) zone.treeCount = Math.round(zone.treeCount * A);
   zone._cen = null; // recompute the cached centroid lazily
 }
@@ -164,6 +174,19 @@ function resolveCollision(zone, ent, radius) {
         ent.x = c.x + (dx / d) * half; ent.z = c.z + (dz / d) * half;
       }
     }
+  }
+
+  // Farmstead fences are solid walls (the gate gap is left open so the trail
+  // leads out); this keeps the livestock penned and the player inside until the
+  // gate.
+  for (const f of (zone._fenceSegs || [])) {
+    const dx = f.x2 - f.x1, dz = f.z2 - f.z1, L2 = dx * dx + dz * dz;
+    let t = L2 > 0 ? ((ent.x - f.x1) * dx + (ent.z - f.z1) * dz) / L2 : 0;
+    t = Math.max(0, Math.min(1, t));
+    const cx = f.x1 + dx * t, cz = f.z1 + dz * t;
+    let ox = ent.x - cx, oz = ent.z - cz, d = Math.hypot(ox, oz);
+    const min = 0.5 + radius;
+    if (d < min) { if (d < 1e-4) { ox = 1; oz = 0; d = 1; } ent.x = cx + (ox / d) * min; ent.z = cz + (oz / d) * min; }
   }
 
   // Solid cave dressing (columns, big stalagmites, ore veins).
@@ -272,6 +295,7 @@ function populate() {
     }
     zone._trees = generateTrees(zone);
     zone._scatter = generateScatter(zone);
+    buildFarm(zone);
     zone._hanging = generateHanging(zone);
     // Any scattered ore vein becomes a minable node, addressed by its index.
     zone._veins = new Map();
@@ -280,6 +304,29 @@ function populate() {
       if (ore) zone._veins.set(o.i, { id: o.i, ore, x: o.x, z: o.z, depleted: 0 });
     }
   }
+}
+
+// Tile the farmstead: turn each fence segment into a run of Farm_Fence panels
+// (appended to the render scatter) plus a wall-collision segment, drop the gate,
+// and place the props. Panels are native meter-scale; the zone scale only moved
+// the endpoints, so we tile the native panel width across the scaled length.
+const FENCE_PANEL = 2.0; // Farm_Fence native width (local +X)
+function buildFarm(zone) {
+  const F = zone.farm; if (!F) return;
+  const scat = zone._scatter;
+  zone._fenceSegs = [];
+  for (const seg of (F.fences || [])) {
+    const dx = seg.x2 - seg.x1, dz = seg.z2 - seg.z1, len = Math.hypot(dx, dz) || 1;
+    const n = Math.max(1, Math.round(len / FENCE_PANEL)), spacing = len / n;
+    const ux = dx / len, uz = dz / len, yaw = Math.atan2(-uz, ux);
+    for (let i = 0; i < n; i++) {
+      const t = (i + 0.5) * spacing;
+      scat.push({ i: scat.length, m: 'Farm_Fence', x: +(seg.x1 + ux * t).toFixed(2), z: +(seg.z1 + uz * t).toFixed(2), s: +(spacing / FENCE_PANEL).toFixed(3), r: +yaw.toFixed(3), c: 0 });
+    }
+    zone._fenceSegs.push({ x1: seg.x1, z1: seg.z1, x2: seg.x2, z2: seg.z2 });
+  }
+  if (F.gate) scat.push({ i: scat.length, m: 'Farm_Gate', x: F.gate.x, z: F.gate.z, s: F.gate.s || 1, r: F.gate.yaw || 0, c: 0 });
+  for (const p of (F.props || [])) scat.push({ i: scat.length, m: p.m, x: p.x, z: p.z, s: p.s || 1, r: p.yaw || 0, c: p.c || 0 });
 }
 
 function populateElite(zoneId, e) {
@@ -913,6 +960,7 @@ function zoneForClient(zone) {
     scatter: zone._scatter || [],
     hanging: zone._hanging || [],
     models: zone.models || [],
+    farmBox: zone._farmBox || null,
   };
 }
 

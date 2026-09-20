@@ -26,6 +26,12 @@ export const darkwoods = {
     'Rough_Fence', 'Warning_Sign', 'Spike_Barricade', 'Goblin_Banner', 'Goblin_Totem',
     'cave/Copper_Ore_Vein', 'cave/Tin_Ore_Vein', 'cave/Iron_Ore_Vein',
     'items/Copper_Ore', 'items/Tin_Ore', 'items/Iron_Ore',
+    // Farmstead at the Entrance Clearing (Farm_Assets pack)
+    'farm/Farm_Fence', 'farm/Farm_Gate', 'farm/Raised_Chicken_Coop', 'farm/Walk_In_Chicken_House',
+    'farm/Nesting_Boxes', 'farm/Chicken_Feeder', 'farm/Chicken_Waterer', 'farm/Feeding_Trough',
+    'farm/Water_Trough', 'farm/Tall_Haystack', 'farm/Round_Hay_Bale', 'farm/Stacked_Hay_Bales',
+    'farm/Hay_Pile', 'farm/Scarecrow', 'farm/Grain_Barrel', 'farm/Grain_Sack', 'farm/Vegetable_Crate',
+    'farm/Wheelbarrow', 'farm/Farm_Handcart', 'farm/Pitchfork',
   ],
 
   treeSeed: 1337,
@@ -92,6 +98,11 @@ export const darkwoods = {
   npcs: [
     { id: 'alric',    name: 'Warden Alric',        x: 11,   z: -88, poi: 'entrance', model: 'Male',
       idle: 'Keep to the path, and keep your blade where you can reach it.' },
+    // Farmstead folk at the Entrance Clearing.
+    { id: 'maggie',   name: 'Old Maggie',          x: 6,    z: -82, poi: 'entrance', model: 'Female', yaw: 2.4,
+      idle: 'Mind the hens, love — and shut the gate on your way out.' },
+    { id: 'bram',     name: 'Farmhand Bram',       x: -6,   z: -87, poi: 'entrance', model: 'Male', yaw: 0.6,
+      idle: 'Cows need feedin’, fences need mendin’. No rest out here.' },
     { id: 'hermit',   name: 'Hermit of the Grove', x: 9,    z: 4,   poi: 'shrine',   model: 'Male',
       idle: 'The shrine holds. Not much else out here does.' },
     { id: 'merchant', name: 'Wandering Merchant',  x: -51.5, z: 9,  poi: 'camp',     model: 'Female', trade: true,
@@ -186,9 +197,9 @@ export const darkwoods = {
   // Counts are per-group before the zone scale; regions are wide so mobs are not
   // packed together. Each area is its own creature so groups don't stack.
   spawns: [
-    // --- Entrance: passive livestock only ---
-    { type: 'chicken', count: 5, cx: 16,  cz: -78, r: 15, level: 1, expect: 1, hint: 'Entrance Clearing' },
-    { type: 'cow',     count: 4, cx: -26, cz: -70, r: 18, level: 1, expect: 1, hint: 'Entrance meadow' },
+    // --- The farmstead at the Entrance Clearing: livestock penned in the yard ---
+    { type: 'chicken', count: 6, cx: 13,  cz: -85, r: 8, level: 1, expect: 1, hint: 'Farm chicken run' },
+    { type: 'cow',     count: 3, cx: -4,  cz: -84, r: 6, level: 1, expect: 1, hint: 'Farm paddock' },
     // --- Trail: lone goblins & scavengers, well spaced ---
     { type: 'goblin',           count: 4, cx: -22, cz: -56, r: 20, level: 1, expect: 2, hint: "Old Hunter's Trail" },
     { type: 'goblin_scavenger', count: 4, cx: 14,  cz: -40, r: 22, level: 2, expect: 2, hint: 'Trail scavengers' },
@@ -209,6 +220,46 @@ export const darkwoods = {
   elites: [
     { type: 'guard', name: 'The Rootbound Guardian', cx: 24, cz: 36, level: 6, expect: 6 },
   ],
+
+  // The farmstead ringing the Entrance Clearing. Coords are pre-scale like the
+  // rest of the zone; server buildFarm() (after scaleZone) tiles Farm_Fence
+  // panels along each segment, adds wall collision, and drops the props in.
+  //   fences: perimeter segments (gate gap left open on the south edge)
+  //   gate:   the swing-gate prop that sits in that gap (walkable)
+  //   props:  m=model, yaw, s=scale, c=collision radius (0 = pure decor)
+  farm: {
+    fences: [
+      { x1: -16, z1: -94, x2: 24,   z2: -94 },  // north
+      { x1: 24,  z1: -94, x2: 24,   z2: -74 },  // east
+      { x1: -16, z1: -94, x2: -16,  z2: -74 },  // west
+      { x1: -16, z1: -74, x2: -9.5, z2: -74 },  // south-west (up to the gate)
+      { x1: -6.5, z1: -74, x2: 24,  z2: -74 },  // south-east (from the gate)
+    ],
+    gate: { x: -8, z: -74, yaw: 0, s: 2.2 },
+    props: [
+      // Chicken side (east): coop, house, nests, feeders.
+      { m: 'Walk_In_Chicken_House', x: 17,  z: -90, yaw: 3.14, s: 1.0, c: 2.2 },
+      { m: 'Raised_Chicken_Coop',   x: 20,  z: -83, yaw: 3.6,  s: 1.0, c: 1.3 },
+      { m: 'Nesting_Boxes',         x: 22,  z: -87, yaw: 4.0,  s: 1.0, c: 0.8 },
+      { m: 'Chicken_Feeder',        x: 12,  z: -87, yaw: 0,    s: 1.0, c: 0.4 },
+      { m: 'Chicken_Waterer',       x: 14,  z: -89, yaw: 0,    s: 1.0, c: 0.4 },
+      // Cow side (west): troughs and hay.
+      { m: 'Feeding_Trough',        x: -5,  z: -88, yaw: 1.57, s: 1.0, c: 0.7 },
+      { m: 'Water_Trough',          x: -2,  z: -85, yaw: 1.57, s: 1.0, c: 0.7 },
+      { m: 'Tall_Haystack',         x: -13, z: -90, yaw: 0,    s: 1.0, c: 1.1 },
+      { m: 'Round_Hay_Bale',        x: -11, z: -87, yaw: 0.5,  s: 1.0, c: 0.7 },
+      { m: 'Stacked_Hay_Bales',     x: -14, z: -83, yaw: 1.2,  s: 1.0, c: 0.9 },
+      // Yard clutter near the gate/front.
+      { m: 'Hay_Pile',              x: 18,  z: -78, yaw: 0,    s: 1.0, c: 0.7 },
+      { m: 'Scarecrow',             x: 3,   z: -80, yaw: 3.14, s: 1.0, c: 0.4 },
+      { m: 'Grain_Barrel',          x: -1,  z: -78, yaw: 0,    s: 1.0, c: 0.5 },
+      { m: 'Grain_Sack',            x: 1,   z: -78, yaw: 0.8,  s: 1.0, c: 0.0 },
+      { m: 'Vegetable_Crate',       x: -3,  z: -79, yaw: 0.3,  s: 1.0, c: 0.5 },
+      { m: 'Wheelbarrow',           x: 9,   z: -78, yaw: 2.2,  s: 1.0, c: 0.4 },
+      { m: 'Farm_Handcart',         x: 13,  z: -77, yaw: 1.0,  s: 1.0, c: 0.6 },
+      { m: 'Pitchfork',             x: -12, z: -80, yaw: 0.3,  s: 1.0, c: 0.0 },
+    ],
+  },
 
   // No environmental hazards — the poison damage areas (and their green circles)
   // were removed.
