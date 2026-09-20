@@ -15,7 +15,7 @@ import {
   PLAYER, ELITE, MONSTER, MONSTER_TEMPLATES,
   maxHpForLevel, xpForLevel, rollPlayerDamage, scaledMonster, rollLoot, mitigate, REGEN,
   TICK, DEFAULT_ATTACK_SPEED, STYLES, COMBAT_SKILLS, hpForHitpoints, combatLevel,
-  maxHit, rollSwing, rollMonsterSwing,
+  maxHit, rollSwing, rollMonsterSwing, MEDITATION, meditationHealRate,
 } from './balance.js';
 import { ITEMS, SLOTS, SLOT_INFO, DOLL, itemDef, slotOf, valueOf, equipStats, slotsFor, emptySlots } from './items.js';
 import {
@@ -675,7 +675,9 @@ function sendSkills(p) {
   const cs = {};
   for (const s of COMBAT_SKILLS) cs[s] = { level: p.skills[s].level, xp: Math.floor(p.skills[s].xp), next: xpForLevel(p.skills[s].level) };
   send(p.ws, { t: 'skills', mining: { level: st.level, xp: p.miningXp, into: st.into, next: st.next, pick: st.pick },
-    combat: cs, combatLevel: p.combat || combatLevel(p.skills), style: p.style });
+    combat: cs, combatLevel: p.combat || combatLevel(p.skills), style: p.style,
+    meditation: { level: p.meditation.level, xp: Math.floor(p.meditation.xp), next: xpForLevel(p.meditation.level) },
+    resting: !!p.resting });
 }
 
 function grantMiningXp(p, amount) {
@@ -858,6 +860,12 @@ function awardCombatXp(p, dmg) {
   addSkillXp(p, 'hitpoints', 1.33 * dmg);
   sendSkills(p);
 }
+// Meditation trains as you rest to heal: xp scales with HP recovered.
+function addMeditationXp(p, amount) {
+  const sk = p.meditation; sk.xp += amount; let leveled = false;
+  while (sk.xp >= xpForLevel(sk.level)) { sk.xp -= xpForLevel(sk.level); sk.level++; leveled = true; }
+  if (leveled) { send(p.ws, { t: 'event', kind: 'medlevel', level: sk.level }); sendSkills(p); }
+}
 function doPlayerAttack(p, m) {
   if (p.atkTimer > 0) return;
   p.atkTimer = playerAttackSpeed(p);
@@ -961,6 +969,13 @@ function stepPlayer(p) {
   if (p.portalCd > 0) p.portalCd -= DT;
   let moved = false;
   const inp = p.input;
+  // Meditating ends the moment the player wants to act (move / fight / interact)
+  // or gets hit — you can't rest in the middle of a scrap.
+  if (p.resting) {
+    const wantsAction = (inp && (inp.f !== 0 || inp.r !== 0)) || p.moveTo || p.combatId != null ||
+      p.pendingChest || p.pendingPickup != null || p.pendingMine != null || p.pendingGate;
+    if (wantsAction || (p.combatTimer || 0) > 0) { p.resting = false; sendSkills(p); }
+  }
   const step = (tx, tz, stopDist) => {
     const dx = tx - p.x, dz = tz - p.z, d = Math.hypot(dx, dz);
     if (d <= stopDist) return false;
@@ -1058,9 +1073,16 @@ function stepPlayer(p) {
   // taking a hit. Without the lockout it ticked all the way through a fight and
   // quietly paid for roughly a third of the incoming damage.
   p.combatTimer = Math.max(0, (p.combatTimer || 0) - DT);
-  if (p.hp < p.maxHp && (safe || p.combatTimer <= 0)) {
+  if (p.resting && p.hp < p.maxHp && p.combatTimer <= 0) {
+    // Meditation: heal at a level-scaled rate, and train the skill on the HP
+    // recovered. HP is a float here; the snapshot rounds it for display.
+    const heal = Math.min(p.maxHp - p.hp, meditationHealRate(p.meditation.level) * DT);
+    p.hp += heal;
+    if (heal > 0) addMeditationXp(p, heal * MEDITATION.xpPerHp);
+    if (p.hp >= p.maxHp) { p.resting = false; sendSkills(p); } // fully rested
+  } else if (p.hp < p.maxHp && (safe || p.combatTimer <= 0)) {
     p.regen += DT;
-    const rate = safe ? 0.35 : 1.0; // seconds per tick of healing
+    const rate = safe ? 0.35 : 1.0; // seconds per tick of passive healing
     if (p.regen >= rate) { p.regen = 0; p.hp = Math.min(p.maxHp, p.hp + (safe ? 6 : 2)); }
   }
   p.inSafe = safe;
@@ -1068,7 +1090,7 @@ function stepPlayer(p) {
 
 function respawnPlayer(p) {
   const zone = zoneOf(p);
-  p.x = zone.spawn.x; p.z = zone.spawn.z; p.hp = p.maxHp; p.alive = true; p.moving = false;
+  p.x = zone.spawn.x; p.z = zone.spawn.z; p.hp = p.maxHp; p.alive = true; p.moving = false; p.resting = false;
   p.moveTo = null; p.combatId = null; p.pendingChest = null; p.pendingPickup = null;
   send(p.ws, { t: 'event', kind: 'respawned' });
 }
@@ -1142,7 +1164,7 @@ setInterval(() => {
           yaw: +p.yaw.toFixed(2), hp: Math.round(p.hp), maxHp: p.maxHp, level: p.level,
           combat: p.combat || combatLevel(p.skills),
           xp: p.xp, xpNext: xpForLevel(p.level), gold: p.gold, alive: p.alive,
-          moving: p.moving, inSafe: !!p.inSafe });
+          moving: p.moving, inSafe: !!p.inSafe, resting: !!p.resting });
       }
       for (const m of monsters.values()) {
         if (m.zoneId !== zid) continue;
@@ -1224,6 +1246,7 @@ wss.on('connection', (ws) => {
           // OSRS-style combat skills. Hitpoints starts at 10 (=> 80 HP).
           skills: { attack: { level: 1, xp: 0 }, strength: { level: 1, xp: 0 },
             defence: { level: 1, xp: 0 }, hitpoints: { level: 10, xp: 0 } },
+          meditation: { level: 1, xp: 0 }, resting: false,
           style: 'controlled',
           // Everyone starts able to mine; better pickaxes are earned.
           inventory: ['Bronze Pickaxe'],
@@ -1263,6 +1286,13 @@ wss.on('connection', (ws) => {
       case 'style': {
         if (!player) break;
         if (STYLES[msg.style]) { player.style = msg.style; sendSkills(player); }
+        break;
+      }
+      case 'rest': {
+        if (!player || !player.alive) break;
+        // Toggle meditation. Can't start resting mid-fight.
+        player.resting = !player.resting && (player.combatTimer || 0) <= 0 && player.combatId == null;
+        sendSkills(player);
         break;
       }
       case 'move': {

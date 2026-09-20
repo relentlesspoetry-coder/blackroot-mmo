@@ -3295,6 +3295,20 @@ function animateEntity(rec, e, kind, dt) {
   }
   if (rig.deathT > 0) { rig.deathT = 0; b.rotation.set(0, 0, 0); b.position.copy(rig.home); }
 
+  // --- meditation: sit cross-legged and breathe slowly while resting (R).
+  if (kind === 'player' && e.resting) {
+    const tt = performance.now() / 1000;
+    b.position.set(rig.home.x, rig.home.y - 0.55 + Math.sin(tt * 1.4) * 0.02, rig.home.z);
+    b.rotation.set(0.06, 0, 0);
+    if (rig.legL) rig.legL.rotation.set(-1.45, 0, 0.5);   // thighs folded forward & out
+    if (rig.legR) rig.legR.rotation.set(-1.45, 0, -0.5);
+    if (rig.shinL) rig.shinL.rotation.set(1.7, 0, 0);      // shins tucked back (cross-legged)
+    if (rig.shinR) rig.shinR.rotation.set(1.7, 0, 0);
+    if (rig.armL) rig.armL.rotation.set(-0.5, 0, 0.35);    // hands resting on the knees
+    if (rig.armR) rig.armR.rotation.set(-0.5, 0, -0.35);
+    return;
+  }
+
   // --- speed, measured from the interpolated mesh rather than trusted input
   const px = rec.mesh.position.x, pz = rec.mesh.position.z;
   const moved = Math.hypot(px - (rec.ax ?? px), pz - (rec.az ?? pz));
@@ -3883,6 +3897,7 @@ function addEventListeners() {
     if (e.key.toLowerCase() === 'q') { toggleQuests(); return; }
     if (e.key.toLowerCase() === 'e') { toggleEquip(); return; }
     if (e.key.toLowerCase() === 'm') { toggleMap(); return; }
+    if (e.key.toLowerCase() === 'r') { ws?.send(JSON.stringify({ t: 'rest' })); return; } // sit / meditate
     if (EDIT.on && e.key === 'Escape' && (EDIT.placing || EDIT.placingMob)) { EDIT.placing = null; EDIT.placingMob = null; editSetMode(); editBuildPalette(); return; }
     if (EDIT.on && (e.key === 'Delete' || e.key === 'Backspace')) {
       if (EDIT.selId) { sendEdit({ t: 'edit:delete', id: EDIT.selId }); return; }
@@ -4232,6 +4247,9 @@ function onEvent(m) {
     case 'skilllevel':
       flyText(`${m.skill[0].toUpperCase() + m.skill.slice(1)} level ${m.level}!`, 'heal');
       addChat('Skills', `Your ${m.skill} level is now ${m.level}.`, true); break;
+    case 'medlevel':
+      flyText(`Meditation level ${m.level}!`, 'heal');
+      addChat('Skills', `Your Meditation level is now ${m.level}.`, true); break;
     case 'loot':
       document.getElementById('cgold').textContent = m.gold;
       addChat('Loot', m.text, true); break;
@@ -4423,12 +4441,17 @@ function renderSkills() {
   const slabel = { accurate: 'Accurate', aggressive: 'Aggressive', defensive: 'Defensive', controlled: 'Controlled' };
   const styleBtns = ['accurate', 'aggressive', 'defensive', 'controlled']
     .map(s => `<button class="stylebtn${s === cur ? ' on' : ''}" data-style="${s}">${slabel[s]}</button>`).join('');
+  const med = skills.meditation || { level: 1, xp: 0, next: 1 };
+  const medPct = Math.max(0, Math.min(1, med.xp / (med.next || 1)));
   el.innerHTML =
     `<div class="cskills">${chips}</div>` +
     `<div class="styles"><span>Style:</span> ${styleBtns}</div>` +
     `<div class="miningrow"><span>⛏ Mining <b>${m.level}</b></span>` +
     `<span class="xpbar"><i style="transform:scaleX(${pct})"></i></span>` +
-    `<span class="pick">${m.pick ? escapeHtml(m.pick.replace(' Pickaxe', '')) : 'no pickaxe'}</span></div>`;
+    `<span class="pick">${m.pick ? escapeHtml(m.pick.replace(' Pickaxe', '')) : 'no pickaxe'}</span></div>` +
+    `<div class="miningrow"><span>🧘 Meditation <b>${med.level}</b></span>` +
+    `<span class="xpbar"><i style="transform:scaleX(${medPct})"></i></span>` +
+    `<span class="pick">${skills.resting ? 'resting…' : 'press R to rest'}</span></div>`;
   el.querySelectorAll('.stylebtn').forEach(b => b.onclick = () => ws?.send(JSON.stringify({ t: 'style', style: b.dataset.style })));
 }
 

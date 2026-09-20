@@ -334,3 +334,13 @@ export const REGEN = {
   combatLockout: 5,     // seconds after being hit before regen resumes
 };
 export const PLAYER_REGEN_PER_SEC = REGEN.perSec;
+
+// Meditation: sit and rest (R) to recover HP. The heal rate starts modest and
+// scales with the Meditation level, so it ramps up slowly at low levels and
+// heals much faster once trained. Meditating to heal is what trains the skill.
+export const MEDITATION = {
+  baseHp: 3,        // hp/sec at level 1
+  perLevel: 0.6,    // extra hp/sec per Meditation level
+  xpPerHp: 2,       // Meditation xp earned per point of HP recovered
+};
+export function meditationHealRate(level) { return MEDITATION.baseHp + (level - 1) * MEDITATION.perLevel; }
