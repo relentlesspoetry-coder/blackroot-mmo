@@ -1059,7 +1059,8 @@ function openChest(p, chestId) {
 
 // World clock + weather (shared by all players).
 const DAY_LENGTH = 600;          // seconds for a full day/night cycle (10 min)
-let dayTime = 0.32;              // 0=midnight, 0.25=dawn, 0.5=noon, 0.75=dusk
+let dayTime = 0.5;              // 0=midnight, 0.25=dawn, 0.5=noon, 0.75=dusk
+const DAY_NIGHT_CYCLE = false;  // night disabled for now — time pinned at noon
 const WEATHER_POOL = ['clear', 'clear', 'clear', 'rain', 'mist'];
 let weather = 'clear';
 let weatherTimer = 120;
@@ -1067,7 +1068,7 @@ let weatherTimer = 120;
 // Main loop
 let lastSnap = 0;
 setInterval(() => {
-  dayTime = (dayTime + DT / DAY_LENGTH) % 1;
+  if (DAY_NIGHT_CYCLE) dayTime = (dayTime + DT / DAY_LENGTH) % 1;
   weatherTimer -= DT;
   if (weatherTimer <= 0) {
     weather = WEATHER_POOL[Math.floor(Math.random() * WEATHER_POOL.length)];
