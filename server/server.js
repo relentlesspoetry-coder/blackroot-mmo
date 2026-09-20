@@ -643,7 +643,7 @@ function stepMonster(m) {
         m.x += Math.sin(m.yaw) * m.speed * DT;
         m.z += Math.cos(m.yaw) * m.speed * DT;
       } else if (m.atkTimer <= 0) {
-        m.atkTimer = 1.2;
+        m.atkTimer = 2.4; // slower, more deliberate monster swings
         const raw = Math.random() < MONSTER.hitChance ? Math.floor(rand(m.dmg[0], m.dmg[1] + 1)) : 0;
         const dmg = mitigate(raw, equipStats(target.equipment).def); // armour, min 1
         if (dmg > 0) { target.hp -= dmg; target.combatTimer = REGEN.combatLockout; }

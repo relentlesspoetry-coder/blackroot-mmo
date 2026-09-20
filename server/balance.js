@@ -9,7 +9,7 @@ export const PLAYER = {
   speed: 8,
   radius: 0.6,
   attackRange: 3.0,
-  attackCooldown: 0.6,   // seconds between swings
+  attackCooldown: 1.5,   // seconds between swings (deliberate, OSRS-ish pace)
   hitChance: 0.85,       // 15% miss
   respawnTime: 5,
 };
