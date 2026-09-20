@@ -2241,9 +2241,10 @@ function makeMonsterMesh(type, elite) {
     // bones from the model's own bbox) — otherwise the biped rig has nothing to
     // move and they just slide along the ground.
     else if (HUMANOID_SPLIT.has(type)) splitHumanoid(g, null);
-    // Most GLB characters face -Z (flip with MODEL_YAW); the Chicken faces +Z,
-    // so it needs no flip or it walks and pecks backwards.
-    g.userData.faceOffset = type === 'chicken' ? 0 : MODEL_YAW;
+    // Most GLB characters face -Z (flip with MODEL_YAW); the Chicken and the
+    // humanoid mobs (goblins, bandits) face +Z, so they need no flip or they
+    // walk backwards.
+    g.userData.faceOffset = (type === 'chicken' || HUMANOID_SPLIT.has(type)) ? 0 : MODEL_YAW;
     g.userData.rig = buildRig(g, RIG_STYLE[type] || 'biped');
     if (elite) g.traverse(o => {
       if (o.isMesh && o.material) {
