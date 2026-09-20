@@ -2246,6 +2246,9 @@ function makeMonsterMesh(type, elite) {
     // walk backwards.
     g.userData.faceOffset = (type === 'chicken' || HUMANOID_SPLIT.has(type)) ? 0 : MODEL_YAW;
     g.userData.rig = buildRig(g, RIG_STYLE[type] || 'biped');
+    // Split humanoid mobs face +Z and punch with alternating hands (see the
+    // generic biped branch in animateEntity).
+    if (g.userData.rig && HUMANOID_SPLIT.has(type)) g.userData.rig.punchMob = true;
     if (elite) g.traverse(o => {
       if (o.isMesh && o.material) {
         o.material = Array.isArray(o.material) ? o.material.map(m => m.clone()) : o.material.clone();
@@ -2530,37 +2533,44 @@ function animateEntity(rec, e, kind, dt) {
     if (rig.shinR) rig.shinR.rotation.set(rShin, 0, 0);
     return;
   }
-  // The model sits inside a group that carries the yaw, so -Z is forward here.
+  // The model sits inside a group that carries the yaw. Most mobs face -Z here;
+  // the split humanoid mobs face +Z (punchMob), so their lean/lunge flip forward
+  // instead of hurling the body backwards on a strike.
+  const fwd = rig.punchMob ? 1 : -1;
   b.position.y = rig.home.y + Math.abs(Math.sin(rig.gait)) * g.bob * a + idle;
-  b.position.z = rig.home.z - punch * 0.5;
-  b.rotation.x = -g.lean * a - punch * 0.45;
+  b.position.z = rig.home.z + fwd * punch * (rig.punchMob ? 0.14 : 0.5);
+  b.rotation.x = rig.punchMob ? (g.lean * a + punch * 0.10) : (-g.lean * a - punch * 0.45);
+  b.rotation.y = 0;
   b.rotation.z = Math.sin(rig.gait * 0.5) * g.roll * a;
 
   // --- limbs from the split models: a real stride and a real swing
   if (rig.legL || rig.armL) {
     const stride = Math.sin(rig.gait) * a;
-    if (rig.legL) rig.legL.rotation.x = stride * 0.55;
-    if (rig.legR) rig.legR.rotation.x = -stride * 0.55;
-    // Arms counter-swing, and the idle pose keeps them slightly off the body.
-    const armSwing = -stride * 0.40;
-    if (rig.armL) rig.armL.rotation.x = armSwing;
-    if (rig.armR) rig.armR.rotation.x = -armSwing;
-    if (rig.armL) rig.armL.rotation.z = 0.06 * a;
-    if (rig.armR) rig.armR.rotation.z = -0.06 * a;
+    let lLeg = stride * 0.55, rLeg = -stride * 0.55;
+    let lArm = -stride * 0.40, rArm = stride * 0.40, lArmZ = 0.06 * a, rArmZ = -0.06 * a;
 
     if (punch > 0) {
-      // Overhead swing: wind back, then bring it down hard. The weapon is a
-      // child of this arm, so it travels with it.
-      const wind = Math.sin(Math.PI * u);
-      const arm = rig.swingArm || rig.armR || rig.armL;
-      if (arm) {
-        arm.rotation.x = -2.1 * wind;
-        arm.rotation.z = (arm === rig.armL ? -1 : 1) * 0.5 * wind;
+      if (rig.punchMob && !rig.swingArm) {
+        // Unarmed humanoid mob: one straight-arm jab, the striking hand chosen at
+        // random each swing; the other hand stays up as a guard, torso twists in.
+        const jab = -1.6 * punch;
+        if ((rig.atkKind || 0) === 0) { rArm = jab; rArmZ = -0.10; lArm = -0.35 * punch; lArmZ = 0.16; }
+        else { lArm = jab; lArmZ = 0.10; rArm = -0.35 * punch; rArmZ = -0.16; }
+        b.rotation.y = ((rig.atkKind || 0) === 0 ? -1 : 1) * 0.16 * punch;
+      } else {
+        // Armed / other bipeds: an overhead weapon swing (wind up, chop down).
+        const wind = Math.sin(Math.PI * u);
+        const arm = rig.swingArm || rig.armR || rig.armL, isL = arm === rig.armL;
+        if (isL) { lArm = -2.1 * wind; lArmZ = -0.5 * wind; rArm = 0.5 * wind; }
+        else { rArm = -2.1 * wind; rArmZ = 0.5 * wind; lArm = 0.5 * wind; }
       }
-      // The off hand braces; a shield comes up with it.
-      const off = arm === rig.armL ? rig.armR : rig.armL;
-      if (off) off.rotation.x = 0.5 * wind;
     }
+    if (rig.armL) rig.armL.rotation.set(lArm, 0, lArmZ);
+    if (rig.armR) rig.armR.rotation.set(rArm, 0, rArmZ);
+    if (rig.legL) rig.legL.rotation.x = lLeg;
+    if (rig.legR) rig.legR.rotation.x = rLeg;
+    if (rig.shinL) rig.shinL.rotation.x = Math.max(0, -stride) * 0.5 * a;
+    if (rig.shinR) rig.shinR.rotation.x = Math.max(0, stride) * 0.5 * a;
   }
 
   // --- parts that genuinely exist on the model
@@ -2582,7 +2592,9 @@ function animateEntity(rec, e, kind, dt) {
 function triggerAttackAnim(id) {
   const rec = entityMeshes.get(id);
   const rig = rec && rec.mesh.userData.rig;
-  if (rig) { rig.atk = 1; rig.atkSeq = (rig.atkSeq || 0) + 1; rig.atkKind = rig.atkSeq % 2; }
+  // Pick the striking hand at random each swing (the player alternates
+  // punch/kick instead — that branch reads atkKind the same way).
+  if (rig) { rig.atk = 1; rig.atkKind = Math.random() < 0.5 ? 0 : 1; }
 }
 
 function lerpAngle(a, b, t) {
