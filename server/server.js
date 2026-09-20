@@ -94,8 +94,20 @@ function inSafeZone(zone, x, z) {
 }
 
 // ---------------------------------------------------------------------------
+// Direction of the polyline segment nearest to (x,z).
+function segDirAt(pts, x, z) {
+  let best = { dx: 1, dz: 0 }, bd = Infinity;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i], b = pts[i + 1], dx = b.x - a.x, dz = b.z - a.z;
+    const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / (dx * dx + dz * dz || 1)));
+    const cx = a.x + dx * t, cz = a.z + dz * t, d = Math.hypot(x - cx, z - cz);
+    if (d < bd) { bd = d; best = { dx, dz }; }
+  }
+  return best;
+}
+
 // Collision: keep an entity inside bounds, out of rocks, and out of the river
-// (except at the bridge).
+// (except at the bridge, where solid rails keep it on the deck).
 // ---------------------------------------------------------------------------
 function resolveCollision(zone, ent, radius) {
   const b = zone.bounds;
@@ -113,11 +125,39 @@ function resolveCollision(zone, ent, radius) {
   if (r) {
     const c = closestOnPolyline(ent.x, ent.z, r.points);
     const half = r.width / 2 + radius;
-    const nearBridge = dist2(ent.x, ent.z, r.bridge.x, r.bridge.z) < (r.bridge.halfWidth + 2) ** 2;
-    if (c.dist < half && !nearBridge) {
-      let dx = ent.x - c.x, dz = ent.z - c.z, d = Math.hypot(dx, dz);
-      if (d < 1e-4) { dx = 1; dz = 0; d = 1; }
-      ent.x = c.x + (dx / d) * half; ent.z = c.z + (dz / d) * half;
+    // Bridge frame (path-aligned deck), computed once: matches how the client
+    // builds and orients the arched bridge.
+    if (r.bridge && !zone._bridge) {
+      const pd = segDirAt(zone.path || r.points, r.bridge.x, r.bridge.z);
+      const rd = segDirAt(r.points, r.bridge.x, r.bridge.z);
+      const pl = Math.hypot(pd.dx, pd.dz) || 1, rl = Math.hypot(rd.dx, rd.dz) || 1;
+      const sinA = Math.min(1, Math.abs((pd.dx / pl) * (rd.dz / rl) - (pd.dz / pl) * (rd.dx / rl)));
+      const L = r.width / Math.max(0.5, sinA) + 9;
+      zone._bridge = { cx: r.bridge.x, cz: r.bridge.z, dx: pd.dx / pl, dz: pd.dz / pl, L, deckW: 6, railHalf: 2.5 };
+    }
+    if (c.dist < half) { // over the river
+      const B = zone._bridge;
+      let onDeck = false;
+      if (B) {
+        const ex = ent.x - B.cx, ez = ent.z - B.cz;
+        const along = ex * B.dx + ez * B.dz;          // along the deck (path direction)
+        const across = ex * -B.dz + ez * B.dx;         // across the deck (rail axis)
+        if (Math.abs(along) <= B.L / 2 && Math.abs(across) <= B.deckW / 2 + 0.5) {
+          onDeck = true;
+          // Solid rails: clamp the player between them.
+          const lim = B.railHalf;
+          if (Math.abs(across) > lim) {
+            const na = Math.sign(across) * lim;
+            ent.x = B.cx + along * B.dx + na * -B.dz;
+            ent.z = B.cz + along * B.dz + na * B.dx;
+          }
+        }
+      }
+      if (!onDeck) { // in the water beside the deck (or no bridge) — push to the bank
+        let dx = ent.x - c.x, dz = ent.z - c.z, d = Math.hypot(dx, dz);
+        if (d < 1e-4) { dx = 1; dz = 0; d = 1; }
+        ent.x = c.x + (dx / d) * half; ent.z = c.z + (dz / d) * half;
+      }
     }
   }
 
