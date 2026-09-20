@@ -2910,6 +2910,63 @@ function splitChickenParts(wrap) {
   }
 }
 
+// A quadruped (the cow) is a merged mesh with the legs baked into the body, so
+// nothing moves. Carve it by position into four legs (front/back x left/right),
+// a head, and the body — each rebuilt as its own pivoted node so the rig can
+// stride the legs and lunge the head to "bite" on an attack.
+function splitQuadParts(wrap) {
+  const collect = () => { const a = []; wrap.traverse(o => { if (o.isMesh) a.push(o); }); return a; };
+  const meshes = collect(); if (!meshes.length) return;
+  for (const m of meshes) m.geometry.computeBoundingBox();
+  let minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  for (const m of meshes) { const b = m.geometry.boundingBox; minY = Math.min(minY, b.min.y); maxY = Math.max(maxY, b.max.y); minZ = Math.min(minZ, b.min.z); maxZ = Math.max(maxZ, b.max.z); }
+  const H = maxY - minY, Zr = maxZ - minZ;
+  const legTop = minY + H * 0.42;      // below this = legs
+  const HEAD_Z = maxZ - Zr * 0.26;     // the front ~quarter (head / horns / muzzle)
+  const HEAD_Y = minY + H * 0.5;
+  const anchor = meshes[0].parent;
+  const mk = () => ({ p: [], n: [], u: [] });
+  const legAcc = { FL: [], FR: [], BL: [], BR: [] }, headAcc = [];
+  for (const m of meshes) {
+    const geo = m.geometry, pa = geo.attributes.position, na = geo.attributes.normal, ua = geo.attributes.uv, idx = geo.index;
+    const P = i => [pa.getX(i), pa.getY(i), pa.getZ(i)];
+    const N = i => na ? [na.getX(i), na.getY(i), na.getZ(i)] : [0, 1, 0];
+    const U = i => ua ? [ua.getX(i), ua.getY(i)] : [0, 0];
+    const body = mk(), head = mk(), legs = { FL: mk(), FR: mk(), BL: mk(), BR: mk() };
+    const triN = idx ? idx.count / 3 : pa.count / 3;
+    for (let t = 0; t < triN; t++) {
+      const i0 = idx ? idx.getX(t * 3) : t * 3, i1 = idx ? idx.getX(t * 3 + 1) : t * 3 + 1, i2 = idx ? idx.getX(t * 3 + 2) : t * 3 + 2;
+      const a = P(i0), b = P(i1), c = P(i2);
+      const cy = (a[1] + b[1] + c[1]) / 3, cx = (a[0] + b[0] + c[0]) / 3, cz = (a[2] + b[2] + c[2]) / 3;
+      let dst;
+      if (cy < legTop) dst = legs[(cz > 0 ? 'F' : 'B') + (cx < 0 ? 'L' : 'R')];
+      else if (cz > HEAD_Z && cy > HEAD_Y) dst = head;
+      else dst = body;
+      for (const i of [i0, i1, i2]) { dst.p.push(...P(i)); dst.n.push(...N(i)); dst.u.push(...U(i)); }
+    }
+    const hasUV = !!ua;
+    m.parent.remove(m);
+    if (body.p.length) { const bm = new THREE.Mesh(chickenPartGeo(body, hasUV), m.material); bm.name = m.name; bm.castShadow = bm.receiveShadow = true; anchor.add(bm); }
+    if (head.p.length) headAcc.push({ bk: head, hasUV, material: m.material });
+    for (const k of ['FL', 'FR', 'BL', 'BR']) if (legs[k].p.length) legAcc[k].push({ bk: legs[k], hasUV, material: m.material });
+  }
+  const bbOf = (parts) => { let mnx = 1e9, mxx = -1e9, mny = 1e9, mxy = -1e9, mnz = 1e9, mxz = -1e9; for (const pt of parts) for (let i = 0; i < pt.bk.p.length; i += 3) { const x = pt.bk.p[i], y = pt.bk.p[i + 1], z = pt.bk.p[i + 2]; mnx = Math.min(mnx, x); mxx = Math.max(mxx, x); mny = Math.min(mny, y); mxy = Math.max(mxy, y); mnz = Math.min(mnz, z); mxz = Math.max(mxz, z); } return { mnx, mxx, mny, mxy, mnz, mxz }; };
+  const buildGroup = (name, parts, pivot) => {
+    const grp = new THREE.Group(); grp.name = name; grp.position.copy(pivot);
+    for (const pt of parts) { const g2 = chickenPartGeo(pt.bk, pt.hasUV); g2.translate(-pivot.x, -pivot.y, -pivot.z); const lm = new THREE.Mesh(g2, pt.material); lm.castShadow = lm.receiveShadow = true; grp.add(lm); }
+    anchor.add(grp); return grp;
+  };
+  for (const k of ['FL', 'FR', 'BL', 'BR']) {
+    if (!legAcc[k].length) continue;
+    const b = bbOf(legAcc[k]);
+    buildGroup('QLeg_' + k, legAcc[k], new THREE.Vector3((b.mnx + b.mxx) / 2, b.mxy, (b.mnz + b.mxz) / 2)); // pivot at hip top
+  }
+  if (headAcc.length) {
+    const b = bbOf(headAcc);
+    buildGroup('Head', headAcc, new THREE.Vector3(0, (b.mny + b.mxy) / 2, b.mnz)); // pivot at the neck base
+  }
+}
+
 // The player (Male) is a rigid merged mesh (no skeleton), so its arms and legs
 // can't move. Segment every triangle to the nearest "bone" — a robust way to
 // carve an A-pose humanoid into limbs — and rebuild the arms and legs as their
@@ -3028,18 +3085,23 @@ function makeMonsterMesh(type, elite) {
   const g = cloneModel(map.model, map.h * (elite ? 1.4 : 1));
   if (g) {
     if (type === 'chicken') splitChickenParts(g);
+    // The cow is a quadruped merged mesh — carve legs + head so it strides and
+    // bites instead of sliding along stiff.
+    else if (type === 'cow') splitQuadParts(g);
     // Humanoid mobs are single merged meshes, so carve them into arms/legs (auto
     // bones from the model's own bbox) — otherwise the biped rig has nothing to
     // move and they just slide along the ground.
     else if (HUMANOID_SPLIT.has(type)) splitHumanoid(g, null);
-    // Most GLB characters face -Z (flip with MODEL_YAW); the Chicken and the
-    // humanoid mobs (goblins, bandits) face +Z, so they need no flip or they
+    // Most GLB characters face -Z (flip with MODEL_YAW); the Chicken, the cow and
+    // the humanoid mobs (goblins, bandits) face +Z, so they need no flip or they
     // walk backwards.
-    g.userData.faceOffset = (type === 'chicken' || HUMANOID_SPLIT.has(type)) ? 0 : MODEL_YAW;
+    g.userData.faceOffset = (type === 'chicken' || type === 'cow' || HUMANOID_SPLIT.has(type)) ? 0 : MODEL_YAW;
     g.userData.rig = buildRig(g, RIG_STYLE[type] || 'biped');
     // Split humanoid mobs face +Z and punch with alternating hands (see the
     // generic biped branch in animateEntity).
     if (g.userData.rig && HUMANOID_SPLIT.has(type)) g.userData.rig.punchMob = true;
+    // The cow faces +Z too, so lean/lunge forward into its bite (not backward).
+    if (g.userData.rig && type === 'cow') g.userData.rig.punchMob = true;
     if (elite) g.traverse(o => {
       if (o.isMesh && o.material) {
         o.material = Array.isArray(o.material) ? o.material.map(m => m.clone()) : o.material.clone();
@@ -3156,6 +3218,14 @@ function buildRig(wrap, style) {
       rig.legs.push({ node: leg, group, baseY: leg.rotation.y, baseP: leg.position.clone() });
     }
   }
+  // Quadruped (cow): four hip-pivoted legs on a diagonal gait + a head to bite.
+  rig.qlegs = [];
+  for (const leg of findByName(body, /^QLeg_(FL|FR|BL|BR)$/)) {
+    const m = leg.name.match(/QLeg_(F|B)(L|R)/), front = m[1] === 'F', left = m[2] === 'L';
+    // Diagonal pairs move together: front-left with back-right, etc.
+    rig.qlegs.push({ node: leg, phase: ((front && left) || (!front && !left)) ? 0 : Math.PI });
+  }
+  if (rig.head) rig.headBase = rig.head.position.clone();
   if (style === 'ogre') rig.club = findByName(body, /Club/i)[0] || null;
   return rig;
 }
@@ -3377,6 +3447,16 @@ function animateEntity(rec, e, kind, dt) {
     }
   }
   if (rig.club) rig.club.rotation.x = -punch * 1.5 - Math.sin(rig.gait) * 0.12 * a;
+
+  // --- quadruped (cow): stride the four legs on a diagonal gait, and thrust the
+  // head down-and-forward to "bite" on a strike.
+  if (rig.qlegs && rig.qlegs.length) {
+    for (const leg of rig.qlegs) leg.node.rotation.x = Math.sin(rig.gait + leg.phase) * 0.5 * a;
+  }
+  if (rig.head && rig.headBase) {
+    rig.head.rotation.x = Math.sin(rig.gait * 0.5) * 0.05 * a + punch * 0.7;  // graze bob + bite dip
+    rig.head.position.z = rig.headBase.z + punch * 0.18;                       // lunge forward on the bite
+  }
 }
 
 // The server tells us who swung; the client plays the swing.
