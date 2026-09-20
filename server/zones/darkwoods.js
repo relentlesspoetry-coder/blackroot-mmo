@@ -110,6 +110,8 @@ export const darkwoods = {
       idle: 'Mind the hens, love — and shut the gate on your way out.' },
     { id: 'bram',     name: 'Farmhand Bram',       x: -6,   z: -87, poi: 'entrance', model: 'Male', yaw: 0.6,
       idle: 'Cows need feedin’, fences need mendin’. No rest out here.' },
+    { id: 'sela',     name: 'Ranger Sela',         x: 48,   z: -70, poi: 'watchtower', model: 'Female', yaw: 2.2,
+      idle: 'From the old tower you can see their fires. The Wolf Den grows bolder every night.' },
     { id: 'hermit',   name: 'Hermit of the Grove', x: 9,    z: 4,   poi: 'shrine',   model: 'Male',
       idle: 'The shrine holds. Not much else out here does.' },
     { id: 'merchant', name: 'Wandering Merchant',  x: -51.5, z: 9,  poi: 'camp',     model: 'Female', trade: true,

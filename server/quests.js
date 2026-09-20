@@ -45,6 +45,21 @@ export const QUESTS = {
     reward: { xp: 120, gold: 20 },
   },
 
+  // --- Ranger Sela, Fallen Watchtower --------------------------------------
+  wolfraid: {
+    id: 'wolfraid', name: 'The Wolf Den', giver: 'sela', minLevel: 4, requires: ['trail'],
+    summary: 'Break the goblin war-camp at the Wolf Den.',
+    intro: 'The goblins have made a war-camp of the old Wolf Den, east past the creek — warriors and archers both, under banners. Thin them out before they march on the trail: their warriors, their bowmen, and bring me a fistful of teeth to prove it.',
+    active: 'Four goblin warriors, two archers, and six teeth from the Wolf Den camp.',
+    done: 'That will slow them. Take the bow — a goblin string, but it shoots true enough.',
+    objectives: [
+      { type: 'kill', target: 'goblin_warrior', count: 4, label: 'Goblin warriors slain' },
+      { type: 'kill', target: 'goblin_archer', count: 2, label: 'Goblin archers slain' },
+      { type: 'collect', item: 'Goblin Tooth', count: 6, label: 'Goblin teeth' },
+    ],
+    reward: { xp: 550, gold: 180, items: ['Goblin Shortbow'] },
+  },
+
   // --- The Hermit, Shrine Grove --------------------------------------------
   rotfen: {
     id: 'rotfen', name: 'Rotfen Pickings', giver: 'hermit', minLevel: 3, requires: ['shrine'],
