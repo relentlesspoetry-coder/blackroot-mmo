@@ -1135,7 +1135,7 @@ wss.on('connection', (ws) => {
         const z = zoneOf(player);
         const o = { id: 'e' + (editSeq++), m: String(msg.m), x: +(+msg.x).toFixed(2), z: +(+msg.z).toFixed(2),
           yaw: +(+(msg.yaw || 0)).toFixed(3), s: +(+(msg.s || 1)).toFixed(3), c: +(+(msg.c || 0)).toFixed(2),
-          tex: msg.tex ? String(msg.tex) : '' };
+          tex: {} }; // per-part texture map: { partIndex: textureName }
         z._editObjects.push(o); saveOverrides(z); broadcastZone(player.zoneId, { t: 'edit', op: 'place', obj: o });
         break;
       }
@@ -1147,7 +1147,11 @@ wss.on('connection', (ws) => {
         if (msg.yaw != null) o.yaw = +(+msg.yaw).toFixed(3);
         if (msg.s != null) o.s = +(+msg.s).toFixed(3);
         if (msg.c != null) o.c = +(+msg.c).toFixed(2);
-        if (msg.tex != null) o.tex = String(msg.tex);
+        // Per-part texture: msg.part is the material index, msg.tex the name ('' clears).
+        if (msg.part != null) {
+          if (!o.tex || typeof o.tex !== 'object') o.tex = {};
+          if (msg.tex) o.tex[String(msg.part)] = String(msg.tex); else delete o.tex[String(msg.part)];
+        }
         saveOverrides(z); broadcastZone(player.zoneId, { t: 'edit', op: 'update', obj: o });
         break;
       }

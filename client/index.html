@@ -286,8 +286,12 @@
       <label style="display:block; margin:4px 0;">Scale <input id="edScale" type="range" min="0.2" max="4" step="0.05" style="width:100%;"> <span id="edScaleV"></span></label>
       <label style="display:flex; align-items:center; gap:6px; margin:4px 0;"><input id="edColOn" type="checkbox"> Solid (collision)</label>
       <label style="display:block; margin:4px 0;">Radius <input id="edColR" type="range" min="0.2" max="6" step="0.1" style="width:100%;"> <span id="edColRV"></span></label>
-      <div style="margin:6px 0 3px; color:#9fb0c4;">Texture</div>
-      <div id="edTexRow" style="display:flex; flex-wrap:wrap; gap:3px; margin-bottom:4px;"></div>
+      <div id="edPartWrap" style="display:none;">
+        <div style="margin:6px 0 3px; color:#9fb0c4;">Part</div>
+        <div id="edPartRow" style="display:flex; flex-wrap:wrap; gap:3px; margin-bottom:4px;"></div>
+      </div>
+      <div style="margin:6px 0 3px; color:#9fb0c4;">Texture <span style="color:#7f8ba0; font-size:10px;">(applies to selected part)</span></div>
+      <div id="edTexRow" style="display:flex; flex-wrap:wrap; gap:3px; margin-bottom:4px; max-height:20vh; overflow-y:auto;"></div>
       <button id="edDelete" style="width:100%; margin-top:6px; background:#5a2330; border:1px solid #7a3040; color:#ffd0d0; border-radius:6px; padding:6px; cursor:pointer;">Delete</button>
     </div>
     <div style="padding:7px 10px; border-top:1px solid #2b3852; font-size:10px; color:#7f8ba0; line-height:1.5;">
@@ -2007,7 +2011,7 @@ function updateFarmGate(dt) {
 // World editor — place/move/rotate/scale/delete GLB props, saved server-side.
 // Activated with ?edit=<key>; the value is the auth key sent with every edit.
 // ---------------------------------------------------------------------------
-const EDIT = { on: false, key: '', models: [], placing: null, selId: null };
+const EDIT = { on: false, key: '', models: [], placing: null, selId: null, selPart: 0 };
 (function () { const p = new URLSearchParams(location.search).get('edit'); if (p) { EDIT.on = true; EDIT.key = p; } })();
 const editMeshes = new Map(); // id -> THREE.Group
 
@@ -2022,17 +2026,28 @@ function makeEditMesh(o) {
   wrap.position.set(o.x, groundY ? groundY(o.x, o.z) : 0, o.z);
   wrap.rotation.y = o.yaw || 0;
   wrap.userData.editObj = o;
-  // Optional texture override: clone the materials (never mutate the shared
-  // source) and swap in the chosen map.
-  if (o.tex) {
-    const tx = editTexture(o.tex);
-    wrap.traverse(x => {
-      if (!x.isMesh || !x.material) return;
-      const one = !Array.isArray(x.material), mats = one ? [x.material] : x.material;
-      const out = mats.map(m => { const c = m.clone(); c.map = tx; c.needsUpdate = true; return c; });
-      x.material = one ? out[0] : out;
+  // Split the object into material "parts" (trunk vs leaves, etc.) so each can be
+  // textured on its own. Index by the SHARED source material (stable per model),
+  // then clone-and-swap only the parts that have a texture assigned.
+  const partIdx = new Map(), parts = [];
+  wrap.traverse(x => {
+    if (!x.isMesh || !x.material) return;
+    for (const m of (Array.isArray(x.material) ? x.material : [x.material])) {
+      if (!partIdx.has(m)) { const i = parts.length; partIdx.set(m, i); parts.push({ index: i, label: editPartLabel(m, i) }); }
+    }
+  });
+  wrap.userData.parts = parts;
+  const texMap = (o.tex && typeof o.tex === 'object') ? o.tex : {};
+  wrap.traverse(x => {
+    if (!x.isMesh || !x.material) return;
+    const one = !Array.isArray(x.material), mats = one ? [x.material] : x.material;
+    const out = mats.map(m => {
+      const name = texMap[partIdx.get(m)];
+      if (!name) return m; // untextured parts keep the shared source material
+      const c = m.clone(); c.map = editTexture(name); c.needsUpdate = true; return c;
     });
-  }
+    x.material = one ? out[0] : out;
+  });
   wrap.traverse(x => { if (x.isMesh) { x.castShadow = x.receiveShadow = true; x.userData.pickKind = 'editobj'; x.userData.editId = o.id; } });
   scene.add(wrap);
   editMeshes.set(o.id, wrap);
@@ -2064,20 +2079,33 @@ async function applyEdit(m) {
 }
 function sendEdit(obj) { obj.key = EDIT.key; ws?.send(JSON.stringify(obj)); }
 
-// Textures selectable in the editor (image files + a couple of procedural ones).
-const EDIT_TEX = ['dirt', 'grass', 'stone', 'rock', 'moss', 'dark_stone', 'bark', 'leaf'];
+// Every texture available to the editor (client/textures/*.png).
+const EDIT_TEX = [
+  'barrel', 'beige_woven_fabric', 'black_hair', 'bone', 'bronze_scale_armor', 'brown_fur',
+  'brown_hair', 'brown_leather', 'cloth', 'dark_stone', 'dirt', 'glowing_purple_runic_sword',
+  'goblin_skin', 'grass', 'grass_blade', 'gray_tombstone', 'green_cactus', 'human_skin', 'leaf',
+  'metal', 'moss', 'ornate_golden_armor', 'red_clay', 'rock', 'rope', 'sand', 'scars_on_skin',
+  'steel', 'steel_chainmail', 'stone', 'tan_clay', 'tree_bark', 'wood', 'wooden_crate',
+];
 function editTexture(name) {
-  let t = null;
-  if (name === 'bark') t = makeBarkTexture().clone();
-  else if (name === 'leaf') t = makeLeafTexture().clone();
-  else t = loadTexture(name, 2, 2);
-  if (t) { t.wrapS = t.wrapT = THREE.RepeatWrapping; if (!t.repeat.x) t.repeat.set(2, 2); t.needsUpdate = true; }
+  const t = loadTexture(name, 2, 2); // clones + sets repeat/wrap
+  if (t) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.needsUpdate = true; }
   return t;
 }
+function editPartLabel(m, i) {
+  if (m.name && !/^material/i.test(m.name)) return m.name;
+  const c = m.color;
+  if (c) { if (c.g > c.r * 1.05 && c.g > c.b * 1.05) return 'Leaves'; if (c.r > 0.25 && c.r >= c.g && c.g >= c.b) return 'Wood'; }
+  return 'Part ' + (i + 1);
+}
+// Apply the texture to the currently-selected PART of the selected object.
 function editSetTexture(name) {
   const o = (zone.editObjects || []).find(e => e.id === EDIT.selId); if (!o) return;
-  o.tex = name; removeEditMesh(o.id); makeEditMesh(o); editSelect(o.id);
-  sendEdit({ t: 'edit:update', id: o.id, tex: name });
+  const part = EDIT.selPart || 0;
+  if (!o.tex || typeof o.tex !== 'object') o.tex = {};
+  if (name) o.tex[part] = name; else delete o.tex[part];
+  removeEditMesh(o.id); makeEditMesh(o); editSelect(o.id, part);
+  sendEdit({ t: 'edit:update', id: o.id, part, tex: name });
 }
 
 let editDrag = null, editHL = null, _edUpdT = 0;
@@ -2113,14 +2141,28 @@ function editBuildPalette() {
   }
 }
 function editSetMode() { const el = document.getElementById('edMode'); if (el) el.textContent = EDIT.placing ? 'place: ' + modelKey(EDIT.placing) : (EDIT.selId ? 'select' : 'idle'); }
-function editSelect(id) {
-  EDIT.selId = id;
+function editSelect(id, part) {
+  EDIT.selId = id; EDIT.selPart = part || 0;
   if (editHL) { scene.remove(editHL); editHL = null; }
   const g = id && editMeshes.get(id);
   if (g) { editHL = new THREE.BoxHelper(g, 0x9fd0ff); scene.add(editHL); }
   document.getElementById('edInspector').style.display = id ? 'block' : 'none';
-  if (id) editSyncInspector();
+  if (id) { editBuildParts(); editSyncInspector(); }
   editSetMode();
+}
+// The material "parts" of the selected object (trunk / leaves / …), each texturable.
+function editBuildParts() {
+  const row = document.getElementById('edPartRow'); if (!row) return;
+  row.innerHTML = '';
+  const g = editMeshes.get(EDIT.selId); const parts = (g && g.userData.parts) || [];
+  if (parts.length <= 1) { row.parentElement.style.display = 'none'; EDIT.selPart = 0; return; }
+  row.parentElement.style.display = 'block';
+  for (const p of parts) {
+    const b = document.createElement('button'); b.textContent = p.label;
+    b.style.cssText = 'background:' + (EDIT.selPart === p.index ? '#2f5aa0' : '#1a2436') + '; border:1px solid #3a4c68; color:#f0f5ff; border-radius:5px; padding:3px 8px; cursor:pointer; font-size:11px;';
+    b.onclick = () => { EDIT.selPart = p.index; editBuildParts(); };
+    row.appendChild(b);
+  }
 }
 function editSyncInspector() {
   const o = (zone.editObjects || []).find(e => e.id === EDIT.selId); if (!o) return;
