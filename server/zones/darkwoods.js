@@ -24,6 +24,11 @@ export const darkwoods = {
     // Dark Woods decor + goblin-camp dressing (new asset pack)
     'Twisted_Dead_Tree', 'Hollow_Stump', 'Exposed_Roots', 'Dark_Fern', 'Poison_Mushrooms', 'Bone_Pile',
     'Rough_Fence', 'Warning_Sign', 'Spike_Barricade', 'Goblin_Banner', 'Goblin_Totem',
+    // Meadow plants & bushes (undergrowth pack, batches 1 & 2)
+    'Broadleaf_Plant', 'Clover_Patch', 'Green_Fern', 'Lavender_Clump', 'Meadow_Grass', 'Meadow_Shrub',
+    'Pond_Reeds', 'Red_Berry_Bush', 'Round_Box_Bush', 'Tall_Hedgerow', 'Wildflower_Patch',
+    'Blackberry_Bramble', 'Blue_Hydrangea', 'Creeping_Bellflowers', 'Foxglove_Clump', 'Goldenrod_Patch',
+    'Heather_Clump', 'Hosta_Plant', 'Meadow_Sedge', 'Poppy_Patch', 'Rose_Bush', 'Sage_Bush', 'Strawberry_Patch',
     'cave/Copper_Ore_Vein', 'cave/Tin_Ore_Vein', 'cave/Iron_Ore_Vein',
     'items/Copper_Ore', 'items/Tin_Ore', 'items/Iron_Ore',
     // Farmstead at the Entrance Clearing (Farm_Assets pack)
@@ -189,6 +194,35 @@ export const darkwoods = {
     { model: 'Dark_Fern',         count: 16, r: 0,   scale: [0.9, 1.4] },
     { model: 'Poison_Mushrooms',  count: 10, r: 0,   scale: [0.9, 1.3] },
     { model: 'Bone_Pile',         count: 7,  r: 0,   scale: [0.9, 1.2] },
+
+    // Meadow undergrowth — lush low plants, flowers & bushes scattered zone-wide
+    // to fill out the forest floor (Meadow Plants & Bushes pack, batches 1 & 2).
+    // Ground plants & ferns are pure decor (walk-through); bushes block lightly.
+    { model: 'Green_Fern',          count: 22, r: 0,   scale: [0.8, 1.3] },
+    { model: 'Broadleaf_Plant',     count: 20, r: 0,   scale: [0.8, 1.2] },
+    { model: 'Hosta_Plant',         count: 16, r: 0,   scale: [0.8, 1.2] },
+    { model: 'Clover_Patch',        count: 18, r: 0,   scale: [0.9, 1.3] },
+    { model: 'Meadow_Grass',        count: 24, r: 0,   scale: [0.8, 1.3] },
+    { model: 'Meadow_Sedge',        count: 16, r: 0,   scale: [0.8, 1.2] },
+    { model: 'Wildflower_Patch',    count: 18, r: 0,   scale: [0.8, 1.2] },
+    { model: 'Poppy_Patch',         count: 12, r: 0,   scale: [0.8, 1.2] },
+    { model: 'Lavender_Clump',      count: 12, r: 0,   scale: [0.8, 1.1] },
+    { model: 'Heather_Clump',       count: 12, r: 0,   scale: [0.8, 1.2] },
+    { model: 'Goldenrod_Patch',     count: 10, r: 0,   scale: [0.8, 1.1] },
+    { model: 'Foxglove_Clump',      count: 10, r: 0,   scale: [0.8, 1.1] },
+    { model: 'Creeping_Bellflowers',count: 12, r: 0,   scale: [0.8, 1.2] },
+    { model: 'Strawberry_Patch',    count: 10, r: 0,   scale: [0.8, 1.2] },
+    // Bushes & shrubs — light collision so they read as solid cover.
+    { model: 'Meadow_Shrub',        count: 14, r: 0.7, scale: [0.9, 1.3] },
+    { model: 'Round_Box_Bush',      count: 10, r: 0.7, scale: [0.9, 1.2] },
+    { model: 'Sage_Bush',           count: 10, r: 0.7, scale: [0.9, 1.2] },
+    { model: 'Red_Berry_Bush',      count: 10, r: 0.7, scale: [0.9, 1.2] },
+    { model: 'Blackberry_Bramble',  count: 8,  r: 0.8, scale: [0.9, 1.3] },
+    { model: 'Rose_Bush',           count: 8,  r: 0.7, scale: [0.9, 1.2] },
+    { model: 'Blue_Hydrangea',      count: 8,  r: 0.7, scale: [0.9, 1.2] },
+    { model: 'Tall_Hedgerow',       count: 8,  r: 0.9, scale: [0.9, 1.3] },
+    // Reeds hug the water's edge but are decor; a few dotted around damp ground.
+    { model: 'Pond_Reeds',          count: 12, r: 0,   scale: [0.9, 1.3] },
   ],
 
   // Monster spawn regions. Level rises toward the south. `hint` labels the area
