@@ -483,7 +483,22 @@ function bridgeLift(x, z) {
   if (Math.abs(along) > bi.L / 2 || Math.abs(across) > bi.deckW / 2 + 0.4) return 0;
   return bi.archH * (1 - Math.pow(2 * along / bi.L, 2)) + 0.35; // arch + deck-top offset
 }
+// River channel profile: a carved bed so the water sits deep with banks rising
+// above it. terrainHeight is the ground height at (x,z) — 0 on flat land, the
+// water line at the shore, dropping to the bed under the water.
+const RIVER_WATER_Y = -0.5, RIVER_BED_Y = -2.2, RIVER_BANK = 4;
+function terrainHeight(x, z) {
+  if (!zone || !zone.river || zone.enclosed) return 0;
+  const rh = zone.river.width / 2;
+  const d = distToPolyline(x, z, zone.river.points);
+  if (d >= rh + RIVER_BANK) return 0;
+  if (d <= rh) return RIVER_WATER_Y + (RIVER_BED_Y - RIVER_WATER_Y) * (1 - d / rh); // bed under water
+  return RIVER_WATER_Y * (1 - (d - rh) / RIVER_BANK); // shore rising to 0
+}
+// Height an entity should stand at: on a bridge use its deck, else the terrain.
+function groundY(x, z) { const b = bridgeLift(x, z); return b > 0 ? b : terrainHeight(x, z); }
 let worldTime = 0.35, worldWeather = 'clear';
+let riverMesh = null, riverTex = null; // animated flowing water
 let timeFrozen = false;   // set only through the ?debug=1 hook
 const UP = new THREE.Vector3(0, 1, 0);
 const chestMeshes = new Map(); // chestId -> { lid, opened }
@@ -867,6 +882,26 @@ function ribbon(points, width, y, color, opacity, texName) {
   return g;
 }
 
+// A flowing-water texture: rippled bands + sparkle streaks, scrolled each frame.
+function makeWaterTexture() {
+  const s = 128, cv = document.createElement('canvas'); cv.width = cv.height = s;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#296a94'; ctx.fillRect(0, 0, s, s);
+  for (let y = 0; y < s; y++) {
+    const w = Math.sin(y * 0.16) * 0.5 + 0.5, l = 30 + w * 45 + Math.sin(y * 0.7) * 12;
+    ctx.fillStyle = `rgba(${140 + l * 0.4 | 0},${185 + l * 0.3 | 0},${215 + l * 0.2 | 0},0.10)`;
+    ctx.fillRect(0, y, s, 1);
+  }
+  for (let i = 0; i < 70; i++) {
+    const x = Math.random() * s, y = Math.random() * s, len = 6 + Math.random() * 22;
+    ctx.strokeStyle = `rgba(220,240,255,${0.04 + Math.random() * 0.12})`;
+    ctx.lineWidth = 1 + Math.random() * 1.5;
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + len, y + (Math.random() - 0.5) * 3); ctx.stroke();
+  }
+  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; return t;
+}
+
 // Catmull-Rom smoothing of a polyline into a dense, gently curving one.
 function smoothPoly(points, seg) {
   if (points.length < 3) return points.map(p => ({ x: p.x, z: p.z }));
@@ -916,7 +951,7 @@ function buildStripRibbon(points, width, y, material, tile) {
 }
 
 function buildZone() {
-  bridgeInfo = null; // rebuilt below if this zone has a bridge
+  bridgeInfo = null; riverMesh = null; riverTex = null; // rebuilt below per zone
   const b = zone.bounds;
   const W = b.maxX - b.minX, D = b.maxZ - b.minZ, cx = (b.minX + b.maxX) / 2, cz = (b.minZ + b.maxZ) / 2;
 
@@ -972,10 +1007,11 @@ function buildZone() {
     buildStripRibbon(zone.path, 5, 0.05, dirtMat, 5);
   }
 
-  // River (Blackroot Creek) — one continuous body of water + the Mossy Bridge.
+  // River (Blackroot Creek) — deep flowing water sitting in the carved channel.
   if (zone.river) {
-    const waterMat = new THREE.MeshStandardMaterial({ color: 0x2f6f9c, roughness: 0.25, metalness: 0.15, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
-    buildStripRibbon(zone.river.points, zone.river.width, 0.08, waterMat, 6);
+    riverTex = makeWaterTexture();
+    const waterMat = new THREE.MeshStandardMaterial({ map: riverTex, color: 0x2c6e97, roughness: 0.3, metalness: 0.25, transparent: true, opacity: 0.9, side: THREE.DoubleSide });
+    riverMesh = buildStripRibbon(zone.river.points, zone.river.width, RIVER_WATER_Y, waterMat, 8);
     const br = zone.river.bridge;
     // Orient the deck along the PATH direction (so you walk straight over it),
     // and make it long enough to span the river at whatever angle the path
@@ -1099,12 +1135,19 @@ function buildLowPolyGround(W, D, cx, cz) {
     // edge would leave see-through holes at the border.
     const keep = zone.enclosed ? (!zone.boundary || inBoundary(mxw, mzw)) : true;
     if (!keep) continue;
-    const p = pal[Math.floor(rng() * pal.length)], j = 0.9 + rng() * 0.2;
-    // tint toward the palette hue but keep it bright enough to show the texture
-    c.setRGB(0.6 + p[0] * 0.7, 0.6 + p[1] * 0.7, 0.6 + p[2] * 0.7).multiplyScalar(j);
+    // Riverbed triangles get a dark, muddy tint instead of grass.
+    const bedD = (zone.river && !zone.enclosed) ? distToPolyline(mxw, mzw, zone.river.points) : 1e9;
+    const onBed = bedD < zone.river.width / 2 + 1.5;
+    const j = 0.9 + rng() * 0.2;
+    if (onBed) {
+      c.setRGB(0.22 + rng() * 0.06, 0.2 + rng() * 0.06, 0.16 + rng() * 0.05).multiplyScalar(j);
+    } else {
+      const p = pal[Math.floor(rng() * pal.length)];
+      c.setRGB(0.6 + p[0] * 0.7, 0.6 + p[1] * 0.7, 0.6 + p[2] * 0.7).multiplyScalar(j);
+    }
     for (let k = 0; k < 3; k++) {
       const lx = src.getX(i + k), lz = src.getZ(i + k);
-      positions.push(lx, src.getY(i + k), lz);
+      positions.push(lx, src.getY(i + k) + terrainHeight(lx + cx, lz + cz), lz); // carve the riverbed
       colors.push(c.r, c.g, c.b);
       uvs.push((lx + W / 2) / 8, (lz + D / 2) / 8); // 8 world units per tile
     }
@@ -2443,7 +2486,7 @@ function renderWorld(dt) {
       else rec.deadFor = (rec.deadFor || 0) + dt;
       rec.mesh.visible = e.alive || rec.deadFor < 2.2;
       rec.mesh.position.x = x; rec.mesh.position.z = z;
-      rec.mesh.position.y = bridgeLift(x, z); // ride up and over an arched bridge
+      rec.mesh.position.y = groundY(x, z); // follow the terrain / ride the bridge
       rec.mesh.rotation.y = yaw + (rec.mesh.userData.faceOffset || 0);
       rec.data = e;
       if (rec.mesh.visible) animateEntity(rec, e, kind, dt);
@@ -2571,8 +2614,8 @@ function updateControls(dt) {
 
   // Camera follows player position
   const rec = entityMeshes.get(myId);
-  // Base height = the arched bridge deck under the player (0 on flat ground).
-  const lift = bridgeLift(rec.mesh.position.x, rec.mesh.position.z);
+  // Base height = terrain under the player (bridge deck / carved riverbank / 0).
+  const lift = groundY(rec.mesh.position.x, rec.mesh.position.z);
   // Spacebar jump (visual hop): crouch, then hop, then land — added on top of
   // the bridge lift so the player walks up and over the arch.
   let hop = 0;
@@ -3102,7 +3145,9 @@ function showHit(m) {
   el.className = 'splat ' + (m.dmg > 0 ? 'hitdmg' : 'hitmiss');
   el.textContent = m.dmg;
   el.style.left = x + 'px'; el.style.top = y + 'px';
-  document.getElementById('toast').appendChild(el);
+  // Append to the full-screen nameplates layer so the projected pixel position
+  // is relative to the viewport (not the centred #toast container).
+  document.getElementById('nameplates').appendChild(el);
   setTimeout(() => el.remove(), 800);
   if (m.dmg > 0) {
     // Flash white per unique material, capturing each original colour exactly
@@ -3597,6 +3642,15 @@ function animate() {
   updateNpcMarkers();
   updatePendingTalk();
   if (mapOpen) drawMap();
+  // Flowing river: scroll the water texture along the current + gentle waves.
+  if (riverTex) riverTex.offset.y = (riverTex.offset.y - dt * 0.12 + 1) % 1;
+  if (riverMesh) {
+    const pos = riverMesh.geometry.attributes.position, tm = performance.now() / 1000;
+    for (let i = 0; i < pos.count; i++) {
+      pos.setY(i, RIVER_WATER_Y + Math.sin(tm * 1.4 + pos.getX(i) * 0.25 + pos.getZ(i) * 0.25) * 0.1);
+    }
+    pos.needsUpdate = true;
+  }
   // flicker campfires
   scene.traverse(o => { if (o.userData && o.userData.flame) o.userData.flame.scale.y = 0.85 + Math.sin(performance.now() / 90 + o.id) * 0.15; });
   // drifting fireflies / motes

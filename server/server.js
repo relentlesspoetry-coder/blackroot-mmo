@@ -123,8 +123,6 @@ function resolveCollision(zone, ent, radius) {
 
   const r = zone.river;
   if (r) {
-    const c = closestOnPolyline(ent.x, ent.z, r.points);
-    const half = r.width / 2 + radius;
     // Bridge frame (path-aligned deck), computed once: matches how the client
     // builds and orients the arched bridge.
     if (r.bridge && !zone._bridge) {
@@ -135,25 +133,29 @@ function resolveCollision(zone, ent, radius) {
       const L = r.width / Math.max(0.5, sinA) + 9;
       zone._bridge = { cx: r.bridge.x, cz: r.bridge.z, dx: pd.dx / pl, dz: pd.dz / pl, L, deckW: 6, railHalf: 2.5 };
     }
-    if (c.dist < half) { // over the river
-      const B = zone._bridge;
-      let onDeck = false;
-      if (B) {
-        const ex = ent.x - B.cx, ez = ent.z - B.cz;
-        const along = ex * B.dx + ez * B.dz;          // along the deck (path direction)
-        const across = ex * -B.dz + ez * B.dx;         // across the deck (rail axis)
-        if (Math.abs(along) <= B.L / 2 && Math.abs(across) <= B.deckW / 2 + 0.5) {
-          onDeck = true;
-          // Solid rails: clamp the player between them.
-          const lim = B.railHalf;
-          if (Math.abs(across) > lim) {
-            const na = Math.sign(across) * lim;
-            ent.x = B.cx + along * B.dx + na * -B.dz;
-            ent.z = B.cz + along * B.dz + na * B.dx;
-          }
+    const B = zone._bridge;
+    let onDeck = false;
+    if (B) {
+      const ex = ent.x - B.cx, ez = ent.z - B.cz;
+      const along = ex * B.dx + ez * B.dz;   // along the deck (path direction)
+      const across = ex * -B.dz + ez * B.dx;  // across the deck (rail axis)
+      // Solid rails run the FULL length of the deck (including the land ramps at
+      // both ends), so clamp whenever within the deck footprint — not only over
+      // the water.
+      if (Math.abs(along) <= B.L / 2 && Math.abs(across) <= B.deckW / 2 + 0.6) {
+        onDeck = true;
+        const lim = B.railHalf;
+        if (Math.abs(across) > lim) {
+          const na = Math.sign(across) * lim;
+          ent.x = B.cx + along * B.dx + na * -B.dz;
+          ent.z = B.cz + along * B.dz + na * B.dx;
         }
       }
-      if (!onDeck) { // in the water beside the deck (or no bridge) — push to the bank
+    }
+    if (!onDeck) { // not on the deck — keep out of the water
+      const c = closestOnPolyline(ent.x, ent.z, r.points);
+      const half = r.width / 2 + radius;
+      if (c.dist < half) {
         let dx = ent.x - c.x, dz = ent.z - c.z, d = Math.hypot(dx, dz);
         if (d < 1e-4) { dx = 1; dz = 0; d = 1; }
         ent.x = c.x + (dx / d) * half; ent.z = c.z + (dz / d) * half;

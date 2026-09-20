@@ -103,7 +103,9 @@ export const darkwoods = {
   path: [
     { x: 5, z: -92 }, { x: -6, z: -76 }, { x: -22, z: -62 }, { x: -30, z: -42 },
     { x: -34, z: -24 }, { x: -20, z: -8 }, { x: 6, z: 2 }, { x: 6, z: 22 },
-    { x: -14, z: 40 }, { x: -6, z: 54 }, { x: 2, z: 66 }, { x: 5, z: 82 }, { x: 6, z: 98 },
+    // A straight run through the Mossy Bridge crossing so the deck lines up.
+    { x: -2, z: 30 }, { x: -8, z: 35 }, { x: -14, z: 40 },
+    { x: -6, z: 54 }, { x: 2, z: 66 }, { x: 5, z: 82 }, { x: 6, z: 98 },
   ],
 
   // Blackroot Creek — flows in from the west, crosses the trail once at the

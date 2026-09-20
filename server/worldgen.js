@@ -66,6 +66,7 @@ export function generateTrees(zone) {
     if (zone.boundary && !pointInPoly(x, z, zone.boundary)) continue;
     if (closestOnPolyline(x, z, zone.path).dist < 6) continue;
     if (zone.river && closestOnPolyline(x, z, zone.river.points).dist < zone.river.width / 2 + 3) continue;
+    if (zone.river && zone.river.bridge && dist2(x, z, zone.river.bridge.x, zone.river.bridge.z) < 15 * 15) continue;
     if (zone.pois.some(p => dist2(x, z, p.x, p.z) < clearRadiusS(p) ** 2)) continue;
     if ((zone.rocks || []).some(o => dist2(x, z, o.x, o.z) < (o.r + 2) ** 2)) continue;
     if (trees.some(t => dist2(x, z, t.x, t.z) < minSpace * minSpace)) continue;
