@@ -21,7 +21,8 @@ export function xpForLevel(level) { return Math.floor(50 * Math.pow(level, 1.6))
 // while monsters keep scaling, which makes everything past the creek unwinnable.
 // A weapon's `atk` shifts the whole roll up.
 export function playerDamageRange(level, atkBonus = 0) {
-  return [3 + level + atkBonus, 8 + Math.round(2.2 * level) + atkBonus];
+  // A level-1 hits softly (1-5); damage ramps with level and gear.
+  return [1 + Math.floor(level * 0.5) + atkBonus, 3 + Math.round(2.4 * level) + atkBonus];
 }
 export function rollPlayerDamage(level, atkBonus = 0) {
   const [lo, hi] = playerDamageRange(level, atkBonus);

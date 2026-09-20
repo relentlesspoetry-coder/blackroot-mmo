@@ -83,11 +83,11 @@
     cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px #0007; }
   #bagBtn:hover { background: #57472f; }
   #bagBtn .cnt { position: absolute; bottom: 2px; right: 5px; font-size: 10px; color: #cfe; }
-  #bag { position: absolute; right: 12px; bottom: 74px; width: 236px; pointer-events: auto; display: none;
+  #bag { position: absolute; right: 12px; bottom: 74px; width: 274px; pointer-events: auto; display: none;
     background: #2e2820; border: 2px solid #1c150e; border-radius: 8px; padding: 10px; box-shadow: 0 8px 24px #000a; }
   #bag h3 { color: #ffdf9e; font-size: 13px; margin-bottom: 8px; display: flex; justify-content: space-between; }
   #bag h3 .g { color: #ffd24a; }
-  #bagGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
+  #bagGrid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; max-height: 46vh; overflow-y: auto; }
   .slot { aspect-ratio: 1; background: #1d1913; border: 1px solid #4a3d2a; border-radius: 5px; position: relative;
     display: flex; align-items: center; justify-content: center; }
   .slot .ic { font-size: 20px; } .slot .n { position: absolute; bottom: 1px; right: 3px; font-size: 10px; color: #fff; font-weight: 700; text-shadow: 0 1px 2px #000; }
@@ -1447,11 +1447,13 @@ function instanceModels(placements, speciesList, targetH, baseScale, bark) {
     const list = groups[sp];
     if (!parts) continue;
     for (const part of parts) {
-      // Bark the trunk parts (those that reach the ground); leaves float up top.
+      // Bark every wood part (trunk AND branches) — anything that isn't a green
+      // leaf cluster gets the bark texture.
       if (bark && !part._barked) {
         part._barked = true;
-        part.geo.computeBoundingBox();
-        if (part.geo.boundingBox.min.y < targetH * 0.28) {
+        const col = part.mat && part.mat.color;
+        const isLeaf = col && col.g > col.r * 1.08 && col.g > col.b * 1.08;
+        if (col && !isLeaf) {
           applyBarkUV(part.geo);
           const m2 = part.mat.clone(); m2.map = makeBarkTexture(); m2.needsUpdate = true; part.mat = m2;
         }
@@ -2586,8 +2588,10 @@ function updateGroundItems(items) {
       scene.remove(rec.mesh);
       rec.mesh = makeItemMesh(it); scene.add(rec.mesh);
     }
-    rec.mesh.position.set(it.x, 0.5 + Math.sin(performance.now() / 300 + it.id) * 0.12, it.z);
-    rec.mesh.rotation.y += 0.03;
+    // Lay the item flat on the ground (no float, no spin), tipped over with a
+    // per-item yaw for variety.
+    rec.mesh.position.set(it.x, groundY(it.x, it.z) + 0.06, it.z);
+    rec.mesh.rotation.set(-Math.PI / 2, (it.id * 1.7) % 6.283, 0);
   }
   for (const [id, rec] of itemMeshes) if (!seen.has(id)) { scene.remove(rec.mesh); itemMeshes.delete(id); }
 }
@@ -3311,14 +3315,19 @@ function renderBag() {
   for (const it of bag.items) counts[it] = (counts[it] || 0) + 1;
   const names = Object.keys(counts);
   const grid = document.getElementById('bagGrid');
-  if (!names.length) { grid.innerHTML = '<div class="empty">Your bag is empty.</div>'; return; }
-  grid.innerHTML = names.map(n => {
+  const BAG_SLOTS = 30;
+  const total = Math.max(BAG_SLOTS, names.length); // always show at least 30 slots
+  let html = '';
+  for (let i = 0; i < total; i++) {
+    const n = names[i];
+    if (!n) { html += '<div class="slot"></div>'; continue; } // empty slot
     const m = metaFor(n);
     const hint = m ? ' \u2014 click to equip' : '';
-    return `<div class="slot" data-item="${escapeHtml(n)}"><span class="ic">${iconFor(n)}</span>` +
+    html += `<div class="slot" data-item="${escapeHtml(n)}"><span class="ic">${iconFor(n)}</span>` +
       `${counts[n] > 1 ? `<span class="n">${counts[n]}</span>` : ''}` +
       `<span class="tip">${escapeHtml(n)}${statText(m)}${hint}</span></div>`;
-  }).join('');
+  }
+  grid.innerHTML = html;
   grid.querySelectorAll('.slot').forEach(el => {
     el.onclick = () => {
       const name = el.dataset.item;
