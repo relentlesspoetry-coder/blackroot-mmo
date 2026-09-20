@@ -129,7 +129,9 @@ function primTopAt(o, x, z) {
   const lx = rx * c + rz * sn, lz = -rx * sn + rz * c;
   if (Math.abs(lx) > hw || Math.abs(lz) > hd) return null;
   const rise = (o.h || 1) * s;
-  if (o.m === 'prim:ramp') { const t = Math.max(0, Math.min(1, (lz + hd) / (2 * hd))); return (o.y || 0) + rise * t; }
+  // Ramps and stairs both rise along their run; physically they are the same
+  // smooth slope, so a stepped staircase walks up without snagging on treads.
+  if (o.m === 'prim:ramp' || o.m === 'prim:stairs') { const t = Math.max(0, Math.min(1, (lz + hd) / (2 * hd))); return (o.y || 0) + rise * t; }
   return (o.y || 0) + rise;
 }
 // The walkable floor height under (x,z), reachable from fromY (ground = 0).
@@ -235,7 +237,7 @@ function resolveCollision(zone, ent, radius) {
   for (const o of (zone._editObjects || [])) {
     if (!o.c) continue;
     const isPrim = typeof o.m === 'string' && o.m.startsWith('prim:');
-    if (o.m === 'prim:ramp') continue; // a ramp is a walkable slope, never a wall
+    if (o.m === 'prim:ramp' || o.m === 'prim:stairs') continue; // a walkable slope, never a wall
     // Height gate: only block if the piece spans the entity's body — you step
     // onto anything within a step, and walk under anything above your head.
     const ey = ent.y || 0, base = o.y || 0, top = base + (isPrim ? (o.h || 1) * (o.s || 1) : 3);
