@@ -977,10 +977,17 @@ function buildZone() {
     const waterMat = new THREE.MeshStandardMaterial({ color: 0x2f6f9c, roughness: 0.25, metalness: 0.15, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
     buildStripRibbon(zone.river.points, zone.river.width, 0.08, waterMat, 6);
     const br = zone.river.bridge;
-    const near = nearestSeg(zone.river.points, br.x, br.z);
-    const phi = Math.atan2(near.dx, near.dz) + Math.PI / 2; // deck length axis crosses the river
+    // Orient the deck along the PATH direction (so you walk straight over it),
+    // and make it long enough to span the river at whatever angle the path
+    // crosses (span = width / sin(angle between path and river)).
+    const pd = nearestSeg(zone.path || zone.river.points, br.x, br.z);
+    const rd = nearestSeg(zone.river.points, br.x, br.z);
+    const pl = Math.hypot(pd.dx, pd.dz) || 1, rl = Math.hypot(rd.dx, rd.dz) || 1;
+    const sinA = Math.min(1, Math.abs((pd.dx / pl) * (rd.dz / rl) - (pd.dz / pl) * (rd.dx / rl)));
+    const phi = Math.atan2(pd.dx, pd.dz); // local +Z runs along the path
     const bridge = new THREE.Group();
-    const L = zone.river.width + 8, deckW = 6, archH = Math.min(3.6, L * 0.28), N = 12;
+    const span = zone.river.width / Math.max(0.5, sinA);
+    const L = span + 9, deckW = 6, archH = Math.min(3.8, L * 0.24), N = 14;
     const arch = zz => archH * (1 - Math.pow(2 * zz / L, 2));
     const deckMat = new THREE.MeshStandardMaterial({ map: loadTexture('moss', 2, 2), color: 0x9fb07a, roughness: 0.9 });
     const railMat = new THREE.MeshStandardMaterial({ color: 0x3f3324, roughness: 1 });
