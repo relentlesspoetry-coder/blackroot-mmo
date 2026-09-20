@@ -2164,11 +2164,15 @@ function splitHumanoid(wrap, bones) {
   // so each model gets limbs scaled to its own proportions.
   if (!bones) {
     const H = maxy - miny, y0 = miny, halfX = Math.max(Math.abs(minx), Math.abs(maxx)) || 0.4;
-    const Y = f => y0 + H * f, lx = halfX * 0.42, aA = halfX * 0.6, aB = halfX * 1.0;
+    // Arms hang along the OUTER sides from shoulder down to the hand; the bone
+    // must run that whole length (down to ~mid-thigh height) or the forearm and
+    // hand end up nearer the leg bone and get carved into the legs (duplicate
+    // arms). Legs sit on the INNER lower half.
+    const Y = f => y0 + H * f, lx = halfX * 0.40, aTop = halfX * 0.66, aBot = halfX * 0.92;
     bones = {
       spine: { a: [0, Y(0.42), 0], b: [0, Y(0.92), 0] },
-      armL: { a: [-aA, Y(0.80), 0], b: [-aB, Y(0.52), 0] }, armR: { a: [aA, Y(0.80), 0], b: [aB, Y(0.52), 0] },
-      legL: { a: [-lx, Y(0.46), 0], b: [-lx, Y(0.02), 0] }, legR: { a: [lx, Y(0.46), 0], b: [lx, Y(0.02), 0] },
+      armL: { a: [-aTop, Y(0.82), 0], b: [-aBot, Y(0.34), 0] }, armR: { a: [aTop, Y(0.82), 0], b: [aBot, Y(0.34), 0] },
+      legL: { a: [-lx, Y(0.48), 0], b: [-lx, Y(0.02), 0] }, legR: { a: [lx, Y(0.48), 0], b: [lx, Y(0.02), 0] },
     };
   }
   // Bias makes a borderline triangle prefer the torso, so the wide chest is not
