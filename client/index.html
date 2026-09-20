@@ -561,23 +561,23 @@ function bridgeLift(x, z) {
 // River channel profile: a carved bed so the water sits deep with banks rising
 // above it. terrainHeight is the ground height at (x,z) — 0 on flat land, the
 // water line at the shore, dropping to the bed under the water.
-const RIVER_WATER_Y = -0.5, RIVER_BED_Y = -2.2, RIVER_BANK = 4, RIVER_LIP = 0.6;
+const RIVER_WATER_Y = -0.5, RIVER_BED_Y = -2.2, RIVER_BANK = 4, RIVER_LIP = 2.0;
 // Half-width of the water surface: the whole carved channel is flooded, so the
-// water reaches out to `river half-width + RIVER_BANK`. The bed drops away
-// steeply so almost the entire channel is deep (reads as water); only a thin
-// dark dirt border (RIVER_LIP) rises out of the water where it meets the grass.
+// water reaches out to `river half-width + RIVER_BANK`. A dedicated smooth dirt
+// shore ribbon (buildRiverShore) forms the visible dirt border out to
+// `half + RIVER_LIP`; the coarse terrain here is only ever seen UNDER the water
+// or the ribbon, so it just needs to stay below them.
 function riverWaterHalf(width) { return width / 2 + RIVER_BANK; }
 function terrainHeight(x, z) {
   if (!zone || !zone.river || zone.enclosed) return 0;
-  const half = riverWaterHalf(zone.river.width);      // water edge
+  const half = riverWaterHalf(zone.river.width);
+  const H = half + RIVER_LIP;                          // grass begins here
   const d = distToPolyline(x, z, zone.river.points);
-  if (d >= half + RIVER_LIP) return 0;                 // grass beyond the channel
-  if (d >= half) return RIVER_WATER_Y + (-RIVER_WATER_Y) * ((d - half) / RIVER_LIP); // dirt border: -0.5 -> 0
-  const t = d / half;                                  // 0 at centre, 1 at the water's edge
-  // Cubic drop-off: deep across the channel, with only a thin shallow ring at
-  // the very edge, so shallow water over the dark bed no longer reads as a wide
-  // dark band.
-  return RIVER_BED_Y + (RIVER_WATER_Y - RIVER_BED_Y) * (t * t * t);
+  if (d >= H) return 0;                                // grass beyond the shore
+  const t = d / H;                                     // 0 at centre, 1 at the shore
+  // Deep basin rising to grass level at the shore, kept safely below the smooth
+  // dirt shore ribbon so the blocky terrain never pokes through it.
+  return RIVER_BED_Y + (0 - RIVER_BED_Y) * (t * t * t * t);
 }
 // Height an entity should stand at: on a bridge use its deck, else the terrain.
 function groundY(x, z) { const b = bridgeLift(x, z); return b > 0 ? b : terrainHeight(x, z); }
@@ -1055,6 +1055,41 @@ function buildStripRibbon(points, width, y, material, tile, feather, cutRiver) {
   const m = new THREE.Mesh(g, material); m.receiveShadow = true; scene.add(m); return m;
 }
 
+// A smooth, banked dirt shore that rings the river: its centre sits well below
+// the water (hidden under the opaque surface) and its rim rises out of the water
+// to grass level, so the exposed rim reads as a crisp dirt border where the
+// water meets the grass — independent of the coarse terrain grid.
+function buildRiverShore(points, half) {
+  const pts = smoothPoly(points, 8);
+  const H = half + RIVER_LIP, W = RIVER_WATER_Y; // outer half-width, water level
+  // Cross-section: offset from centreline -> height. The rim (|o| in [half, H])
+  // climbs from just under the waterline up to grass, forming the dirt border.
+  const cols = [
+    { o: -H, y: 0.04 }, { o: -half, y: W - 0.04 }, { o: -half * 0.6, y: W - 0.7 },
+    { o: half * 0.6, y: W - 0.7 }, { o: half, y: W - 0.04 }, { o: H, y: 0.04 },
+  ];
+  const N = cols.length, T = 6, pos = [], uv = [], idx = [];
+  let dist = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
+    let dx = b.x - a.x, dz = b.z - a.z; const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
+    const nx = -dz, nz = dx;
+    if (i > 0) dist += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z);
+    for (const c of cols) { pos.push(pts[i].x + nx * c.o, c.y, pts[i].z + nz * c.o); uv.push((c.o + H) / T, dist / T); }
+  }
+  for (let i = 0; i < pts.length - 1; i++) for (let j = 0; j < N - 1; j++) {
+    const p = i * N + j; idx.push(p, p + 1, p + N, p + 1, p + N + 1, p + N);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx); g.computeVertexNormals();
+  const mat = new THREE.MeshStandardMaterial({ map: loadTexture('dirt', 1, 1), color: 0x8a6b47, roughness: 1,
+    emissive: 0x241a10, emissiveIntensity: 0.7, // stays legible as a dirt rim at night
+    polygonOffset: true, polygonOffsetFactor: -1 });
+  const m = new THREE.Mesh(g, mat); m.receiveShadow = true; m.userData.isGround = true; scene.add(m); return m;
+}
+
 function buildZone() {
   bridgeInfo = null; riverMesh = null; riverTex = null; // rebuilt below per zone
   const b = zone.bounds;
@@ -1118,10 +1153,13 @@ function buildZone() {
   // River (Blackroot Creek) — deep flowing water sitting in the carved channel.
   if (zone.river) {
     riverTex = makeWaterTexture();
-    const waterMat = new THREE.MeshStandardMaterial({ map: riverTex, color: 0x2f74a0, roughness: 0.3, metalness: 0.25, transparent: true, opacity: 0.96, side: THREE.DoubleSide });
-    // Overshoot the flooded width by a little so the water always tucks under the
-    // grass edge with no dry sliver, even on the insides/outsides of bends.
-    riverMesh = buildStripRibbon(zone.river.points, (riverWaterHalf(zone.river.width) + 1.2) * 2, RIVER_WATER_Y, waterMat, 8);
+    const waterMat = new THREE.MeshStandardMaterial({ map: riverTex, color: 0x2f74a0, roughness: 0.3, metalness: 0.25, transparent: true, opacity: 0.96, side: THREE.DoubleSide,
+      emissive: 0x11364f, emissiveIntensity: 0.9 }); // faint moonlit sheen so it still reads as water at night
+    // Smooth dirt shore ring first, then flood the channel. The water overshoots
+    // the flooded width slightly so it always tucks under the dirt rim with no
+    // dry sliver; the rim rises out of the water as the visible dirt border.
+    buildRiverShore(zone.river.points, riverWaterHalf(zone.river.width));
+    riverMesh = buildStripRibbon(zone.river.points, (riverWaterHalf(zone.river.width) + 0.6) * 2, RIVER_WATER_Y, waterMat, 8);
     const br = zone.river.bridge;
     // Orient the deck along the PATH direction (so you walk straight over it),
     // and make it long enough to span the river at whatever angle the path
