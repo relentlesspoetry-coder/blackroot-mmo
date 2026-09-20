@@ -1260,12 +1260,62 @@ function buildFireflies() {
   scene.add(fireflies);
 }
 
+const TREE_H = 12; // taller trees
 function buildForest() {
   // Trees are authoritative (server-generated, thinned, solid) and rendered
   // from GLB models, instanced per species for performance.
   const placements = zone.trees || [];
   if (!placements.length) return;
-  instanceModels(placements, TREE_SPECIES, 8.5, 1.0, true);
+  instanceModels(placements, TREE_SPECIES, TREE_H, 1.0, true);
+  addTreeCanopy(placements, TREE_H);
+}
+
+// Enrich every tree's canopy: extra leaf clusters filling out the crown, plus a
+// few branches with leafy tips growing outward. All instanced for performance
+// and tinted per-instance for varied greens.
+function addTreeCanopy(placements, H) {
+  const rng = mulberry32(4242);
+  const N = placements.length;
+  const BLOBS = 6, BRANCHES = 5;
+  const leafGeo = new THREE.IcosahedronGeometry(1, 0);
+  const leafMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, flatShading: true });
+  const branchGeo = new THREE.CylinderGeometry(0.05, 0.13, 1, 5);
+  const branchMat = new THREE.MeshStandardMaterial({ color: 0x5a4128, roughness: 1, flatShading: true });
+  const blobIM = new THREE.InstancedMesh(leafGeo, leafMat, N * BLOBS);
+  const branchIM = new THREE.InstancedMesh(branchGeo, branchMat, N * BRANCHES);
+  const tipIM = new THREE.InstancedMesh(leafGeo, leafMat.clone(), N * BRANCHES);
+  blobIM.castShadow = tipIM.castShadow = branchIM.castShadow = true;
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), pos = new THREE.Vector3(),
+    sc = new THREE.Vector3(), dir = new THREE.Vector3(), base = new THREE.Vector3(), col = new THREE.Color();
+  const greenAt = () => col.setHSL(0.24 + rng() * 0.09, 0.42 + rng() * 0.24, 0.26 + rng() * 0.16);
+  let bi = 0, bri = 0, ti = 0;
+  for (const t of placements) {
+    const s = t.s || 1, h = H * s, cx = t.x, cz = t.z;
+    const cBase = h * 0.5, cTop = h * 0.96;
+    // Canopy leaf clusters
+    for (let k = 0; k < BLOBS; k++) {
+      const a = rng() * 6.28, rr = rng() * h * 0.24, y = cBase + rng() * (cTop - cBase);
+      pos.set(cx + Math.cos(a) * rr, y, cz + Math.sin(a) * rr);
+      const bs = h * (0.13 + rng() * 0.11); sc.set(bs, bs * 0.88, bs);
+      q.setFromAxisAngle(UP, rng() * 6.28); m.compose(pos, q, sc); blobIM.setMatrixAt(bi, m);
+      blobIM.setColorAt(bi, greenAt()); bi++;
+    }
+    // Branches with leafy tips, angled up-and-out from the upper trunk
+    for (let k = 0; k < BRANCHES; k++) {
+      const a = rng() * 6.28, baseY = h * (0.42 + rng() * 0.22), len = h * (0.22 + rng() * 0.16), tilt = 0.5 + rng() * 0.5;
+      dir.set(Math.cos(a) * Math.cos(tilt), Math.sin(tilt), Math.sin(a) * Math.cos(tilt)).normalize();
+      base.set(cx, baseY, cz);
+      pos.copy(base).addScaledVector(dir, len * 0.5);
+      q.setFromUnitVectors(UP, dir); sc.set(s, len, s);
+      m.compose(pos, q, sc); branchIM.setMatrixAt(bri, m); bri++;
+      pos.copy(base).addScaledVector(dir, len);
+      const ls = h * (0.11 + rng() * 0.07); sc.set(ls, ls * 0.9, ls);
+      q.setFromAxisAngle(UP, rng() * 6.28); m.compose(pos, q, sc); tipIM.setMatrixAt(ti, m);
+      tipIM.setColorAt(ti, greenAt()); ti++;
+    }
+  }
+  blobIM.instanceColor.needsUpdate = true; tipIM.instanceColor.needsUpdate = true;
+  scene.add(blobIM); scene.add(branchIM); scene.add(tipIM);
 }
 
 // A procedural bark texture: vertical ridges + cracks, greyscale so it multiplies
