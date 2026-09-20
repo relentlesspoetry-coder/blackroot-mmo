@@ -2399,8 +2399,51 @@ function editSelect(id, part) {
   const g = id && editMeshes.get(id);
   if (g) { editHL = new THREE.BoxHelper(g, 0x9fd0ff); scene.add(editHL); }
   document.getElementById('edInspector').style.display = id ? 'block' : 'none';
-  if (id) { editBuildParts(); editSyncInspector(); }
+  if (id) { editBuildParts(); editSyncInspector(); buildEditGizmo(); } else clearEditGizmo();
   editSetMode();
+}
+// -- In-scene rotate/scale gizmo for the selected object -------------------
+// A flat blue ring you drag to spin the object (yaw) and a green knob you drag
+// out/in to scale it uniformly, so pieces can be oriented and sized by hand in
+// the world instead of only through the inspector sliders.
+let editGizmo = null, gizmoDrag = null, _gizmoRad = 3;
+function clearEditGizmo() {
+  if (!editGizmo) return;
+  scene.remove(editGizmo);
+  editGizmo.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
+  editGizmo = null;
+}
+function buildEditGizmo() {
+  clearEditGizmo();
+  const o = (zone.editObjects || []).find(e => e.id === EDIT.selId); if (!o) return;
+  const g = editMeshes.get(o.id); if (!g) return;
+  const box = new THREE.Box3().setFromObject(g), size = new THREE.Vector3(); box.getSize(size);
+  const rad = Math.max(1.4, Math.max(size.x, size.z) * 0.5 + 1.0); _gizmoRad = rad;
+  const grp = new THREE.Group();
+  grp.position.set(o.x, (groundY ? groundY(o.x, o.z) : 0) + (o.y || 0) + 0.06, o.z);
+  const flat = c => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.9, depthTest: false });
+  // rotate ring (lies flat in the ground plane)
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(rad, 0.16, 10, 60), flat(0x5bc0ff));
+  ring.rotation.x = -Math.PI / 2; ring.renderOrder = 998; ring.userData.gizmo = 'rotate';
+  grp.add(ring);
+  // facing notch: a marker on the ring pointing the object's current yaw
+  const notch = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.7, 12), flat(0x9be0ff));
+  notch.renderOrder = 999; notch.userData.gizmo = 'rotate';
+  notch.position.set(Math.sin(o.yaw || 0) * rad, 0, Math.cos(o.yaw || 0) * rad);
+  grp.add(notch);
+  // scale knob (drag radially to resize)
+  const knob = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.55, 0.55), flat(0x6be08a));
+  knob.position.set(rad, 0, 0); knob.renderOrder = 999; knob.userData.gizmo = 'scale';
+  grp.add(knob);
+  grp.userData.notch = notch; grp.userData.knob = knob;
+  scene.add(grp); editGizmo = grp;
+}
+function pickGizmo(e) {
+  if (!editGizmo) return null;
+  const ndc = new THREE.Vector2((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const hits = raycaster.intersectObjects(editGizmo.children, true);
+  return hits.length ? hits[0].object.userData.gizmo : null;
 }
 // The material "parts" of the selected object (trunk / leaves / …), each texturable.
 function editBuildParts() {
@@ -2443,6 +2486,7 @@ function editEditSel(patch) {
     if ('s' in patch) g.scale.setScalar(o.s);
     if ('y' in patch) g.position.y = (groundY ? groundY(o.x, o.z) : 0) + (o.y || 0);
     if (editHL) editHL.update();
+    if (!gizmoDrag) buildEditGizmo();
   }
   const now = performance.now(); if (now - _edUpdT > 140) { _edUpdT = now; editFlush(); }
 }
@@ -2458,6 +2502,7 @@ function editEditDim(patch) {
   Object.assign(o, patch);
   removeEditMesh(o.id); makeEditMesh(o);
   if (editHL) { scene.remove(editHL); editHL = new THREE.BoxHelper(editMeshes.get(o.id), 0x9fd0ff); scene.add(editHL); }
+  buildEditGizmo();
   const now = performance.now(); if (now - _edUpdT > 140) { _edUpdT = now; editFlush(); }
 }
 function groundPointAt(e) {
@@ -3473,6 +3518,16 @@ function addEventListeners() {
     dragMoved = false; lastMX = downMX = e.clientX; lastMY = downMY = e.clientY;
     // Edit mode: grabbing a placed object or spawn ring drags it, not the camera.
     if (EDIT.on && !EDIT.placing && !EDIT.placingMob) {
+      // Gizmo handles take priority over selecting whatever is behind them.
+      const gz = editGizmo && EDIT.selId ? pickGizmo(e) : null;
+      if (gz) {
+        const o = (zone.editObjects || []).find(x => x.id === EDIT.selId), gp = groundPointAt(e);
+        if (o && gp) {
+          if (gz === 'rotate') gizmoDrag = { mode: 'rotate', startYaw: o.yaw || 0, startAng: Math.atan2(gp.x - o.x, gp.z - o.z) };
+          else gizmoDrag = { mode: 'scale', startS: o.s || 1, startDist: Math.max(0.3, Math.hypot(gp.x - o.x, gp.z - o.z)) };
+          dragging = false; dragMoved = false; return;
+        }
+      }
       const pk = pickAt(e);
       if (pk && pk.kind === 'editobj') { editSelectSpawn(null); editSelect(pk.id); editDrag = { kind: 'obj', id: pk.id }; dragging = false; return; }
       if (pk && pk.kind === 'spawn') { editSelect(null); editSelectSpawn(pk.id); editDrag = { kind: 'spawn', id: pk.id }; dragging = false; return; }
@@ -3481,6 +3536,7 @@ function addEventListeners() {
   });
   addEventListener('mouseup', (e) => {
     if (e.button !== 0) return;
+    if (gizmoDrag) { gizmoDrag = null; editFlush(); buildEditGizmo(); dragging = false; return; }
     if (editDrag) {
       if (editDrag.kind === 'obj') editFlush();
       else { const sp = (zone.editSpawns || []).find(x => x.id === editDrag.id); if (sp) editSpawnUpdate({ cx: sp.cx, cz: sp.cz }); }
@@ -3493,12 +3549,36 @@ function addEventListeners() {
   cv.addEventListener('contextmenu', (e) => { e.preventDefault(); openContextMenu(e); });
   addEventListener('mousedown', (e) => { if (e.button === 0 && !e.target.closest('#ctxmenu')) hideContextMenu(); });
   addEventListener('mousemove', (e) => {
+    // Rotating / scaling the selected object with the gizmo.
+    if (gizmoDrag) {
+      const gp = groundPointAt(e);
+      const o = (zone.editObjects || []).find(x => x.id === EDIT.selId), g = editMeshes.get(EDIT.selId);
+      if (gp && o && g) {
+        const snap = document.getElementById('edSnap') && document.getElementById('edSnap').checked;
+        if (gizmoDrag.mode === 'rotate') {
+          let yaw = gizmoDrag.startYaw + (Math.atan2(gp.x - o.x, gp.z - o.z) - gizmoDrag.startAng);
+          if (snap) yaw = Math.round(yaw / (Math.PI / 12)) * (Math.PI / 12); // 15° steps
+          yaw = ((yaw % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+          o.yaw = +yaw.toFixed(3); g.rotation.y = o.yaw;
+          const n = editGizmo && editGizmo.userData.notch;
+          if (n) n.position.set(Math.sin(o.yaw) * _gizmoRad, 0, Math.cos(o.yaw) * _gizmoRad);
+        } else {
+          let s = gizmoDrag.startS * (Math.max(0.3, Math.hypot(gp.x - o.x, gp.z - o.z)) / gizmoDrag.startDist);
+          if (snap) s = Math.round(s * 10) / 10; // 0.1 steps
+          o.s = +Math.min(4, Math.max(0.2, s)).toFixed(3); g.scale.setScalar(o.s);
+        }
+        if (editHL) editHL.update();
+        editSyncInspector();
+        const now = performance.now(); if (now - _edUpdT > 140) { _edUpdT = now; editFlush(); }
+      }
+      dragMoved = true; return;
+    }
     // Dragging a placed object or spawn ring across the ground.
     if (editDrag) {
       const gp = groundPointAt(e);
       if (gp && editDrag.kind === 'obj') {
         const o = (zone.editObjects || []).find(x => x.id === editDrag.id), g = editMeshes.get(editDrag.id);
-        if (o && g) { o.x = editSnap(gp.x); o.z = editSnap(gp.z); g.position.set(o.x, (groundY ? groundY(o.x, o.z) : 0) + (o.y || 0), o.z); if (editHL) editHL.update(); }
+        if (o && g) { o.x = editSnap(gp.x); o.z = editSnap(gp.z); g.position.set(o.x, (groundY ? groundY(o.x, o.z) : 0) + (o.y || 0), o.z); if (editHL) editHL.update(); if (editGizmo) editGizmo.position.set(o.x, (groundY ? groundY(o.x, o.z) : 0) + (o.y || 0) + 0.06, o.z); }
         const now = performance.now(); if (now - _edUpdT > 140) { _edUpdT = now; editFlush(); }
       } else if (gp && editDrag.kind === 'spawn') {
         const sp = (zone.editSpawns || []).find(x => x.id === editDrag.id), g = spawnMeshes.get(editDrag.id);
