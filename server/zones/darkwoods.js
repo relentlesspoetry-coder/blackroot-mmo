@@ -200,6 +200,14 @@ export const darkwoods = {
     { model: 'Unlit_Fire_Pit',  count: 1, r: 0, scale: [1.0, 1.0], near: 'rotfen', nearR: 10 },
     { model: 'Rough_Fence',     count: 3, r: 0.5, scale: [1.0, 1.1], near: 'rotfen', nearR: 14 },
 
+    // Blackroot Creek — a reedy, marshy bend of the river: reeds, ferns, sedge
+    // and damp-loving flowers cluster where the water meets the trail.
+    { model: 'Pond_Reeds',      count: 10, r: 0, scale: [1.0, 1.5], near: 'creek', nearR: 14 },
+    { model: 'Meadow_Sedge',    count: 8,  r: 0, scale: [1.0, 1.4], near: 'creek', nearR: 14 },
+    { model: 'Green_Fern',      count: 8,  r: 0, scale: [1.0, 1.4], near: 'creek', nearR: 15 },
+    { model: 'Blue_Hydrangea',  count: 4,  r: 0.6, scale: [1.0, 1.2], near: 'creek', nearR: 13 },
+    { model: 'Hollow_Stump',    count: 2,  r: 0.8, scale: [1.0, 1.2], near: 'creek', nearR: 14 },
+
     // Fallen Watchtower — an abandoned lookout gone to ruin: toppled fence,
     // broken barricades, scattered crates, a warning sign and bleached bones.
     { model: 'Spike_Barricade', count: 3, r: 0.8, scale: [1.0, 1.2], near: 'watchtower', nearR: 12 },

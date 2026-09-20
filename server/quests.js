@@ -45,6 +45,32 @@ export const QUESTS = {
     reward: { xp: 120, gold: 20 },
   },
 
+  // --- The Farmstead: Old Maggie & Farmhand Bram ---------------------------
+  henhouse: {
+    id: 'henhouse', name: 'Foxes in the Hen House', giver: 'maggie', minLevel: 1,
+    summary: 'Drive the egg-thieving scavengers off the farm.',
+    intro: 'Goblin scavengers have been slinking out of the trees to raid my hens — half my eggs gone before dawn! Put a few of the little thieves down and gather what eggs you can find, there’s a love.',
+    active: 'Five scavengers off my hens, and four eggs back in the basket.',
+    done: 'Bless you. The hens can roost easy again. Take this — it kept my late husband warm.',
+    objectives: [
+      { type: 'kill', target: 'goblin_scavenger', count: 5, label: 'Scavengers driven off' },
+      { type: 'collect', item: 'Egg', count: 4, label: 'Eggs recovered' },
+    ],
+    reward: { xp: 120, gold: 50, items: ['Goblin Mail'] },
+  },
+  mending: {
+    id: 'mending', name: 'Mending the Fences', giver: 'bram', minLevel: 2, requires: ['henhouse'],
+    summary: 'Scavenge the goblins’ leavings to repair the farm.',
+    intro: 'Them goblins wrecked the west fence gettin’ at the cows. I can mend it, but I need cordage and hide — and the goblins carry plenty, if you’re handy with a blade. Bring me rope and leather scraps.',
+    active: 'Four coils of rope and three leather scraps off the goblins.',
+    done: 'That’ll hold the herd. Obliged — here’s a bit of coin from the sale of the last calf.',
+    objectives: [
+      { type: 'collect', item: 'Rope', count: 4, label: 'Rope gathered' },
+      { type: 'collect', item: 'Leather Scraps', count: 3, label: 'Leather scraps gathered' },
+    ],
+    reward: { xp: 200, gold: 90 },
+  },
+
   // --- Ranger Sela, Fallen Watchtower --------------------------------------
   wolfraid: {
     id: 'wolfraid', name: 'The Wolf Den', giver: 'sela', minLevel: 4, requires: ['trail'],
