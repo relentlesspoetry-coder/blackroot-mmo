@@ -473,6 +473,16 @@ let fireflies = null;
 let targetRing = null;
 let hemiLight = null, sunLight = null;
 let sky = {};
+let bridgeInfo = null; // arched bridge: {x,z,phi,L,archH,deckW} for walking up & over
+// Height of the bridge deck at world (x,z), or 0 if not on the bridge span.
+function bridgeLift(x, z) {
+  const bi = bridgeInfo; if (!bi) return 0;
+  const dx = x - bi.x, dz = z - bi.z, sf = Math.sin(bi.phi), cf = Math.cos(bi.phi);
+  const along = dx * sf + dz * cf;   // across the river (deck length axis)
+  const across = dx * cf - dz * sf;  // along the deck's walkable width
+  if (Math.abs(along) > bi.L / 2 || Math.abs(across) > bi.deckW / 2 + 0.4) return 0;
+  return bi.archH * (1 - Math.pow(2 * along / bi.L, 2)) + 0.35; // arch + deck-top offset
+}
 let worldTime = 0.35, worldWeather = 'clear';
 let timeFrozen = false;   // set only through the ?debug=1 hook
 const UP = new THREE.Vector3(0, 1, 0);
@@ -906,6 +916,7 @@ function buildStripRibbon(points, width, y, material, tile) {
 }
 
 function buildZone() {
+  bridgeInfo = null; // rebuilt below if this zone has a bridge
   const b = zone.bounds;
   const W = b.maxX - b.minX, D = b.maxZ - b.minZ, cx = (b.minX + b.maxX) / 2, cz = (b.minZ + b.maxZ) / 2;
 
@@ -966,21 +977,38 @@ function buildZone() {
     const waterMat = new THREE.MeshStandardMaterial({ color: 0x2f6f9c, roughness: 0.25, metalness: 0.15, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
     buildStripRibbon(zone.river.points, zone.river.width, 0.08, waterMat, 6);
     const br = zone.river.bridge;
-    // orient bridge across the river direction
     const near = nearestSeg(zone.river.points, br.x, br.z);
-    const ang = Math.atan2(near.dx, near.dz);
+    const phi = Math.atan2(near.dx, near.dz) + Math.PI / 2; // deck length axis crosses the river
     const bridge = new THREE.Group();
-    const deck = new THREE.Mesh(new THREE.BoxGeometry(6, 0.5, zone.river.width + 5),
-      new THREE.MeshStandardMaterial({ map: loadTexture('moss', 2, 2), color: 0x9fb07a, roughness: 0.9 }));
-    deck.position.y = 0.6; deck.castShadow = true; deck.receiveShadow = true; bridge.add(deck);
-    for (const side of [-1, 1]) {
-      const rail = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.9, zone.river.width + 5),
-        new THREE.MeshStandardMaterial({ color: 0x3f3324 }));
-      rail.position.set(side * 2.8, 1.1, 0); bridge.add(rail);
+    const L = zone.river.width + 8, deckW = 6, archH = Math.min(3.6, L * 0.28), N = 12;
+    const arch = zz => archH * (1 - Math.pow(2 * zz / L, 2));
+    const deckMat = new THREE.MeshStandardMaterial({ map: loadTexture('moss', 2, 2), color: 0x9fb07a, roughness: 0.9 });
+    const railMat = new THREE.MeshStandardMaterial({ color: 0x3f3324, roughness: 1 });
+    // A humpback of short planks following the arch curve (deck + side rails).
+    const strip = (w, th, ox, ey, mat) => {
+      for (let i = 1; i <= N; i++) {
+        const z1 = -L / 2 + (i - 1) * (L / N), z2 = -L / 2 + i * (L / N);
+        const y1 = arch(z1) + ey, y2 = arch(z2) + ey;
+        const dz = z2 - z1, dy = y2 - y1, segLen = Math.hypot(dz, dy) + 0.15;
+        const p = new THREE.Mesh(new THREE.BoxGeometry(w, th, segLen), mat);
+        p.position.set(ox, (y1 + y2) / 2, (z1 + z2) / 2); p.rotation.x = -Math.atan2(dy, dz);
+        p.castShadow = p.receiveShadow = true; bridge.add(p);
+      }
+    };
+    strip(deckW, 0.4, 0, 0.15, deckMat);                 // walking surface
+    strip(0.3, 0.35, -(deckW / 2 - 0.2), 1.1, railMat);  // left top rail
+    strip(0.3, 0.35, (deckW / 2 - 0.2), 1.1, railMat);   // right top rail
+    for (let i = 0; i <= N; i += 2) {                     // rail posts
+      const z = -L / 2 + i * (L / N), y = arch(z);
+      for (const s of [-1, 1]) {
+        const post = new THREE.Mesh(new THREE.BoxGeometry(0.25, 1.3, 0.25), railMat);
+        post.position.set(s * (deckW / 2 - 0.2), y + 0.75, z); bridge.add(post);
+      }
     }
     bridge.position.set(br.x, 0, br.z);
-    bridge.rotation.y = ang + Math.PI / 2;
+    bridge.rotation.y = phi;
     scene.add(bridge);
+    bridgeInfo = { x: br.x, z: br.z, phi, L, archH, deckW };
   }
 
   // Rocks (collision) — textured stone
@@ -2408,6 +2436,7 @@ function renderWorld(dt) {
       else rec.deadFor = (rec.deadFor || 0) + dt;
       rec.mesh.visible = e.alive || rec.deadFor < 2.2;
       rec.mesh.position.x = x; rec.mesh.position.z = z;
+      rec.mesh.position.y = bridgeLift(x, z); // ride up and over an arched bridge
       rec.mesh.rotation.y = yaw + (rec.mesh.userData.faceOffset || 0);
       rec.data = e;
       if (rec.mesh.visible) animateEntity(rec, e, kind, dt);
@@ -2535,15 +2564,17 @@ function updateControls(dt) {
 
   // Camera follows player position
   const rec = entityMeshes.get(myId);
-  // Spacebar jump (visual hop on the local player): crouch, then hop, then land.
-  // The mesh only leaves the ground during the airborne phase; the crouch and
-  // landing knee-bends are played on the rig (see the 'hero' branch).
+  // Base height = the arched bridge deck under the player (0 on flat ground).
+  const lift = bridgeLift(rec.mesh.position.x, rec.mesh.position.z);
+  // Spacebar jump (visual hop): crouch, then hop, then land — added on top of
+  // the bridge lift so the player walks up and over the arch.
+  let hop = 0;
   if (jump.active) {
     jump.t += dt;
-    if (jump.t >= JUMP_TOTAL) { jump.active = false; rec.mesh.position.y = 0; }
-    else if (jump.t < JUMP_CROUCH || jump.t >= JUMP_CROUCH + JUMP_AIR) rec.mesh.position.y = 0;
-    else rec.mesh.position.y = Math.sin(Math.PI * ((jump.t - JUMP_CROUCH) / JUMP_AIR)) * 1.7;
-  } else rec.mesh.position.y = 0;
+    if (jump.t >= JUMP_TOTAL) jump.active = false;
+    else if (jump.t >= JUMP_CROUCH && jump.t < JUMP_CROUCH + JUMP_AIR) hop = Math.sin(Math.PI * ((jump.t - JUMP_CROUCH) / JUMP_AIR)) * 1.7;
+  }
+  rec.mesh.position.y = lift + hop;
   const px = rec.mesh.position.x, pz = rec.mesh.position.z;
   let cx = px + Math.sin(camYaw) * Math.cos(camPitch) * camDist;
   let cy = 2 + Math.sin(camPitch) * camDist;
