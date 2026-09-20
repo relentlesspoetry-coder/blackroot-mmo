@@ -29,6 +29,8 @@ export const darkwoods = {
     'Pond_Reeds', 'Red_Berry_Bush', 'Round_Box_Bush', 'Tall_Hedgerow', 'Wildflower_Patch',
     'Blackberry_Bramble', 'Blue_Hydrangea', 'Creeping_Bellflowers', 'Foxglove_Clump', 'Goldenrod_Patch',
     'Heather_Clump', 'Hosta_Plant', 'Meadow_Sedge', 'Poppy_Patch', 'Rose_Bush', 'Sage_Bush', 'Strawberry_Patch',
+    // Ambient flying critters (butterflies by day, moths by night)
+    'Butterfly', 'Moth',
     'cave/Copper_Ore_Vein', 'cave/Tin_Ore_Vein', 'cave/Iron_Ore_Vein',
     'items/Copper_Ore', 'items/Tin_Ore', 'items/Iron_Ore',
     // Farmstead at the Entrance Clearing (Farm_Assets pack)
