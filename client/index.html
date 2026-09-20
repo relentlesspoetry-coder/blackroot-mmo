@@ -2136,22 +2136,54 @@ function d2segSq(px, py, pz, s) {
   return dx * dx + dy * dy + dz * dz;
 }
 function splitHumanoid(wrap, bones) {
+  wrap.updateMatrixWorld(true);
   const meshes = []; wrap.traverse(o => { if (o.isMesh) meshes.push(o); });
   if (!meshes.length) return;
   const anchor = meshes[0].parent;
+  // Classify every triangle in ONE common frame — the anchor's local space —
+  // by baking each mesh's transform in. Models like the goblins carry per-mesh
+  // offsets (the body sits +1m up), so reading raw geometry would misplace them.
+  const anchorInv = new THREE.Matrix4().copy(anchor.matrixWorld).invert();
+  const _v = new THREE.Vector3(), _n = new THREE.Vector3();
+  const items = []; let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
+  for (const m of meshes) {
+    const geo = m.geometry, pa = geo.attributes.position, na = geo.attributes.normal, ua = geo.attributes.uv, idx = geo.index;
+    const M = new THREE.Matrix4().multiplyMatrices(anchorInv, m.matrixWorld);
+    const NM = new THREE.Matrix3().getNormalMatrix(M);
+    const n = pa.count, pos = new Float32Array(n * 3), nrm = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      _v.set(pa.getX(i), pa.getY(i), pa.getZ(i)).applyMatrix4(M);
+      pos[i * 3] = _v.x; pos[i * 3 + 1] = _v.y; pos[i * 3 + 2] = _v.z;
+      if (na) { _n.set(na.getX(i), na.getY(i), na.getZ(i)).applyMatrix3(NM).normalize(); nrm[i * 3] = _n.x; nrm[i * 3 + 1] = _n.y; nrm[i * 3 + 2] = _n.z; } else nrm[i * 3 + 1] = 1;
+      if (_v.x < minx) minx = _v.x; if (_v.x > maxx) maxx = _v.x;
+      if (_v.y < miny) miny = _v.y; if (_v.y > maxy) maxy = _v.y;
+    }
+    items.push({ mesh: m, pos, nrm, ua, hasUV: !!ua, idx, material: m.material });
+  }
+  // No bones supplied (mobs): derive an A-pose humanoid skeleton from the bbox,
+  // so each model gets limbs scaled to its own proportions.
+  if (!bones) {
+    const H = maxy - miny, y0 = miny, halfX = Math.max(Math.abs(minx), Math.abs(maxx)) || 0.4;
+    const Y = f => y0 + H * f, lx = halfX * 0.42, aA = halfX * 0.6, aB = halfX * 1.0;
+    bones = {
+      spine: { a: [0, Y(0.42), 0], b: [0, Y(0.92), 0] },
+      armL: { a: [-aA, Y(0.80), 0], b: [-aB, Y(0.52), 0] }, armR: { a: [aA, Y(0.80), 0], b: [aB, Y(0.52), 0] },
+      legL: { a: [-lx, Y(0.46), 0], b: [-lx, Y(0.02), 0] }, legR: { a: [lx, Y(0.46), 0], b: [lx, Y(0.02), 0] },
+    };
+  }
   // Bias makes a borderline triangle prefer the torso, so the wide chest is not
   // clawed into the arms.
   const segs = { body: bones.spine, Arm_L: bones.armL, Arm_R: bones.armR, Leg_L: bones.legL, Leg_R: bones.legR };
   const bias = { body: 1.0, Arm_L: 1.18, Arm_R: 1.18, Leg_L: 1.06, Leg_R: 1.06 };
   const keys = Object.keys(segs);
   const limbAcc = { Arm_L: [], Arm_R: [], Leg_L: [], Leg_R: [] };
-  for (const m of meshes) {
-    const geo = m.geometry, pa = geo.attributes.position, na = geo.attributes.normal, ua = geo.attributes.uv, idx = geo.index;
-    const P = i => [pa.getX(i), pa.getY(i), pa.getZ(i)];
-    const N = i => na ? [na.getX(i), na.getY(i), na.getZ(i)] : [0, 1, 0];
+  for (const it of items) {
+    const pos = it.pos, nrm = it.nrm, ua = it.ua, idx = it.idx, hasUV = it.hasUV;
+    const P = i => [pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]];
+    const N = i => [nrm[i * 3], nrm[i * 3 + 1], nrm[i * 3 + 2]];
     const U = i => ua ? [ua.getX(i), ua.getY(i)] : [0, 0];
     const bk = {}; for (const k of keys) bk[k] = { p: [], n: [], u: [] };
-    const triN = idx ? idx.count / 3 : pa.count / 3;
+    const triN = idx ? idx.count / 3 : (pos.length / 3) / 3;
     for (let t = 0; t < triN; t++) {
       const i0 = idx ? idx.getX(t * 3) : t * 3, i1 = idx ? idx.getX(t * 3 + 1) : t * 3 + 1, i2 = idx ? idx.getX(t * 3 + 2) : t * 3 + 2;
       const a = P(i0), b = P(i1), c = P(i2);
@@ -2161,9 +2193,9 @@ function splitHumanoid(wrap, bones) {
       const dst = bk[best];
       for (const i of [i0, i1, i2]) { dst.p.push(...P(i)); dst.n.push(...N(i)); dst.u.push(...U(i)); }
     }
-    m.parent.remove(m);
-    if (bk.body.p.length) { const bm = new THREE.Mesh(chickenPartGeo(bk.body, !!ua), m.material); bm.name = m.name; bm.castShadow = bm.receiveShadow = true; anchor.add(bm); }
-    for (const k of ['Arm_L', 'Arm_R', 'Leg_L', 'Leg_R']) if (bk[k].p.length) limbAcc[k].push({ bk: bk[k], hasUV: !!ua, material: m.material });
+    it.mesh.parent.remove(it.mesh);
+    if (bk.body.p.length) { const bm = new THREE.Mesh(chickenPartGeo(bk.body, hasUV), it.material); bm.name = it.mesh.name; bm.castShadow = bm.receiveShadow = true; anchor.add(bm); }
+    for (const k of ['Arm_L', 'Arm_R', 'Leg_L', 'Leg_R']) if (bk[k].p.length) limbAcc[k].push({ bk: bk[k], hasUV, material: it.material });
   }
   for (const k of ['Arm_L', 'Arm_R', 'Leg_L', 'Leg_R']) {
     const parts = limbAcc[k]; if (!parts.length) continue;
@@ -2205,6 +2237,10 @@ function makeMonsterMesh(type, elite) {
   const g = cloneModel(map.model, map.h * (elite ? 1.4 : 1));
   if (g) {
     if (type === 'chicken') splitChickenParts(g);
+    // Humanoid mobs are single merged meshes, so carve them into arms/legs (auto
+    // bones from the model's own bbox) — otherwise the biped rig has nothing to
+    // move and they just slide along the ground.
+    else if (HUMANOID_SPLIT.has(type)) splitHumanoid(g, null);
     // Most GLB characters face -Z (flip with MODEL_YAW); the Chicken faces +Z,
     // so it needs no flip or it walks and pecks backwards.
     g.userData.faceOffset = type === 'chicken' ? 0 : MODEL_YAW;
@@ -2257,6 +2293,13 @@ const RIG_STYLE = {
   goblin_shaman: 'biped', goblin_miner: 'biped', goblin_chief: 'biped',
   ember_dragon: 'quad', frost_dragon: 'quad', venom_dragon: 'quad',
 };
+// Upright humanoid mobs whose merged mesh gets carved into arms/legs so they
+// actually stride and swing (see splitHumanoid). Quads/spiders/giants are not
+// included — their proportions don't fit the A-pose split.
+const HUMANOID_SPLIT = new Set([
+  'goblin', 'goblin_scavenger', 'goblin_warrior', 'goblin_archer',
+  'goblin_shaman', 'goblin_miner', 'goblin_chief', 'bandit',
+]);
 // bob = vertical rise per step, roll = side-to-side sway, stride = metres per
 // step (drives cadence from real speed, so nothing moonwalks).
 const GAIT = {
