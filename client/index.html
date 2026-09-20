@@ -452,7 +452,9 @@ function bakeModel(name, targetH) {
   const src = LOADED[name];
   if (!src) { bakeCache[key] = null; return null; }
   src.updateMatrixWorld(true);
-  const meshes = []; src.traverse(o => { if (o.isMesh) meshes.push(o); });
+  // Skip the birch's "Bark_Mark" meshes — they modelled as dark stubs poking
+  // out of the trunk like ladder rungs.
+  const meshes = []; src.traverse(o => { if (o.isMesh && !/Bark_Mark/i.test(o.name || '')) meshes.push(o); });
   if (!meshes.length) { bakeCache[key] = null; return null; }
   const box = new THREE.Box3().setFromObject(src);
   const s = targetH ? targetH / ((box.max.y - box.min.y) || 1) : 1;
@@ -1010,9 +1012,9 @@ function smoothPoly(points, seg) {
 // A single continuous, smoothly-curving ribbon strip that follows a polyline
 // with a constant width (mitred at joints) — no disconnected rectangles. Used
 // for the dirt path and the river so both read as one connected feature.
-function buildStripRibbon(points, width, y, material, tile, feather, cutRiver) {
+function buildStripRibbon(points, width, y, material, tile, feather, cutRiver, endFade) {
   const pts = smoothPoly(points, 8);
-  const hw = width / 2, T = tile || 5, fr = feather || 0;
+  const hw = width / 2, T = tile || 5, fr = feather || 0, ef = endFade || 0;
   // Cross-section vertex offsets (fraction of half-width) and their opacity.
   // With a feather, add a transparent fringe on each side so the strip fades
   // into whatever is under it (the path dissolving into grass at its edges).
@@ -1021,6 +1023,8 @@ function buildStripRibbon(points, width, y, material, tile, feather, cutRiver) {
     : [{ o: -hw, a: 1 }, { o: hw, a: 1 }];
   const N = cols.length;
   const pos = [], uv = [], col = [], idx = [];
+  // Total length up front so the ends can be faded into the ground.
+  let total = 0; for (let i = 1; i < pts.length; i++) total += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z);
   let dist = 0;
   for (let i = 0; i < pts.length; i++) {
     const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
@@ -1036,6 +1040,9 @@ function buildStripRibbon(points, width, y, material, tile, feather, cutRiver) {
       const edge = riverWaterHalf(zone.river.width);
       rowA = Math.max(0, Math.min(1, (rd - edge) / 2.5)); // 0 over water -> 1 on the bank
     }
+    // Taper the two ENDS to transparent so the path melts into the grass rather
+    // than stopping on a hard straight edge.
+    if (ef > 0) rowA *= Math.max(0, Math.min(1, Math.min(dist, total - dist) / ef));
     for (const c of cols) {
       pos.push(pts[i].x + nx * c.o, y, pts[i].z + nz * c.o);
       uv.push((c.o + hw + fr) / T, v);
@@ -1051,7 +1058,7 @@ function buildStripRibbon(points, width, y, material, tile, feather, cutRiver) {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  if (fr > 0) g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
+  if (fr > 0 || ef > 0) g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
   g.setIndex(idx); g.computeVertexNormals();
   const m = new THREE.Mesh(g, material); m.receiveShadow = true; scene.add(m); return m;
 }
@@ -1154,7 +1161,7 @@ function buildZone() {
     // edges into the surrounding grass instead of a hard cut.
     const dirtMat = new THREE.MeshStandardMaterial({ map: loadTexture('dirt', 1, 1), roughness: 1,
       side: THREE.DoubleSide, transparent: true, vertexColors: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
-    buildStripRibbon(zone.path, 5, 0.05, dirtMat, 5, 1.8, true);
+    buildStripRibbon(zone.path, 5, 0.05, dirtMat, 5, 1.8, true, 6);
   }
 
   // River (Blackroot Creek) — deep flowing water sitting in the carved channel.
