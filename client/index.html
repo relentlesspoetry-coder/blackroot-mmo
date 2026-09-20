@@ -1061,21 +1061,23 @@ function buildStripRibbon(points, width, y, material, tile, feather, cutRiver) {
 // water meets the grass — independent of the coarse terrain grid.
 function buildRiverShore(points, half) {
   const pts = smoothPoly(points, 8);
-  const H = half + RIVER_LIP, W = RIVER_WATER_Y; // outer half-width, water level
-  // Cross-section: offset from centreline -> height. The rim (|o| in [half, H])
-  // climbs from just under the waterline up to grass, forming the dirt border.
+  const H = half + RIVER_LIP, W = RIVER_WATER_Y, FR = 1.6; // outer half-width, water level, grass feather
+  // Cross-section: offset from centreline -> height, with alpha. The rim
+  // (|o| in [half, H]) climbs from under the waterline up to grass as the dirt
+  // border; a transparent fringe (|o| = H+FR) melts that border into the grass.
   const cols = [
-    { o: -H, y: 0.04 }, { o: -half, y: W - 0.04 }, { o: -half * 0.6, y: W - 0.7 },
-    { o: half * 0.6, y: W - 0.7 }, { o: half, y: W - 0.04 }, { o: H, y: 0.04 },
+    { o: -(H + FR), y: 0.06, a: 0 }, { o: -H, y: 0.05, a: 1 }, { o: -half, y: W - 0.04, a: 1 },
+    { o: -half * 0.6, y: W - 0.7, a: 1 }, { o: half * 0.6, y: W - 0.7, a: 1 },
+    { o: half, y: W - 0.04, a: 1 }, { o: H, y: 0.05, a: 1 }, { o: H + FR, y: 0.06, a: 0 },
   ];
-  const N = cols.length, T = 6, pos = [], uv = [], idx = [];
+  const N = cols.length, T = 3.5, pos = [], uv = [], col = [], idx = [];
   let dist = 0;
   for (let i = 0; i < pts.length; i++) {
     const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
     let dx = b.x - a.x, dz = b.z - a.z; const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
     const nx = -dz, nz = dx;
     if (i > 0) dist += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z);
-    for (const c of cols) { pos.push(pts[i].x + nx * c.o, c.y, pts[i].z + nz * c.o); uv.push((c.o + H) / T, dist / T); }
+    for (const c of cols) { pos.push(pts[i].x + nx * c.o, c.y, pts[i].z + nz * c.o); uv.push((c.o + H) / T, dist / T); col.push(1, 1, 1, c.a); }
   }
   for (let i = 0; i < pts.length - 1; i++) for (let j = 0; j < N - 1; j++) {
     const p = i * N + j; idx.push(p, p + 1, p + N, p + 1, p + N + 1, p + N);
@@ -1083,10 +1085,12 @@ function buildRiverShore(points, half) {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
   g.setIndex(idx); g.computeVertexNormals();
-  const mat = new THREE.MeshStandardMaterial({ map: loadTexture('dirt', 1, 1), color: 0x8a6b47, roughness: 1,
-    emissive: 0x241a10, emissiveIntensity: 0.7, // stays legible as a dirt rim at night
-    polygonOffset: true, polygonOffsetFactor: -1 });
+  const mat = new THREE.MeshStandardMaterial({ map: loadTexture('dirt', 1, 1), color: 0xb08a5c, roughness: 1,
+    vertexColors: true, transparent: true, depthWrite: false, // vertex-alpha fringe blends into grass
+    emissive: 0x2a1e12, emissiveIntensity: 0.5,               // faintly legible at night
+    polygonOffset: true, polygonOffsetFactor: -2 });
   const m = new THREE.Mesh(g, mat); m.receiveShadow = true; m.userData.isGround = true; scene.add(m); return m;
 }
 

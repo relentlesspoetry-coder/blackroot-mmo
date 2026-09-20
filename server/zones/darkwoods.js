@@ -130,9 +130,12 @@ export const darkwoods = {
   // Mossy Bridge, then bends away to the east so it never runs over the path.
   river: {
     width: 6,
+    // First & last points run past the zone bounds (minX -90 / maxX 90) so the
+    // river flows in and out under the boundary treeline instead of dead-ending
+    // in a pool in the middle of the woods.
     points: [
-      { x: -78, z: 8 }, { x: -58, z: 14 }, { x: -38, z: 20 }, { x: -20, z: 28 },
-      { x: -8, z: 35 }, { x: 10, z: 44 }, { x: 30, z: 54 }, { x: 52, z: 62 }, { x: 72, z: 72 },
+      { x: -98, z: 2 }, { x: -78, z: 8 }, { x: -58, z: 14 }, { x: -38, z: 20 }, { x: -20, z: 28 },
+      { x: -8, z: 35 }, { x: 10, z: 44 }, { x: 30, z: 54 }, { x: 52, z: 62 }, { x: 72, z: 72 }, { x: 98, z: 85 },
     ],
     bridge: { x: -8, z: 35, halfWidth: 5 }, // the single crossing, on the trail
   },
