@@ -283,7 +283,8 @@
     </div>
     <div style="padding:8px 10px;">
       <input id="edSearch" placeholder="search…" style="width:100%; box-sizing:border-box; background:#0c111b; border:1px solid #2b3852; color:#e6edf6; border-radius:6px; padding:5px 7px; font-size:12px;" />
-      <div id="edPalette" style="margin-top:6px; max-height:34vh; overflow-y:auto;"></div>
+      <div id="edPalette" style="margin-top:6px; max-height:32vh; overflow-y:auto;"></div>
+      <label id="edSnapWrap" style="display:flex; align-items:center; gap:6px; margin-top:6px; font-size:11px; color:#9fb0c4;"><input id="edSnap" type="checkbox" checked> Snap to grid</label>
     </div>
     <div id="edInspector" style="display:none; padding:8px 10px; border-top:1px solid #2b3852;">
       <div id="edSelName" style="font-weight:700; color:#ffd98a; margin-bottom:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></div>
@@ -291,6 +292,11 @@
       <label style="display:block; margin:4px 0;">Scale <input id="edScale" type="range" min="0.2" max="4" step="0.05" style="width:100%;"> <span id="edScaleV"></span></label>
       <label style="display:flex; align-items:center; gap:6px; margin:4px 0;"><input id="edColOn" type="checkbox"> Solid (collision)</label>
       <label style="display:block; margin:4px 0;">Radius <input id="edColR" type="range" min="0.2" max="6" step="0.1" style="width:100%;"> <span id="edColRV"></span></label>
+      <div id="edDimWrap" style="display:none;">
+        <label style="display:block; margin:4px 0;">Width <input id="edW" type="range" min="0.3" max="60" step="0.1" style="width:100%;"> <span id="edWV"></span></label>
+        <label style="display:block; margin:4px 0;">Height <input id="edH" type="range" min="0.2" max="30" step="0.1" style="width:100%;"> <span id="edHV"></span></label>
+        <label style="display:block; margin:4px 0;">Depth <input id="edD" type="range" min="0.3" max="60" step="0.1" style="width:100%;"> <span id="edDV"></span></label>
+      </div>
       <div id="edPartWrap" style="display:none;">
         <div style="margin:6px 0 3px; color:#9fb0c4;">Part</div>
         <div id="edPartRow" style="display:flex; flex-wrap:wrap; gap:3px; margin-bottom:4px;"></div>
@@ -2045,7 +2051,30 @@ const spawnMeshes = new Map(); // spawn region id -> THREE.Group (ring + pole + 
 (function () { const p = new URLSearchParams(location.search).get('edit'); if (p) { EDIT.on = true; EDIT.key = p; } })();
 const editMeshes = new Map(); // id -> THREE.Group
 
+const PRIM_DEF = { floor: { w: 4, h: 0.3, d: 4, c: 0 }, wall: { w: 4, h: 3, d: 0.4, c: 1 }, block: { w: 2, h: 2, d: 2, c: 1 } };
+function makePrimMesh(o) {
+  const kind = o.m.slice(5), def = PRIM_DEF[kind] || PRIM_DEF.block;
+  const w = o.w || def.w, h = o.h || def.h, d = o.d || def.d;
+  const col = kind === 'floor' ? 0x8a8f98 : kind === 'wall' ? 0x9a9aa2 : 0x8f8a7e;
+  const mat = new THREE.MeshStandardMaterial({ color: col, roughness: 0.92 });
+  if (o.tex && o.tex[0]) {
+    const tx = editTexture(o.tex[0]);
+    tx.repeat.set(Math.max(1, Math.round(w / 3)), Math.max(1, Math.round((kind === 'wall' ? h : d) / 3)));
+    mat.map = tx; mat.needsUpdate = true;
+  }
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  mesh.castShadow = mesh.receiveShadow = true; mesh.position.y = h / 2;
+  mesh.userData.pickKind = 'editobj'; mesh.userData.editId = o.id;
+  const wrap = new THREE.Group(); wrap.add(mesh);
+  wrap.scale.setScalar(o.s || 1);
+  wrap.position.set(o.x, groundY ? groundY(o.x, o.z) : 0, o.z);
+  wrap.rotation.y = o.yaw || 0;
+  wrap.userData.editObj = o; wrap.userData.parts = [{ index: 0, label: 'Surface' }];
+  scene.add(wrap); editMeshes.set(o.id, wrap);
+  return wrap;
+}
 function makeEditMesh(o) {
+  if (typeof o.m === 'string' && o.m.startsWith('prim:')) return makePrimMesh(o);
   const key = modelKey(o.m); const src = LOADED[key];
   if (!src) return null;
   const obj = src.clone(true); obj.updateMatrixWorld(true);
@@ -2088,7 +2117,7 @@ async function buildEditObjects() {
   for (const g of editMeshes.values()) scene.remove(g);
   editMeshes.clear();
   const objs = zone.editObjects || [];
-  const need = [...new Set(objs.map(o => o.m).filter(m => LOADED[modelKey(m)] === undefined))];
+  const need = [...new Set(objs.map(o => o.m).filter(m => !m.startsWith('prim:') && LOADED[modelKey(m)] === undefined))];
   if (need.length) await loadModels(need).catch(() => {});
   for (const o of objs) makeEditMesh(o);
 }
@@ -2098,7 +2127,7 @@ async function applyEdit(m) {
   if (m.op === 'place' || m.op === 'update') {
     const o = m.obj; const i = zone.editObjects.findIndex(e => e.id === o.id);
     if (i >= 0) zone.editObjects[i] = o; else zone.editObjects.push(o);
-    if (LOADED[modelKey(o.m)] === undefined) await loadModels([o.m]).catch(() => {});
+    if (!o.m.startsWith('prim:') && LOADED[modelKey(o.m)] === undefined) await loadModels([o.m]).catch(() => {});
     removeEditMesh(o.id); makeEditMesh(o);
     if (EDIT.selId === o.id) editSyncInspector();
   } else if (m.op === 'delete') {
@@ -2191,6 +2220,11 @@ function editInit() {
   $('edColOn').addEventListener('change', e => editEditSel({ c: e.target.checked ? (+$('edColR').value || 1) : 0 }));
   $('edColR').addEventListener('input', e => { $('edColRV').textContent = (+e.target.value).toFixed(1); if ($('edColOn').checked) editEditSel({ c: +e.target.value }); });
   for (const id of ['edYaw', 'edScale', 'edColR']) $(id).addEventListener('change', () => editFlush());
+  // Primitive dimensions
+  $('edW').addEventListener('input', e => { $('edWV').textContent = e.target.value; editEditDim({ w: +e.target.value }); });
+  $('edH').addEventListener('input', e => { $('edHV').textContent = e.target.value; editEditDim({ h: +e.target.value }); });
+  $('edD').addEventListener('input', e => { $('edDV').textContent = e.target.value; editEditDim({ d: +e.target.value }); });
+  for (const id of ['edW', 'edH', 'edD']) $(id).addEventListener('change', () => editFlush());
   $('edDelete').addEventListener('click', () => { if (EDIT.selId) sendEdit({ t: 'edit:delete', id: EDIT.selId }); });
   // Duplicate: enter placing mode carrying this object's scale/rotation/collision
   // /textures, so every click stamps another fully-configured copy.
@@ -2268,6 +2302,8 @@ function editLootSave() {
   const table = EDIT.loot[EDIT.lootType]; if (!table) return;
   sendEdit({ t: 'edit:loot:set', type: EDIT.lootType, table });
 }
+// Grid snap for placement/drag (1-unit grid) when the Snap toggle is on.
+function editSnap(v) { const on = document.getElementById('edSnap') && document.getElementById('edSnap').checked; return on ? Math.round(v) : +v.toFixed(2); }
 function editBuildPalette() {
   const wrap = document.getElementById('edPalette'); if (!wrap) return;
   const q = (document.getElementById('edSearch').value || '').toLowerCase();
@@ -2286,6 +2322,15 @@ function editBuildPalette() {
     }
     return;
   }
+  // Builder primitives first (floor / wall / block).
+  for (const kind of ['floor', 'wall', 'block']) {
+    if (q && !kind.includes(q)) continue;
+    const mm = 'prim:' + kind, active = EDIT.placing && EDIT.placing.m === mm, def = PRIM_DEF[kind];
+    const b = document.createElement('button'); b.textContent = '▦ ' + kind[0].toUpperCase() + kind.slice(1);
+    b.style.cssText = rowStyle(active);
+    b.onclick = () => { EDIT.placing = active ? null : { m: mm, s: 1, yaw: 0, c: def.c, w: def.w, h: def.h, d: def.d, tex: {} }; editSetMode(); editBuildPalette(); };
+    wrap.appendChild(b);
+  }
   for (const m of EDIT.models) {
     if (q && !m.toLowerCase().includes(q)) continue;
     const b = document.createElement('button'); b.textContent = modelKey(m); b.title = m;
@@ -2295,9 +2340,10 @@ function editBuildPalette() {
     wrap.appendChild(b);
   }
 }
+function primName(m) { return m.startsWith('prim:') ? m.slice(5) : modelKey(m); }
 function editSetMode() {
   const el = document.getElementById('edMode'); if (!el) return;
-  el.textContent = EDIT.placing ? 'place: ' + modelKey(EDIT.placing.m)
+  el.textContent = EDIT.placing ? 'place: ' + primName(EDIT.placing.m)
     : EDIT.placingMob ? 'spawn: ' + EDIT.placingMob
     : (EDIT.selId || EDIT.selSpawn) ? 'select' : 'idle';
 }
@@ -2327,7 +2373,15 @@ function editBuildParts() {
 function editSyncInspector() {
   const o = (zone.editObjects || []).find(e => e.id === EDIT.selId); if (!o) return;
   const $ = id => document.getElementById(id);
-  $('edSelName').textContent = modelKey(o.m);
+  const prim = typeof o.m === 'string' && o.m.startsWith('prim:');
+  $('edSelName').textContent = prim ? primName(o.m) : modelKey(o.m);
+  $('edDimWrap').style.display = prim ? 'block' : 'none';
+  if (prim) {
+    const def = PRIM_DEF[o.m.slice(5)] || {};
+    $('edW').value = o.w || def.w; $('edWV').textContent = o.w || def.w;
+    $('edH').value = o.h || def.h; $('edHV').textContent = o.h || def.h;
+    $('edD').value = o.d || def.d; $('edDV').textContent = o.d || def.d;
+  }
   $('edYaw').value = o.yaw || 0;
   $('edScale').value = o.s || 1; $('edScaleV').textContent = (o.s || 1).toFixed(2);
   $('edColOn').checked = (o.c || 0) > 0;
@@ -2342,7 +2396,17 @@ function editEditSel(patch) {
 }
 function editFlush() {
   const o = (zone.editObjects || []).find(e => e.id === EDIT.selId); if (!o) return;
-  sendEdit({ t: 'edit:update', id: o.id, x: o.x, z: o.z, yaw: o.yaw, s: o.s, c: o.c });
+  const msg = { t: 'edit:update', id: o.id, x: o.x, z: o.z, yaw: o.yaw, s: o.s, c: o.c };
+  if (typeof o.m === 'string' && o.m.startsWith('prim:')) { msg.w = o.w; msg.h = o.h; msg.d = o.d; }
+  sendEdit(msg);
+}
+// Resize a primitive: rebuild its box and refresh the highlight.
+function editEditDim(patch) {
+  const o = (zone.editObjects || []).find(e => e.id === EDIT.selId); if (!o) return;
+  Object.assign(o, patch);
+  removeEditMesh(o.id); makeEditMesh(o);
+  if (editHL) { scene.remove(editHL); editHL = new THREE.BoxHelper(editMeshes.get(o.id), 0x9fd0ff); scene.add(editHL); }
+  const now = performance.now(); if (now - _edUpdT > 140) { _edUpdT = now; editFlush(); }
 }
 function groundPointAt(e) {
   const ndc = new THREE.Vector2((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
@@ -2354,7 +2418,10 @@ function groundPointAt(e) {
 function editClick(e) {
   if (EDIT.placing) {
     const gp = groundPointAt(e); const p = EDIT.placing;
-    if (gp) sendEdit({ t: 'edit:place', m: p.m, x: +gp.x.toFixed(2), z: +gp.z.toFixed(2), yaw: p.yaw || 0, s: p.s || 1, c: p.c || 0, tex: p.tex || {} });
+    if (gp) {
+      const x = editSnap(gp.x), z = editSnap(gp.z);
+      sendEdit({ t: 'edit:place', m: p.m, x, z, yaw: p.yaw || 0, s: p.s || 1, c: p.c || 0, tex: p.tex || {}, w: p.w, h: p.h, d: p.d });
+    }
     return;
   }
   if (EDIT.placingMob) {
@@ -3360,7 +3427,7 @@ function addEventListeners() {
       const gp = groundPointAt(e);
       if (gp && editDrag.kind === 'obj') {
         const o = (zone.editObjects || []).find(x => x.id === editDrag.id), g = editMeshes.get(editDrag.id);
-        if (o && g) { o.x = +gp.x.toFixed(2); o.z = +gp.z.toFixed(2); g.position.set(o.x, groundY ? groundY(o.x, o.z) : 0, o.z); if (editHL) editHL.update(); }
+        if (o && g) { o.x = editSnap(gp.x); o.z = editSnap(gp.z); g.position.set(o.x, groundY ? groundY(o.x, o.z) : 0, o.z); if (editHL) editHL.update(); }
         const now = performance.now(); if (now - _edUpdT > 140) { _edUpdT = now; editFlush(); }
       } else if (gp && editDrag.kind === 'spawn') {
         const sp = (zone.editSpawns || []).find(x => x.id === editDrag.id), g = spawnMeshes.get(editDrag.id);

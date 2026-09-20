@@ -207,11 +207,23 @@ function resolveCollision(zone, ent, radius) {
     const dx = ent.x - o.x, dz = ent.z - o.z, d = Math.hypot(dx, dz), min = o.c * o.s + radius;
     if (d < min && d > 1e-4) { ent.x = o.x + (dx / d) * min; ent.z = o.z + (dz / d) * min; }
   }
-  // Editor-placed objects with a collision radius.
+  // Editor-placed objects: builder primitives are solid oriented boxes; other
+  // props use a simple collision radius.
   for (const o of (zone._editObjects || [])) {
     if (!o.c) continue;
-    const dx = ent.x - o.x, dz = ent.z - o.z, d = Math.hypot(dx, dz), min = o.c * (o.s || 1) + radius;
-    if (d < min && d > 1e-4) { ent.x = o.x + (dx / d) * min; ent.z = o.z + (dz / d) * min; }
+    if (typeof o.m === 'string' && o.m.startsWith('prim:')) {
+      const s = o.s || 1, hw = (o.w || 1) * s / 2 + radius, hd = (o.d || 1) * s / 2 + radius;
+      const c = Math.cos(o.yaw || 0), sn = Math.sin(o.yaw || 0);
+      const rx = ent.x - o.x, rz = ent.z - o.z;
+      let lx = rx * c + rz * sn, lz = -rx * sn + rz * c; // world -> box-local
+      if (Math.abs(lx) < hw && Math.abs(lz) < hd) {
+        if (hw - Math.abs(lx) < hd - Math.abs(lz)) lx = Math.sign(lx || 1) * hw; else lz = Math.sign(lz || 1) * hd;
+        ent.x = o.x + lx * c - lz * sn; ent.z = o.z + lx * sn + lz * c; // box-local -> world
+      }
+    } else {
+      const dx = ent.x - o.x, dz = ent.z - o.z, d = Math.hypot(dx, dz), min = o.c * (o.s || 1) + radius;
+      if (d < min && d > 1e-4) { ent.x = o.x + (dx / d) * min; ent.z = o.z + (dz / d) * min; }
+    }
   }
 
   // Trees are solid.
@@ -1234,6 +1246,8 @@ wss.on('connection', (ws) => {
           yaw: +(+(msg.yaw || 0)).toFixed(3), s: +(+(msg.s || 1)).toFixed(3), c: +(+(msg.c || 0)).toFixed(2),
           // per-part texture map { partIndex: textureName }; carried over by Duplicate
           tex: (msg.tex && typeof msg.tex === 'object' && !Array.isArray(msg.tex)) ? msg.tex : {} };
+        // Builder primitives (prim:floor / prim:wall / prim:block) carry box dims.
+        if (o.m.startsWith('prim:')) { o.w = clamp(+msg.w || 4, 0.2, 200); o.h = clamp(+msg.h || 3, 0.2, 60); o.d = clamp(+msg.d || 4, 0.2, 200); }
         z._editObjects.push(o); saveOverrides(z); broadcastZone(player.zoneId, { t: 'edit', op: 'place', obj: o });
         break;
       }
@@ -1245,6 +1259,9 @@ wss.on('connection', (ws) => {
         if (msg.yaw != null) o.yaw = +(+msg.yaw).toFixed(3);
         if (msg.s != null) o.s = +(+msg.s).toFixed(3);
         if (msg.c != null) o.c = +(+msg.c).toFixed(2);
+        if (msg.w != null) o.w = clamp(+msg.w, 0.2, 200);
+        if (msg.h != null) o.h = clamp(+msg.h, 0.2, 60);
+        if (msg.d != null) o.d = clamp(+msg.d, 0.2, 200);
         // Per-part texture: msg.part is the material index, msg.tex the name ('' clears).
         if (msg.part != null) {
           if (!o.tex || typeof o.tex !== 'object') o.tex = {};
