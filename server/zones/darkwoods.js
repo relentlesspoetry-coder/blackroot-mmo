@@ -31,6 +31,8 @@ export const darkwoods = {
     'Heather_Clump', 'Hosta_Plant', 'Meadow_Sedge', 'Poppy_Patch', 'Rose_Bush', 'Sage_Bush', 'Strawberry_Patch',
     // Ambient flying critters (butterflies by day, moths by night)
     'Butterfly', 'Moth',
+    // Wild woodland rabbits (small game)
+    'Rabbit',
     'cave/Copper_Ore_Vein', 'cave/Tin_Ore_Vein', 'cave/Iron_Ore_Vein',
     'items/Copper_Ore', 'items/Tin_Ore', 'items/Iron_Ore',
     // Farmstead at the Entrance Clearing (Farm_Assets pack)
@@ -285,6 +287,9 @@ export const darkwoods = {
     // --- The farmstead at the Entrance Clearing: livestock penned in the yard ---
     { type: 'chicken', count: 6, cx: 13,  cz: -85, r: 8, level: 1, expect: 1, hint: 'Farm chicken run' },
     { type: 'cow',     count: 3, cx: -4,  cz: -84, r: 6, level: 1, expect: 1, hint: 'Farm paddock' },
+    // --- Wild rabbits: small game scattered through the open woods ---
+    { type: 'rabbit',  count: 5, cx: -18, cz: -40, r: 30, level: 1, expect: 1, hint: 'Woodland rabbits' },
+    { type: 'rabbit',  count: 5, cx: 20,  cz: 10,  r: 32, level: 1, expect: 1, hint: 'Woodland rabbits' },
     // --- Trail: lone goblins & scavengers, well spaced ---
     { type: 'goblin',           count: 4, cx: -22, cz: -56, r: 20, level: 1, expect: 2, hint: "Old Hunter's Trail" },
     { type: 'goblin_scavenger', count: 4, cx: 14,  cz: -40, r: 22, level: 2, expect: 2, hint: 'Trail scavengers' },

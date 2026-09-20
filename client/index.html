@@ -401,6 +401,7 @@ const CORE_MODELS = ['Male', 'items/Coins'];
 const MOB_MODEL = {
   goblin: { model: 'Goblin', h: 2.0 }, bandit: { model: 'Bandit', h: 2.3 }, guard: { model: 'Hill_Ogre', h: 3.0 },
   spider: { model: 'Cave_Spider', h: 1.6 }, cow: { model: 'Cow', h: 2.0 }, chicken: { model: 'Chicken', h: 1.1 },
+  rabbit: { model: 'Rabbit', h: 0.7 },
   venom_spider: { model: 'Venom_Spider', h: 1.7 }, crystal_spider: { model: 'Crystal_Spider', h: 1.8 },
   bat: { model: 'Bat', h: 1.0 },
   cave_giant: { model: 'Moss_Cave_Giant', h: 3.4 }, crystal_giant: { model: 'Crystal_Cave_Giant', h: 3.6 },
@@ -3132,9 +3133,9 @@ function makeMonsterMesh(type, elite) {
   const g = cloneModel(map.model, map.h * (elite ? 1.4 : 1));
   if (g) {
     if (type === 'chicken') splitChickenParts(g);
-    // The cow is a quadruped merged mesh — carve legs + head so it strides and
-    // bites instead of sliding along stiff.
-    else if (type === 'cow') splitQuadParts(g);
+    // The cow and rabbit are quadruped merged meshes — carve legs + head so
+    // they stride instead of sliding along stiff.
+    else if (type === 'cow' || type === 'rabbit') splitQuadParts(g);
     // Humanoid mobs are single merged meshes, so carve them into arms/legs (auto
     // bones from the model's own bbox) — otherwise the biped rig has nothing to
     // move and they just slide along the ground.
@@ -3142,7 +3143,7 @@ function makeMonsterMesh(type, elite) {
     // Most GLB characters face -Z (flip with MODEL_YAW); the Chicken, the cow and
     // the humanoid mobs (goblins, bandits) face +Z, so they need no flip or they
     // walk backwards.
-    g.userData.faceOffset = (type === 'chicken' || type === 'cow' || HUMANOID_SPLIT.has(type)) ? 0 : MODEL_YAW;
+    g.userData.faceOffset = (type === 'chicken' || type === 'cow' || type === 'rabbit' || HUMANOID_SPLIT.has(type)) ? 0 : MODEL_YAW;
     g.userData.rig = buildRig(g, RIG_STYLE[type] || 'biped');
     // Split humanoid mobs face +Z and punch with alternating hands (see the
     // generic biped branch in animateEntity).
@@ -3191,7 +3192,7 @@ function ensureMesh(ent, kind) {
 const RIG_STYLE = {
   goblin: 'biped', bandit: 'biped', guard: 'ogre',
   spider: 'spider', venom_spider: 'spider', crystal_spider: 'spider',
-  cow: 'quad', chicken: 'bird', bat: 'flier',
+  cow: 'quad', rabbit: 'quad', chicken: 'bird', bat: 'flier',
   cave_giant: 'biped', crystal_giant: 'biped', cave_guardian: 'biped', broodmother: 'spider',
   goblin_scavenger: 'biped', goblin_warrior: 'biped', goblin_archer: 'biped',
   goblin_shaman: 'biped', goblin_miner: 'biped', goblin_chief: 'biped',
