@@ -26,6 +26,12 @@ import {
   MINING, ORES, PICKAXES, oreFromModel, bestPickaxe, swingChance, swingTime,
   miningLevelFromXp, canMine,
 } from './mining.js';
+import {
+  FISHING, FISH, RODS, bestRod, fishingLevelFromXp, catchChance, castTime,
+} from './fishing.js';
+import {
+  COOKING, COOKABLES, BURNT, cookingLevelFromXp, burnChance, cookableInInventory,
+} from './cooking.js';
 
 function rand(min, max) { return min + Math.random() * (max - min); }
 function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
@@ -62,6 +68,8 @@ function scaleZone(zone, k) {
   (zone.rocks || []).forEach(sp);
   (zone.pools || []).forEach(sp);
   (zone.chests || []).forEach(sp);
+  (zone.fishingSpots || []).forEach(sp);
+  (zone.campfires || []).forEach(sp);
   if (zone.safeSpawnRadius) zone.safeSpawnRadius *= k;
   if (zone.boundaryInset) zone.boundaryInset *= k;
   // Spread mobs out: regions grow with the zone (r*k) but counts grow only
@@ -674,7 +682,10 @@ function sendSkills(p) {
   const st = minerStats(p);
   const cs = {};
   for (const s of COMBAT_SKILLS) cs[s] = { level: p.skills[s].level, xp: Math.floor(p.skills[s].xp), next: xpForLevel(p.skills[s].level) };
+  const fp = fishingLevelFromXp(p.fishingXp), cp = cookingLevelFromXp(p.cookingXp);
   send(p.ws, { t: 'skills', mining: { level: st.level, xp: p.miningXp, into: st.into, next: st.next, pick: st.pick },
+    fishing: { level: fp.level, into: fp.into, next: fp.next, rod: fisherStats(p).rod },
+    cooking: { level: cp.level, into: cp.into, next: cp.next },
     combat: cs, combatLevel: p.combat || combatLevel(p.skills), style: p.style,
     meditation: { level: p.meditation.level, xp: Math.floor(p.meditation.xp), next: xpForLevel(p.meditation.level) },
     resting: !!p.resting });
@@ -729,6 +740,100 @@ function stepMining(p) {
     p.mineTimer = swingTime(st.power || 1);
     if (mineSwing(p, vein)) p.pendingMine = null; // one ore per click, like the veins deplete
   }
+}
+
+// ---------------------------------------------------------------------------
+// Fishing — mirrors mining: click a spot, walk to the bank, cast on a timer.
+// ---------------------------------------------------------------------------
+function fisherStats(p) {
+  const prog = fishingLevelFromXp(p.fishingXp);
+  const carried = p.equipment.weapon ? [...p.inventory, p.equipment.weapon] : p.inventory;
+  const rod = bestRod(carried, prog.level);
+  return { ...prog, rod, power: rod ? RODS[rod].power : 0 };
+}
+function grantFishingXp(p, amount) {
+  const before = fishingLevelFromXp(p.fishingXp).level;
+  p.fishingXp += amount;
+  const after = fishingLevelFromXp(p.fishingXp).level;
+  if (after > before) { send(p.ws, { t: 'event', kind: 'fishlevel', level: after }); systemChat(`${p.name} reached Fishing level ${after}.`); }
+  sendSkills(p);
+}
+function fishCast(p, spot) {
+  const st = fisherStats(p);
+  if (!st.rod) { send(p.ws, { t: 'event', kind: 'notice', text: 'You need a fishing rod.' }); p.pendingFish = null; return true; }
+  const fish = FISH[spot.tier];
+  if (!fish || st.level < fish.level) {
+    send(p.ws, { t: 'event', kind: 'notice', text: `You need Fishing level ${fish ? fish.level : '?'} to fish here.` });
+    p.pendingFish = null; return true;
+  }
+  send(p.ws, { t: 'event', kind: 'fishcast', id: spot.id });
+  if (Math.random() >= catchChance(spot.tier, st.level, st.power)) return false;
+  p.inventory.push(fish.item);
+  send(p.ws, { t: 'event', kind: 'caught', item: fish.item, xp: fish.xp });
+  grantFishingXp(p, fish.xp);
+  sendBag(p);
+  return false; // keep fishing this spot (spots never deplete)
+}
+function stepFishing(p) {
+  if (p.pendingFish == null) return;
+  const zone = zoneOf(p);
+  const spot = (zone.fishingSpots || []).find(s => s.id === p.pendingFish);
+  if (!spot) { p.pendingFish = null; return; }
+  if (Math.hypot(spot.x - p.x, spot.z - p.z) > FISHING.reach) return; // stepPlayer walks us in
+  p.yaw = Math.atan2(spot.x - p.x, spot.z - p.z);
+  p.fishTimer -= DT;
+  if (p.fishTimer <= 0) { p.fishTimer = castTime(fisherStats(p).power || 1); if (fishCast(p, spot)) p.pendingFish = null; }
+}
+
+// ---------------------------------------------------------------------------
+// Cooking — stand at a campfire and cook raw meat/fish; burn chance by level.
+// ---------------------------------------------------------------------------
+function grantCookingXp(p, amount) {
+  const before = cookingLevelFromXp(p.cookingXp).level;
+  p.cookingXp += amount;
+  const after = cookingLevelFromXp(p.cookingXp).level;
+  if (after > before) { send(p.ws, { t: 'event', kind: 'cooklevel', level: after }); systemChat(`${p.name} reached Cooking level ${after}.`); }
+  sendSkills(p);
+}
+function cookOne(p) {
+  const level = cookingLevelFromXp(p.cookingXp).level;
+  const raw = cookableInInventory(p.inventory, level)[0];
+  if (!raw) { p.pendingCook = null; return true; }         // nothing left to cook
+  const i = p.inventory.indexOf(raw); if (i < 0) { p.pendingCook = null; return true; }
+  p.inventory.splice(i, 1);
+  const c = COOKABLES[raw];
+  if (Math.random() < burnChance(raw, level)) {
+    p.inventory.push(BURNT);
+    send(p.ws, { t: 'event', kind: 'cooked', item: BURNT, burnt: true });
+  } else {
+    p.inventory.push(c.cooked);
+    send(p.ws, { t: 'event', kind: 'cooked', item: c.cooked, xp: c.xp });
+    grantCookingXp(p, c.xp);
+  }
+  sendBag(p);
+  return cookableInInventory(p.inventory, level).length === 0; // stop when out of raw food
+}
+function stepCooking(p) {
+  if (p.pendingCook == null) return;
+  const zone = zoneOf(p);
+  const fire = (zone.campfires || []).find(f => f.id === p.pendingCook);
+  if (!fire) { p.pendingCook = null; return; }
+  if (Math.hypot(fire.x - p.x, fire.z - p.z) > COOKING.reach) return; // walk in
+  p.yaw = Math.atan2(fire.x - p.x, fire.z - p.z);
+  p.cookTimer -= DT;
+  if (p.cookTimer <= 0) { p.cookTimer = COOKING.cookTime; if (cookOne(p)) p.pendingCook = null; }
+}
+
+// Eat a cooked food to recover HP.
+function eatFood(p, item) {
+  const def = itemDef(item);
+  if (!def || !def.heal) return;
+  const i = p.inventory.indexOf(item); if (i < 0) return;
+  if (p.hp >= p.maxHp) { send(p.ws, { t: 'event', kind: 'notice', text: 'You are already at full health.' }); return; }
+  p.inventory.splice(i, 1);
+  p.hp = Math.min(p.maxHp, p.hp + def.heal);
+  send(p.ws, { t: 'event', kind: 'ate', item, heal: def.heal });
+  sendBag(p);
 }
 
 // Depleted veins come back on their own timer.
@@ -973,7 +1078,8 @@ function stepPlayer(p) {
   // or gets hit — you can't rest in the middle of a scrap.
   if (p.resting) {
     const wantsAction = (inp && (inp.f !== 0 || inp.r !== 0)) || p.moveTo || p.combatId != null ||
-      p.pendingChest || p.pendingPickup != null || p.pendingMine != null || p.pendingGate;
+      p.pendingChest || p.pendingPickup != null || p.pendingMine != null || p.pendingGate ||
+      p.pendingFish != null || p.pendingCook != null;
     if (wantsAction || (p.combatTimer || 0) > 0) { p.resting = false; sendSkills(p); }
   }
   const step = (tx, tz, stopDist) => {
@@ -986,7 +1092,7 @@ function stepPlayer(p) {
 
   if (inp && (inp.f !== 0 || inp.r !== 0)) {
     // Manual WASD overrides click-to-move / combat.
-    p.moveTo = null; p.combatId = null; p.pendingChest = null; p.pendingPickup = null; p.pendingMine = null; p.pendingGate = false;
+    p.moveTo = null; p.combatId = null; p.pendingChest = null; p.pendingPickup = null; p.pendingMine = null; p.pendingGate = false; p.pendingFish = null; p.pendingCook = null;
     const yaw = inp.yaw;
     const fx = Math.sin(yaw), fz = Math.cos(yaw);
     const rx = Math.sin(yaw - Math.PI / 2), rz = Math.cos(yaw - Math.PI / 2);
@@ -1017,6 +1123,16 @@ function stepPlayer(p) {
     if (!v || v.depleted > 0) { p.pendingMine = null; }
     else if (step(v.x, v.z, MINING.reach - 0.6)) { moved = true; }
     else p.yaw = Math.atan2(v.x - p.x, v.z - p.z);
+  } else if (p.pendingFish != null) {
+    const s = (zone.fishingSpots || []).find(f => f.id === p.pendingFish);
+    if (!s) { p.pendingFish = null; }
+    else if (step(s.x, s.z, FISHING.reach - 0.6)) { moved = true; }
+    else p.yaw = Math.atan2(s.x - p.x, s.z - p.z);
+  } else if (p.pendingCook != null) {
+    const f = (zone.campfires || []).find(c => c.id === p.pendingCook);
+    if (!f) { p.pendingCook = null; }
+    else if (step(f.x, f.z, COOKING.reach - 0.6)) { moved = true; }
+    else p.yaw = Math.atan2(f.x - p.x, f.z - p.z);
   } else if (p.pendingGate) {
     const g = zone._gate;
     if (!g) { p.pendingGate = false; }
@@ -1043,6 +1159,8 @@ function stepPlayer(p) {
   }
 
   stepMining(p);
+  stepFishing(p);
+  stepCooking(p);
   checkQuestReach(p);
 
   const safe = inSafeZone(zone, p.x, p.z);
@@ -1164,7 +1282,8 @@ setInterval(() => {
           yaw: +p.yaw.toFixed(2), hp: Math.round(p.hp), maxHp: p.maxHp, level: p.level,
           combat: p.combat || combatLevel(p.skills),
           xp: p.xp, xpNext: xpForLevel(p.level), gold: p.gold, alive: p.alive,
-          moving: p.moving, inSafe: !!p.inSafe, resting: !!p.resting });
+          moving: p.moving, inSafe: !!p.inSafe, resting: !!p.resting,
+          weapon: p.equipment.weapon || null }); // held item for the paperdoll
       }
       for (const m of monsters.values()) {
         if (m.zoneId !== zid) continue;
@@ -1214,6 +1333,7 @@ function zoneForClient(zone) {
     id: zone.id, name: zone.name, subtitle: zone.subtitle, spawn: zone.spawn,
     bounds: zone.bounds, boundary: zone.boundary, pois: zone.pois, path: zone.path, river: zone.river,
     rocks: zone.rocks, hazards: zone.hazards, pools: zone.pools, chests: zone.chests,
+    fishingSpots: zone.fishingSpots || [], campfires: zone.campfires || [],
     env: zone.env, enclosed: !!zone.enclosed, ceilingY: zone.ceilingY,
     npcs: zone.npcs || [],
     trees: zone._trees || [],
@@ -1248,10 +1368,13 @@ wss.on('connection', (ws) => {
             defence: { level: 1, xp: 0 }, hitpoints: { level: 10, xp: 0 } },
           meditation: { level: 1, xp: 0 }, resting: false,
           style: 'controlled',
-          // Everyone starts able to mine; better pickaxes are earned.
-          inventory: ['Bronze Pickaxe'],
-          equipment: emptySlots(),
+          // Everyone starts able to mine and fish; better tools are earned. The
+          // pickaxe starts equipped so it shows in-hand (and swings when mining).
+          inventory: ['Fishing Rod'],
+          equipment: Object.assign(emptySlots(), { weapon: 'Bronze Pickaxe' }),
           miningXp: 0, pendingMine: null, mineTimer: 0,
+          fishingXp: 0, pendingFish: null, fishTimer: 0,
+          cookingXp: 0, pendingCook: null, cookTimer: 0,
           quests: new Map(), questDone: new Set(), questKills: {},
           questFlags: new Set(), questAnnounced: new Set(),
           maxHp: hpForHitpoints(10), hp: hpForHitpoints(10), alive: true,
@@ -1315,6 +1438,27 @@ wss.on('connection', (ws) => {
       case 'gate': {
         if (!player || !player.alive || !zoneOf(player)._gate) break;
         player.pendingGate = true; player.combatId = null; player.moveTo = null; player.pendingChest = null; player.pendingPickup = null; player.pendingMine = null;
+        break;
+      }
+      case 'fish': {
+        if (!player || !player.alive) break;
+        const spot = (zoneOf(player).fishingSpots || []).find(s => s.id === String(msg.id || ''));
+        if (!spot) break;
+        player.pendingFish = spot.id; player.pendingCook = null;
+        player.combatId = null; player.moveTo = null; player.pendingChest = null; player.pendingPickup = null; player.pendingMine = null; player.resting = false;
+        break;
+      }
+      case 'cook': {
+        if (!player || !player.alive) break;
+        const fire = (zoneOf(player).campfires || []).find(s => s.id === String(msg.id || ''));
+        if (!fire) break;
+        player.pendingCook = fire.id; player.pendingFish = null;
+        player.combatId = null; player.moveTo = null; player.pendingChest = null; player.pendingPickup = null; player.pendingMine = null; player.resting = false;
+        break;
+      }
+      case 'eat': {
+        if (!player || !player.alive) break;
+        eatFood(player, String(msg.item || ''));
         break;
       }
       // --- World editor (gated by EDIT_KEY) ---

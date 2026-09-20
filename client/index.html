@@ -154,6 +154,28 @@
   #skillline .pick { color: #8a7d63; }
   .slot { cursor: pointer; }
 
+  /* ---- Skills window ---- */
+  #skillsBtn { position: absolute; right: 260px; bottom: 12px; width: 52px; height: 52px; pointer-events: auto;
+    background: #3f342a; border: 2px solid #1c150e; border-radius: 8px; color: #ffdf9e; font-size: 22px;
+    cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px #0007; }
+  #skillsBtn:hover { background: #57472f; }
+  #skillwin { position: absolute; right: 12px; bottom: 74px; width: 300px; pointer-events: auto; display: none;
+    background: #2e2820; border: 2px solid #1c150e; border-radius: 8px; padding: 10px; box-shadow: 0 8px 24px #000a; }
+  #skillwin h3 { color: #ffdf9e; font-size: 13px; margin-bottom: 8px; display: flex; justify-content: space-between; }
+  #skillwin h3 .g { color: #ffd24a; }
+  #skillGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .skcell { background: #1d1913; border: 1px solid #4a3d2a; border-radius: 6px; padding: 6px 8px; position: relative; }
+  .skcell .top { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #d8cba8; }
+  .skcell .top .em { font-size: 16px; }
+  .skcell .top b { margin-left: auto; color: #ffd47a; font-size: 13px; }
+  .skcell .bar { height: 5px; background: #100d09; border: 1px solid #4a3d2a; border-radius: 3px; margin-top: 5px; overflow: hidden; }
+  .skcell .bar i { display: block; height: 100%; background: #6a9f4a; transform-origin: left; }
+  .skcell .tip { display: none; }
+  .skcell:hover .tip { display: block; position: absolute; bottom: 104%; left: 50%; transform: translateX(-50%);
+    background: #000d; color: #ffe9b0; font-size: 11px; padding: 3px 7px; border-radius: 4px; white-space: nowrap; z-index: 3; }
+  #skillTotal { margin-top: 8px; text-align: center; color: #b9ad90; font-size: 12px; }
+  #skillTotal b { color: #ffd47a; }
+
   /* ---- Quest log ---- */
   #questBtn { position: absolute; right: 74px; bottom: 12px; width: 52px; height: 52px; pointer-events: auto;
     background: #3f342a; border: 2px solid #1c150e; border-radius: 8px; color: #ffdf9e; font-size: 22px;
@@ -276,6 +298,7 @@
         <span>R</span><b>Rest / meditate</b>
         <span>I</span><b>Bag</b>
         <span>E</span><b>Equipment</b>
+        <span>K</span><b>Skills</b>
         <span>Q</span><b>Quests</b>
         <span>M</span><b>Map</b>
         <span>Right-click</span><b>Options</b>
@@ -292,6 +315,7 @@
   <button id="bagBtn" title="Bag (I)">🎒<span class="cnt" id="bagCnt"></span></button>
   <button id="questBtn" title="Quest log (Q)">📜<span class="cnt" id="questCnt"></span></button>
   <button id="equipBtn" title="Equipment (E)">🧍<span class="cnt" id="equipCnt"></span></button>
+  <button id="skillsBtn" title="Skills (K)">📊<span class="cnt" id="skillsCnt"></span></button>
   <button id="mapBtn" title="Map (M)" style="position:absolute; right:198px; bottom:12px; width:52px; height:52px; pointer-events:auto; background:#3f342a; border:2px solid #1c150e; border-radius:8px; color:#ffdf9e; font-size:22px; cursor:pointer;">🗺️</button>
   <div id="bag">
     <h3><span>Bag</span><span class="g" id="bagGold">0 gp</span></h3>
@@ -303,6 +327,11 @@
     <div id="doll"></div>
     <div id="equipStats"></div>
     <div id="equipHint"></div>
+  </div>
+  <div id="skillwin">
+    <h3><span>Skills</span><span class="g" id="skillCombat"></span></h3>
+    <div id="skillGrid"></div>
+    <div id="skillTotal"></div>
   </div>
   <div id="questlog">
     <h3><span>Quest Log</span><span class="g" id="questDoneCnt"></span></h3>
@@ -485,7 +514,15 @@ function cloneModel(name, targetH, byMax) {
   const box2 = new THREE.Box3().setFromObject(obj);
   obj.position.set(-(box2.min.x + box2.max.x) / 2, -box2.min.y, -(box2.min.z + box2.max.z) / 2);
   const wrap = new THREE.Group(); wrap.add(obj);
-  wrap.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  // clone(true) SHARES material instances across every clone of a model, so the
+  // hit-flash (which sets material.color white, then restores) used to whiten
+  // every entity that shared that material — half the mobs in the zone strobing
+  // white whenever any one was struck. Give each clone its own materials.
+  wrap.traverse(o => {
+    if (!o.isMesh) return;
+    o.castShadow = true; o.receiveShadow = true;
+    if (o.material) o.material = Array.isArray(o.material) ? o.material.map(m => m.clone()) : o.material.clone();
+  });
   return wrap;
 }
 
@@ -635,6 +672,8 @@ let riverMesh = null, riverTex = null; // animated flowing water
 let timeFrozen = false;   // set only through the ?debug=1 hook
 const UP = new THREE.Vector3(0, 1, 0);
 const chestMeshes = new Map(); // chestId -> { lid, opened }
+const fishSpots = [];          // { id, tier, x, z, ripples } — animated fishing spots
+const cookFires = [];          // { id, x, z } — clickable campfires
 const itemMeshes = new Map();  // groundItemId -> { mesh, name, qty }
 const entityMeshes = new Map(); // id -> { mesh, mixerData }
 const raycaster = new THREE.Raycaster();
@@ -802,6 +841,7 @@ function loadZone(zdata) {
   entityMeshes.clear();
   poiWorld.length = 0; poiLayer.innerHTML = ''; poiEls.length = 0;
   chestMeshes.clear(); npcMeshes.clear(); camBlockers.length = 0;
+  fishSpots.length = 0; cookFires.length = 0;
   npcMarkLayer.innerHTML = ''; npcMarkEls.clear();
   closeDialogue();
   fireflies = null; critters = []; targetId = null;
@@ -1301,6 +1341,10 @@ function buildZone() {
 
   // Treasure chests (clickable)
   for (const ch of (zone.chests || [])) buildChest(ch);
+
+  // Fishing spots + cooking campfires (clickable)
+  buildFishingSpots();
+  for (const cf of (zone.campfires || [])) buildCampfire(cf);
 
   // Environmental hazard areas
   if (zone.hazards) buildHazards();
@@ -2857,6 +2901,53 @@ function buildChest(ch) {
   chestMeshes.set(ch.id, { lid: lidPivot, opened: false });
 }
 
+// Fishing spots — a patch of disturbed water (ripple rings + bubbles) that sits
+// just above the river surface. Clickable; never depletes.
+function buildFishingSpots() {
+  for (const sp of (zone.fishingSpots || [])) {
+    const g = new THREE.Group(); g.position.set(sp.x, RIVER_WATER_Y + 0.06, sp.z);
+    const ripples = [];
+    for (let i = 0; i < 3; i++) {
+      const ring = new THREE.Mesh(new THREE.RingGeometry(0.25, 0.45, 24),
+        new THREE.MeshBasicMaterial({ color: 0xbfe4ef, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false }));
+      ring.rotation.x = -Math.PI / 2; g.add(ring); ripples.push(ring);
+    }
+    // A wider, always-clickable disc so the tiny rings are easy to hit.
+    const pad = new THREE.Mesh(new THREE.CircleGeometry(1.4, 20),
+      new THREE.MeshBasicMaterial({ color: 0x7fc9dd, transparent: true, opacity: 0.14, side: THREE.DoubleSide, depthWrite: false }));
+    pad.rotation.x = -Math.PI / 2; g.add(pad);
+    g.traverse(o => { if (o.isMesh) { o.userData.pickKind = 'fishspot'; o.userData.pickId = sp.id; } });
+    scene.add(g);
+    fishSpots.push({ id: sp.id, tier: sp.tier, x: sp.x, z: sp.z, ripples, phase: Math.random() * 6 });
+  }
+}
+
+// Interactive campfires for cooking — logs, animated flame, warm light.
+function buildCampfire(cf) {
+  const g = new THREE.Group(); g.position.set(cf.x, 0, cf.z);
+  const stoneMat = new THREE.MeshStandardMaterial({ color: 0x6b6b72, roughness: 1, flatShading: true });
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    const s = new THREE.Mesh(new THREE.DodecahedronGeometry(0.28, 0), stoneMat);
+    s.position.set(Math.cos(a) * 0.85, 0.12, Math.sin(a) * 0.85); s.rotation.y = a; g.add(s);
+  }
+  for (let i = 0; i < 3; i++) {
+    const log = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.13, 1.2, 6), woodMat());
+    log.rotation.z = Math.PI / 2; log.rotation.y = (i / 3) * Math.PI; log.position.y = 0.22; g.add(log);
+  }
+  const flame = new THREE.Mesh(new THREE.ConeGeometry(0.42, 1.1, 8),
+    new THREE.MeshStandardMaterial({ color: 0xff8a3c, emissive: 0xff5a1c, emissiveIntensity: 1.6 }));
+  flame.position.y = 0.95; g.add(flame);
+  const flame2 = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.7, 8),
+    new THREE.MeshStandardMaterial({ color: 0xffd15a, emissive: 0xffb020, emissiveIntensity: 1.8 }));
+  flame2.position.y = 1.05; g.add(flame2);
+  const light = new THREE.PointLight(0xff8844, 1.8, 24); light.position.y = 1.6; g.add(light);
+  g.userData.flame = flame;
+  g.traverse(o => { if (o.isMesh) { o.userData.pickKind = 'cookfire'; o.userData.pickId = cf.id; o.castShadow = true; } });
+  scene.add(g);
+  cookFires.push({ id: cf.id, x: cf.x, z: cf.z });
+}
+
 function buildHazards() {
   for (const h of zone.hazards) {
     const disc = new THREE.Mesh(new THREE.CircleGeometry(h.r, 36),
@@ -3174,7 +3265,16 @@ function makeMonsterMesh(type, elite) {
     if (type === 'chicken') splitChickenParts(g);
     // The cow and rabbit are quadruped merged meshes — carve legs + head so
     // they stride instead of sliding along stiff.
-    else if (type === 'cow' || type === 'rabbit') splitQuadParts(g);
+    else if (type === 'cow' || type === 'rabbit') {
+      // The Rabbit GLB is authored facing +X (its body runs left-right), while
+      // the quad rig and faceOffset both assume +Z forward — so untouched it
+      // walks sideways, scooting along on its haunches. Bake a yaw into the
+      // geometry so nose→tail runs along Z before we carve legs/head.
+      // clone(true) SHARES geometry across clones, so rotate a COPY — mutating the
+      // shared buffer would spin every rabbit (and compound on each new spawn).
+      if (type === 'rabbit') g.traverse(o => { if (o.isMesh && o.geometry) { o.geometry = o.geometry.clone(); o.geometry.rotateY(-Math.PI / 2); } });
+      splitQuadParts(g);
+    }
     // Humanoid mobs are single merged meshes, so carve them into arms/legs (auto
     // bones from the model's own bbox) — otherwise the biped rig has nothing to
     // move and they just slide along the ground.
@@ -3214,10 +3314,77 @@ function ensureMesh(ent, kind) {
     scene.add(mesh);
     // clickable pieces carry the id
     mesh.traverse(o => { if (o.isMesh) o.userData.pickId = ent.id; o.userData.pickKind = kind; });
-    rec = { mesh, kind, bob: Math.random() * 10 };
+    rec = { mesh, kind, bob: Math.random() * 10, heldWeapon: undefined };
     entityMeshes.set(ent.id, rec);
   }
   return rec;
+}
+
+// ---------------------------------------------------------------------------
+// Held-weapon paperdoll — the equipped weapon rendered in the player's hand,
+// so you can see (and swing) your pickaxe / sword. Attached to the right arm so
+// the existing swing/chop animation drives it. Rebuilt only when it changes.
+// ---------------------------------------------------------------------------
+function buildHeldWeapon(name) {
+  const g = new THREE.Group();
+  const wood = new THREE.MeshStandardMaterial({ color: 0x6b4a2a, roughness: 0.9, flatShading: true });
+  // Metal tint keyed off the item tier so a mithril pick reads blue, gold gold, etc.
+  const tier = /Iron/.test(name) ? 0x9aa0a8 : /Steel/.test(name) ? 0xc2c8d0
+    : /Mithril/.test(name) ? 0x4f7fd0 : /Adamant/.test(name) ? 0x2f8f6f
+    : /Rune/.test(name) ? 0x49b0c8 : /Gold/.test(name) ? 0xe8c34a : 0xb87333; // bronze default
+  const metal = new THREE.MeshStandardMaterial({ color: tier, roughness: 0.45, metalness: 0.6, flatShading: true });
+  if (/Pickaxe/.test(name)) {
+    // Handle grips at the origin (the hand) and runs down; the pick head is the
+    // striking end at the bottom, so an overhead chop drives it into the rock.
+    const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.045, 0.95, 6), wood);
+    handle.position.set(0, -0.22, 0); g.add(handle);
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.08, 0.08), metal);
+    bar.position.set(0, -0.66, 0); g.add(bar);
+    for (const s of [-1, 1]) {
+      const tip = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.26, 4), metal);
+      tip.position.set(s * 0.28, -0.63, 0); tip.rotation.z = Math.PI / 2 + s * 0.5; g.add(tip);
+    }
+  } else if (/Sword|Dagger|Blade|Scimitar/.test(name)) {
+    const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.04, 0.22, 6), wood);
+    grip.position.set(0, -0.05, 0); g.add(grip);
+    const guard = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.06, 0.08), metal);
+    guard.position.set(0, -0.18, 0); g.add(guard);
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.8, 0.03), metal);
+    blade.position.set(0, -0.6, 0); g.add(blade);
+  } else if (/Club|Maul|Hammer/.test(name)) {
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.8, 6), wood);
+    shaft.position.set(0, -0.3, 0); g.add(shaft);
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.22, 0.24), metal);
+    head.position.set(0, -0.72, 0); g.add(head);
+  } else if (/Bow/.test(name)) {
+    const bow = new THREE.Mesh(new THREE.TorusGeometry(0.35, 0.03, 6, 12, Math.PI * 1.2), wood);
+    bow.position.set(0, -0.35, 0); bow.rotation.z = Math.PI / 2; g.add(bow);
+  } else {
+    // A generic tool/rod so any weapon at least shows something in hand.
+    const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 0.7, 6), wood);
+    rod.position.set(0, -0.3, 0); g.add(rod);
+  }
+  g.traverse(o => { if (o.isMesh) { o.castShadow = true; o.userData.pickKind = 'player'; } });
+  return g;
+}
+// Attach / swap / remove the held weapon on a player record to match `name`.
+function updateHeldWeapon(rec, name) {
+  if (rec.heldWeapon === name) return;
+  rec.heldWeapon = name;
+  const rig = rec.mesh.userData.rig;
+  if (!rig || !rig.armR) return;
+  const existing = findByName(rig.armR, /^Weapon$/)[0];
+  if (existing) { rig.armR.remove(existing); rig.weapon = null; rig.swingArm = null; }
+  if (!name) return;
+  const w = buildHeldWeapon(name);
+  w.name = 'Weapon';
+  // The hand sits at the far end of the arm; in Arm_R-local space that is
+  // (armR.b - armR.a). Grip the weapon there, tilted slightly forward.
+  const bn = MALE_BONES.armR;
+  w.position.set(bn.b[0] - bn.a[0], bn.b[1] - bn.a[1], bn.b[2] - bn.a[2] + 0.05);
+  w.rotation.x = -0.35;
+  rig.armR.add(w);
+  rig.weapon = w; rig.swingArm = rig.armR;
 }
 
 // ---------------------------------------------------------------------------
@@ -3474,9 +3641,17 @@ function animateEntity(rec, e, kind, dt) {
     lShin += crouch * 1.35; rShin += crouch * 1.35;
     lArm -= crouch * 0.4; rArm -= crouch * 0.4;
 
-    // Attack: alternate a straight punch and a front kick (forward is -rot.x).
+    // Attack: with a weapon in hand (pickaxe / sword) the player raises it
+    // overhead and chops down — the same motion reads as a mining swing on a
+    // vein and a weapon strike in combat. Unarmed, alternate a punch and a kick.
     if (punch > 0) {
-      if ((rig.atkKind || 0) === 0) {                  // punch: right jab, left guards
+      if (rig.weapon) {                                // overhead chop: wind up, drive down
+        const wind = Math.sin(Math.PI * u);
+        rArm = -2.3 * wind; rArmZ = 0.25 * wind;       // right arm hauls the head up and over
+        lArm = 0.4 * wind;                             // off hand steadies
+        b.rotation.x = 0.10 * a + 0.22 * wind;         // bend into the swing
+        b.rotation.y = -0.14 * wind;
+      } else if ((rig.atkKind || 0) === 0) {           // punch: right jab, left guards
         rArm = -1.7 * punch; rArmZ = -0.08;
         lArm = 0.5 * punch;
         b.rotation.y = -0.28 * punch;                  // twist the torso into it
@@ -3604,6 +3779,7 @@ function renderWorld(dt) {
       rec.mesh.position.y = py;
       rec.mesh.rotation.y = yaw + (rec.mesh.userData.faceOffset || 0);
       rec.data = e;
+      if (kind === 'player' && e.weapon !== rec.heldWeapon) updateHeldWeapon(rec, e.weapon);
       if (rec.mesh.visible) animateEntity(rec, e, kind, dt);
     }
   };
@@ -3936,6 +4112,7 @@ function addEventListeners() {
     if (e.key.toLowerCase() === 'i') { toggleBag(); return; }
     if (e.key.toLowerCase() === 'q') { toggleQuests(); return; }
     if (e.key.toLowerCase() === 'e') { toggleEquip(); return; }
+    if (e.key.toLowerCase() === 'k') { toggleSkills(); return; }
     if (e.key.toLowerCase() === 'm') { toggleMap(); return; }
     if (e.key.toLowerCase() === 'r') { ws?.send(JSON.stringify({ t: 'rest' })); return; } // sit / meditate
     if (EDIT.on && e.key === 'Escape' && (EDIT.placing || EDIT.placingMob)) { EDIT.placing = null; EDIT.placingMob = null; editSetMode(); editBuildPalette(); return; }
@@ -3981,6 +4158,8 @@ function pickAt(e) {
       if (rec && rec.data && rec.data.alive) return { kind: 'monster', id: u.pickId, data: rec.data, point: h.point };
     }
     if (u.pickKind === 'chest' && u.pickId != null) return { kind: 'chest', id: u.pickId, point: h.point };
+    if (u.pickKind === 'fishspot' && u.pickId != null) { const s = fishSpots.find(f => f.id === u.pickId); return { kind: 'fishspot', id: u.pickId, tier: s ? s.tier : '', point: h.point }; }
+    if (u.pickKind === 'cookfire' && u.pickId != null) return { kind: 'cookfire', id: u.pickId, point: h.point };
     if (u.pickKind === 'item' && u.pickId != null) { const r = itemMeshes.get(u.pickId); return { kind: 'item', id: u.pickId, name: r ? r.name : 'Item', qty: r ? r.qty : 1, point: h.point }; }
     if (u.pickKind === 'ore' && h.instanceId != null) {
       const rec = oreMeshes.find(o => o.mesh === h.object);
@@ -4041,6 +4220,19 @@ function optionsFor(pk) {
         examineText(`A seam of ${pk.ore.toLowerCase()} running through the rock. Mining ${req}.`) },
     ];
   }
+  if (pk.kind === 'fishspot') {
+    const req = FISH_LEVEL[pk.tier] || 1;
+    const can = (skills.fishing?.level || 1) >= req;
+    return [
+      { label: `Fish <b>${escapeHtml(pk.tier || 'fishing spot')}</b>` +
+        (can ? '' : ` <span class="lvl">(needs Fishing ${req})</span>`), act: () => fishSpot(pk.id) },
+      { label: 'Examine fishing spot', act: () => examineText(`A shoal of ${(pk.tier || 'fish').toLowerCase()} stirs the water. Fishing ${req}.`) },
+    ];
+  }
+  if (pk.kind === 'cookfire') return [
+    { label: 'Cook-at <b>Campfire</b>', act: () => cookHere(pk.id) },
+    { label: 'Examine campfire', act: () => examineText('A crackling campfire. Good for cooking raw food.') },
+  ];
   if (pk.kind === 'ground') return [
     { label: 'Walk here', act: () => walkTo(pk.point) },
   ];
@@ -4096,6 +4288,25 @@ function mineVein(id) {
   if (v) spawnMarker(v.x, v.z, 0x9fd4ff);
   targetId = null;
 }
+
+// Mirrors server/fishing.js FISH; used only for menu labels.
+const FISH_LEVEL = { Shrimp: 1, Trout: 10, Salmon: 22, Pike: 34 };
+// Edible items (mirror the `heal` foods in server/items.js) — clicking eats them.
+const EDIBLE = new Set(['Shrimp', 'Cooked Rabbit', 'Cooked Chicken', 'Cooked Beef',
+  'Trout', 'Salmon', 'Pike', 'Kebab']);
+function fishSpot(id) {
+  ws?.send(JSON.stringify({ t: 'fish', id }));
+  const s = fishSpots.find(f => f.id === id);
+  if (s) spawnMarker(s.x, s.z, 0x7fc9dd);
+  targetId = null;
+}
+function cookHere(id) {
+  ws?.send(JSON.stringify({ t: 'cook', id }));
+  const f = cookFires.find(c => c.id === id);
+  if (f) spawnMarker(f.x, f.z, 0xff8844);
+  targetId = null;
+}
+function eatItem(name) { ws?.send(JSON.stringify({ t: 'eat', item: name })); }
 
 // Hide mined-out veins and bring them back when the server says so.
 const _mtx = new THREE.Matrix4(), _q = new THREE.Quaternion(), _v3 = new THREE.Vector3(), _s3 = new THREE.Vector3();
@@ -4345,6 +4556,32 @@ function onEvent(m) {
       flyText(`Mining level ${m.level}!`, 'heal');
       addChat('Mining', `You are now Mining level ${m.level}.`, true);
       break;
+    case 'fishcast': {
+      // The cast/reel motion reads as effort even on an empty cast.
+      const rec = entityMeshes.get(myId);
+      if (rec && rec.mesh.userData.rig) rec.mesh.userData.rig.atk = 1;
+      break;
+    }
+    case 'caught':
+      addChat('Fishing', `You catch some ${m.item}.`, true);
+      flyText(`+${m.xp} Fishing`, 'xp');
+      break;
+    case 'fishlevel':
+      flyText(`Fishing level ${m.level}!`, 'heal');
+      addChat('Fishing', `You are now Fishing level ${m.level}.`, true);
+      break;
+    case 'cooked':
+      if (m.burnt) { addChat('Cooking', 'You accidentally burn the food.', true); flyText('Burnt!', 'dmg'); }
+      else { addChat('Cooking', `You cook a ${m.item}.`, true); flyText(`+${m.xp} Cooking`, 'xp'); }
+      break;
+    case 'cooklevel':
+      flyText(`Cooking level ${m.level}!`, 'heal');
+      addChat('Cooking', `You are now Cooking level ${m.level}.`, true);
+      break;
+    case 'ate':
+      addChat('', `You eat the ${m.item}. It heals ${m.heal}.`, true);
+      flyText(`+${m.heal}`, 'heal');
+      break;
     case 'hit': showHit(m); break;
     case 'death': showDeath(); break;
     case 'respawned': hideDeath(); break;
@@ -4472,6 +4709,12 @@ const ITEM_ICON = {
   'Iron Arrowheads': '🔻', 'Goblin Tooth': '🦷', 'Uncut Quartz': '💠', 'Cave Mushroom': '🍄',
   'Rusty Dagger': '🗡️', 'Worn Pickaxe': '⛏️', 'Goblin Shortbow': '🏹', 'Battered Iron Shield': '🛡️',
   'Bone Charm': '📿', "Shaman's Spirit Stone": '🔮', "Chief's Bronze Signet": '💍', 'Goblin Pet Totem': '🗿',
+  // fishing / cooking
+  'Fishing Rod': '🎣', 'Feathered Rod': '🎣',
+  'Raw Shrimp': '🦐', 'Shrimp': '🍤', 'Raw Trout': '🐟', 'Trout': '🐟',
+  'Raw Salmon': '🐠', 'Salmon': '🍣', 'Raw Pike': '🐡', 'Pike': '🐡',
+  'Raw Rabbit': '🥩', 'Cooked Rabbit': '🍖', 'Raw Chicken': '🍗', 'Cooked Chicken': '🍗',
+  'Raw Beef': '🥩', 'Cooked Beef': '🍖', 'Rabbit Pelt': '🟫', 'Burnt Food': '🔥', 'Kebab': '🌯',
 };
 function iconFor(name) { return ITEM_ICON[name] || (/Trophy/.test(name) ? '🏆' : '📦'); }
 function toggleBag(force) { bagOpen = force != null ? force : !bagOpen; document.getElementById('bag').style.display = bagOpen ? 'block' : 'none'; if (bagOpen) renderBag(); }
@@ -4491,17 +4734,79 @@ function renderSkills() {
     .map(s => `<button class="stylebtn${s === cur ? ' on' : ''}" data-style="${s}">${slabel[s]}</button>`).join('');
   const med = skills.meditation || { level: 1, xp: 0, next: 1 };
   const medPct = Math.max(0, Math.min(1, med.xp / (med.next || 1)));
+  const fish = skills.fishing || { level: 1, into: 0, next: 1, rod: null };
+  const fishPct = Math.max(0, Math.min(1, fish.into / (fish.next || 1)));
+  const cook = skills.cooking || { level: 1, into: 0, next: 1 };
+  const cookPct = Math.max(0, Math.min(1, cook.into / (cook.next || 1)));
   el.innerHTML =
     `<div class="cskills">${chips}</div>` +
     `<div class="styles"><span>Style:</span> ${styleBtns}</div>` +
     `<div class="miningrow"><span>⛏ Mining <b>${m.level}</b></span>` +
     `<span class="xpbar"><i style="transform:scaleX(${pct})"></i></span>` +
     `<span class="pick">${m.pick ? escapeHtml(m.pick.replace(' Pickaxe', '')) : 'no pickaxe'}</span></div>` +
+    `<div class="miningrow"><span>🎣 Fishing <b>${fish.level}</b></span>` +
+    `<span class="xpbar"><i style="transform:scaleX(${fishPct})"></i></span>` +
+    `<span class="pick">${fish.rod ? escapeHtml(fish.rod.replace(' Rod', '')) : 'no rod'}</span></div>` +
+    `<div class="miningrow"><span>🍳 Cooking <b>${cook.level}</b></span>` +
+    `<span class="xpbar"><i style="transform:scaleX(${cookPct})"></i></span>` +
+    `<span class="pick">at a campfire</span></div>` +
     `<div class="miningrow"><span>🧘 Meditation <b>${med.level}</b></span>` +
     `<span class="xpbar"><i style="transform:scaleX(${medPct})"></i></span>` +
     `<span class="pick">${skills.resting ? 'resting…' : 'press R to rest'}</span></div>`;
   el.querySelectorAll('.stylebtn').forEach(b => b.onclick = () => ws?.send(JSON.stringify({ t: 'style', style: b.dataset.style })));
+  if (skillsOpen) renderSkillWindow();
 }
+
+// ---- Full Skills window (K) — every skill, its level and xp progress ----
+let skillsOpen = false;
+function toggleSkills(force) {
+  skillsOpen = force != null ? force : !skillsOpen;
+  document.getElementById('skillwin').style.display = skillsOpen ? 'block' : 'none';
+  if (skillsOpen) renderSkillWindow();
+}
+function renderSkillWindow() {
+  const grid = document.getElementById('skillGrid');
+  if (!grid) return;
+  const cs = skills.combat || {};
+  const cell = (em, name, level, into, next, note) => {
+    const pct = Math.max(0, Math.min(1, (into || 0) / (next || 1)));
+    return `<div class="skcell"><div class="top"><span class="em">${em}</span>${name}<b>${level || 1}</b></div>` +
+      `<div class="bar"><i style="transform:scaleX(${pct})"></i></div>` +
+      `<span class="tip">${name} — level ${level || 1}${note ? ' · ' + note : ''}</span></div>`;
+  };
+  const combatCell = (em, name, k) => {
+    const s = cs[k] || { level: 1, xp: 0, next: 1 };
+    const prevTotal = k === 'hitpoints' ? 0 : 0; // xp shown is running total into next level
+    return cell(em, name, s.level, s.xp - (xpTotalFor(s.level)), s.next, `${Math.floor(s.xp)} xp`);
+  };
+  const m = skills.mining || { level: 1, into: 0, next: 1, pick: null };
+  const fish = skills.fishing || { level: 1, into: 0, next: 1, rod: null };
+  const cook = skills.cooking || { level: 1, into: 0, next: 1 };
+  const med = skills.meditation || { level: 1, xp: 0, next: 1 };
+  grid.innerHTML =
+    combatCell('⚔️', 'Attack', 'attack') +
+    combatCell('💪', 'Strength', 'strength') +
+    combatCell('🛡️', 'Defence', 'defence') +
+    combatCell('❤️', 'Hitpoints', 'hitpoints') +
+    cell('⛏️', 'Mining', m.level, m.into, m.next, m.pick ? m.pick.replace(' Pickaxe', '') : 'no pickaxe') +
+    cell('🎣', 'Fishing', fish.level, fish.into, fish.next, fish.rod ? fish.rod.replace(' Rod', '') : 'no rod') +
+    cell('🍳', 'Cooking', cook.level, cook.into, cook.next, 'cook at a fire') +
+    cell('🧘', 'Meditation', med.level, med.xp - xpTotalFor(med.level), med.next, skills.resting ? 'resting…' : 'press R');
+  document.getElementById('skillCombat').textContent = 'Combat ' + (skills.combatLevel || 3);
+  // Total level across every skill.
+  const total = (cs.attack?.level || 1) + (cs.strength?.level || 1) + (cs.defence?.level || 1) +
+    (cs.hitpoints?.level || 1) + (m.level || 1) + (fish.level || 1) + (cook.level || 1) + (med.level || 1);
+  document.getElementById('skillTotal').innerHTML = `Total level <b>${total}</b>`;
+}
+// Total xp banked before reaching `level`, so we can show progress into the
+// current level for combat/meditation skills (their payload sends a running xp total).
+function xpTotalFor(level) {
+  let sum = 0;
+  for (let l = 1; l < level; l++) sum += xpForLevelClient(l);
+  return sum;
+}
+// Mirrors server/balance.js xpForLevel. Only used for the progress bar.
+function xpForLevelClient(level) { return Math.floor(50 * Math.pow(level, 1.6)); }
 
 // The slot layout is authored on the server (items.js SLOT_INFO) and arrives
 // with the bag, so adding a slot does not need a client change.
@@ -4588,7 +4893,7 @@ function renderBag() {
     const n = names[i];
     if (!n) { html += '<div class="slot"></div>'; continue; } // empty slot
     const m = metaFor(n);
-    const hint = m ? ' \u2014 click to equip' : '';
+    const hint = EDIBLE.has(n) ? ' \u2014 click to eat' : (m ? ' \u2014 click to equip' : '');
     html += `<div class="slot" data-item="${escapeHtml(n)}"><span class="ic">${iconFor(n)}</span>` +
       `${counts[n] > 1 ? `<span class="n">${counts[n]}</span>` : ''}` +
       `<span class="tip">${escapeHtml(n)}${statText(m)}${hint}</span></div>`;
@@ -4597,7 +4902,8 @@ function renderBag() {
   grid.querySelectorAll('.slot').forEach(el => {
     el.onclick = () => {
       const name = el.dataset.item;
-      if (metaFor(name)) ws?.send(JSON.stringify({ t: 'equip', item: name }));
+      if (EDIBLE.has(name)) eatItem(name);
+      else if (metaFor(name)) ws?.send(JSON.stringify({ t: 'equip', item: name }));
     };
   });
 }
@@ -4941,6 +5247,18 @@ function animate() {
   }
   // flicker campfires
   scene.traverse(o => { if (o.userData && o.userData.flame) o.userData.flame.scale.y = 0.85 + Math.sin(performance.now() / 90 + o.id) * 0.15; });
+  // expanding ripple rings on fishing spots
+  if (fishSpots.length) {
+    const tf = performance.now() / 1000;
+    for (const sp of fishSpots) {
+      sp.ripples.forEach((ring, i) => {
+        const p = (tf * 0.6 + sp.phase + i / sp.ripples.length) % 1;
+        const s = 0.3 + p * 1.6;
+        ring.scale.set(s, s, s);
+        ring.material.opacity = Math.max(0, 0.55 * (1 - p));
+      });
+    }
+  }
   // drifting fireflies / motes
   if (fireflies) {
     const t = performance.now() / 1000, ud = fireflies.userData, arr = fireflies.geometry.attributes.position.array;
@@ -4964,6 +5282,7 @@ function startGame() {
   document.getElementById('bagBtn').onclick = () => toggleBag();
   document.getElementById('questBtn').onclick = () => toggleQuests();
   document.getElementById('equipBtn').onclick = () => toggleEquip();
+  document.getElementById('skillsBtn').onclick = () => toggleSkills();
   initThree();
 }
 

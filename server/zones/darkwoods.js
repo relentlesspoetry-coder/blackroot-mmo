@@ -167,6 +167,22 @@ export const darkwoods = {
     { id: 'stones',     x: 20, z: 38,  gold: 240, item: 'Crystal Heart' },        // the Guardian's hoard at the Stone Circle
   ],
 
+  // Fishing spots along Blackroot Creek (fished from the bank). Tier gates which
+  // fish lands; positions are pre-scale like everything else.
+  fishingSpots: [
+    { id: 'fs_shr1', tier: 'Shrimp', x: -20, z: 24 },
+    { id: 'fs_shr2', tier: 'Shrimp', x: 2,   z: 39 },
+    { id: 'fs_tro1', tier: 'Trout',  x: 28,  z: 49 },
+    { id: 'fs_sal1', tier: 'Salmon', x: 52,  z: 58 },
+  ],
+
+  // Campfire cooking stations. Stand near one to cook raw meat/fish.
+  campfires: [
+    { id: 'cf_farm',   x: 20,  z: -80 },  // by the Entrance Clearing (early cooking)
+    { id: 'cf_camp',   x: -48, z: 14 },   // Abandoned Camp
+    { id: 'cf_shrine', x: 10,  z: 3 },    // Shrine Grove
+  ],
+
   // No aggressive mob may spawn within this radius of `spawn` — the first
   // thing a new character meets is livestock, not a goblin.
   safeSpawnRadius: 30,
