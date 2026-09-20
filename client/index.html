@@ -272,13 +272,13 @@
   <div id="nameplates"></div>
   <div id="hurt"></div>
   <div id="toast"></div>
-  <div id="editor" style="display:none; position:absolute; left:10px; top:80px; width:250px; z-index:45; pointer-events:auto; background:rgba(14,18,26,0.94); border:1px solid #2b3852; border-radius:10px; color:#cdd6e5; font-size:12px; box-shadow:0 8px 28px #000a;">
+  <div id="editor" style="display:none; position:absolute; left:10px; top:80px; width:280px; z-index:45; pointer-events:auto; background:rgba(14,18,26,0.97); border:1px solid #3a4c68; border-radius:10px; color:#e6edf6; font-size:13px; box-shadow:0 8px 28px #000c;">
     <div style="padding:8px 10px; border-bottom:1px solid #2b3852; font-weight:700; color:#9fd0ff; letter-spacing:1px; display:flex; justify-content:space-between; align-items:center;">
       <span>WORLD EDITOR</span><span id="edMode" style="font-size:10px; color:#7f8ba0;">place</span>
     </div>
     <div style="padding:8px 10px;">
       <input id="edSearch" placeholder="search models…" style="width:100%; box-sizing:border-box; background:#0c111b; border:1px solid #2b3852; color:#e6edf6; border-radius:6px; padding:5px 7px; font-size:12px;" />
-      <div id="edPalette" style="margin-top:6px; max-height:34vh; overflow-y:auto; display:flex; flex-direction:column; gap:2px;"></div>
+      <div id="edPalette" style="margin-top:6px; max-height:34vh; overflow-y:auto;"></div>
     </div>
     <div id="edInspector" style="display:none; padding:8px 10px; border-top:1px solid #2b3852;">
       <div id="edSelName" style="font-weight:700; color:#ffd98a; margin-bottom:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></div>
@@ -286,6 +286,8 @@
       <label style="display:block; margin:4px 0;">Scale <input id="edScale" type="range" min="0.2" max="4" step="0.05" style="width:100%;"> <span id="edScaleV"></span></label>
       <label style="display:flex; align-items:center; gap:6px; margin:4px 0;"><input id="edColOn" type="checkbox"> Solid (collision)</label>
       <label style="display:block; margin:4px 0;">Radius <input id="edColR" type="range" min="0.2" max="6" step="0.1" style="width:100%;"> <span id="edColRV"></span></label>
+      <div style="margin:6px 0 3px; color:#9fb0c4;">Texture</div>
+      <div id="edTexRow" style="display:flex; flex-wrap:wrap; gap:3px; margin-bottom:4px;"></div>
       <button id="edDelete" style="width:100%; margin-top:6px; background:#5a2330; border:1px solid #7a3040; color:#ffd0d0; border-radius:6px; padding:6px; cursor:pointer;">Delete</button>
     </div>
     <div style="padding:7px 10px; border-top:1px solid #2b3852; font-size:10px; color:#7f8ba0; line-height:1.5;">
@@ -2020,6 +2022,17 @@ function makeEditMesh(o) {
   wrap.position.set(o.x, groundY ? groundY(o.x, o.z) : 0, o.z);
   wrap.rotation.y = o.yaw || 0;
   wrap.userData.editObj = o;
+  // Optional texture override: clone the materials (never mutate the shared
+  // source) and swap in the chosen map.
+  if (o.tex) {
+    const tx = editTexture(o.tex);
+    wrap.traverse(x => {
+      if (!x.isMesh || !x.material) return;
+      const one = !Array.isArray(x.material), mats = one ? [x.material] : x.material;
+      const out = mats.map(m => { const c = m.clone(); c.map = tx; c.needsUpdate = true; return c; });
+      x.material = one ? out[0] : out;
+    });
+  }
   wrap.traverse(x => { if (x.isMesh) { x.castShadow = x.receiveShadow = true; x.userData.pickKind = 'editobj'; x.userData.editId = o.id; } });
   scene.add(wrap);
   editMeshes.set(o.id, wrap);
@@ -2051,6 +2064,22 @@ async function applyEdit(m) {
 }
 function sendEdit(obj) { obj.key = EDIT.key; ws?.send(JSON.stringify(obj)); }
 
+// Textures selectable in the editor (image files + a couple of procedural ones).
+const EDIT_TEX = ['dirt', 'grass', 'stone', 'rock', 'moss', 'dark_stone', 'bark', 'leaf'];
+function editTexture(name) {
+  let t = null;
+  if (name === 'bark') t = makeBarkTexture().clone();
+  else if (name === 'leaf') t = makeLeafTexture().clone();
+  else t = loadTexture(name, 2, 2);
+  if (t) { t.wrapS = t.wrapT = THREE.RepeatWrapping; if (!t.repeat.x) t.repeat.set(2, 2); t.needsUpdate = true; }
+  return t;
+}
+function editSetTexture(name) {
+  const o = (zone.editObjects || []).find(e => e.id === EDIT.selId); if (!o) return;
+  o.tex = name; removeEditMesh(o.id); makeEditMesh(o); editSelect(o.id);
+  sendEdit({ t: 'edit:update', id: o.id, tex: name });
+}
+
 let editDrag = null, editHL = null, _edUpdT = 0;
 function editInit() {
   document.getElementById('editor').style.display = 'block';
@@ -2062,6 +2091,14 @@ function editInit() {
   $('edColR').addEventListener('input', e => { $('edColRV').textContent = (+e.target.value).toFixed(1); if ($('edColOn').checked) editEditSel({ c: +e.target.value }); });
   for (const id of ['edYaw', 'edScale', 'edColR']) $(id).addEventListener('change', () => editFlush());
   $('edDelete').addEventListener('click', () => { if (EDIT.selId) sendEdit({ t: 'edit:delete', id: EDIT.selId }); });
+  // Texture palette: a "none" swatch plus every available texture.
+  const row = $('edTexRow');
+  for (const name of ['none', ...EDIT_TEX]) {
+    const b = document.createElement('button'); b.textContent = name; b.dataset.tex = (name === 'none' ? '' : name);
+    b.style.cssText = 'background:#0c111b; border:1px solid #2b3852; color:#cdd6e5; border-radius:5px; padding:3px 6px; cursor:pointer; font-size:10px;';
+    b.onclick = () => editSetTexture(name === 'none' ? '' : name);
+    row.appendChild(b);
+  }
 }
 function editBuildPalette() {
   const wrap = document.getElementById('edPalette'); if (!wrap) return;
@@ -2070,7 +2107,7 @@ function editBuildPalette() {
   for (const m of EDIT.models) {
     if (q && !m.toLowerCase().includes(q)) continue;
     const b = document.createElement('button'); b.textContent = modelKey(m); b.title = m;
-    b.style.cssText = 'text-align:left; background:' + (EDIT.placing === m ? '#274063' : '#0c111b') + '; border:1px solid #2b3852; color:#dbe6f3; border-radius:5px; padding:4px 7px; cursor:pointer; font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;';
+    b.style.cssText = 'display:block; width:100%; box-sizing:border-box; margin:0 0 4px 0; text-align:left; background:' + (EDIT.placing === m ? '#2f5aa0' : '#1a2436') + '; border:1px solid #3a4c68; color:#f0f5ff; border-radius:5px; padding:6px 9px; cursor:pointer; font-size:13px; line-height:1.25; height:30px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-family:inherit;';
     b.onclick = () => { EDIT.placing = (EDIT.placing === m ? null : m); editSetMode(); editBuildPalette(); };
     wrap.appendChild(b);
   }
