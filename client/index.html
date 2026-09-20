@@ -490,7 +490,7 @@ function bridgeLift(x, z) {
 // River channel profile: a carved bed so the water sits deep with banks rising
 // above it. terrainHeight is the ground height at (x,z) — 0 on flat land, the
 // water line at the shore, dropping to the bed under the water.
-const RIVER_WATER_Y = -0.5, RIVER_BED_Y = -2.2, RIVER_BANK = 4, RIVER_LIP = 1.0;
+const RIVER_WATER_Y = -0.5, RIVER_BED_Y = -2.2, RIVER_BANK = 4, RIVER_LIP = 0.4;
 // Half-width of the water surface: the whole carved channel is flooded, so the
 // water reaches out to `river half-width + RIVER_BANK` and only a thin shore lip
 // (RIVER_LIP) rises out of it. Keeps the bank from showing as a dry dark rim.
@@ -933,7 +933,7 @@ function smoothPoly(points, seg) {
 // A single continuous, smoothly-curving ribbon strip that follows a polyline
 // with a constant width (mitred at joints) — no disconnected rectangles. Used
 // for the dirt path and the river so both read as one connected feature.
-function buildStripRibbon(points, width, y, material, tile, feather) {
+function buildStripRibbon(points, width, y, material, tile, feather, cutRiver) {
   const pts = smoothPoly(points, 8);
   const hw = width / 2, T = tile || 5, fr = feather || 0;
   // Cross-section vertex offsets (fraction of half-width) and their opacity.
@@ -951,10 +951,18 @@ function buildStripRibbon(points, width, y, material, tile, feather) {
     const nx = -dz, nz = dx; // left normal
     if (i > 0) dist += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z);
     const v = dist / T;
+    // Fade the strip out where it crosses the river, so the dirt path never
+    // paints over the water under the bridge (the bridge deck is the crossing).
+    let rowA = 1;
+    if (cutRiver && zone.river) {
+      const rd = distToPolyline(pts[i].x, pts[i].z, zone.river.points);
+      const edge = riverWaterHalf(zone.river.width);
+      rowA = Math.max(0, Math.min(1, (rd - edge) / 2.5)); // 0 over water -> 1 on the bank
+    }
     for (const c of cols) {
       pos.push(pts[i].x + nx * c.o, y, pts[i].z + nz * c.o);
       uv.push((c.o + hw + fr) / T, v);
-      col.push(1, 1, 1, c.a);
+      col.push(1, 1, 1, c.a * rowA);
     }
   }
   for (let i = 0; i < pts.length - 1; i++) {
@@ -1028,14 +1036,16 @@ function buildZone() {
     // edges into the surrounding grass instead of a hard cut.
     const dirtMat = new THREE.MeshStandardMaterial({ map: loadTexture('dirt', 1, 1), roughness: 1,
       side: THREE.DoubleSide, transparent: true, vertexColors: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
-    buildStripRibbon(zone.path, 5, 0.05, dirtMat, 5, 1.8);
+    buildStripRibbon(zone.path, 5, 0.05, dirtMat, 5, 1.8, true);
   }
 
   // River (Blackroot Creek) — deep flowing water sitting in the carved channel.
   if (zone.river) {
     riverTex = makeWaterTexture();
     const waterMat = new THREE.MeshStandardMaterial({ map: riverTex, color: 0x2c6e97, roughness: 0.3, metalness: 0.25, transparent: true, opacity: 0.9, side: THREE.DoubleSide });
-    riverMesh = buildStripRibbon(zone.river.points, riverWaterHalf(zone.river.width) * 2, RIVER_WATER_Y, waterMat, 8);
+    // Overshoot the flooded width by a little so the water always tucks under the
+    // grass edge with no dry sliver, even on the insides/outsides of bends.
+    riverMesh = buildStripRibbon(zone.river.points, (riverWaterHalf(zone.river.width) + 1.2) * 2, RIVER_WATER_Y, waterMat, 8);
     const br = zone.river.bridge;
     // Orient the deck along the PATH direction (so you walk straight over it),
     // and make it long enough to span the river at whatever angle the path
