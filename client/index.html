@@ -1945,8 +1945,8 @@ function buildScatter() {
 // server owns the open amount (0 shut .. 1 open) and streams it as `gateTarget`;
 // the client eases the hinge toward it each frame. ----
 let farmGate = null;       // { mesh, hinge }
-let gateTarget = 0, gateOpen = 0;
-const GATE_MAX_SWING = -1.85; // radians the leaf rotates when fully open
+let gateTarget = 0, gateOpen = 0; // signed: magnitude 0..1, sign = swing direction
+const GATE_MAX_SWING = 1.85; // radians the leaf rotates at full open (sign from gateTarget)
 function buildFarmGate() {
   farmGate = null;
   const g = zone.gate;
@@ -1961,7 +1961,7 @@ function buildFarmGate() {
   wrap.scale.setScalar(g.s || 1);
   wrap.position.set(g.x, 0, g.z);
   wrap.rotation.y = g.yaw || 0;
-  wrap.traverse(o => { if (o.isMesh) { o.castShadow = o.receiveShadow = true; } });
+  wrap.traverse(o => { if (o.isMesh) { o.castShadow = o.receiveShadow = true; o.userData.pickKind = 'gate'; } });
   scene.add(wrap);
   farmGate = { mesh: wrap, hinge: findByName(wrap, /CTRL_Gate_Hinge/)[0] || null };
 }
@@ -2981,6 +2981,7 @@ function pickAt(e) {
       continue; // a mined-out vein is not a target
     }
     if (u.pickKind === 'npc') return { kind: 'npc', id: u.npcId, npcId: u.npcId, name: u.npcName, x: u.npcX, z: u.npcZ, point: h.point };
+    if (u.pickKind === 'gate') return { kind: 'gate', point: h.point };
     if (u.isGround && !groundPt) groundPt = h.point;
   }
   if (groundPt) return { kind: 'ground', point: groundPt };
@@ -3009,6 +3010,13 @@ function optionsFor(pk) {
     return [
       { label: `Talk-to <b>${escapeHtml(pk.name)}</b>${tag}`, act: () => talkNpc(pk) },
       { label: `Examine ${escapeHtml(pk.name)}`, act: () => examineText(npcMeshes.get(pk.npcId)?.def.idle || 'A weathered traveller.') },
+    ];
+  }
+  if (pk.kind === 'gate') {
+    const open = Math.abs(gateOpen) > 0.5;
+    return [
+      { label: open ? 'Close <b>the gate</b>' : 'Open <b>the gate</b>', act: () => toggleFarmGate() },
+      { label: 'Examine gate', act: () => examineText('A sturdy farm gate. Give it a push.') },
     ];
   }
   if (pk.kind === 'ore') {
@@ -3102,6 +3110,8 @@ function applyDepleted(list) {
 
 function openChestAt(id) { ws?.send(JSON.stringify({ t: 'openchest', id })); }
 function takeItem(id) { const r = itemMeshes.get(id); if (r) spawnMarker(r.mesh.position.x, r.mesh.position.z, 0xffe14a); ws?.send(JSON.stringify({ t: 'pickup', id })); targetId = null; }
+// Click the gate to operate it — the server walks you over and swings it.
+function toggleFarmGate() { ws?.send(JSON.stringify({ t: 'gate' })); targetId = null; }
 function walkTo(point) { ws?.send(JSON.stringify({ t: 'move', x: +point.x.toFixed(2), z: +point.z.toFixed(2) })); targetId = null; spawnMarker(point.x, point.z, 0xffe14a); }
 // Walk over, then open the dialogue once we're actually standing there — the
 // server refuses accepts and hand-ins from across the map, so the UI shouldn't

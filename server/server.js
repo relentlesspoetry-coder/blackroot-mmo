@@ -340,22 +340,25 @@ function buildFarm(zone) {
   // The gate is rendered as a standalone, animated model on the client (it
   // swings), so it is NOT baked into the instanced scatter. The server owns its
   // open/shut state and toggles the gap collision with it.
-  if (F.gate) zone._gate = { cx: F.gate.x, cz: F.gate.z, seg: F.gate.seg || null, t: 0 };
+  if (F.gate) zone._gate = { cx: F.gate.x, cz: F.gate.z, seg: F.gate.seg || null, t: 0, target: 0, dir: 1 };
   for (const p of (F.props || [])) scat.push({ i: scat.length, m: p.m, x: p.x, z: p.z, s: p.s || 1, r: p.yaw || 0, c: p.c || 0 });
 }
 
-// Ease each farm gate open when a player stands near it, shut when they leave.
-const GATE_OPEN_RADIUS = 8;
+// The gate only opens/shuts when a player clicks it (see toggleGate); here we
+// just ease the leaf toward its target each tick.
+const GATE_REACH = 3.2; // how close a player walks before the click takes effect
+function toggleGate(g, p) {
+  g.target = g.target > 0.5 ? 0 : 1;
+  // Open AWAY from the player's side, so it swings both ways (whoever operates it
+  // pushes it open in front of them). A player north of the gate swings it south
+  // and vice-versa.
+  if (g.target > 0.5) g.dir = (p.z < g.cz) ? -1 : 1;
+}
 function stepGates() {
   for (const zoneId of Object.keys(ZONES)) {
     const g = ZONES[zoneId]._gate; if (!g) continue;
-    let near = false;
-    for (const p of players.values()) {
-      if (p.zoneId === zoneId && p.alive && dist2(p.x, p.z, g.cx, g.cz) < GATE_OPEN_RADIUS * GATE_OPEN_RADIUS) { near = true; break; }
-    }
-    const target = near ? 1 : 0;
-    g.t += (target - g.t) * Math.min(1, DT * 4); // ~0.25s swing
-    if (Math.abs(g.t - target) < 0.01) g.t = target;
+    g.t += (g.target - g.t) * Math.min(1, DT * 4); // ~0.25s swing
+    if (Math.abs(g.t - g.target) < 0.01) g.t = g.target;
   }
 }
 
@@ -776,7 +779,7 @@ function stepPlayer(p) {
 
   if (inp && (inp.f !== 0 || inp.r !== 0)) {
     // Manual WASD overrides click-to-move / combat.
-    p.moveTo = null; p.combatId = null; p.pendingChest = null; p.pendingPickup = null; p.pendingMine = null;
+    p.moveTo = null; p.combatId = null; p.pendingChest = null; p.pendingPickup = null; p.pendingMine = null; p.pendingGate = false;
     const yaw = inp.yaw;
     const fx = Math.sin(yaw), fz = Math.cos(yaw);
     const rx = Math.sin(yaw - Math.PI / 2), rz = Math.cos(yaw - Math.PI / 2);
@@ -807,6 +810,11 @@ function stepPlayer(p) {
     if (!v || v.depleted > 0) { p.pendingMine = null; }
     else if (step(v.x, v.z, MINING.reach - 0.6)) { moved = true; }
     else p.yaw = Math.atan2(v.x - p.x, v.z - p.z);
+  } else if (p.pendingGate) {
+    const g = zone._gate;
+    if (!g) { p.pendingGate = false; }
+    else if (step(g.cx, g.cz, GATE_REACH)) { moved = true; }
+    else { p.yaw = Math.atan2(g.cx - p.x, g.cz - p.z); toggleGate(g, p); p.pendingGate = false; }
   } else if (p.moveTo) {
     if (step(p.moveTo.x, p.moveTo.z, 0.5)) moved = true;
     else p.moveTo = null;
@@ -953,7 +961,7 @@ setInterval(() => {
       const gate = ZONES[zid]._gate;
       return (byZone[zid] = JSON.stringify({ t: 'snapshot', now, players: ps, monsters: ms, items,
         depleted: depletedIds(ZONES[zid]),
-        gate: gate ? +gate.t.toFixed(3) : undefined,
+        gate: gate ? +(gate.t * gate.dir).toFixed(3) : undefined, // signed: sign = swing direction
         time: +dayTime.toFixed(4), weather }));
     };
     for (const p of players.values()) {
@@ -1022,7 +1030,7 @@ wss.on('connection', (ws) => {
           questFlags: new Set(), questAnnounced: new Set(),
           maxHp: maxHpForLevel(1), hp: maxHpForLevel(1), alive: true,
           atkTimer: 0, regen: 0, combatTimer: 0, deathTimer: 0, portalCd: 0, inSafe: true,
-          moveTo: null, combatId: null, pendingChest: null, pendingPickup: null, input: { f: 0, r: 0, yaw: 0 },
+          moveTo: null, combatId: null, pendingChest: null, pendingPickup: null, pendingGate: false, input: { f: 0, r: 0, yaw: 0 },
         };
         players.set(id, player);
         send(ws, { t: 'welcome', id, tickRate: SNAPSHOT_HZ, zone: zoneForClient(start) });
@@ -1063,6 +1071,11 @@ wss.on('connection', (ws) => {
       case 'pickup': {
         if (!player || !player.alive) break;
         player.pendingPickup = Number(msg.id); player.combatId = null; player.moveTo = null; player.pendingChest = null; player.pendingMine = null;
+        break;
+      }
+      case 'gate': {
+        if (!player || !player.alive || !zoneOf(player)._gate) break;
+        player.pendingGate = true; player.combatId = null; player.moveTo = null; player.pendingChest = null; player.pendingPickup = null; player.pendingMine = null;
         break;
       }
       case 'equip': if (player && player.alive) equipItem(player, String(msg.item || ''), msg.slot ? String(msg.slot) : null); break;
