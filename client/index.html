@@ -365,13 +365,17 @@ async function loadModels(list, onProgress) {
 }
 
 // Clone a model normalized to a target height with its base at y=0, centered.
-function cloneModel(name, targetH) {
+function cloneModel(name, targetH, byMax) {
   const src = LOADED[name];
   if (!src) return null;
   const obj = src.clone(true);
   const box = new THREE.Box3().setFromObject(obj);
-  const h = (box.max.y - box.min.y) || 1;
-  obj.scale.setScalar(targetH / h);
+  // Characters normalise by height; flat/wide props (loot laid out on the
+  // ground) normalise by their largest dimension so they never balloon.
+  const ref = byMax
+    ? (Math.max(box.max.x - box.min.x, box.max.y - box.min.y, box.max.z - box.min.z) || 1)
+    : ((box.max.y - box.min.y) || 1);
+  obj.scale.setScalar(targetH / ref);
   obj.updateMatrixWorld(true);
   const box2 = new THREE.Box3().setFromObject(obj);
   obj.position.set(-(box2.min.x + box2.max.x) / 2, -box2.min.y, -(box2.min.z + box2.max.z) / 2);
@@ -925,27 +929,40 @@ function smoothPoly(points, seg) {
 // A single continuous, smoothly-curving ribbon strip that follows a polyline
 // with a constant width (mitred at joints) — no disconnected rectangles. Used
 // for the dirt path and the river so both read as one connected feature.
-function buildStripRibbon(points, width, y, material, tile) {
+function buildStripRibbon(points, width, y, material, tile, feather) {
   const pts = smoothPoly(points, 8);
-  const hw = width / 2, T = tile || 5;
-  const pos = [], uv = [], idx = [];
+  const hw = width / 2, T = tile || 5, fr = feather || 0;
+  // Cross-section vertex offsets (fraction of half-width) and their opacity.
+  // With a feather, add a transparent fringe on each side so the strip fades
+  // into whatever is under it (the path dissolving into grass at its edges).
+  const cols = fr > 0
+    ? [{ o: -(hw + fr), a: 0 }, { o: -hw, a: 1 }, { o: hw, a: 1 }, { o: hw + fr, a: 0 }]
+    : [{ o: -hw, a: 1 }, { o: hw, a: 1 }];
+  const N = cols.length;
+  const pos = [], uv = [], col = [], idx = [];
   let dist = 0;
   for (let i = 0; i < pts.length; i++) {
     const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
     let dx = b.x - a.x, dz = b.z - a.z; const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
     const nx = -dz, nz = dx; // left normal
     if (i > 0) dist += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z);
-    pos.push(pts[i].x + nx * hw, y, pts[i].z + nz * hw, pts[i].x - nx * hw, y, pts[i].z - nz * hw);
     const v = dist / T;
-    uv.push(0, v, width / T, v);
+    for (const c of cols) {
+      pos.push(pts[i].x + nx * c.o, y, pts[i].z + nz * c.o);
+      uv.push((c.o + hw + fr) / T, v);
+      col.push(1, 1, 1, c.a);
+    }
   }
   for (let i = 0; i < pts.length - 1; i++) {
-    const a = i * 2, b = i * 2 + 1, c = (i + 1) * 2, d = (i + 1) * 2 + 1;
-    idx.push(a, b, c, b, d, c);
+    for (let j = 0; j < N - 1; j++) {
+      const a = i * N + j, b = a + 1, c = (i + 1) * N + j, d = c + 1;
+      idx.push(a, b, c, b, d, c);
+    }
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  if (fr > 0) g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
   g.setIndex(idx); g.computeVertexNormals();
   const m = new THREE.Mesh(g, material); m.receiveShadow = true; scene.add(m); return m;
 }
@@ -1003,8 +1020,11 @@ function buildZone() {
 
   // Primary path — one continuous, smoothly-curving dirt trail.
   if (zone.path) {
-    const dirtMat = new THREE.MeshStandardMaterial({ map: loadTexture('dirt', 1, 1), roughness: 1, side: THREE.DoubleSide });
-    buildStripRibbon(zone.path, 5, 0.05, dirtMat, 5);
+    // The core dirt is opaque; a feathered fringe (vertex-alpha) melts the path
+    // edges into the surrounding grass instead of a hard cut.
+    const dirtMat = new THREE.MeshStandardMaterial({ map: loadTexture('dirt', 1, 1), roughness: 1,
+      side: THREE.DoubleSide, transparent: true, vertexColors: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
+    buildStripRibbon(zone.path, 5, 0.05, dirtMat, 5, 1.8);
   }
 
   // River (Blackroot Creek) — deep flowing water sitting in the carved channel.
@@ -1245,17 +1265,19 @@ function makeGrassTexture() {
   }
   const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t;
 }
-// A small crossed billboard (two quads in a + so it reads from any angle).
+// A crossed pair of tapered blade triangles (no texture): a vertical brightness
+// gradient (dark base -> bright tip) baked into vertex colours, multiplied by the
+// per-instance green hue so every blade is a different gradient of green.
 function crossBladeGeo(w, h) {
-  const hw = w / 2, pos = [], uv = [];
-  const quad = (ax, az, bx, bz) => {
-    pos.push(ax, 0, az, bx, 0, bz, bx, h, bz, ax, 0, az, bx, h, bz, ax, h, az);
-    uv.push(0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1);
+  const hw = w / 2, pos = [], col = [];
+  const tri = (ax, az, bx, bz) => {
+    pos.push(ax, 0, az, bx, 0, bz, 0, h, 0);
+    col.push(0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 1, 1, 1); // base darker, tip brighter
   };
-  quad(-hw, 0, hw, 0); quad(0, -hw, 0, hw);
+  tri(-hw, 0, hw, 0); tri(0, -hw, 0, hw);
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   g.computeVertexNormals();
   return g;
 }
@@ -1263,10 +1285,9 @@ function crossBladeGeo(w, h) {
 // each a randomised shade of green.
 function buildGrass() {
   const b = zone.bounds, rng = mulberry32((zone.treeSeed || 1) + 271);
-  const geo = crossBladeGeo(0.45, 0.45);
+  const geo = crossBladeGeo(0.15, 0.4);
   const mat = new THREE.MeshStandardMaterial({
-    map: makeGrassTexture(), transparent: true, alphaTest: 0.4, side: THREE.DoubleSide,
-    vertexColors: true, roughness: 1,
+    side: THREE.DoubleSide, vertexColors: true, roughness: 1,
   });
   const ok = (x, z) => (!zone.boundary || inBoundary(x, z)) &&
     !(zone.river && distToPolyline(x, z, zone.river.points) < zone.river.width / 2 + 0.5) &&
@@ -1276,7 +1297,7 @@ function buildGrass() {
   // Density scales with the zone's area so a larger zone stays as lush.
   const areaK = Math.min(3.2, ((b.maxX - b.minX) * (b.maxZ - b.minZ)) / 37800);
   // Little groups (clumps of a few tufts).
-  let clumps = Math.round(2200 * areaK), guard = 0;
+  let clumps = Math.round(4400 * areaK), guard = 0;
   while (clumps > 0 && guard++ < clumps * 6) {
     const ccx = b.minX + 2 + rng() * (b.maxX - b.minX - 4), ccz = b.minZ + 2 + rng() * (b.maxZ - b.minZ - 4);
     if (!ok(ccx, ccz) || onPathSkip(ccx, ccz)) continue;
@@ -1285,7 +1306,7 @@ function buildGrass() {
     clumps--;
   }
   // Scattered singles.
-  let singles = Math.round(6000 * areaK); guard = 0;
+  let singles = Math.round(12000 * areaK); guard = 0;
   while (singles > 0 && guard++ < singles * 6) {
     const x = b.minX + 2 + rng() * (b.maxX - b.minX - 4), z = b.minZ + 2 + rng() * (b.maxZ - b.minZ - 4);
     if (!ok(x, z) || onPathSkip(x, z)) continue;
@@ -1296,11 +1317,11 @@ function buildGrass() {
   const mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), col = new THREE.Color();
   spots.forEach((p, i) => {
     q.setFromAxisAngle(UP, rng() * 6.28);
-    const s = 0.55 + rng() * 0.7; sc.set(s, 0.6 + rng() * 0.7, s);
+    const s = 0.45 + rng() * 0.5; sc.set(s, 0.5 + rng() * 0.55, s);
     mtx.compose(new THREE.Vector3(p.x, 0, p.z), q, sc); im.setMatrixAt(i, mtx);
-    // varied shades of green (yellow-green to deep green), kept bright so the
-    // tuft texture reads rather than darkening to specks
-    col.setHSL(0.25 + rng() * 0.11, 0.35 + rng() * 0.3, 0.72 + rng() * 0.45); im.setColorAt(i, col);
+    // every blade a different gradient of green (yellow-green -> deep green);
+    // multiplied by the baked dark-base/bright-tip vertex gradient
+    col.setHSL(0.24 + rng() * 0.13, 0.5 + rng() * 0.35, 0.4 + rng() * 0.22); im.setColorAt(i, col);
   });
   im.instanceColor.needsUpdate = true;
   scene.add(im);
@@ -1423,6 +1444,42 @@ function makeBarkTexture() {
   const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace;
   t.wrapS = t.wrapT = THREE.RepeatWrapping; _barkTex = t; return t;
 }
+let _leafTex = null;
+// A tileable leafy-foliage texture: mottled greens with scattered leaf blades
+// and veins, so canopies read as clustered leaves rather than flat green blobs.
+function makeLeafTexture() {
+  if (_leafTex) return _leafTex;
+  const s = 128, cv = document.createElement('canvas'); cv.width = cv.height = s;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#2f5a22'; ctx.fillRect(0, 0, s, s);
+  // scatter many little leaf shapes in varied greens (wrapping across edges)
+  for (let i = 0; i < 260; i++) {
+    const x = Math.random() * s, y = Math.random() * s;
+    const g = 90 + Math.floor(Math.random() * 110);
+    const r = 30 + Math.floor(Math.random() * 40), b = 20 + Math.floor(Math.random() * 40);
+    const a = 0.35 + Math.random() * 0.5, rot = Math.random() * Math.PI;
+    const w = 3 + Math.random() * 6, h = w * (1.6 + Math.random() * 1.2);
+    for (const dx of [-s, 0, s]) for (const dy of [-s, 0, s]) {
+      ctx.save(); ctx.translate(x + dx, y + dy); ctx.rotate(rot);
+      ctx.fillStyle = `rgba(${r},${g},${b},${a})`;
+      ctx.beginPath(); ctx.ellipse(0, 0, w, h, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = `rgba(${Math.max(0, r - 25)},${Math.max(0, g - 35)},${Math.max(0, b - 15)},${a * 0.6})`;
+      ctx.lineWidth = 0.7; ctx.beginPath(); ctx.moveTo(0, -h); ctx.lineTo(0, h); ctx.stroke();
+      ctx.restore();
+    }
+  }
+  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; _leafTex = t; return t;
+}
+// Planar UVs for a foliage cluster (tiles roughly every 1.4m of canopy).
+function applyLeafUV(geo) {
+  const pos = geo.attributes.position; const uv = new Float32Array(pos.count * 2);
+  for (let i = 0; i < pos.count; i++) {
+    uv[i * 2] = pos.getX(i) / 1.4;
+    uv[i * 2 + 1] = pos.getY(i) / 1.4;
+  }
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+}
 // Wrap a bark texture around a baked trunk part with cylindrical UVs.
 function applyBarkUV(geo) {
   const pos = geo.attributes.position; const uv = new Float32Array(pos.count * 2);
@@ -1456,6 +1513,9 @@ function instanceModels(placements, speciesList, targetH, baseScale, bark) {
         if (col && !isLeaf) {
           applyBarkUV(part.geo);
           const m2 = part.mat.clone(); m2.map = makeBarkTexture(); m2.needsUpdate = true; part.mat = m2;
+        } else if (isLeaf) {
+          applyLeafUV(part.geo);
+          const m2 = part.mat.clone(); m2.map = makeLeafTexture(); m2.needsUpdate = true; part.mat = m2;
         }
       }
       const im = new THREE.InstancedMesh(part.geo, part.mat, list.length);
@@ -1595,7 +1655,7 @@ function buildPoi(p) {
   // why this cannot simply be the key.
   const art = p.art || (zone.id === 'hiddencave' ? p.kind : p.key);
   switch (art) {
-    case 'entrance': addCampfire(); addSafeRing(p.r || 10); addSignpost(1); break;
+    case 'entrance': addSafeRing(p.r || 10); break;
     case 'shrine': {
       addSafeRing(p.r || 11);
       const base = new THREE.Mesh(new THREE.CylinderGeometry(1.8, 2.2, 0.7, 8), stoneMat()); base.position.y = 0.35; g.add(base);
@@ -2529,6 +2589,8 @@ function makeProceduralItem(name) {
   } else if (/hide|leather|cowhide|body|straps/.test(n)) {
     add(new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.12, 0.36), mat(0x7a5230)), 0, 0.1, 0, 0, 0.4, 0);
     add(new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.1, 0.28), mat(0x6a4526)), 0.05, 0.21, 0.03, 0, 0.15, 0);
+  } else if (/egg/.test(n)) {
+    const e = add(new THREE.Mesh(new THREE.SphereGeometry(0.15, 8, 6), mat(0xf3ead6, 0.7)), 0, 0.15, 0); e.scale.set(0.85, 1.25, 0.85);
   } else if (/raw|beef|meat|chicken|kebab/.test(n)) {
     const m2 = add(new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 6), mat(0xb0503f, 0.6)), 0, 0.15, 0); m2.scale.set(1.1, 0.6, 0.8);
     if (/kebab/.test(n)) add(new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.6, 5), mat(0x8a6a40)), 0, 0.18, 0, 0.5, 0, 0);
@@ -2562,7 +2624,7 @@ function makeProceduralItem(name) {
 function makeItemMesh(it) {
   const g = new THREE.Group();
   const key = itemModelName(it.name);
-  const model = cloneModel(key, 0.55);
+  const model = cloneModel(key, 0.5, true); // fit longest side to ~0.5m
   if (model) {
     g.add(model);
     g.userData.hasModel = true;
@@ -2579,7 +2641,12 @@ function makeItemMesh(it) {
 }
 function updateGroundItems(items) {
   const seen = new Set();
-  for (const it of (items || [])) {
+  // A single kill drops everything on one spot: stack co-located items into a
+  // little pile (ordered by id so the stack order is stable) instead of letting
+  // them overlap and z-fight.
+  const stackAt = new Map();
+  const sorted = (items || []).slice().sort((a, b) => a.id - b.id);
+  for (const it of sorted) {
     seen.add(it.id);
     let rec = itemMeshes.get(it.id);
     if (!rec) { const mesh = makeItemMesh(it); scene.add(mesh); rec = { mesh, name: it.name, qty: it.qty }; itemMeshes.set(it.id, rec); }
@@ -2588,10 +2655,18 @@ function updateGroundItems(items) {
       scene.remove(rec.mesh);
       rec.mesh = makeItemMesh(it); scene.add(rec.mesh);
     }
-    // Lay the item flat on the ground (no float, no spin), tipped over with a
-    // per-item yaw for variety.
-    rec.mesh.position.set(it.x, groundY(it.x, it.z) + 0.06, it.z);
-    rec.mesh.rotation.set(-Math.PI / 2, (it.id * 1.7) % 6.283, 0);
+    const pk = Math.round(it.x * 4) + ',' + Math.round(it.z * 4);
+    const tier = stackAt.get(pk) || 0; stackAt.set(pk, tier + 1);
+    // Lay each item flat, piled up: a small per-item jitter keeps the pile
+    // natural while staying centred on the death spot; each tier sits higher.
+    const jx = ((it.id * 12.9898) % 1 - 0.5) * 0.18, jz = ((it.id * 78.233) % 1 - 0.5) * 0.18;
+    rec.mesh.position.set(it.x + jx, groundY(it.x, it.z) + 0.06 + tier * 0.11, it.z + jz);
+    // Real GLB loot is modelled with ground-level origins, so it rests naturally
+    // (just a yaw for variety); the procedural stand-ins are built standing up,
+    // so those get tipped flat onto the ground.
+    const yaw = (it.id * 1.7) % 6.283;
+    if (rec.mesh.userData.hasModel) rec.mesh.rotation.set(0, yaw, 0);
+    else rec.mesh.rotation.set(-Math.PI / 2, yaw, 0);
   }
   for (const [id, rec] of itemMeshes) if (!seen.has(id)) { scene.remove(rec.mesh); itemMeshes.delete(id); }
 }
@@ -3017,6 +3092,11 @@ const poiEls = [];
 const POI_ICON = { safe: '🔥', boss: '☠', gate: '⛩', cave: '🕳', landmark: '◈', merchant: '🪙',
   exitup: '⬆', pool: '💧', cache: '📦', crystal: '💎', deep: '☠' };
 function updatePoiLabels() {
+  // Floating in-world place/landmark names are disabled — the world is left
+  // unlabelled (the zone map, opened with M, still lists them). Any labels that
+  // were created before are hidden.
+  if (poiEls.length) { for (const el of poiEls) if (el) el.style.display = 'none'; }
+  return;
   if (!poiWorld.length) return;
   const selfRec = entityMeshes.get(myId);
   const sx = selfRec ? selfRec.mesh.position.x : 0, sz = selfRec ? selfRec.mesh.position.z : 0;
@@ -3202,6 +3282,14 @@ const ITEM_META = {
   'Iron Pickaxe': { slot: 'weapon', atk: 2, level: 1 },
   'Steel Pickaxe': { slot: 'weapon', atk: 3, level: 3 },
   'Mithril Pickaxe': { slot: 'weapon', atk: 5, level: 5 },
+  // goblin loot equipment
+  'Rusty Dagger': { slot: 'weapon', atk: 1, level: 1 },
+  'Worn Pickaxe': { slot: 'weapon', atk: 1, level: 1 },
+  'Goblin Shortbow': { slot: 'weapon', atk: 3, level: 2 },
+  'Battered Iron Shield': { slot: 'offhand', def: 4, level: 3 },
+  'Bone Charm': { slot: 'necklace', def: 1, level: 2 },
+  "Shaman's Spirit Stone": { slot: 'ring', atk: 2, def: 2, level: 4 },
+  "Chief's Bronze Signet": { slot: 'ring', atk: 3, def: 2, level: 5 },
 };
 function metaFor(name) { return ITEM_META[name] || null; }
 function statText(m) {
@@ -3213,7 +3301,7 @@ function statText(m) {
   return bits.length ? ' (' + bits.join(', ') + ')' : '';
 }
 const ITEM_ICON = {
-  Coins: '🪙', Cowhide: '🟫', 'Raw Beef': '🥩', 'Raw Chicken': '🍗', Feather: '🪶', Bones: '🦴',
+  Coins: '🪙', Cowhide: '🟫', 'Raw Beef': '🥩', 'Raw Chicken': '🍗', Feather: '🪶', Bones: '🦴', Egg: '🥚',
   'Big Bones': '🦴', 'Spider Silk': '🕸️', 'Venom Sac': '🧪', 'Bronze Dagger': '🗡️', 'Iron Sword': '⚔️',
   'Goblin Mail': '🛡️', 'Leather Body': '🦺', 'Ogre Club': '🏏', Kebab: '🍢',
   'Bronze Pickaxe': '⛏️', 'Iron Pickaxe': '⛏️', 'Steel Pickaxe': '⛏️', 'Mithril Pickaxe': '⛏️',
@@ -3224,6 +3312,11 @@ const ITEM_ICON = {
   'Cave Giant Pet Stone': '🗿', "Giant's Stone Maul": '🔨', "Guardian's Iron Shield": '🛡️',
   'Living Crystal Core': '🔆', "Ancient Giant's Signet": '💍',
   "Smuggler's Cache": '📦', 'Crystalline Relic': '💎', 'Smuggler’s Trinket': '💍',
+  // goblin loot
+  'Ragged Cloth': '🧵', 'Leather Scraps': '🟫', 'Rope': '➿', 'Wooden Arrow Shafts': '🪵',
+  'Iron Arrowheads': '🔻', 'Goblin Tooth': '🦷', 'Uncut Quartz': '💠', 'Cave Mushroom': '🍄',
+  'Rusty Dagger': '🗡️', 'Worn Pickaxe': '⛏️', 'Goblin Shortbow': '🏹', 'Battered Iron Shield': '🛡️',
+  'Bone Charm': '📿', "Shaman's Spirit Stone": '🔮', "Chief's Bronze Signet": '💍', 'Goblin Pet Totem': '🗿',
 };
 function iconFor(name) { return ITEM_ICON[name] || (/Trophy/.test(name) ? '🏆' : '📦'); }
 function toggleBag(force) { bagOpen = force != null ? force : !bagOpen; document.getElementById('bag').style.display = bagOpen ? 'block' : 'none'; if (bagOpen) renderBag(); }

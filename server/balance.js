@@ -109,14 +109,40 @@ const GIANT_DROPS = [
   ["Ancient Giant's Signet", 1, 1, [5000, 4500, 3500]],
   ['Cave Giant Pet Stone', 1, 1, [10000, 10000, 10000]],
 ];
+// Goblin loot (Goblin_Loot_Items pack). One shared table across the six goblin
+// variants; the chance columns are [Scavenger, Miner, Warrior, Archer, Shaman,
+// Chief] and a chance of 1 means guaranteed. Every entry rolls independently.
+const GOB = { scavenger: 0, miner: 1, warrior: 2, archer: 3, shaman: 4, chief: 5 };
+const GOBLIN_DROPS = [
+  ['Bones', 1, 1, [1, 1, 1, 1, 1, 1]],
+  ['Coins', 5, 30, [2, 2, 2, 2, 2, 2]],
+  ['Ragged Cloth', 1, 3, [4, 8, 10, 6, 4, 12]],
+  ['Leather Scraps', 1, 2, [6, 8, 5, 4, 12, 8]],
+  ['Rope', 1, 1, [12, 8, 25, 10, 30, 20]],
+  ['Iron Ore', 1, 3, [25, 4, 20, 40, 50, 15]],
+  ['Coal', 1, 3, [35, 6, 30, 50, 60, 20]],
+  ['Wooden Arrow Shafts', 5, 15, [20, 40, 30, 4, 50, 25]],
+  ['Iron Arrowheads', 5, 10, [40, 25, 20, 8, 80, 20]],
+  ['Cave Mushroom', 1, 2, [15, 12, 35, 25, 6, 20]],
+  ['Goblin Tooth', 1, 1, [30, 35, 20, 30, 40, 12]],
+  ['Uncut Quartz', 1, 1, [150, 40, 200, 200, 100, 60]],
+  ['Rusty Dagger', 1, 1, [80, 200, 150, 250, 300, 150]],
+  ['Worn Pickaxe', 1, 1, [300, 100, 500, 500, 750, 250]],
+  ['Goblin Shortbow', 1, 1, [400, 600, 500, 125, 750, 300]],
+  ['Battered Iron Shield', 1, 1, [500, 600, 150, 600, 800, 200]],
+  ['Bone Charm', 1, 1, [600, 750, 500, 650, 175, 250]],
+  ["Shaman's Spirit Stone", 1, 1, [3000, 3000, 2500, 3000, 500, 1000]],
+  ["Chief's Bronze Signet", 1, 1, [5000, 5000, 4000, 5000, 3500, 750]],
+  ['Goblin Pet Totem', 1, 1, [15000, 15000, 15000, 15000, 15000, 7500]],
+];
 
 // `passive` mobs never initiate combat (classic cows/chickens); `respawn` is
 // seconds; `loot` is a weighted table rolled on death (an entry with item
 // 'Coins' drops a coin pile; item null = nothing that roll). Cave creatures use
 // `droptable` (independent rolls) instead — assigned just below.
 export const MONSTER_TEMPLATES = {
-  goblin: { name: 'Goblin', hp: 35, dmg: [2, 5], speed: 4.5, aggro: 12, xp: 28, respawn: 25, rolls: 1,
-    loot: [ { item: 'Coins', min: 5, max: 20, w: 55 }, { item: 'Bronze Dagger', w: 10 }, { item: 'Goblin Mail', w: 6 }, { item: 'Goblin Ear', w: 26 }, { item: null, w: 30 } ] },
+  goblin: { name: 'Goblin', hp: 35, dmg: [2, 5], speed: 4.5, aggro: 12, xp: 28, respawn: 25,
+    droptable: buildDropTable(GOBLIN_DROPS, GOB.scavenger) },
   bandit: { name: 'Bandit', hp: 55, dmg: [4, 9], speed: 5.5, aggro: 15, xp: 48, respawn: 35, rolls: 1,
     loot: [ { item: 'Coins', min: 15, max: 60, w: 55 }, { item: 'Leather Body', w: 10 }, { item: 'Iron Sword', w: 7 }, { item: 'Kebab', w: 12 }, { item: 'Stolen Pendant', w: 14 }, { item: null, w: 26 } ] },
   guard: { name: 'Hill Ogre', hp: 95, dmg: [6, 11], speed: 4.0, aggro: 14, xp: 130, respawn: 55, rolls: 2,
@@ -140,8 +166,14 @@ export const MONSTER_TEMPLATES = {
             { item: 'Cave Giant Pet Stone', w: 1 }, { item: null, w: 18 } ] },
   cow: { name: 'Cow', hp: 40, dmg: [1, 3], speed: 3, aggro: 0, xp: 20, respawn: 25, passive: true, rolls: 2,
     loot: [ { item: 'Cowhide', w: 70 }, { item: 'Raw Beef', w: 60 }, { item: 'Coins', min: 1, max: 8, w: 20 } ] },
-  chicken: { name: 'Chicken', hp: 12, dmg: [1, 1], speed: 3, aggro: 0, xp: 8, respawn: 18, passive: true, rolls: 2,
-    loot: [ { item: 'Feather', min: 5, max: 15, w: 80 }, { item: 'Raw Chicken', w: 60 }, { item: 'Bones', w: 80 } ] },
+  chicken: { name: 'Chicken', hp: 12, dmg: [1, 1], speed: 3, aggro: 0, xp: 8, respawn: 18, passive: true,
+    // Independent-roll drop table (Chicken_Loot_Pack): each entry rolls on its own.
+    droptable: [
+      { item: 'Feather', min: 2, max: 6, always: true }, // 2–6, guaranteed
+      { item: 'Bones', always: true },                   // 1, guaranteed
+      { item: 'Raw Chicken', chance: 1.25 },             // 1, 4/5 (80%)
+      { item: 'Egg', chance: 12 },                       // 1, 1/12 (~8.3%)
+    ] },
   // The Cave Guardian — a hulking variant that guards the Deep Chamber.
   cave_guardian: { name: 'Cave Guardian', hp: 210, dmg: [10, 18], speed: 3.6, aggro: 14, xp: 300, respawn: 80, rolls: 1,
     loot: [ { item: 'Coins', min: 40, max: 120, w: 1 } ] },
@@ -149,18 +181,18 @@ export const MONSTER_TEMPLATES = {
   broodmother: { name: 'Broodmother', hp: 90, dmg: [6, 11], speed: 5.0, aggro: 14, xp: 110, respawn: 120, rolls: 1,
     loot: [ { item: 'Coins', min: 20, max: 60, w: 1 } ] },
   // --- Goblin-kin variants that populate the deeper Dark Woods camps ---
-  goblin_scavenger: { name: 'Goblin Scavenger', hp: 28, dmg: [2, 5], speed: 6.0, aggro: 13, xp: 30, respawn: 22, rolls: 1,
-    loot: [ { item: 'Coins', min: 3, max: 15, w: 55 }, { item: 'Goblin Ear', w: 30 }, { item: 'Bones', w: 20 }, { item: null, w: 30 } ] },
-  goblin_warrior: { name: 'Goblin Warrior', hp: 62, dmg: [5, 9], speed: 4.8, aggro: 14, xp: 58, respawn: 30, rolls: 1,
-    loot: [ { item: 'Coins', min: 10, max: 35, w: 50 }, { item: 'Goblin Mail', w: 12 }, { item: 'Bronze Dagger', w: 12 }, { item: 'Goblin Ear', w: 24 }, { item: null, w: 26 } ] },
-  goblin_archer: { name: 'Goblin Archer', hp: 42, dmg: [5, 10], speed: 5.2, aggro: 16, xp: 52, respawn: 30, rolls: 1,
-    loot: [ { item: 'Coins', min: 8, max: 30, w: 50 }, { item: 'Goblin Ear', w: 28 }, { item: 'Feather', min: 3, max: 8, w: 20 }, { item: null, w: 28 } ] },
-  goblin_shaman: { name: 'Goblin Shaman', hp: 50, dmg: [6, 11], speed: 4.6, aggro: 15, xp: 66, respawn: 34, rolls: 1,
-    loot: [ { item: 'Coins', min: 12, max: 40, w: 48 }, { item: 'Stolen Pendant', w: 12 }, { item: 'Goblin Ear', w: 24 }, { item: 'Uncut Quartz', w: 8 }, { item: null, w: 26 } ] },
-  goblin_miner: { name: 'Goblin Miner', hp: 46, dmg: [3, 7], speed: 4.6, aggro: 12, xp: 48, respawn: 30, rolls: 2,
-    loot: [ { item: 'Coins', min: 8, max: 28, w: 45 }, { item: 'Iron Ore', w: 22 }, { item: 'Coal', w: 20 }, { item: 'Iron Pickaxe', w: 8 }, { item: 'Stone Fragment', w: 18 }, { item: null, w: 24 } ] },
-  goblin_chief: { name: 'Goblin Chief', hp: 130, dmg: [7, 13], speed: 4.4, aggro: 16, xp: 165, respawn: 60, rolls: 2,
-    loot: [ { item: 'Coins', min: 60, max: 160, w: 55 }, { item: 'Goblin Mail', w: 16 }, { item: 'Iron Sword', w: 12 }, { item: 'Stolen Pendant', w: 14 }, { item: 'Uncut Emerald', w: 5 }, { item: null, w: 20 } ] },
+  goblin_scavenger: { name: 'Goblin Scavenger', hp: 28, dmg: [2, 5], speed: 6.0, aggro: 13, xp: 30, respawn: 22,
+    droptable: buildDropTable(GOBLIN_DROPS, GOB.scavenger) },
+  goblin_warrior: { name: 'Goblin Warrior', hp: 62, dmg: [5, 9], speed: 4.8, aggro: 14, xp: 58, respawn: 30,
+    droptable: buildDropTable(GOBLIN_DROPS, GOB.warrior) },
+  goblin_archer: { name: 'Goblin Archer', hp: 42, dmg: [5, 10], speed: 5.2, aggro: 16, xp: 52, respawn: 30,
+    droptable: buildDropTable(GOBLIN_DROPS, GOB.archer) },
+  goblin_shaman: { name: 'Goblin Shaman', hp: 50, dmg: [6, 11], speed: 4.6, aggro: 15, xp: 66, respawn: 34,
+    droptable: buildDropTable(GOBLIN_DROPS, GOB.shaman) },
+  goblin_miner: { name: 'Goblin Miner', hp: 46, dmg: [3, 7], speed: 4.6, aggro: 12, xp: 48, respawn: 30,
+    droptable: buildDropTable(GOBLIN_DROPS, GOB.miner) },
+  goblin_chief: { name: 'Goblin Chief', hp: 130, dmg: [7, 13], speed: 4.4, aggro: 16, xp: 165, respawn: 60,
+    droptable: buildDropTable(GOBLIN_DROPS, GOB.chief) },
   // Wyrms lairing at the edges of the woods — rare, dangerous elites.
   ember_dragon: { name: 'Ember Dragon', hp: 420, dmg: [14, 26], speed: 5.0, aggro: 18, xp: 900, respawn: 240, rolls: 3,
     loot: [ { item: 'Coins', min: 200, max: 500, w: 50 }, { item: 'Giant Bones', w: 24 }, { item: 'Crystal Heart', w: 14 }, { item: 'Uncut Emerald', w: 12 }, { item: 'Living Crystal Core', w: 6 }, { item: "Giant's Stone Maul", w: 3 } ] },

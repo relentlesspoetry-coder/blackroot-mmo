@@ -338,9 +338,9 @@ function killMonster(m, killer) {
     for (const item of (m.spec.drops || [`${m.name} Trophy`])) drops.push({ item, qty: 1 });
     drops.push({ item: 'Coins', qty: Math.floor(rand(200, 400)) });
   }
+  // Everything a kill drops piles up on the exact spot where the mob fell.
   for (const d of drops) {
-    const ang = rand(0, Math.PI * 2), rr = rand(0, 1.4);
-    dropItem(m.zoneId, m.x + Math.cos(ang) * rr, m.z + Math.sin(ang) * rr, d.item, d.qty, killer ? killer.id : null);
+    dropItem(m.zoneId, m.x, m.z, d.item, d.qty, killer ? killer.id : null);
   }
   if (m.elite) systemChat(`${killer ? killer.name : 'Someone'} has slain ${m.name}!`);
 }
