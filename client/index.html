@@ -1345,7 +1345,7 @@ function buildForest() {
   // full-canopy models, so no procedural canopy/bark augmentation is needed.
   const placements = zone.trees || [];
   if (!placements.length) return;
-  instanceModels(placements, TREE_SPECIES, TREE_H, 1.0, false);
+  instanceModels(placements, TREE_SPECIES, TREE_H, 1.0, true); // bark the trunks
 }
 
 // Enrich every tree's canopy: extra leaf clusters filling out the crown, plus a
