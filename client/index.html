@@ -1310,39 +1310,56 @@ function buildLowPolyGround(W, D, cx, cz) {
   const seg = Math.max(24, Math.round(Math.max(W, D) / 6));
   const geo = new THREE.PlaneGeometry(W, D, seg, seg);
   geo.rotateX(-Math.PI / 2);
-  const src = geo.toNonIndexed().attributes.position;
-  const pal = zone.id === 'hiddencave'
-    ? [[0.15, 0.16, 0.19], [0.12, 0.13, 0.16], [0.2, 0.19, 0.15], [0.17, 0.19, 0.23]]
-    : [[0.27, 0.42, 0.21], [0.22, 0.36, 0.17], [0.32, 0.47, 0.25], [0.36, 0.33, 0.2], [0.2, 0.31, 0.16]];
-  const texName = zone.id === 'hiddencave' ? 'dark_stone' : 'grass';
   const rng = mulberry32(9), c = new THREE.Color();
   const half = (zone.river && !zone.enclosed) ? riverWaterHalf(zone.river.width) : 0;
-  const positions = [], colors = [], uvs = [];
-  for (let i = 0; i < src.count; i += 3) { // one flat colour per triangle
-    const mxw = (src.getX(i) + src.getX(i + 1) + src.getX(i + 2)) / 3 + cx;
-    const mzw = (src.getZ(i) + src.getZ(i + 1) + src.getZ(i + 2)) / 3 + cz;
-    const keep = zone.enclosed ? (!zone.boundary || inBoundary(mxw, mzw)) : true;
-    if (!keep) continue;
-    // Submerged riverbed triangles get a dark, muddy tint (seen through the
-    // water). The dirt shore itself is a separate flush ribbon (buildRiverShore).
-    const onBed = half && distToPolyline(mxw, mzw, zone.river.points) < half + 0.5;
-    const j = 0.9 + rng() * 0.2;
-    if (onBed) c.setRGB(0.22 + rng() * 0.06, 0.2 + rng() * 0.06, 0.16 + rng() * 0.05).multiplyScalar(j);
-    else { const p = pal[Math.floor(rng() * pal.length)]; c.setRGB(0.6 + p[0] * 0.7, 0.6 + p[1] * 0.7, 0.6 + p[2] * 0.7).multiplyScalar(j); }
-    for (let k = 0; k < 3; k++) {
-      const lx = src.getX(i + k), lz = src.getZ(i + k);
-      positions.push(lx, src.getY(i + k) + terrainHeight(lx + cx, lz + cz), lz);
-      colors.push(c.r, c.g, c.b);
-      uvs.push((lx + W / 2) / 8, (lz + D / 2) / 8);
+
+  // --- The cave keeps the faceted, clipped, stone-textured floor. ---
+  if (zone.enclosed) {
+    const src = geo.toNonIndexed().attributes.position;
+    const pal = [[0.15, 0.16, 0.19], [0.12, 0.13, 0.16], [0.2, 0.19, 0.15], [0.17, 0.19, 0.23]];
+    const positions = [], colors = [], uvs = [];
+    for (let i = 0; i < src.count; i += 3) {
+      const mxw = (src.getX(i) + src.getX(i + 1) + src.getX(i + 2)) / 3 + cx;
+      const mzw = (src.getZ(i) + src.getZ(i + 1) + src.getZ(i + 2)) / 3 + cz;
+      if (zone.boundary && !inBoundary(mxw, mzw)) continue;
+      const p = pal[Math.floor(rng() * pal.length)], j = 0.9 + rng() * 0.2;
+      c.setRGB(0.6 + p[0] * 0.7, 0.6 + p[1] * 0.7, 0.6 + p[2] * 0.7).multiplyScalar(j);
+      for (let k = 0; k < 3; k++) {
+        const lx = src.getX(i + k), lz = src.getZ(i + k);
+        positions.push(lx, src.getY(i + k), lz); colors.push(c.r, c.g, c.b); uvs.push((lx + W / 2) / 8, (lz + D / 2) / 8);
+      }
     }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    g.computeVertexNormals();
+    ground = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ map: loadTexture('dark_stone', 1, 1), vertexColors: true, flatShading: true, roughness: 1 }));
+    ground.position.set(cx, 0, cz); ground.receiveShadow = true; ground.userData.isGround = true; scene.add(ground);
+    return;
   }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  g.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-  g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-  g.computeVertexNormals();
-  const map = loadTexture(texName, 1, 1);
-  ground = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ map, vertexColors: true, flatShading: true, roughness: 1 }));
+
+  // --- Open-air: a SMOOTH ground (indexed + smooth normals, no hard facets)
+  // coloured with per-vertex gradients of green that flow across the terrain,
+  // and a dark muddy tint under the river. Keeps the grass texture map so
+  // textured zones still tile, while the colours read as soft green gradients. ---
+  const pos = geo.attributes.position, uv = geo.attributes.uv, N = pos.count;
+  const colors = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++) {
+    const lx = pos.getX(i), lz = pos.getZ(i), wx = lx + cx, wz = lz + cz;
+    pos.setY(i, terrainHeight(wx, wz)); // carve the riverbed
+    if (uv) uv.setXY(i, (lx + W / 2) / 8, (lz + D / 2) / 8);
+    // Smooth low-frequency field -> gentle gradients rather than per-triangle jumps.
+    const nf = Math.sin(wx * 0.06) * 0.5 + Math.cos(wz * 0.052) * 0.5 + Math.sin((wx + wz) * 0.017) * 0.45;
+    const onBed = half && distToPolyline(wx, wz, zone.river.points) < half + 0.5;
+    if (onBed) c.setHSL(0.09, 0.34, 0.15 + nf * 0.02);                        // muddy riverbed
+    else c.setHSL(0.27 + nf * 0.035, 0.48 + nf * 0.08, 0.33 + nf * 0.08);     // gradients of green
+    colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
+  }
+  pos.needsUpdate = true;
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geo.computeVertexNormals(); // shared vertices -> smooth shading, no triangle facets
+  ground = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: loadTexture('grass', 1, 1), vertexColors: true, roughness: 1 }));
   ground.position.set(cx, 0, cz); ground.receiveShadow = true; ground.userData.isGround = true; scene.add(ground);
 }
 
