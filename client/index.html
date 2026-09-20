@@ -272,6 +272,26 @@
   <div id="nameplates"></div>
   <div id="hurt"></div>
   <div id="toast"></div>
+  <div id="editor" style="display:none; position:absolute; left:10px; top:80px; width:250px; z-index:45; pointer-events:auto; background:rgba(14,18,26,0.94); border:1px solid #2b3852; border-radius:10px; color:#cdd6e5; font-size:12px; box-shadow:0 8px 28px #000a;">
+    <div style="padding:8px 10px; border-bottom:1px solid #2b3852; font-weight:700; color:#9fd0ff; letter-spacing:1px; display:flex; justify-content:space-between; align-items:center;">
+      <span>WORLD EDITOR</span><span id="edMode" style="font-size:10px; color:#7f8ba0;">place</span>
+    </div>
+    <div style="padding:8px 10px;">
+      <input id="edSearch" placeholder="search models…" style="width:100%; box-sizing:border-box; background:#0c111b; border:1px solid #2b3852; color:#e6edf6; border-radius:6px; padding:5px 7px; font-size:12px;" />
+      <div id="edPalette" style="margin-top:6px; max-height:34vh; overflow-y:auto; display:flex; flex-direction:column; gap:2px;"></div>
+    </div>
+    <div id="edInspector" style="display:none; padding:8px 10px; border-top:1px solid #2b3852;">
+      <div id="edSelName" style="font-weight:700; color:#ffd98a; margin-bottom:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></div>
+      <label style="display:block; margin:4px 0;">Rotate <input id="edYaw" type="range" min="0" max="6.283" step="0.05" style="width:100%;"></label>
+      <label style="display:block; margin:4px 0;">Scale <input id="edScale" type="range" min="0.2" max="4" step="0.05" style="width:100%;"> <span id="edScaleV"></span></label>
+      <label style="display:flex; align-items:center; gap:6px; margin:4px 0;"><input id="edColOn" type="checkbox"> Solid (collision)</label>
+      <label style="display:block; margin:4px 0;">Radius <input id="edColR" type="range" min="0.2" max="6" step="0.1" style="width:100%;"> <span id="edColRV"></span></label>
+      <button id="edDelete" style="width:100%; margin-top:6px; background:#5a2330; border:1px solid #7a3040; color:#ffd0d0; border-radius:6px; padding:6px; cursor:pointer;">Delete</button>
+    </div>
+    <div style="padding:7px 10px; border-top:1px solid #2b3852; font-size:10px; color:#7f8ba0; line-height:1.5;">
+      Pick a model, then <b>left-click ground</b> to place. Click a placed object to select. Drag to move. <b>Esc</b> cancels placing.
+    </div>
+  </div>
   <div id="chat">
     <div id="chatlog"></div>
     <input id="chatinput" placeholder="Press Enter to chat…" maxlength="200" />
@@ -430,6 +450,7 @@ function handle(m) {
   switch (m.t) {
     case 'welcome':
       myId = m.id; zone = m.zone; startGame();
+      if (EDIT.on) { editInit(); ws?.send(JSON.stringify({ t: 'edit:list', key: EDIT.key })); }
       break;
     case 'snapshot':
       snapPrev = snapCur; snapPrevT = snapCurT;
@@ -442,6 +463,12 @@ function handle(m) {
       break;
     case 'transition':
       enterZone(m.zone);
+      break;
+    case 'models':
+      EDIT.models = m.models || []; editBuildPalette();
+      break;
+    case 'edit':
+      applyEdit(m);
       break;
     case 'bag':
       bag = { items: m.items || [], gold: m.gold || 0,
@@ -1116,6 +1143,9 @@ function buildZone() {
 
   // The farm gate — a standalone model that swings open/shut (server-driven).
   buildFarmGate();
+
+  // World-editor objects (player-built props), as individual meshes.
+  buildEditObjects();
 
   // Treasure chests (clickable)
   for (const ch of (zone.chests || [])) buildChest(ch);
@@ -1969,6 +1999,127 @@ function updateFarmGate(dt) {
   if (!farmGate || !farmGate.hinge) return;
   gateOpen += (gateTarget - gateOpen) * Math.min(1, dt * 6);
   farmGate.hinge.rotation.y = gateOpen * GATE_MAX_SWING;
+}
+
+// ---------------------------------------------------------------------------
+// World editor — place/move/rotate/scale/delete GLB props, saved server-side.
+// Activated with ?edit=<key>; the value is the auth key sent with every edit.
+// ---------------------------------------------------------------------------
+const EDIT = { on: false, key: '', models: [], placing: null, selId: null };
+(function () { const p = new URLSearchParams(location.search).get('edit'); if (p) { EDIT.on = true; EDIT.key = p; } })();
+const editMeshes = new Map(); // id -> THREE.Group
+
+function makeEditMesh(o) {
+  const key = modelKey(o.m); const src = LOADED[key];
+  if (!src) return null;
+  const obj = src.clone(true); obj.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(obj);
+  obj.position.set(-(box.min.x + box.max.x) / 2, -box.min.y, -(box.min.z + box.max.z) / 2);
+  const wrap = new THREE.Group(); wrap.add(obj);
+  wrap.scale.setScalar(o.s || 1);
+  wrap.position.set(o.x, groundY ? groundY(o.x, o.z) : 0, o.z);
+  wrap.rotation.y = o.yaw || 0;
+  wrap.userData.editObj = o;
+  wrap.traverse(x => { if (x.isMesh) { x.castShadow = x.receiveShadow = true; x.userData.pickKind = 'editobj'; x.userData.editId = o.id; } });
+  scene.add(wrap);
+  editMeshes.set(o.id, wrap);
+  return wrap;
+}
+function removeEditMesh(id) { const g = editMeshes.get(id); if (g) { scene.remove(g); editMeshes.delete(id); } }
+async function buildEditObjects() {
+  for (const g of editMeshes.values()) scene.remove(g);
+  editMeshes.clear();
+  const objs = zone.editObjects || [];
+  const need = [...new Set(objs.map(o => o.m).filter(m => LOADED[modelKey(m)] === undefined))];
+  if (need.length) await loadModels(need).catch(() => {});
+  for (const o of objs) makeEditMesh(o);
+}
+// A live edit from the server (place / update / delete).
+async function applyEdit(m) {
+  zone.editObjects = zone.editObjects || [];
+  if (m.op === 'place' || m.op === 'update') {
+    const o = m.obj; const i = zone.editObjects.findIndex(e => e.id === o.id);
+    if (i >= 0) zone.editObjects[i] = o; else zone.editObjects.push(o);
+    if (LOADED[modelKey(o.m)] === undefined) await loadModels([o.m]).catch(() => {});
+    removeEditMesh(o.id); makeEditMesh(o);
+    if (EDIT.selId === o.id) editSyncInspector();
+  } else if (m.op === 'delete') {
+    zone.editObjects = zone.editObjects.filter(e => e.id !== m.id);
+    removeEditMesh(m.id);
+    if (EDIT.selId === m.id) editSelect(null);
+  }
+}
+function sendEdit(obj) { obj.key = EDIT.key; ws?.send(JSON.stringify(obj)); }
+
+let editDrag = null, editHL = null, _edUpdT = 0;
+function editInit() {
+  document.getElementById('editor').style.display = 'block';
+  const $ = id => document.getElementById(id);
+  $('edSearch').addEventListener('input', editBuildPalette);
+  $('edYaw').addEventListener('input', e => editEditSel({ yaw: +e.target.value }));
+  $('edScale').addEventListener('input', e => { editEditSel({ s: +e.target.value }); $('edScaleV').textContent = (+e.target.value).toFixed(2); });
+  $('edColOn').addEventListener('change', e => editEditSel({ c: e.target.checked ? (+$('edColR').value || 1) : 0 }));
+  $('edColR').addEventListener('input', e => { $('edColRV').textContent = (+e.target.value).toFixed(1); if ($('edColOn').checked) editEditSel({ c: +e.target.value }); });
+  for (const id of ['edYaw', 'edScale', 'edColR']) $(id).addEventListener('change', () => editFlush());
+  $('edDelete').addEventListener('click', () => { if (EDIT.selId) sendEdit({ t: 'edit:delete', id: EDIT.selId }); });
+}
+function editBuildPalette() {
+  const wrap = document.getElementById('edPalette'); if (!wrap) return;
+  const q = (document.getElementById('edSearch').value || '').toLowerCase();
+  wrap.innerHTML = '';
+  for (const m of EDIT.models) {
+    if (q && !m.toLowerCase().includes(q)) continue;
+    const b = document.createElement('button'); b.textContent = modelKey(m); b.title = m;
+    b.style.cssText = 'text-align:left; background:' + (EDIT.placing === m ? '#274063' : '#0c111b') + '; border:1px solid #2b3852; color:#dbe6f3; border-radius:5px; padding:4px 7px; cursor:pointer; font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;';
+    b.onclick = () => { EDIT.placing = (EDIT.placing === m ? null : m); editSetMode(); editBuildPalette(); };
+    wrap.appendChild(b);
+  }
+}
+function editSetMode() { const el = document.getElementById('edMode'); if (el) el.textContent = EDIT.placing ? 'place: ' + modelKey(EDIT.placing) : (EDIT.selId ? 'select' : 'idle'); }
+function editSelect(id) {
+  EDIT.selId = id;
+  if (editHL) { scene.remove(editHL); editHL = null; }
+  const g = id && editMeshes.get(id);
+  if (g) { editHL = new THREE.BoxHelper(g, 0x9fd0ff); scene.add(editHL); }
+  document.getElementById('edInspector').style.display = id ? 'block' : 'none';
+  if (id) editSyncInspector();
+  editSetMode();
+}
+function editSyncInspector() {
+  const o = (zone.editObjects || []).find(e => e.id === EDIT.selId); if (!o) return;
+  const $ = id => document.getElementById(id);
+  $('edSelName').textContent = modelKey(o.m);
+  $('edYaw').value = o.yaw || 0;
+  $('edScale').value = o.s || 1; $('edScaleV').textContent = (o.s || 1).toFixed(2);
+  $('edColOn').checked = (o.c || 0) > 0;
+  $('edColR').value = (o.c || 1); $('edColRV').textContent = (o.c || 1).toFixed(1);
+}
+function editEditSel(patch) {
+  const o = (zone.editObjects || []).find(e => e.id === EDIT.selId); if (!o) return;
+  Object.assign(o, patch);
+  const g = editMeshes.get(o.id);
+  if (g) { if ('yaw' in patch) g.rotation.y = o.yaw; if ('s' in patch) g.scale.setScalar(o.s); if (editHL) editHL.update(); }
+  const now = performance.now(); if (now - _edUpdT > 140) { _edUpdT = now; editFlush(); }
+}
+function editFlush() {
+  const o = (zone.editObjects || []).find(e => e.id === EDIT.selId); if (!o) return;
+  sendEdit({ t: 'edit:update', id: o.id, x: o.x, z: o.z, yaw: o.yaw, s: o.s, c: o.c });
+}
+function groundPointAt(e) {
+  const ndc = new THREE.Vector2((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  for (const h of raycaster.intersectObjects(scene.children, true)) if (h.object.userData.isGround) return h.point;
+  return null;
+}
+// Left-click while editing: place, or select/deselect.
+function editClick(e) {
+  if (EDIT.placing) {
+    const gp = groundPointAt(e);
+    if (gp) sendEdit({ t: 'edit:place', m: EDIT.placing, x: +gp.x.toFixed(2), z: +gp.z.toFixed(2), yaw: 0, s: 1, c: 0 });
+    return;
+  }
+  const pk = pickAt(e);
+  editSelect(pk && pk.kind === 'editobj' ? pk.id : null);
 }
 
 // ---- NPCs (quest givers / merchants), placed from the zone data ----
@@ -2909,11 +3060,17 @@ function addEventListeners() {
   const cv = renderer.domElement;
   cv.addEventListener('mousedown', (e) => {
     if (e.button !== 0) return;
-    dragging = true; dragMoved = false;
-    lastMX = downMX = e.clientX; lastMY = downMY = e.clientY;
+    dragMoved = false; lastMX = downMX = e.clientX; lastMY = downMY = e.clientY;
+    // Edit mode: grabbing a placed object drags it instead of the camera.
+    if (EDIT.on && !EDIT.placing) {
+      const pk = pickAt(e);
+      if (pk && pk.kind === 'editobj') { editSelect(pk.id); editDrag = pk.id; dragging = false; return; }
+    }
+    dragging = true;
   });
   addEventListener('mouseup', (e) => {
     if (e.button !== 0) return;
+    if (editDrag) { editFlush(); editDrag = null; dragging = false; return; }
     const wasDragging = dragging;
     dragging = false;
     if (!dragMoved && wasDragging && e.target === cv) handleLeftClick(e);
@@ -2921,6 +3078,18 @@ function addEventListeners() {
   cv.addEventListener('contextmenu', (e) => { e.preventDefault(); openContextMenu(e); });
   addEventListener('mousedown', (e) => { if (e.button === 0 && !e.target.closest('#ctxmenu')) hideContextMenu(); });
   addEventListener('mousemove', (e) => {
+    // Dragging a placed object across the ground.
+    if (editDrag) {
+      const gp = groundPointAt(e);
+      const o = (zone.editObjects || []).find(x => x.id === editDrag), g = editMeshes.get(editDrag);
+      if (gp && o && g) {
+        o.x = +gp.x.toFixed(2); o.z = +gp.z.toFixed(2);
+        g.position.set(o.x, groundY ? groundY(o.x, o.z) : 0, o.z);
+        if (editHL) editHL.update();
+        const now = performance.now(); if (now - _edUpdT > 140) { _edUpdT = now; editFlush(); }
+      }
+      dragMoved = true; return;
+    }
     if (!dragging) return;
     const dx = e.clientX - lastMX, dy = e.clientY - lastMY;
     if (Math.abs(e.clientX - downMX) + Math.abs(e.clientY - downMY) > 5) dragMoved = true;
@@ -2941,7 +3110,9 @@ function addEventListeners() {
     if (e.key.toLowerCase() === 'q') { toggleQuests(); return; }
     if (e.key.toLowerCase() === 'e') { toggleEquip(); return; }
     if (e.key.toLowerCase() === 'm') { toggleMap(); return; }
-    if (e.key === 'Escape') { closeDialogue(); hideContextMenu(); closeMap(); return; }
+    if (EDIT.on && e.key === 'Escape' && EDIT.placing) { EDIT.placing = null; editSetMode(); editBuildPalette(); return; }
+    if (EDIT.on && (e.key === 'Delete' || e.key === 'Backspace') && EDIT.selId) { sendEdit({ t: 'edit:delete', id: EDIT.selId }); return; }
+    if (e.key === 'Escape') { closeDialogue(); hideContextMenu(); closeMap(); if (EDIT.on) editSelect(null); return; }
     if (e.key === ' ' || e.code === 'Space') { e.preventDefault(); if (!jump.active) { jump.active = true; jump.t = 0; } return; }
     const k = e.key.toLowerCase();
     if (k.startsWith('arrow')) e.preventDefault();
@@ -2982,6 +3153,7 @@ function pickAt(e) {
     }
     if (u.pickKind === 'npc') return { kind: 'npc', id: u.npcId, npcId: u.npcId, name: u.npcName, x: u.npcX, z: u.npcZ, point: h.point };
     if (u.pickKind === 'gate') return { kind: 'gate', point: h.point };
+    if (u.pickKind === 'editobj') return { kind: 'editobj', id: u.editId, point: h.point };
     if (u.isGround && !groundPt) groundPt = h.point;
   }
   if (groundPt) return { kind: 'ground', point: groundPt };
@@ -3037,6 +3209,7 @@ function optionsFor(pk) {
 
 function handleLeftClick(e) {
   hideContextMenu();
+  if (EDIT.on) { editClick(e); return; } // edit mode: place / select, not walk / attack
   const pk = pickAt(e);
   const opts = optionsFor(pk);
   if (opts.length) opts[0].act();

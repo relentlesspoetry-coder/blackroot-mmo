@@ -3,3 +3,6 @@
 maps/
 node_modules/
 shots/
+
+# Player-built world edits (world editor)
+server/zones/*.overrides.json

@@ -207,6 +207,12 @@ function resolveCollision(zone, ent, radius) {
     const dx = ent.x - o.x, dz = ent.z - o.z, d = Math.hypot(dx, dz), min = o.c * o.s + radius;
     if (d < min && d > 1e-4) { ent.x = o.x + (dx / d) * min; ent.z = o.z + (dz / d) * min; }
   }
+  // Editor-placed objects with a collision radius.
+  for (const o of (zone._editObjects || [])) {
+    if (!o.c) continue;
+    const dx = ent.x - o.x, dz = ent.z - o.z, d = Math.hypot(dx, dz), min = o.c * (o.s || 1) + radius;
+    if (d < min && d > 1e-4) { ent.x = o.x + (dx / d) * min; ent.z = o.z + (dz / d) * min; }
+  }
 
   // Trees are solid.
   for (const t of (zone._trees || [])) {
@@ -308,6 +314,7 @@ function populate() {
     zone._trees = generateTrees(zone);
     zone._scatter = generateScatter(zone);
     buildFarm(zone);
+    loadOverrides(zone); // player-built objects from the world editor
     zone._hanging = generateHanging(zone);
     // Any scattered ore vein becomes a minable node, addressed by its index.
     zone._veins = new Map();
@@ -361,6 +368,45 @@ function stepGates() {
     if (Math.abs(g.t - g.target) < 0.01) g.t = g.target;
   }
 }
+
+// ---------------------------------------------------------------------------
+// World editor (Edit Mode). Player-placed objects live in a per-zone overrides
+// file and merge into the live world. Edits are authoritative and gated by a key
+// (?edit=<key> on the client). Rendered as individual meshes client-side so they
+// can be moved/deleted one at a time.
+// ---------------------------------------------------------------------------
+const EDIT_KEY = process.env.BLACKROOT_EDIT_KEY || 'letmebuild';
+let editSeq = 1;
+function overridesPath(zone) { return path.join(__dirname, 'zones', zone.id + '.overrides.json'); }
+function loadOverrides(zone) {
+  zone._editObjects = [];
+  try {
+    const data = JSON.parse(fs.readFileSync(overridesPath(zone), 'utf8'));
+    if (Array.isArray(data.objects)) zone._editObjects = data.objects;
+    for (const o of zone._editObjects) { const n = parseInt(String(o.id).replace(/\D/g, ''), 10); if (n >= editSeq) editSeq = n + 1; }
+  } catch { /* no overrides yet */ }
+}
+function saveOverrides(zone) {
+  try { fs.writeFileSync(overridesPath(zone), JSON.stringify({ objects: zone._editObjects }, null, 2)); }
+  catch (e) { console.error('saveOverrides failed:', e.message); }
+}
+function broadcastZone(zoneId, obj) {
+  const s = JSON.stringify(obj);
+  for (const p of players.values()) if (p.zoneId === zoneId && p.ws.readyState === p.ws.OPEN) p.ws.send(s);
+}
+// Every .glb under client/models, as model keys for the editor palette.
+let MODEL_MANIFEST = [];
+(function scanModels() {
+  const base = path.join(CLIENT_DIR, 'models'), out = [];
+  const walk = (dir, prefix) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (e.isDirectory()) walk(path.join(dir, e.name), prefix + e.name + '/');
+      else if (e.name.endsWith('.glb')) out.push(prefix + e.name.replace(/\.glb$/, ''));
+    }
+  };
+  try { walk(base, ''); } catch { /* no models dir */ }
+  MODEL_MANIFEST = out.sort();
+})();
 
 function populateElite(zoneId, e) {
   const elite = makeMonster({
@@ -1003,6 +1049,7 @@ function zoneForClient(zone) {
     models: zone.models || [],
     farmBox: zone._farmBox || null,
     gate: zone.farm && zone.farm.gate ? { x: zone.farm.gate.x, z: zone.farm.gate.z, yaw: zone.farm.gate.yaw || 0, s: zone.farm.gate.s || 1 } : null,
+    editObjects: zone._editObjects || [],
   };
 }
 
@@ -1076,6 +1123,36 @@ wss.on('connection', (ws) => {
       case 'gate': {
         if (!player || !player.alive || !zoneOf(player)._gate) break;
         player.pendingGate = true; player.combatId = null; player.moveTo = null; player.pendingChest = null; player.pendingPickup = null; player.pendingMine = null;
+        break;
+      }
+      // --- World editor (gated by EDIT_KEY) ---
+      case 'edit:list': {
+        if (msg.key === EDIT_KEY) send(ws, { t: 'models', models: MODEL_MANIFEST });
+        break;
+      }
+      case 'edit:place': {
+        if (!player || msg.key !== EDIT_KEY || !msg.m) break;
+        const z = zoneOf(player);
+        const o = { id: 'e' + (editSeq++), m: String(msg.m), x: +(+msg.x).toFixed(2), z: +(+msg.z).toFixed(2),
+          yaw: +(+(msg.yaw || 0)).toFixed(3), s: +(+(msg.s || 1)).toFixed(3), c: +(+(msg.c || 0)).toFixed(2) };
+        z._editObjects.push(o); saveOverrides(z); broadcastZone(player.zoneId, { t: 'edit', op: 'place', obj: o });
+        break;
+      }
+      case 'edit:update': {
+        if (!player || msg.key !== EDIT_KEY) break;
+        const z = zoneOf(player); const o = (z._editObjects || []).find(o => o.id === msg.id); if (!o) break;
+        if (msg.x != null) o.x = +(+msg.x).toFixed(2);
+        if (msg.z != null) o.z = +(+msg.z).toFixed(2);
+        if (msg.yaw != null) o.yaw = +(+msg.yaw).toFixed(3);
+        if (msg.s != null) o.s = +(+msg.s).toFixed(3);
+        if (msg.c != null) o.c = +(+msg.c).toFixed(2);
+        saveOverrides(z); broadcastZone(player.zoneId, { t: 'edit', op: 'update', obj: o });
+        break;
+      }
+      case 'edit:delete': {
+        if (!player || msg.key !== EDIT_KEY) break;
+        const z = zoneOf(player); const i = (z._editObjects || []).findIndex(o => o.id === msg.id); if (i < 0) break;
+        z._editObjects.splice(i, 1); saveOverrides(z); broadcastZone(player.zoneId, { t: 'edit', op: 'delete', id: msg.id });
         break;
       }
       case 'equip': if (player && player.alive) equipItem(player, String(msg.item || ''), msg.slot ? String(msg.slot) : null); break;
