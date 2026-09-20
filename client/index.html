@@ -1359,7 +1359,9 @@ function buildDetails() {
 
   // Little blades of grass across the whole zone. (This replaced the old solid
   // cone "grass tufts" and "ferns", which read as weird green pyramids/blobs.)
-  buildGrass();
+  // Dark Woods is dressed only by real modelled vegetation, so its procedural
+  // grass tufts are skipped there — the ground grass texture carries the green.
+  if (zone.id !== 'darkwoods') buildGrass();
   // Detail density scales with zone area so the bigger woods stay full.
   const areaK = Math.min(3.2, ((b.maxX - b.minX) * (b.maxZ - b.minZ)) / 37800);
   const N = (n) => Math.round(n * areaK);
