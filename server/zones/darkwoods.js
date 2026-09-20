@@ -148,6 +148,15 @@ export const darkwoods = {
     { x: -64, z: 60, r: 6 }, { x: -59, z: 64, r: 3 }, { x: -67, z: 56, r: 3 },
   ],
 
+  // Treasure chests reward exploring the optional landmarks. Loot scales with
+  // how deep/dangerous the spot is. Positions are pre-scale like everything else.
+  chests: [
+    { id: 'watchtower', x: 52, z: -74, gold: 70,  item: 'Leather Body' },        // old soldier's kit at the Fallen Watchtower
+    { id: 'rotfen',     x: 50, z: -32, gold: 110, item: 'Battered Iron Shield' }, // bandit stash in the Rotfen Thicket
+    { id: 'wolfden',    x: 64, z: 30,  gold: 160, item: 'Iron Sword' },           // goblin plunder at the Wolf Den
+    { id: 'stones',     x: 20, z: 38,  gold: 240, item: 'Crystal Heart' },        // the Guardian's hoard at the Stone Circle
+  ],
+
   // No aggressive mob may spawn within this radius of `spawn` — the first
   // thing a new character meets is livestock, not a goblin.
   safeSpawnRadius: 30,
@@ -188,6 +197,23 @@ export const darkwoods = {
     { model: 'Goblin_Hide_Tent', count: 1, r: 1.4, scale: [1.0, 1.1], near: 'rotfen', nearR: 12 },
     { model: 'Unlit_Fire_Pit',  count: 1, r: 0, scale: [1.0, 1.0], near: 'rotfen', nearR: 10 },
     { model: 'Rough_Fence',     count: 3, r: 0.5, scale: [1.0, 1.1], near: 'rotfen', nearR: 14 },
+
+    // Fallen Watchtower — an abandoned lookout gone to ruin: toppled fence,
+    // broken barricades, scattered crates, a warning sign and bleached bones.
+    { model: 'Spike_Barricade', count: 3, r: 0.8, scale: [1.0, 1.2], near: 'watchtower', nearR: 12 },
+    { model: 'Rough_Fence',     count: 4, r: 0.5, scale: [1.0, 1.1], near: 'watchtower', nearR: 14 },
+    { model: 'Supply_Crate',    count: 3, r: 0.8, scale: [0.9, 1.1], near: 'watchtower', nearR: 12 },
+    { model: 'Warning_Sign',    count: 1, r: 0,   scale: [1.0, 1.0], near: 'watchtower', nearR: 10 },
+    { model: 'Bone_Pile',       count: 2, r: 0,   scale: [1.0, 1.3], near: 'watchtower', nearR: 12 },
+    { model: 'Twisted_Dead_Tree', count: 3, r: 0.9, scale: [1.0, 1.4], near: 'watchtower', nearR: 16 },
+
+    // Ancient Stone Circle — the Rootbound Guardian's grove: goblin totems, dead
+    // trees, bones and poison mushrooms give it an ominous, ritual feel.
+    { model: 'Goblin_Totem',    count: 3, r: 0.6, scale: [1.0, 1.2], near: 'stones', nearR: 12 },
+    { model: 'Twisted_Dead_Tree', count: 4, r: 0.9, scale: [1.1, 1.5], near: 'stones', nearR: 15 },
+    { model: 'Bone_Pile',       count: 3, r: 0,   scale: [1.0, 1.3], near: 'stones', nearR: 13 },
+    { model: 'Poison_Mushrooms', count: 6, r: 0,  scale: [1.0, 1.4], near: 'stones', nearR: 14 },
+    { model: 'Exposed_Roots',   count: 4, r: 0,   scale: [1.0, 1.4], near: 'stones', nearR: 13 },
 
     // Atmospheric flora & bones scattered zone-wide (no anchor).
     { model: 'Twisted_Dead_Tree', count: 10, r: 0.9, scale: [0.9, 1.3] },
