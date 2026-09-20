@@ -199,8 +199,23 @@
     text-shadow: 0 2px 4px #000; pointer-events: none; }
   .npcmark.offer { color: #ffd24a; } .npcmark.turnin { color: #8fd070; }
 
-  #help { position: absolute; top: 12px; right: 12px; text-align: right; color: #6f8199; font-size: 12px; line-height: 1.6; text-shadow: 0 1px 2px #000; }
-  #help b { color: #b9c9dd; }
+  /* ESC settings / menu overlay */
+  #settings { position: fixed; inset: 0; z-index: 40; display: none; align-items: center; justify-content: center;
+    background: rgba(6,10,18,0.55); pointer-events: auto; }
+  #settings.show { display: flex; }
+  #settings .panel { width: 320px; max-width: 88vw; background: #141b28; border: 1px solid #2b3a52;
+    border-radius: 12px; box-shadow: 0 12px 40px #000a; padding: 18px 20px; color: #d7e2f0; }
+  #settings h2 { margin: 0 0 12px; font-size: 20px; color: #9ad0ff; text-align: center; font-weight: 700; }
+  #settings h3 { margin: 14px 0 6px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: #6f8199; }
+  #settings .ctrls { display: grid; grid-template-columns: auto 1fr; gap: 3px 14px; font-size: 13px; }
+  #settings .ctrls b { color: #b9c9dd; font-weight: 600; }
+  #settings .ctrls span { color: #8a97ab; text-align: right; }
+  #settings .row { display: flex; align-items: center; justify-content: space-between; margin: 8px 0; font-size: 13px; }
+  #settings .sbtn { pointer-events: auto; cursor: pointer; font-size: 13px; padding: 4px 12px; background: #1a2436;
+    color: #cfe0f5; border: 1px solid #3a4c68; border-radius: 6px; }
+  #settings .sbtn.on { background: #2f5aa0; border-color: #5a86c8; color: #fff; }
+  #settings .resume { width: 100%; margin-top: 16px; padding: 9px; font-size: 14px; font-weight: 600; cursor: pointer;
+    background: linear-gradient(90deg,#3f6fd6,#8a5cff); color: #fff; border: none; border-radius: 8px; pointer-events: auto; }
 
   #hurt { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .12s;
     box-shadow: inset 0 0 120px 40px #c0392b; }
@@ -250,8 +265,29 @@
     <div class="bar"><i id="hpfill"></i><span id="hptext">100 / 100</span></div>
     <div class="bar"><i id="xpfill"></i><span id="xptext">XP 0%</span></div>
   </div>
-  <div id="help">
-    <b>Walk</b> Left-click ground<br><b>Attack</b> Left-click monster<br><b>Target</b> Tab<br><b>Bag</b> I<br><b>Equipment</b> E<br><b>Quests</b> Q<br><b>Map</b> M<br><b>Options</b> Right-click<br><b>Look</b> Arrows / Drag<br><b>Zoom</b> Scroll<br><b>Chat</b> Enter
+  <div id="settings">
+    <div class="panel">
+      <h2>Menu</h2>
+      <h3>Controls</h3>
+      <div class="ctrls">
+        <span>Left-click ground</span><b>Walk</b>
+        <span>Left-click monster</span><b>Attack</b>
+        <span>Tab</span><b>Target</b>
+        <span>R</span><b>Rest / meditate</b>
+        <span>I</span><b>Bag</b>
+        <span>E</span><b>Equipment</b>
+        <span>Q</span><b>Quests</b>
+        <span>M</span><b>Map</b>
+        <span>Right-click</span><b>Options</b>
+        <span>Arrows / Drag</span><b>Look</b>
+        <span>Scroll</span><b>Zoom</b>
+        <span>Enter</span><b>Chat</b>
+        <span>Esc</span><b>This menu</b>
+      </div>
+      <h3>Options</h3>
+      <div class="row"><span>Show damage numbers</span><button class="sbtn on" id="optSplats">On</button></div>
+      <button class="resume" id="resumeBtn">Resume</button>
+    </div>
   </div>
   <button id="bagBtn" title="Bag (I)">🎒<span class="cnt" id="bagCnt"></span></button>
   <button id="questBtn" title="Quest log (Q)">📜<span class="cnt" id="questCnt"></span></button>
@@ -3907,7 +3943,15 @@ function addEventListeners() {
       if (EDIT.selId) { sendEdit({ t: 'edit:delete', id: EDIT.selId }); return; }
       if (EDIT.selSpawn) { sendEdit({ t: 'edit:spawn:delete', id: EDIT.selSpawn }); return; }
     }
-    if (e.key === 'Escape') { closeDialogue(); hideContextMenu(); closeMap(); if (EDIT.on) { editSelect(null); editSelectSpawn(null); } return; }
+    if (e.key === 'Escape') {
+      // Esc closes whatever is open; if nothing is, it opens the menu.
+      if (settingsEl.classList.contains('show')) { closeSettings(); return; }
+      let any = dialogueEl.style.display === 'block' || mapOpen || ctxEl.style.display === 'block';
+      closeDialogue(); hideContextMenu(); closeMap();
+      if (EDIT.on && (EDIT.selId || EDIT.selSpawn)) { editSelect(null); editSelectSpawn(null); any = true; }
+      if (!any) openSettings();
+      return;
+    }
     if (e.key === ' ' || e.code === 'Space') { e.preventDefault(); if (!jump.active) { jump.active = true; jump.t = 0; } return; }
     const k = e.key.toLowerCase();
     if (k.startsWith('arrow')) e.preventDefault();
@@ -4324,17 +4368,17 @@ function showHit(m) {
   const rec = entityMeshes.get(m.target);
   if (!rec) return;
   tmpV.copy(rec.mesh.position); tmpV.y += 2.0; tmpV.project(camera);
-  if (tmpV.z > 1) return;
-  const x = (tmpV.x * 0.5 + 0.5) * innerWidth, y = (-tmpV.y * 0.5 + 0.5) * innerHeight;
-  // Old School RuneScape hitsplat: blue "0" on a miss, red on a hit.
-  const el = document.createElement('div');
-  el.className = 'splat ' + (m.dmg > 0 ? 'hitdmg' : 'hitmiss');
-  el.textContent = m.dmg;
-  el.style.left = x + 'px'; el.style.top = y + 'px';
-  // Append to the full-screen nameplates layer so the projected pixel position
-  // is relative to the viewport (not the centred #toast container).
-  document.getElementById('nameplates').appendChild(el);
-  setTimeout(() => el.remove(), 800);
+  // Old School RuneScape hitsplat: blue "0" on a miss, red on a hit. (Skipped if
+  // damage numbers are turned off in the menu; the hit flash still plays.)
+  if (showSplats && tmpV.z <= 1) {
+    const x = (tmpV.x * 0.5 + 0.5) * innerWidth, y = (-tmpV.y * 0.5 + 0.5) * innerHeight;
+    const el = document.createElement('div');
+    el.className = 'splat ' + (m.dmg > 0 ? 'hitdmg' : 'hitmiss');
+    el.textContent = m.dmg;
+    el.style.left = x + 'px'; el.style.top = y + 'px';
+    document.getElementById('nameplates').appendChild(el);
+    setTimeout(() => el.remove(), 800);
+  }
   if (m.dmg > 0) {
     // Flash white, then restore. Overlapping hits (two mobs on one target, or a
     // fast weapon) used to capture the already-white colour as the "original"
@@ -4606,6 +4650,18 @@ function renderQuestLog() {
 }
 
 // ---- Giver dialogue ----
+// --- ESC menu (settings + controls) ---
+const settingsEl = document.getElementById('settings');
+function openSettings() { settingsEl.classList.add('show'); }
+function closeSettings() { settingsEl.classList.remove('show'); }
+let showSplats = true; // toggled in the menu; showHit respects it
+document.getElementById('resumeBtn').onclick = closeSettings;
+settingsEl.onclick = (e) => { if (e.target === settingsEl) closeSettings(); }; // click backdrop to close
+document.getElementById('optSplats').onclick = (e) => {
+  showSplats = !showSplats;
+  e.target.classList.toggle('on', showSplats); e.target.textContent = showSplats ? 'On' : 'Off';
+};
+
 const dialogueEl = document.getElementById('dialogue');
 function rewardLine(r) {
   if (!r) return '';
