@@ -104,6 +104,8 @@ export const ITEMS = {
   'Cowhide':      { value: 6 },
   'Raw Beef':     { value: 5 },
   'Raw Chicken':  { value: 4 },
+  'Raw Rabbit':   { value: 4 },
+  'Rabbit Pelt':  { value: 5 },
   'Feather':      { value: 1 },
   'Egg':          { value: 3 },
   'Bones':        { value: 2 },

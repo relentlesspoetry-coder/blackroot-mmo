@@ -217,7 +217,7 @@ export const MONSTER_TEMPLATES = {
     loot: [ { item: 'Cowhide', w: 70 }, { item: 'Raw Beef', w: 60 }, { item: 'Coins', min: 1, max: 8, w: 20 } ] },
   // Wild woodland rabbit: skittish, quick, harmless — small game for early XP.
   rabbit: { name: 'Rabbit', hp: 8, dmg: [1, 1], speed: 6, aggro: 0, xp: 6, respawn: 15, passive: true,
-    loot: [ { item: 'Bones', w: 55 }, { item: 'Raw Beef', w: 35 }, { item: 'Coins', min: 1, max: 4, w: 20 } ] },
+    loot: [ { item: 'Raw Rabbit', w: 55 }, { item: 'Rabbit Pelt', w: 40 }, { item: 'Bones', w: 20 }, { item: 'Coins', min: 1, max: 4, w: 15 } ] },
   chicken: { name: 'Chicken', hp: 12, dmg: [1, 1], speed: 3, aggro: 0, xp: 8, respawn: 18, passive: true,
     // Independent-roll drop table (Chicken_Loot_Pack): each entry rolls on its own.
     droptable: [

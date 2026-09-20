@@ -71,6 +71,21 @@ export const QUESTS = {
     reward: { xp: 200, gold: 90 },
   },
 
+  // --- Trapper Tam, Old Hunter's Trail -------------------------------------
+  trapping: {
+    id: 'trapping', name: 'The Trapper\'s Table', giver: 'tam', minLevel: 1,
+    summary: 'Hunt the woodland rabbits for Tam.',
+    intro: 'My snares come up empty, but a quick blade does better than string. Bring me a few rabbits — the meat for the pot and the pelts for trade — and I’ll cook you something hot.',
+    active: 'Six rabbits for the pot: four cuts of meat and three good pelts.',
+    done: 'Fine hunting. Here — a kebab off the fire, and my thanks.',
+    objectives: [
+      { type: 'kill', target: 'rabbit', count: 6, label: 'Rabbits hunted' },
+      { type: 'collect', item: 'Raw Rabbit', count: 4, label: 'Rabbit meat' },
+      { type: 'collect', item: 'Rabbit Pelt', count: 3, label: 'Rabbit pelts' },
+    ],
+    reward: { xp: 130, gold: 45, items: ['Kebab'] },
+  },
+
   // --- Prospector Dorn, Root-Choked Ravine ---------------------------------
   claimjumpers: {
     id: 'claimjumpers', name: 'Claim Jumpers', giver: 'dorn', minLevel: 4, requires: ['shrine'],
