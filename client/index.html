@@ -714,9 +714,12 @@ function updateSky(dt) {
   sky.domeMat.uniforms.bottom.value.copy(hor);
   scene.background = hor;
   scene.fog.color.copy(fog);
-  const baseFar = 320, far = misty ? 55 : (rainy ? 120 : baseFar);
-  scene.fog.near = misty ? 6 : 25;
-  scene.fog.far = far;
+  // Clear-weather fog distances come from the zone's env, so each zone sets its
+  // own sense of depth; rain/mist pull it in for atmosphere.
+  const baseFar = (zone && zone.env && zone.env.fogFar) || 320;
+  const baseNear = (zone && zone.env && zone.env.fogNear) || 25;
+  scene.fog.far = misty ? 55 : (rainy ? Math.min(120, baseFar) : baseFar);
+  scene.fog.near = misty ? 6 : baseNear;
 
   hemiLight.color.copy(pal.hemiSky); hemiLight.groundColor.copy(pal.hemiGr);
   hemiLight.intensity = pal.hemi * (1 - 0.35 * w);

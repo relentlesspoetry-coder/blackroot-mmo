@@ -68,7 +68,9 @@ export const darkwoods = {
   spawn: { x: 5, z: -92, yaw: 0 }, // Entrance Clearing, facing south
 
   // Rendering atmosphere — bright, readable, Old School RuneScape style.
-  env: { bg: 0x9fc4dc, fogNear: 90, fogFar: 320, hemiSky: 0xcfe4f0, hemiGround: 0x5f6f3e, hemiInt: 1.25, sun: 0xfff3d6, sunInt: 1.2 },
+  // Deeper woods: pull the clear-weather fog in so distant trees fade into a
+  // soft haze (depth + mood) without going dark. A hint of warm, mossy green.
+  env: { bg: 0x9fc4dc, fogNear: 32, fogFar: 210, hemiSky: 0xcfe4f0, hemiGround: 0x5f6f3e, hemiInt: 1.25, sun: 0xfff3d6, sunInt: 1.2 },
 
   // Zone transitions — step onto the cave mouth to descend, or the South Gate
   // to cross into the Killing Fields. (Portal locations scale with the zone; the
