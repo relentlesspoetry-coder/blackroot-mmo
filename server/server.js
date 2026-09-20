@@ -106,6 +106,9 @@ function segDirAt(pts, x, z) {
   return best;
 }
 
+// How far the flooded channel reaches beyond the river's nominal half-width
+// (must match RIVER_BANK on the client, which floods the whole carved channel).
+const RIVER_BANK = 4;
 // Collision: keep an entity inside bounds, out of rocks, and out of the river
 // (except at the bridge, where solid rails keep it on the deck).
 // ---------------------------------------------------------------------------
@@ -130,7 +133,7 @@ function resolveCollision(zone, ent, radius) {
       const rd = segDirAt(r.points, r.bridge.x, r.bridge.z);
       const pl = Math.hypot(pd.dx, pd.dz) || 1, rl = Math.hypot(rd.dx, rd.dz) || 1;
       const sinA = Math.min(1, Math.abs((pd.dx / pl) * (rd.dz / rl) - (pd.dz / pl) * (rd.dx / rl)));
-      const L = r.width / Math.max(0.5, sinA) + 9;
+      const L = (r.width + 2 * RIVER_BANK) / Math.max(0.5, sinA) + 9;
       zone._bridge = { cx: r.bridge.x, cz: r.bridge.z, dx: pd.dx / pl, dz: pd.dz / pl, L, deckW: 6, railHalf: 2.5 };
     }
     const B = zone._bridge;
@@ -154,7 +157,7 @@ function resolveCollision(zone, ent, radius) {
     }
     if (!onDeck) { // not on the deck — keep out of the water
       const c = closestOnPolyline(ent.x, ent.z, r.points);
-      const half = r.width / 2 + radius;
+      const half = r.width / 2 + RIVER_BANK + radius;
       if (c.dist < half) {
         let dx = ent.x - c.x, dz = ent.z - c.z, d = Math.hypot(dx, dz);
         if (d < 1e-4) { dx = 1; dz = 0; d = 1; }
@@ -215,7 +218,7 @@ function spawnInRegion(zone, region, opts = {}) {
     if (inSafeZone(zone, x, z)) continue;
     if (keepOut && dist2(x, z, zone.spawn.x, zone.spawn.z) < keepOut * keepOut) continue;
     if ((zone.rocks || []).some(o => dist2(x, z, o.x, o.z) < (o.r + 2) ** 2)) continue;
-    if (zone.river && closestOnPolyline(x, z, zone.river.points).dist < zone.river.width / 2 + 1) continue;
+    if (zone.river && closestOnPolyline(x, z, zone.river.points).dist < zone.river.width / 2 + RIVER_BANK + 1) continue;
     return { x, z };
   }
   // Fallback: the region centre, pushed clear of the keep-out ring if needed.

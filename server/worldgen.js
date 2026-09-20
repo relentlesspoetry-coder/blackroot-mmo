@@ -6,6 +6,9 @@
 
 function rand(min, max) { return min + Math.random() * (max - min); }
 function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+// Extra flooded width beyond the river's nominal half-width (matches the client
+// and server collision, so nothing is placed in the widened water).
+const RIVER_BANK = 4;
 export function dist2(ax, az, bx, bz) { const dx = ax - bx, dz = az - bz; return dx * dx + dz * dz; }
 
 export function closestOnSeg(px, pz, ax, az, bx, bz) {
@@ -65,7 +68,7 @@ export function generateTrees(zone) {
     const z = b.minZ + 3 + rng() * (b.maxZ - b.minZ - 6);
     if (zone.boundary && !pointInPoly(x, z, zone.boundary)) continue;
     if (closestOnPolyline(x, z, zone.path).dist < 6) continue;
-    if (zone.river && closestOnPolyline(x, z, zone.river.points).dist < zone.river.width / 2 + 3) continue;
+    if (zone.river && closestOnPolyline(x, z, zone.river.points).dist < zone.river.width / 2 + RIVER_BANK + 3) continue;
     if (zone.river && zone.river.bridge && dist2(x, z, zone.river.bridge.x, zone.river.bridge.z) < 15 * 15) continue;
     if (zone.pois.some(p => dist2(x, z, p.x, p.z) < clearRadiusS(p) ** 2)) continue;
     if ((zone.rocks || []).some(o => dist2(x, z, o.x, o.z) < (o.r + 2) ** 2)) continue;
@@ -106,7 +109,7 @@ export function generateScatter(zone) {
       // Keep dressing out of the water. A solid piece in a river is worse than
       // useless: an ore vein there is unreachable, because the river is the one
       // thing the player cannot walk through.
-      if (zone.river && closestOnPolyline(x, z, zone.river.points).dist < zone.river.width / 2 + 2.5) continue;
+      if (zone.river && closestOnPolyline(x, z, zone.river.points).dist < zone.river.width / 2 + RIVER_BANK + 2.5) continue;
       if ((zone.rocks || []).some(o => dist2(x, z, o.x, o.z) < (o.r + 1.5) ** 2)) continue;
       if ((zone.chests || []).some(c => dist2(x, z, c.x, c.z) < 16)) continue;
       if (dist2(x, z, zone.spawn.x, zone.spawn.z) < 64) continue;

@@ -490,14 +490,18 @@ function bridgeLift(x, z) {
 // River channel profile: a carved bed so the water sits deep with banks rising
 // above it. terrainHeight is the ground height at (x,z) — 0 on flat land, the
 // water line at the shore, dropping to the bed under the water.
-const RIVER_WATER_Y = -0.5, RIVER_BED_Y = -2.2, RIVER_BANK = 4;
+const RIVER_WATER_Y = -0.5, RIVER_BED_Y = -2.2, RIVER_BANK = 4, RIVER_LIP = 1.0;
+// Half-width of the water surface: the whole carved channel is flooded, so the
+// water reaches out to `river half-width + RIVER_BANK` and only a thin shore lip
+// (RIVER_LIP) rises out of it. Keeps the bank from showing as a dry dark rim.
+function riverWaterHalf(width) { return width / 2 + RIVER_BANK; }
 function terrainHeight(x, z) {
   if (!zone || !zone.river || zone.enclosed) return 0;
-  const rh = zone.river.width / 2;
+  const half = riverWaterHalf(zone.river.width);      // water edge
   const d = distToPolyline(x, z, zone.river.points);
-  if (d >= rh + RIVER_BANK) return 0;
-  if (d <= rh) return RIVER_WATER_Y + (RIVER_BED_Y - RIVER_WATER_Y) * (1 - d / rh); // bed under water
-  return RIVER_WATER_Y * (1 - (d - rh) / RIVER_BANK); // shore rising to 0
+  if (d >= half + RIVER_LIP) return 0;                 // grass beyond the channel
+  if (d >= half) return RIVER_WATER_Y * (1 - (d - half) / RIVER_LIP); // shore lip: -0.5 -> 0
+  return RIVER_BED_Y + (RIVER_WATER_Y - RIVER_BED_Y) * (d / half);    // submerged bed
 }
 // Height an entity should stand at: on a bridge use its deck, else the terrain.
 function groundY(x, z) { const b = bridgeLift(x, z); return b > 0 ? b : terrainHeight(x, z); }
@@ -1031,7 +1035,7 @@ function buildZone() {
   if (zone.river) {
     riverTex = makeWaterTexture();
     const waterMat = new THREE.MeshStandardMaterial({ map: riverTex, color: 0x2c6e97, roughness: 0.3, metalness: 0.25, transparent: true, opacity: 0.9, side: THREE.DoubleSide });
-    riverMesh = buildStripRibbon(zone.river.points, zone.river.width, RIVER_WATER_Y, waterMat, 8);
+    riverMesh = buildStripRibbon(zone.river.points, riverWaterHalf(zone.river.width) * 2, RIVER_WATER_Y, waterMat, 8);
     const br = zone.river.bridge;
     // Orient the deck along the PATH direction (so you walk straight over it),
     // and make it long enough to span the river at whatever angle the path
@@ -1042,7 +1046,7 @@ function buildZone() {
     const sinA = Math.min(1, Math.abs((pd.dx / pl) * (rd.dz / rl) - (pd.dz / pl) * (rd.dx / rl)));
     const phi = Math.atan2(pd.dx, pd.dz); // local +Z runs along the path
     const bridge = new THREE.Group();
-    const span = zone.river.width / Math.max(0.5, sinA);
+    const span = (riverWaterHalf(zone.river.width) * 2) / Math.max(0.5, sinA);
     const L = span + 9, deckW = 6, archH = Math.min(3.8, L * 0.24), N = 14;
     const arch = zz => archH * (1 - Math.pow(2 * zz / L, 2));
     const deckMat = new THREE.MeshStandardMaterial({ map: loadTexture('moss', 2, 2), color: 0x9fb07a, roughness: 0.9 });
@@ -1157,7 +1161,7 @@ function buildLowPolyGround(W, D, cx, cz) {
     if (!keep) continue;
     // Riverbed triangles get a dark, muddy tint instead of grass.
     const bedD = (zone.river && !zone.enclosed) ? distToPolyline(mxw, mzw, zone.river.points) : 1e9;
-    const onBed = bedD < zone.river.width / 2 + 1.5;
+    const onBed = zone.river && bedD < riverWaterHalf(zone.river.width) + RIVER_LIP;
     const j = 0.9 + rng() * 0.2;
     if (onBed) {
       c.setRGB(0.22 + rng() * 0.06, 0.2 + rng() * 0.06, 0.16 + rng() * 0.05).multiplyScalar(j);
@@ -1201,7 +1205,7 @@ function buildDetails() {
   const clearOK = (x, z, pathClear) =>
     (!zone.boundary || inBoundary(x, z)) &&
     distToPolyline(x, z, zone.path) >= pathClear &&
-    (!zone.river || distToPolyline(x, z, zone.river.points) >= zone.river.width / 2 + 1) &&
+    (!zone.river || distToPolyline(x, z, zone.river.points) >= riverWaterHalf(zone.river.width) + RIVER_LIP) &&
     !zone.pois.some(p => Math.hypot(x - p.x, z - p.z) < Math.max(3, clearRadius(p) - 3)) &&
     !zone.rocks.some(o => Math.hypot(x - o.x, z - o.z) < o.r + 1);
   const gen = (n, pathClear = 2.5) => {
@@ -1226,6 +1230,13 @@ function buildDetails() {
   const N = (n) => Math.round(n * areaK);
   // bushes (GLB models) — every bush species
   instanceModels(gen(N(150)), BUSH_SPECIES, 1.5, 1);
+
+  // Dark Woods is dressed entirely by real modelled decor (rocks, mushrooms,
+  // stumps, ferns, bone piles… placed via zone.scatter). The old procedural
+  // stand-ins — plain stone lumps, cone/sphere mushrooms and cylinder logs —
+  // are skipped there so nothing appears that wasn't actually modelled.
+  if (zone.id === 'darkwoods') return;
+
   // small rocks (textured stone)
   const smallRockMat = new THREE.MeshStandardMaterial({ map: loadTexture('stone', 1, 1), color: 0x9195a0, roughness: 0.95, flatShading: true });
   instScatter(new THREE.IcosahedronGeometry(0.5, 0), smallRockMat, gen(N(150)), p => 0.3 * p.s);
@@ -1290,7 +1301,7 @@ function buildGrass() {
     side: THREE.DoubleSide, vertexColors: true, roughness: 1,
   });
   const ok = (x, z) => (!zone.boundary || inBoundary(x, z)) &&
-    !(zone.river && distToPolyline(x, z, zone.river.points) < zone.river.width / 2 + 0.5) &&
+    !(zone.river && distToPolyline(x, z, zone.river.points) < riverWaterHalf(zone.river.width) + RIVER_LIP) &&
     !zone.rocks.some(o => Math.hypot(x - o.x, z - o.z) < o.r);
   const onPathSkip = (x, z) => zone.path && distToPolyline(x, z, zone.path) < 2.2 && rng() > 0.12;
   const spots = [];
