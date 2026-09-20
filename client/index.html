@@ -4295,18 +4295,27 @@ function showHit(m) {
   document.getElementById('nameplates').appendChild(el);
   setTimeout(() => el.remove(), 800);
   if (m.dmg > 0) {
-    // Flash white per unique material, capturing each original colour exactly
-    // once — split limbs share a material across several meshes, so a naive
-    // per-mesh flash would read the already-white colour as the "original" and
-    // leave the model stuck white.
-    const seen = new Set(), restore = [];
+    // Flash white, then restore. Overlapping hits (two mobs on one target, or a
+    // fast weapon) used to capture the already-white colour as the "original"
+    // and leave the model stuck white. Store the true colour ONCE per material
+    // (only while it isn't already flashing) and let only the most recent flash
+    // restore it, via a per-material token.
+    const seen = new Set();
     rec.mesh.traverse(o => {
       if (!o.isMesh || !o.material) return;
       for (const mm of (Array.isArray(o.material) ? o.material : [o.material])) {
-        if (mm.color && !seen.has(mm)) { seen.add(mm); restore.push([mm, mm.color.clone()]); mm.color.set(0xffffff); }
+        if (!mm.color || seen.has(mm)) continue;
+        seen.add(mm);
+        if (!mm._flashing) { mm._flashOrig = mm.color.clone(); mm._flashing = true; }
+        mm.color.set(0xffffff);
+        const token = (mm._flashTok = (mm._flashTok || 0) + 1);
+        setTimeout(() => {
+          if (mm._flashTok !== token) return;      // a newer flash owns it now
+          if (mm._flashOrig) mm.color.copy(mm._flashOrig);
+          mm._flashing = false;
+        }, 90);
       }
     });
-    setTimeout(() => { for (const [mm, col] of restore) mm.color.copy(col); }, 90);
   }
 }
 
