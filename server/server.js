@@ -211,6 +211,7 @@ function resolveCollision(zone, ent, radius) {
   // props use a simple collision radius.
   for (const o of (zone._editObjects || [])) {
     if (!o.c) continue;
+    if ((o.y || 0) >= 2.2) continue; // raised above head height (upper storey) — walk under it
     if (typeof o.m === 'string' && o.m.startsWith('prim:')) {
       const s = o.s || 1, hw = (o.w || 1) * s / 2 + radius, hd = (o.d || 1) * s / 2 + radius;
       const c = Math.cos(o.yaw || 0), sn = Math.sin(o.yaw || 0);
@@ -1246,6 +1247,7 @@ wss.on('connection', (ws) => {
           yaw: +(+(msg.yaw || 0)).toFixed(3), s: +(+(msg.s || 1)).toFixed(3), c: +(+(msg.c || 0)).toFixed(2),
           // per-part texture map { partIndex: textureName }; carried over by Duplicate
           tex: (msg.tex && typeof msg.tex === 'object' && !Array.isArray(msg.tex)) ? msg.tex : {} };
+        o.y = clamp(+(msg.y || 0), -20, 100); // height offset above the ground (stacking)
         // Builder primitives (prim:floor / prim:wall / prim:block) carry box dims.
         if (o.m.startsWith('prim:')) { o.w = clamp(+msg.w || 4, 0.2, 200); o.h = clamp(+msg.h || 3, 0.2, 60); o.d = clamp(+msg.d || 4, 0.2, 200); }
         z._editObjects.push(o); saveOverrides(z); broadcastZone(player.zoneId, { t: 'edit', op: 'place', obj: o });
@@ -1259,6 +1261,7 @@ wss.on('connection', (ws) => {
         if (msg.yaw != null) o.yaw = +(+msg.yaw).toFixed(3);
         if (msg.s != null) o.s = +(+msg.s).toFixed(3);
         if (msg.c != null) o.c = +(+msg.c).toFixed(2);
+        if (msg.y != null) o.y = clamp(+msg.y, -20, 100);
         if (msg.w != null) o.w = clamp(+msg.w, 0.2, 200);
         if (msg.h != null) o.h = clamp(+msg.h, 0.2, 60);
         if (msg.d != null) o.d = clamp(+msg.d, 0.2, 200);
