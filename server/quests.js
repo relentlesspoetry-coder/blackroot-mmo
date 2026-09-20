@@ -71,6 +71,20 @@ export const QUESTS = {
     reward: { xp: 200, gold: 90 },
   },
 
+  // --- Prospector Dorn, Root-Choked Ravine ---------------------------------
+  claimjumpers: {
+    id: 'claimjumpers', name: 'Claim Jumpers', giver: 'dorn', minLevel: 4, requires: ['shrine'],
+    summary: 'Run the goblin miners out of the ravine and haul out iron.',
+    intro: 'Goblins have jumped my claim in the Root-Choked Ravine — a whole dig-crew stripping my iron seam. Clear the miners out and bring me five loads of iron ore, mined or looted off their carcasses, I don’t care which.',
+    active: 'Four goblin miners cleared, and five loads of iron ore for Dorn.',
+    done: 'The seam’s mine again. Take my old steel pick — she bites deeper than whatever you’re swinging.',
+    objectives: [
+      { type: 'kill', target: 'goblin_miner', count: 4, label: 'Goblin miners cleared' },
+      { type: 'collect', item: 'Iron Ore', count: 5, label: 'Iron ore hauled' },
+    ],
+    reward: { xp: 500, gold: 160, items: ['Steel Pickaxe'] },
+  },
+
   // --- Ranger Sela, Fallen Watchtower --------------------------------------
   wolfraid: {
     id: 'wolfraid', name: 'The Wolf Den', giver: 'sela', minLevel: 4, requires: ['trail'],
