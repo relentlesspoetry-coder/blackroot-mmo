@@ -561,18 +561,23 @@ function bridgeLift(x, z) {
 // River channel profile: a carved bed so the water sits deep with banks rising
 // above it. terrainHeight is the ground height at (x,z) — 0 on flat land, the
 // water line at the shore, dropping to the bed under the water.
-const RIVER_WATER_Y = -0.5, RIVER_BED_Y = -2.2, RIVER_BANK = 4, RIVER_LIP = 0.4;
+const RIVER_WATER_Y = -0.5, RIVER_BED_Y = -2.2, RIVER_BANK = 4, RIVER_LIP = 0.6;
 // Half-width of the water surface: the whole carved channel is flooded, so the
-// water reaches out to `river half-width + RIVER_BANK` and only a thin shore lip
-// (RIVER_LIP) rises out of it. Keeps the bank from showing as a dry dark rim.
+// water reaches out to `river half-width + RIVER_BANK`. The bed drops away
+// steeply so almost the entire channel is deep (reads as water); only a thin
+// dark dirt border (RIVER_LIP) rises out of the water where it meets the grass.
 function riverWaterHalf(width) { return width / 2 + RIVER_BANK; }
 function terrainHeight(x, z) {
   if (!zone || !zone.river || zone.enclosed) return 0;
   const half = riverWaterHalf(zone.river.width);      // water edge
   const d = distToPolyline(x, z, zone.river.points);
   if (d >= half + RIVER_LIP) return 0;                 // grass beyond the channel
-  if (d >= half) return RIVER_WATER_Y * (1 - (d - half) / RIVER_LIP); // shore lip: -0.5 -> 0
-  return RIVER_BED_Y + (RIVER_WATER_Y - RIVER_BED_Y) * (d / half);    // submerged bed
+  if (d >= half) return RIVER_WATER_Y + (-RIVER_WATER_Y) * ((d - half) / RIVER_LIP); // dirt border: -0.5 -> 0
+  const t = d / half;                                  // 0 at centre, 1 at the water's edge
+  // Cubic drop-off: deep across the channel, with only a thin shallow ring at
+  // the very edge, so shallow water over the dark bed no longer reads as a wide
+  // dark band.
+  return RIVER_BED_Y + (RIVER_WATER_Y - RIVER_BED_Y) * (t * t * t);
 }
 // Height an entity should stand at: on a bridge use its deck, else the terrain.
 function groundY(x, z) { const b = bridgeLift(x, z); return b > 0 ? b : terrainHeight(x, z); }
@@ -1113,7 +1118,7 @@ function buildZone() {
   // River (Blackroot Creek) — deep flowing water sitting in the carved channel.
   if (zone.river) {
     riverTex = makeWaterTexture();
-    const waterMat = new THREE.MeshStandardMaterial({ map: riverTex, color: 0x2c6e97, roughness: 0.3, metalness: 0.25, transparent: true, opacity: 0.9, side: THREE.DoubleSide });
+    const waterMat = new THREE.MeshStandardMaterial({ map: riverTex, color: 0x2f74a0, roughness: 0.3, metalness: 0.25, transparent: true, opacity: 0.96, side: THREE.DoubleSide });
     // Overshoot the flooded width by a little so the water always tucks under the
     // grass edge with no dry sliver, even on the insides/outsides of bends.
     riverMesh = buildStripRibbon(zone.river.points, (riverWaterHalf(zone.river.width) + 1.2) * 2, RIVER_WATER_Y, waterMat, 8);
