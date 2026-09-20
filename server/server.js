@@ -407,6 +407,44 @@ function despawnEditorRegion(id) {
 }
 // Mob types offered in the spawn palette.
 const MOB_TYPES = Object.keys(MONSTER_TEMPLATES);
+
+// ---- Loot overrides: per mob type, an independent-roll drop table edited in
+// game. Global (a type drops the same everywhere), stored in loot.overrides.json.
+let LOOT_OVERRIDES = {};
+const lootOverridesPath = () => path.join(__dirname, 'loot.overrides.json');
+(function loadLootOverrides() { try { LOOT_OVERRIDES = JSON.parse(fs.readFileSync(lootOverridesPath(), 'utf8')) || {}; } catch { LOOT_OVERRIDES = {}; } })();
+function saveLootOverrides() { try { fs.writeFileSync(lootOverridesPath(), JSON.stringify(LOOT_OVERRIDES, null, 2)); } catch (e) { console.error('saveLootOverrides:', e.message); } }
+const LOOT_ITEMS = ['Coins', ...Object.keys(ITEMS)];
+const lootItemOk = (name) => name === 'Coins' || !!ITEMS[name];
+// A template's loot, expressed in the editor's independent-roll format
+// ({item, min, max, chance=1-in-N}). Weighted tables convert approximately.
+function templateLootAsEditor(type) {
+  const t = MONSTER_TEMPLATES[type]; if (!t) return [];
+  if (t.droptable) return t.droptable.map(e => ({ item: e.item, min: e.min || 1, max: e.max || 1, chance: e.always ? 1 : Math.max(1, Math.round(e.chance || 1)) }));
+  if (t.loot) {
+    const rolls = t.rolls || 1; let W = 0; for (const e of t.loot) W += e.w;
+    const out = [];
+    for (const e of t.loot) { if (e.item == null) continue; const p = 1 - Math.pow(1 - e.w / W, rolls); out.push({ item: e.item, min: e.min || 1, max: e.max || 1, chance: Math.max(1, Math.round(1 / Math.max(1e-4, p))) }); }
+    return out;
+  }
+  return [];
+}
+function effectiveLoot(type) { return LOOT_OVERRIDES[type] || templateLootAsEditor(type); }
+function allLootTables() { const o = {}; for (const t of MOB_TYPES) o[t] = effectiveLoot(t); return o; }
+// Roll loot, honouring an override table (independent rolls) when present.
+function rollMobLoot(type) {
+  const ov = LOOT_OVERRIDES[type];
+  if (!ov) return rollLoot(type);
+  const drops = [];
+  for (const e of ov) {
+    if (!e.item) continue;
+    if (Math.random() < 1 / Math.max(1, e.chance || 1)) {
+      const min = e.min || 1, max = Math.max(min, e.max || min);
+      drops.push({ item: e.item, qty: min + Math.floor(Math.random() * (max - min + 1)) });
+    }
+  }
+  return drops;
+}
 function broadcastZone(zoneId, obj) {
   const s = JSON.stringify(obj);
   for (const p of players.values()) if (p.zoneId === zoneId && p.ws.readyState === p.ws.OPEN) p.ws.send(s);
@@ -478,7 +516,7 @@ function killMonster(m, killer) {
   }
 
   // Roll the loot table and drop items on the ground where it fell.
-  const drops = rollLoot(m.type);
+  const drops = rollMobLoot(m.type);
   if (m.elite) {
     // A named encounter can name its own reward; otherwise it leaves a trophy.
     for (const item of (m.spec.drops || [`${m.name} Trophy`])) drops.push({ item, qty: 1 });
@@ -1145,7 +1183,17 @@ wss.on('connection', (ws) => {
       }
       // --- World editor (gated by EDIT_KEY) ---
       case 'edit:list': {
-        if (msg.key === EDIT_KEY) send(ws, { t: 'models', models: MODEL_MANIFEST, mobs: MOB_TYPES });
+        if (msg.key === EDIT_KEY) send(ws, { t: 'models', models: MODEL_MANIFEST, mobs: MOB_TYPES, items: LOOT_ITEMS, loot: allLootTables() });
+        break;
+      }
+      case 'edit:loot:set': {
+        if (msg.key !== EDIT_KEY || !MONSTER_TEMPLATES[msg.type] || !Array.isArray(msg.table)) break;
+        const table = msg.table.filter(e => e && lootItemOk(e.item)).map(e => ({
+          item: String(e.item), min: Math.max(0, Math.min(9999, (+e.min | 0) || 1)),
+          max: Math.max(1, Math.min(9999, (+e.max | 0) || 1)), chance: Math.max(1, Math.min(100000, (+e.chance | 0) || 1)),
+        }));
+        LOOT_OVERRIDES[msg.type] = table; saveLootOverrides();
+        broadcast({ t: 'loot', type: msg.type, table }); // sync any other editors
         break;
       }
       case 'edit:spawn:place': {

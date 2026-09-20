@@ -6,3 +6,5 @@ shots/
 
 # Player-built world edits (world editor)
 server/zones/*.overrides.json
+
+server/loot.overrides.json

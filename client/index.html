@@ -272,13 +272,14 @@
   <div id="nameplates"></div>
   <div id="hurt"></div>
   <div id="toast"></div>
-  <div id="editor" style="display:none; position:absolute; left:10px; top:80px; width:280px; z-index:45; pointer-events:auto; background:rgba(14,18,26,0.97); border:1px solid #3a4c68; border-radius:10px; color:#e6edf6; font-size:13px; box-shadow:0 8px 28px #000c;">
+  <div id="editor" style="display:none; position:absolute; left:10px; top:80px; width:280px; max-height:calc(100vh - 96px); overflow-y:auto; z-index:45; pointer-events:auto; background:rgba(14,18,26,0.97); border:1px solid #3a4c68; border-radius:10px; color:#e6edf6; font-size:13px; box-shadow:0 8px 28px #000c;">
     <div style="padding:8px 10px; border-bottom:1px solid #2b3852; font-weight:700; color:#9fd0ff; letter-spacing:1px; display:flex; justify-content:space-between; align-items:center;">
       <span>WORLD EDITOR</span><span id="edMode" style="font-size:10px; color:#7f8ba0;">place</span>
     </div>
     <div style="display:flex; border-bottom:1px solid #2b3852;">
       <button id="edTabObjects" style="flex:1; background:#22314a; border:0; color:#f0f5ff; padding:7px; cursor:pointer; font-size:12px; font-weight:700;">Objects</button>
-      <button id="edTabSpawns" style="flex:1; background:#141d2c; border:0; color:#9fb0c4; padding:7px; cursor:pointer; font-size:12px; font-weight:700;">Mob Spawns</button>
+      <button id="edTabSpawns" style="flex:1; background:#141d2c; border:0; color:#9fb0c4; padding:7px; cursor:pointer; font-size:12px; font-weight:700;">Spawns</button>
+      <button id="edTabLoot" style="flex:1; background:#141d2c; border:0; color:#9fb0c4; padding:7px; cursor:pointer; font-size:12px; font-weight:700;">Loot</button>
     </div>
     <div style="padding:8px 10px;">
       <input id="edSearch" placeholder="search…" style="width:100%; box-sizing:border-box; background:#0c111b; border:1px solid #2b3852; color:#e6edf6; border-radius:6px; padding:5px 7px; font-size:12px;" />
@@ -310,6 +311,13 @@
       <label style="display:block; margin:4px 0;">Radius <input id="edSpR" type="range" min="1" max="40" step="0.5" style="width:100%;"> <span id="edSpRV"></span></label>
       <label style="display:block; margin:4px 0;">Respawn (s) <input id="edSpRespawn" type="number" min="2" max="600" style="width:64px; background:#0c111b; border:1px solid #2b3852; color:#e6edf6; border-radius:5px; padding:3px 5px;"></label>
       <button id="edSpDelete" style="width:100%; margin-top:6px; background:#5a2330; border:1px solid #7a3040; color:#ffd0d0; border-radius:6px; padding:6px; cursor:pointer;">Delete spawn</button>
+    </div>
+    <div id="edLootInspector" style="display:none; padding:8px 10px; border-top:1px solid #2b3852;">
+      <div id="edLootName" style="font-weight:700; color:#a8e0a0; margin-bottom:2px;"></div>
+      <div style="display:flex; gap:3px; font-size:9px; color:#7f8ba0; padding:0 2px 2px;"><span style="flex:1;">item</span><span style="width:30px;">min</span><span style="width:30px;">max</span><span style="width:42px;">1 in</span><span style="width:16px;"></span></div>
+      <div id="edLootRows" style="max-height:32vh; overflow-y:auto;"></div>
+      <button id="edLootAdd" style="width:100%; margin-top:6px; background:#234a2e; border:1px solid #356041; color:#cdffd6; border-radius:6px; padding:6px; cursor:pointer;">+ Add drop</button>
+      <div style="font-size:10px; color:#7f8ba0; margin-top:5px; line-height:1.4;">“1 in N” = drop chance per kill (1 = always). Each row rolls independently.</div>
     </div>
     <div style="padding:7px 10px; border-top:1px solid #2b3852; font-size:10px; color:#7f8ba0; line-height:1.5;">
       <b>Objects:</b> pick a model, left-click ground to place; click one to select, drag to move. <b>Spawns:</b> pick a mob, click ground to drop a spawn ring; click a ring to edit its count/level/radius/timer. <b>Esc</b> cancels/deselects.
@@ -488,10 +496,13 @@ function handle(m) {
       enterZone(m.zone);
       break;
     case 'models':
-      EDIT.models = m.models || []; EDIT.mobs = m.mobs || []; editBuildPalette();
+      EDIT.models = m.models || []; EDIT.mobs = m.mobs || []; EDIT.items = m.items || []; EDIT.loot = m.loot || {}; editBuildPalette();
       break;
     case 'edit':
       applyEdit(m);
+      break;
+    case 'loot':
+      EDIT.loot[m.type] = m.table; if (EDIT.lootType === m.type) editBuildLootRows();
       break;
     case 'bag':
       bag = { items: m.items || [], gold: m.gold || 0,
@@ -2029,7 +2040,7 @@ function updateFarmGate(dt) {
 // World editor — place/move/rotate/scale/delete GLB props, saved server-side.
 // Activated with ?edit=<key>; the value is the auth key sent with every edit.
 // ---------------------------------------------------------------------------
-const EDIT = { on: false, key: '', models: [], mobs: [], tab: 'objects', placing: null, selId: null, selPart: 0, placingMob: null, selSpawn: null };
+const EDIT = { on: false, key: '', models: [], mobs: [], items: [], loot: {}, lootType: null, tab: 'objects', placing: null, selId: null, selPart: 0, placingMob: null, selSpawn: null };
 const spawnMeshes = new Map(); // spawn region id -> THREE.Group (ring + pole + label)
 (function () { const p = new URLSearchParams(location.search).get('edit'); if (p) { EDIT.on = true; EDIT.key = p; } })();
 const editMeshes = new Map(); // id -> THREE.Group
@@ -2191,6 +2202,13 @@ function editInit() {
   // Tabs
   $('edTabObjects').addEventListener('click', () => editSetTab('objects'));
   $('edTabSpawns').addEventListener('click', () => editSetTab('spawns'));
+  $('edTabLoot').addEventListener('click', () => editSetTab('loot'));
+  $('edLootAdd').addEventListener('click', () => {
+    if (!EDIT.lootType) return;
+    const table = EDIT.loot[EDIT.lootType] || (EDIT.loot[EDIT.lootType] = []);
+    table.push({ item: EDIT.items[0] || 'Coins', min: 1, max: 1, chance: 1 });
+    editLootSave(); editBuildLootRows();
+  });
   // Spawn inspector
   $('edSpType').addEventListener('change', e => editSpawnUpdate({ type: e.target.value }));
   $('edSpCount').addEventListener('change', e => editSpawnUpdate({ count: +e.target.value }));
@@ -2211,24 +2229,59 @@ function editInit() {
 function editSetTab(tab) {
   EDIT.tab = tab; EDIT.placing = null; EDIT.placingMob = null;
   const on = '#22314a', off = '#141d2c';
-  document.getElementById('edTabObjects').style.background = tab === 'objects' ? on : off;
-  document.getElementById('edTabObjects').style.color = tab === 'objects' ? '#f0f5ff' : '#9fb0c4';
-  document.getElementById('edTabSpawns').style.background = tab === 'spawns' ? on : off;
-  document.getElementById('edTabSpawns').style.color = tab === 'spawns' ? '#f0f5ff' : '#9fb0c4';
+  for (const [t, id] of [['objects', 'edTabObjects'], ['spawns', 'edTabSpawns'], ['loot', 'edTabLoot']]) {
+    const el = document.getElementById(id); el.style.background = tab === t ? on : off; el.style.color = tab === t ? '#f0f5ff' : '#9fb0c4';
+  }
   document.getElementById('edSearch').placeholder = tab === 'objects' ? 'search models…' : 'search mobs…';
+  document.getElementById('edLootInspector').style.display = 'none';
+  EDIT.lootType = null;
   editSelect(null); editSelectSpawn(null); editSetMode(); editBuildPalette();
+}
+// --- Loot table editor ---
+function editLootSelect(type) {
+  EDIT.lootType = type;
+  document.getElementById('edLootInspector').style.display = 'block';
+  document.getElementById('edLootName').textContent = 'Loot: ' + type;
+  editBuildLootRows(); editBuildPalette();
+}
+function editBuildLootRows() {
+  const wrap = document.getElementById('edLootRows'); if (!wrap) return;
+  wrap.innerHTML = '';
+  const table = EDIT.loot[EDIT.lootType] || [];
+  table.forEach((e, i) => {
+    const row = document.createElement('div'); row.style.cssText = 'display:flex; gap:3px; margin-bottom:3px; align-items:center;';
+    const sel = document.createElement('select'); sel.style.cssText = 'flex:1; min-width:0; background:#0c111b; border:1px solid #2b3852; color:#e6edf6; border-radius:4px; font-size:11px; padding:2px;';
+    for (const it of EDIT.items) { const o = document.createElement('option'); o.value = o.textContent = it; if (it === e.item) o.selected = true; sel.appendChild(o); }
+    sel.onchange = () => { e.item = sel.value; editLootSave(); };
+    const mkNum = (val, w, on) => { const n = document.createElement('input'); n.type = 'number'; n.value = val; n.style.cssText = `width:${w}px; background:#0c111b; border:1px solid #2b3852; color:#e6edf6; border-radius:4px; font-size:11px; padding:2px 3px;`; n.onchange = () => on(+n.value); return n; };
+    const rm = document.createElement('button'); rm.textContent = '×'; rm.style.cssText = 'width:16px; background:#5a2330; border:1px solid #7a3040; color:#ffd0d0; border-radius:4px; cursor:pointer; font-size:12px; line-height:1;';
+    rm.onclick = () => { table.splice(i, 1); editLootSave(); editBuildLootRows(); };
+    row.appendChild(sel);
+    row.appendChild(mkNum(e.min, 30, v => { e.min = v; editLootSave(); }));
+    row.appendChild(mkNum(e.max, 30, v => { e.max = v; editLootSave(); }));
+    row.appendChild(mkNum(e.chance, 42, v => { e.chance = v; editLootSave(); }));
+    row.appendChild(rm);
+    wrap.appendChild(row);
+  });
+}
+function editLootSave() {
+  const table = EDIT.loot[EDIT.lootType]; if (!table) return;
+  sendEdit({ t: 'edit:loot:set', type: EDIT.lootType, table });
 }
 function editBuildPalette() {
   const wrap = document.getElementById('edPalette'); if (!wrap) return;
   const q = (document.getElementById('edSearch').value || '').toLowerCase();
   wrap.innerHTML = '';
   const rowStyle = (active) => 'display:block; width:100%; box-sizing:border-box; margin:0 0 4px 0; text-align:left; background:' + (active ? '#2f5aa0' : '#1a2436') + '; border:1px solid #3a4c68; color:#f0f5ff; border-radius:5px; padding:6px 9px; cursor:pointer; font-size:13px; line-height:1.25; height:30px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-family:inherit;';
-  if (EDIT.tab === 'spawns') {
+  if (EDIT.tab === 'spawns' || EDIT.tab === 'loot') {
+    const spawns = EDIT.tab === 'spawns';
     for (const t of EDIT.mobs) {
       if (q && !t.toLowerCase().includes(q)) continue;
       const b = document.createElement('button'); b.textContent = t;
-      b.style.cssText = rowStyle(EDIT.placingMob === t);
-      b.onclick = () => { EDIT.placingMob = EDIT.placingMob === t ? null : t; editSetMode(); editBuildPalette(); };
+      b.style.cssText = rowStyle(spawns ? EDIT.placingMob === t : EDIT.lootType === t);
+      b.onclick = spawns
+        ? () => { EDIT.placingMob = EDIT.placingMob === t ? null : t; editSetMode(); editBuildPalette(); }
+        : () => editLootSelect(t);
       wrap.appendChild(b);
     }
     return;
