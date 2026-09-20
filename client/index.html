@@ -436,6 +436,7 @@ function handle(m) {
       snapCur = m; snapCurT = performance.now();
       if (m.time != null && !timeFrozen) worldTime = m.time;
       if (m.weather) worldWeather = m.weather;
+      if (m.gate != null) gateTarget = m.gate;
       applyDepleted(m.depleted);
       updateHudFromSnapshot(m);
       break;
@@ -1112,6 +1113,9 @@ function buildZone() {
 
   // Quest givers / merchants
   buildNpcs();
+
+  // The farm gate — a standalone model that swings open/shut (server-driven).
+  buildFarmGate();
 
   // Treasure chests (clickable)
   for (const ch of (zone.chests || [])) buildChest(ch);
@@ -1935,6 +1939,36 @@ function buildScatter() {
   // the ceiling rather than the floor.
   const ceil = (zone.ceilingY || 13) - 0.1;
   place(zone.hanging || [], () => ceil);
+}
+
+// ---- The farm gate: a standalone model whose hinge swings open/shut. The
+// server owns the open amount (0 shut .. 1 open) and streams it as `gateTarget`;
+// the client eases the hinge toward it each frame. ----
+let farmGate = null;       // { mesh, hinge }
+let gateTarget = 0, gateOpen = 0;
+const GATE_MAX_SWING = -1.85; // radians the leaf rotates when fully open
+function buildFarmGate() {
+  farmGate = null;
+  const g = zone.gate;
+  if (!g || !LOADED['Farm_Gate']) return;
+  // Match the instanced scatter look: native geometry, centred on X/Z and set on
+  // the ground, then uniformly scaled by the gate's scale.
+  const obj = LOADED['Farm_Gate'].clone(true);
+  obj.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(obj);
+  obj.position.set(-(box.min.x + box.max.x) / 2, -box.min.y, -(box.min.z + box.max.z) / 2);
+  const wrap = new THREE.Group(); wrap.add(obj);
+  wrap.scale.setScalar(g.s || 1);
+  wrap.position.set(g.x, 0, g.z);
+  wrap.rotation.y = g.yaw || 0;
+  wrap.traverse(o => { if (o.isMesh) { o.castShadow = o.receiveShadow = true; } });
+  scene.add(wrap);
+  farmGate = { mesh: wrap, hinge: findByName(wrap, /CTRL_Gate_Hinge/)[0] || null };
+}
+function updateFarmGate(dt) {
+  if (!farmGate || !farmGate.hinge) return;
+  gateOpen += (gateTarget - gateOpen) * Math.min(1, dt * 6);
+  farmGate.hinge.rotation.y = gateOpen * GATE_MAX_SWING;
 }
 
 // ---- NPCs (quest givers / merchants), placed from the zone data ----
@@ -3823,6 +3857,7 @@ function animate() {
   updateSky(dt);
   updateControls(dt);
   updateMarkers(dt);
+  updateFarmGate(dt);
   updatePoiLabels();
   updateNameplates();
   updateNpcMarkers();

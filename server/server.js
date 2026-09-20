@@ -70,7 +70,7 @@ function scaleZone(zone, k) {
   // Farm layout: scale positions only (prop SIZES stay native meter-scale).
   if (zone.farm) {
     (zone.farm.fences || []).forEach(f => { f.x1 *= k; f.z1 *= k; f.x2 *= k; f.z2 *= k; });
-    if (zone.farm.gate) { zone.farm.gate.x *= k; zone.farm.gate.z *= k; }
+    if (zone.farm.gate) { const g = zone.farm.gate; g.x *= k; g.z *= k; if (g.seg) { g.seg.x1 *= k; g.seg.z1 *= k; g.seg.x2 *= k; g.seg.z2 *= k; } }
     (zone.farm.props || []).forEach(sp);
     // Keep-out box so the forest/scatter don't grow through the farmyard.
     let mnx = 1e9, mxx = -1e9, mnz = 1e9, mxz = -1e9;
@@ -181,6 +181,18 @@ function resolveCollision(zone, ent, radius) {
   // gate.
   for (const f of (zone._fenceSegs || [])) {
     const dx = f.x2 - f.x1, dz = f.z2 - f.z1, L2 = dx * dx + dz * dz;
+    let t = L2 > 0 ? ((ent.x - f.x1) * dx + (ent.z - f.z1) * dz) / L2 : 0;
+    t = Math.max(0, Math.min(1, t));
+    const cx = f.x1 + dx * t, cz = f.z1 + dz * t;
+    let ox = ent.x - cx, oz = ent.z - cz, d = Math.hypot(ox, oz);
+    const min = 0.5 + radius;
+    if (d < min) { if (d < 1e-4) { ox = 1; oz = 0; d = 1; } ent.x = cx + (ox / d) * min; ent.z = cz + (oz / d) * min; }
+  }
+  // The gate leaf blocks its gap while shut (t small); once it has swung open
+  // the gap is passable.
+  const G = zone._gate;
+  if (G && G.seg && G.t < 0.55) {
+    const f = G.seg, dx = f.x2 - f.x1, dz = f.z2 - f.z1, L2 = dx * dx + dz * dz;
     let t = L2 > 0 ? ((ent.x - f.x1) * dx + (ent.z - f.z1) * dz) / L2 : 0;
     t = Math.max(0, Math.min(1, t));
     const cx = f.x1 + dx * t, cz = f.z1 + dz * t;
@@ -325,8 +337,26 @@ function buildFarm(zone) {
     }
     zone._fenceSegs.push({ x1: seg.x1, z1: seg.z1, x2: seg.x2, z2: seg.z2 });
   }
-  if (F.gate) scat.push({ i: scat.length, m: 'Farm_Gate', x: F.gate.x, z: F.gate.z, s: F.gate.s || 1, r: F.gate.yaw || 0, c: 0 });
+  // The gate is rendered as a standalone, animated model on the client (it
+  // swings), so it is NOT baked into the instanced scatter. The server owns its
+  // open/shut state and toggles the gap collision with it.
+  if (F.gate) zone._gate = { cx: F.gate.x, cz: F.gate.z, seg: F.gate.seg || null, t: 0 };
   for (const p of (F.props || [])) scat.push({ i: scat.length, m: p.m, x: p.x, z: p.z, s: p.s || 1, r: p.yaw || 0, c: p.c || 0 });
+}
+
+// Ease each farm gate open when a player stands near it, shut when they leave.
+const GATE_OPEN_RADIUS = 8;
+function stepGates() {
+  for (const zoneId of Object.keys(ZONES)) {
+    const g = ZONES[zoneId]._gate; if (!g) continue;
+    let near = false;
+    for (const p of players.values()) {
+      if (p.zoneId === zoneId && p.alive && dist2(p.x, p.z, g.cx, g.cz) < GATE_OPEN_RADIUS * GATE_OPEN_RADIUS) { near = true; break; }
+    }
+    const target = near ? 1 : 0;
+    g.t += (target - g.t) * Math.min(1, DT * 4); // ~0.25s swing
+    if (Math.abs(g.t - target) < 0.01) g.t = target;
+  }
 }
 
 function populateElite(zoneId, e) {
@@ -889,6 +919,7 @@ setInterval(() => {
     weatherTimer = 90 + Math.random() * 150;
   }
   stepVeins();
+  stepGates();
   for (const m of monsters.values()) stepMonster(m);
   for (const p of players.values()) stepPlayer(p);
   for (const [id, it] of groundItems) { it.ttl -= DT; if (it.ttl <= 0) groundItems.delete(id); }
@@ -919,8 +950,10 @@ setInterval(() => {
         if (it.zoneId !== zid) continue;
         items.push({ id: it.id, name: it.name, qty: it.qty, x: +it.x.toFixed(2), z: +it.z.toFixed(2) });
       }
+      const gate = ZONES[zid]._gate;
       return (byZone[zid] = JSON.stringify({ t: 'snapshot', now, players: ps, monsters: ms, items,
         depleted: depletedIds(ZONES[zid]),
+        gate: gate ? +gate.t.toFixed(3) : undefined,
         time: +dayTime.toFixed(4), weather }));
     };
     for (const p of players.values()) {
@@ -961,6 +994,7 @@ function zoneForClient(zone) {
     hanging: zone._hanging || [],
     models: zone.models || [],
     farmBox: zone._farmBox || null,
+    gate: zone.farm && zone.farm.gate ? { x: zone.farm.gate.x, z: zone.farm.gate.z, yaw: zone.farm.gate.yaw || 0, s: zone.farm.gate.s || 1 } : null,
   };
 }
 

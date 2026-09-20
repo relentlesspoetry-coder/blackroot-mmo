@@ -235,7 +235,7 @@ export const darkwoods = {
       { x1: -16, z1: -74, x2: -9.5, z2: -74 },  // south-west (up to the gate)
       { x1: -6.5, z1: -74, x2: 24,  z2: -74 },  // south-east (from the gate)
     ],
-    gate: { x: -8, z: -74, yaw: 0, s: 2.2 },
+    gate: { x: -8, z: -74, yaw: 0, s: 2.2, seg: { x1: -9.5, z1: -74, x2: -6.5, z2: -74 } },
     props: [
       // Chicken side (east): coop, house, nests, feeders.
       { m: 'Walk_In_Chicken_House', x: 17,  z: -90, yaw: 3.14, s: 1.0, c: 2.2 },
