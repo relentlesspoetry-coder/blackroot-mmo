@@ -1370,8 +1370,11 @@ function buildDetails() {
   // Detail density scales with zone area so the bigger woods stay full.
   const areaK = Math.min(3.2, ((b.maxX - b.minX) * (b.maxZ - b.minZ)) / 37800);
   const N = (n) => Math.round(n * areaK);
-  // bushes (GLB models) — every bush species
-  instanceModels(gen(N(150)), BUSH_SPECIES, 1.5, 1);
+  // bushes (GLB models) — every bush species. Dark Woods is dressed by the
+  // meadow plant/bush packs instead; the old BUSH_SPECIES each sit on a modelled
+  // "Base soil" mound that reads as a potted plant plonked on the grass, so they
+  // are skipped there.
+  if (zone.id !== 'darkwoods') instanceModels(gen(N(150)), BUSH_SPECIES, 1.5, 1);
 
   // Dark Woods is dressed entirely by real modelled decor (rocks, mushrooms,
   // stumps, ferns, bone piles… placed via zone.scatter). The old procedural
