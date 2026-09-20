@@ -93,6 +93,20 @@ export const QUESTS = {
     ],
     reward: { xp: 500, gold: 120 },
   },
+  caches: {
+    id: 'caches', name: 'Caches of the Blackroot', giver: 'merchant', minLevel: 5, requires: ['intothedark'],
+    summary: 'Recover the four hidden caches scattered across the Dark Woods.',
+    intro: 'The woods are littered with old stashes — a soldier’s footlocker at the fallen watchtower, a bandit hoard in the Rotfen, the goblins’ plunder at the Wolf Den, and something older ringed by the stone circle. Crack all four and I’ll make it worth your while.',
+    active: 'Four caches: the Fallen Watchtower, the Rotfen Thicket, the Wolf Den, and the Ancient Stone Circle. Keep what you find inside — I only want to know they’re opened.',
+    done: 'All four, opened and emptied. You’ve a nose for buried coin — here, a little something for the road.',
+    objectives: [
+      { type: 'chest', zone: 'darkwoods', chest: 'watchtower', label: 'Loot the Fallen Watchtower cache' },
+      { type: 'chest', zone: 'darkwoods', chest: 'rotfen', label: 'Loot the Rotfen Thicket stash' },
+      { type: 'chest', zone: 'darkwoods', chest: 'wolfden', label: 'Loot the Wolf Den plunder' },
+      { type: 'chest', zone: 'darkwoods', chest: 'stones', label: 'Loot the Stone Circle hoard' },
+    ],
+    reward: { xp: 700, gold: 300, items: ['Smuggler\'s Cache'] },
+  },
   silk: {
     id: 'silk', name: 'Silk and Venom', giver: 'merchant', minLevel: 5, requires: ['intothedark'],
     summary: 'Harvest spider silk and venom from the Crystal Hollow.',
