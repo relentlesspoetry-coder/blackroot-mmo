@@ -344,7 +344,7 @@ const MOB_MODEL = {
   ember_dragon: { model: 'Ember_Dragon', h: 4.6 }, frost_dragon: { model: 'Frost_Dragon', h: 4.8 },
   venom_dragon: { model: 'Venom_Dragon', h: 4.4 },
 };
-const TREE_SPECIES = ['Oak_Tree', 'Willow_Tree', 'Yew_Tree', 'Maple_Tree', 'Magic_Tree', 'Normal_Tree', 'Tree'];
+const TREE_SPECIES = ['Ancient_Forest_Tree', 'Broad_Crown_Oak', 'Tall_Leafy_Birch', 'Twisted_Darkwood', 'Weeping_Willow'];
 const BUSH_SPECIES = ['Normal_Bush', 'Berry_Bush', 'Flowering_Bush', 'Thorn_Bush', 'Darkroot_Bush', 'Dead_Bush'];
 const MODEL_YAW = Math.PI; // GLB characters face -Z; flip to match our +Z "forward"
 
@@ -1288,14 +1288,14 @@ function buildFireflies() {
   scene.add(fireflies);
 }
 
-const TREE_H = 12; // taller trees
+const TREE_H = 13; // taller trees
 function buildForest() {
   // Trees are authoritative (server-generated, thinned, solid) and rendered
-  // from GLB models, instanced per species for performance.
+  // from GLB models, instanced per species for performance. These are the
+  // full-canopy models, so no procedural canopy/bark augmentation is needed.
   const placements = zone.trees || [];
   if (!placements.length) return;
-  instanceModels(placements, TREE_SPECIES, TREE_H, 1.0, true);
-  addTreeCanopy(placements, TREE_H);
+  instanceModels(placements, TREE_SPECIES, TREE_H, 1.0, false);
 }
 
 // Enrich every tree's canopy: extra leaf clusters filling out the crown, plus a

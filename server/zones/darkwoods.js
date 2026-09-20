@@ -14,8 +14,8 @@ export const darkwoods = {
     'Goblin', 'Bandit', 'Hill_Ogre', 'Cow', 'Chicken', 'Male', 'Female',
     // Low-level goblin-kin variants
     'Goblin_Scavenger', 'Goblin_Warrior', 'Goblin_Archer', 'Goblin_Shaman', 'Goblin_Miner',
-    // Every tree and bush species
-    'Oak_Tree', 'Willow_Tree', 'Yew_Tree', 'Maple_Tree', 'Magic_Tree', 'Normal_Tree', 'Tree',
+    // Full-canopy tree models + every bush species
+    'Ancient_Forest_Tree', 'Broad_Crown_Oak', 'Tall_Leafy_Birch', 'Twisted_Darkwood', 'Weeping_Willow',
     'Normal_Bush', 'Berry_Bush', 'Flowering_Bush', 'Thorn_Bush', 'Darkroot_Bush', 'Dead_Bush',
     // Campsite props (Abandoned Camp + goblin camps)
     'props/Campfire', 'props/Unlit_Fire_Pit', 'props/Cooking_Tripod', 'props/Bedroll', 'props/Rolled_Bedroll',
@@ -83,7 +83,7 @@ export const darkwoods = {
     { key: 'wolfden',    name: 'Wolf Den',             x: 62,  z: 28,  kind: 'landmark', hidden: true },
     { key: 'ravine',     name: 'Root-Choked Ravine',   x: -36, z: 44,  kind: 'landmark' },
     { key: 'cave',       name: 'Hidden Cave Entrance', x: -60, z: 58,  kind: 'cave', hidden: true },
-    { key: 'bridge',     name: 'Mossy Bridge',         x: 2,   z: 66,  kind: 'landmark' },
+    { key: 'bridge',     name: 'Mossy Bridge',         x: -8,  z: 35,  kind: 'landmark' },
     { key: 'southgate',  name: 'South Gate',           x: 6,   z: 98,  kind: 'gate', exit: true },
   ],
 
@@ -106,16 +106,15 @@ export const darkwoods = {
     { x: -14, z: 40 }, { x: -6, z: 54 }, { x: 2, z: 66 }, { x: 5, z: 82 }, { x: 6, z: 98 },
   ],
 
-  // Blackroot Creek — a river running down the western-centre of the zone.
-  // The Mossy Bridge (near z=66) is the only crossing; elsewhere it blocks
-  // movement, so the route funnels through the bridge.
+  // Blackroot Creek — flows in from the west, crosses the trail once at the
+  // Mossy Bridge, then bends away to the east so it never runs over the path.
   river: {
     width: 6,
     points: [
-      { x: -48, z: -30 }, { x: -40, z: -18 }, { x: -30, z: -2 }, { x: -18, z: 16 },
-      { x: -8, z: 36 }, { x: -1, z: 54 }, { x: 2, z: 66 }, { x: 6, z: 84 }, { x: 9, z: 105 },
+      { x: -78, z: 8 }, { x: -58, z: 14 }, { x: -38, z: 20 }, { x: -20, z: 28 },
+      { x: -8, z: 35 }, { x: 10, z: 44 }, { x: 30, z: 54 }, { x: 52, z: 62 }, { x: 72, z: 72 },
     ],
-    bridge: { x: 2, z: 66, halfWidth: 5 }, // crossing gap at the Mossy Bridge
+    bridge: { x: -8, z: 35, halfWidth: 5 }, // the single crossing, on the trail
   },
 
   // Impassable rocks/cliffs (collision). Trees are visual-only.

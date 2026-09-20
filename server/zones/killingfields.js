@@ -17,7 +17,8 @@ export const killingfields = {
   models: [
     'Bandit', 'Goblin', 'Goblin_Warrior', 'Goblin_Archer', 'Goblin_Scavenger', 'Hill_Ogre', 'Cow', 'Male', 'Female',
     // Sparse, blighted flora — mostly dead.
-    'Dead_Bush', 'Thorn_Bush', 'Darkroot_Bush', 'Normal_Tree', 'Tree', 'Yew_Tree', 'Oak_Tree',
+    'Dead_Bush', 'Thorn_Bush', 'Darkroot_Bush',
+    'Ancient_Forest_Tree', 'Broad_Crown_Oak', 'Tall_Leafy_Birch', 'Twisted_Darkwood', 'Weeping_Willow',
     // Farmstead / raider-camp props.
     'props/Goblin_Hide_Tent', 'props/Small_Canvas_Tent', 'props/Unlit_Fire_Pit', 'props/Campfire',
     'props/Supply_Crate', 'props/Water_Barrel', 'props/Supply_Pavilion', 'props/Camp_Lantern', 'props/Cooking_Tripod',
