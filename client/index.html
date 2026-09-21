@@ -37,7 +37,25 @@
   .bar > span { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; text-shadow: 0 1px 2px #000; }
   .bar > i { position: absolute; inset: 0; transform-origin: left; transition: transform .15s; }
   #hpfill { background: linear-gradient(90deg,#e0524d,#ff8a63); }
-  #xpfill { background: linear-gradient(90deg,#5bd6a4,#3b82f6); }
+  #actionbar { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); width: 372px; pointer-events: none; }
+  #xpbar { height: 14px; border-radius: 7px; background: #120a1fb0; border: 1px solid #5a3f8a; overflow: hidden; position: relative; margin: 0 4px 6px; }
+  #xpbar > i { position: absolute; inset: 0; transform-origin: left; transition: transform .2s;
+    background: linear-gradient(90deg, #4a1f8f, #8a3fd8 55%, #c48bff); box-shadow: inset 0 0 8px #d9b3ff66; }
+  #xpbar > span { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #f1e6ff; text-shadow: 0 1px 2px #000; letter-spacing: .3px; }
+  #slots { display: flex; gap: 6px; justify-content: center; }
+  .abslot { width: 56px; height: 56px; pointer-events: auto; position: relative; background: #1b1526; border: 2px solid #4a3a6a; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center; font-size: 26px; cursor: pointer; box-shadow: 0 2px 6px #0008; user-select: none; }
+  .abslot:hover { border-color: #b08cff; }
+  .abslot.locked { filter: grayscale(1) brightness(.55); cursor: default; }
+  .abslot.empty { background: #14101b; border-style: dashed; cursor: default; }
+  .abslot .key { position: absolute; top: 2px; left: 5px; font-size: 10px; color: #cbb7f0; font-weight: 700; text-shadow: 0 1px 2px #000; }
+  .abslot .lvl { position: absolute; bottom: 2px; right: 4px; font-size: 9px; color: #ffd47a; text-shadow: 0 1px 2px #000; }
+  .abslot .cd { position: absolute; inset: 0; border-radius: 6px; background: conic-gradient(#0009 var(--p), transparent 0); pointer-events: none; }
+  .abslot .cdt { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 800; color: #fff; text-shadow: 0 1px 3px #000; pointer-events: none; }
+  .abslot .tip { display: none; }
+  .abslot:hover .tip { display: block; position: absolute; bottom: 110%; left: 50%; transform: translateX(-50%); width: 200px; white-space: normal;
+    background: #14100bee; color: #ffe9b0; font-size: 11px; line-height: 1.35; padding: 5px 8px; border-radius: 5px; border: 1px solid #6a5636; z-index: 5; text-align: left; }
+  .abslot .tip b { color: #ffd24a; } .abslot .tip .dim { color: #b3a385; }
   #charline { color: #dbe6f3; font-size: 13px; margin-bottom: 6px; text-shadow: 0 1px 2px #000; display:flex; gap:10px; }
   #charline b { color: #ffd47a; }
 
@@ -143,11 +161,6 @@
   .eslot:hover .tip { display: block; position: absolute; bottom: 104%; left: 50%; transform: translateX(-50%);
     background: #000d; color: #ffe9b0; font-size: 11px; padding: 3px 7px; border-radius: 4px; white-space: nowrap; z-index: 3; }
   .eslot .tip { display: none; }
-  #skillStyles { margin: -2px 0 8px; font-size: 11px; }
-  #skillStyles .styles { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; color: #8a7d63; }
-  #skillStyles .stylebtn { pointer-events: auto; cursor: pointer; font-size: 10px; padding: 2px 7px;
-    background: #1a2436; color: #cfe0f5; border: 1px solid #3a4c68; border-radius: 4px; }
-  #skillStyles .stylebtn.on { background: #2f5aa0; border-color: #5a86c8; color: #fff; }
   .slot { cursor: pointer; }
 
   /* ---- Skills window ---- */
@@ -160,6 +173,12 @@
   #skillwin h3 { color: #ffdf9e; font-size: 13px; margin-bottom: 8px; display: flex; justify-content: space-between; }
   #skillwin h3 .g { color: #ffd24a; }
   #skillGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .classcard { background: #1b1526; border: 1px solid #5a3f8a; border-radius: 6px; padding: 6px 8px; margin-bottom: 8px; }
+  .classcard .top { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #e8dcff; } .classcard .top .em { font-size: 18px; }
+  .classcard .top .nm { font-weight: 700; } .classcard .top b { margin-left: auto; color: #ffd47a; font-size: 15px; }
+  .classcard .bar { height: 6px; border-radius: 3px; background: #120a1f; border: 1px solid #4a3a6a; overflow: hidden; margin: 5px 0 4px; }
+  .classcard .bar i { display: block; height: 100%; transform-origin: left; background: linear-gradient(90deg, #4a1f8f, #8a3fd8 55%, #c48bff); }
+  .classcard .sub { font-size: 10.5px; color: #b3a6cc; } .classcard .sub i { color: #cbbfe6; }
   .skcell { background: #1d1913; border: 1px solid #4a3d2a; border-radius: 6px; padding: 6px 8px; position: relative; }
   .skcell .top { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #d8cba8; }
   .skcell .top .em { font-size: 16px; }
@@ -283,7 +302,11 @@
   <div id="topleft">
     <div id="charline"><span id="cname">—</span><span>Lv <b id="clevel">1</b></span><span>💰 <b id="cgold">0</b></span></div>
     <div class="bar"><i id="hpfill"></i><span id="hptext">100 / 100</span></div>
-    <div class="bar"><i id="xpfill"></i><span id="xptext">XP 0%</span></div>
+  </div>
+  <!-- Action bar: class xp above, six ability slots (keys 1-6) below -->
+  <div id="actionbar">
+    <div id="xpbar"><i id="xpfill"></i><span id="xptext">XP 0 / 83</span></div>
+    <div id="slots"></div>
   </div>
   <div id="settings">
     <div class="panel">
@@ -945,6 +968,9 @@ function handle(m) {
     case 'skills':
       skills = { ...skills, ...m };
       renderSkills();
+      break;
+    case 'abilities':
+      abilities = m.list || []; renderActionBar();
       break;
     case 'quests':
       questData = { active: m.active || [], available: m.available || [], completed: m.completed || [], markers: m.markers || {} };
@@ -5096,6 +5122,7 @@ function addEventListeners() {
       if (!any) openSettings();
       return;
     }
+    if (/^[1-6]$/.test(e.key) && !e.ctrlKey && !e.altKey) { const a = abilities[+e.key - 1]; if (a && !a.locked) useAbility(a.id); return; }
     if (e.key === ' ' || e.code === 'Space') { e.preventDefault(); if (!jump.active) { jump.active = true; jump.t = 0; } return; }
     const k = e.key.toLowerCase();
     if (k.startsWith('arrow')) e.preventDefault();
@@ -5453,7 +5480,7 @@ function updateHudFromSnapshot(snap) {
   const me = snap.players.find(p => p.id === myId);
   if (!me) return;
   document.getElementById('cname').textContent = me.name;
-  document.getElementById('clevel').textContent = me.combat != null ? me.combat : me.level;
+  document.getElementById('clevel').textContent = me.level;
   document.getElementById('hpfill').style.transform = `scaleX(${Math.max(0, me.hp / me.maxHp)})`;
   document.getElementById('hptext').textContent = `${me.hp} / ${me.maxHp}`;
   if (me.gold != null) document.getElementById('cgold').textContent = me.gold;
@@ -5474,10 +5501,10 @@ function onEvent(m) {
   switch (m.kind) {
     case 'xp': flyText(`+${m.amount} XP`, 'xp'); break;
     case 'levelup':
-      flyText(`Level ${m.level}!`, 'heal'); break;
-    case 'skilllevel':
-      flyText(`${m.skill[0].toUpperCase() + m.skill.slice(1)} level ${m.level}!`, 'heal');
-      addChat('Skills', `Your ${m.skill} level is now ${m.level}.`, true); break;
+      flyText(`${m.cls || 'Level'} ${m.level}!`, 'heal');
+      addChat('Class', `You are now a level ${m.level} ${m.cls || ''}.`, true); break;
+    case 'ability':
+      if (m.by === myId) flyText(m.name, 'xp'); break;
     case 'medlevel':
       flyText(`Meditation level ${m.level}!`, 'heal');
       addChat('Skills', `Your Meditation level is now ${m.level}.`, true); break;
@@ -5707,42 +5734,62 @@ function toggleSkills(force) {
 function renderSkillWindow() {
   const grid = document.getElementById('skillGrid');
   if (!grid) return;
-  const cs = skills.combat || {};
-  // Attack style (what combat trains) lives with the skills it feeds.
-  const cur = skills.style || 'controlled';
-  const slabel = { accurate: 'Accurate', aggressive: 'Aggressive', defensive: 'Defensive', controlled: 'Controlled' };
-  const stylesEl = document.getElementById('skillStyles');
-  stylesEl.innerHTML = `<div class="styles"><span>Style:</span> ` + ['accurate', 'aggressive', 'defensive', 'controlled']
-    .map(st => `<button class="stylebtn${st === cur ? ' on' : ''}" data-style="${st}">${slabel[st]}</button>`).join('') + `</div>`;
-  stylesEl.querySelectorAll('.stylebtn').forEach(b => b.onclick = () => ws?.send(JSON.stringify({ t: 'style', style: b.dataset.style })));
   const cell = (em, name, level, into, next, note) => {
     const pct = Math.max(0, Math.min(1, (into || 0) / (next || 1)));
     return `<div class="skcell"><div class="top"><span class="em">${em}</span>${name}<b>${level || 1}</b></div>` +
       `<div class="bar"><i style="transform:scaleX(${pct})"></i></div>` +
       `<span class="tip">${name} — level ${level || 1}${note ? ' · ' + note : ''}</span></div>`;
   };
-  const combatCell = (em, name, k) => {
-    const s = cs[k] || { level: 1, xp: 0, next: 1 };
-    return cell(em, name, s.level, s.into, s.next, `${Math.floor(s.xp).toLocaleString()} xp`);
-  };
+  const c = skills.cls || { name: 'Fighter', icon: '⚔️', level: 1, xp: 0, into: 0, next: 83 };
   const m = skills.mining || { level: 1, into: 0, next: 1, pick: null };
   const fish = skills.fishing || { level: 1, into: 0, next: 1, rod: null };
   const cook = skills.cooking || { level: 1, into: 0, next: 1 };
   const med = skills.meditation || { level: 1, xp: 0, next: 1 };
+  // The class is the combat "skill": one card, its level and xp.
+  const cpct = Math.max(0, Math.min(1, (c.into || 0) / (c.next || 1)));
+  document.getElementById('skillStyles').innerHTML =
+    `<div class="classcard"><div class="top"><span class="em">${c.icon || '⚔️'}</span><span class="nm">${escapeHtml(c.name)}</span><b>${c.level}</b></div>` +
+    `<div class="bar"><i style="transform:scaleX(${cpct})"></i></div>` +
+    `<div class="sub">${Math.floor(c.xp || 0).toLocaleString()} xp · ${(c.next === null || c.next == null) ? 'max' : ((c.next - (c.into || 0)).toLocaleString() + ' to next')}${c.desc ? ' · <i>' + escapeHtml(c.desc) + '</i>' : ''}</div></div>`;
   grid.innerHTML =
-    combatCell('⚔️', 'Attack', 'attack') +
-    combatCell('💪', 'Strength', 'strength') +
-    combatCell('🛡️', 'Defence', 'defence') +
-    combatCell('❤️', 'Hitpoints', 'hitpoints') +
     cell('⛏️', 'Mining', m.level, m.into, m.next, m.pick ? m.pick.replace(' Pickaxe', '') : 'no pickaxe') +
     cell('🎣', 'Fishing', fish.level, fish.into, fish.next, fish.rod ? fish.rod.replace(' Rod', '') : 'no rod') +
     cell('🍳', 'Cooking', cook.level, cook.into, cook.next, 'cook at a fire') +
     cell('🧘', 'Meditation', med.level, med.into, med.next, skills.resting ? 'resting…' : 'press R');
-  document.getElementById('skillCombat').textContent = 'Combat ' + (skills.combatLevel || 3);
-  // Total level across every skill.
-  const total = (cs.attack?.level || 1) + (cs.strength?.level || 1) + (cs.defence?.level || 1) +
-    (cs.hitpoints?.level || 1) + (m.level || 1) + (fish.level || 1) + (cook.level || 1) + (med.level || 1);
+  document.getElementById('skillCombat').textContent = `${c.name} ${c.level}`;
+  const total = (c.level || 1) + (m.level || 1) + (fish.level || 1) + (cook.level || 1) + (med.level || 1);
   document.getElementById('skillTotal').innerHTML = `Total level <b>${total}</b>`;
+}
+
+// ---- Action bar: the class's abilities on six slots, keys 1-6 ----
+let abilities = [];
+function renderActionBar() {
+  const el = document.getElementById('slots'); if (!el) return;
+  let html = '';
+  for (let i = 0; i < 6; i++) {
+    const a = abilities[i];
+    if (!a) { html += `<div class="abslot empty"><span class="key">${i + 1}</span></div>`; continue; }
+    const cls = 'abslot' + (a.locked ? ' locked' : '');
+    html += `<div class="${cls}" data-id="${a.id}" data-i="${i}"><span class="key">${i + 1}</span>${a.icon}` +
+      (a.locked ? `<span class="lvl">Lv ${a.level}</span>` : '') +
+      `<div class="cd" style="--p:0%"></div><div class="cdt"></div>` +
+      `<span class="tip"><b>${escapeHtml(a.name)}</b>${a.locked ? ` <span class="dim">(unlocks at level ${a.level})</span>` : ''}<br>${escapeHtml(a.desc)}<br><span class="dim">Cooldown ${a.cd}s · key ${i + 1}</span></span></div>`;
+  }
+  el.innerHTML = html;
+  el.querySelectorAll('.abslot[data-id]').forEach(d => { d.onclick = () => useAbility(d.dataset.id); });
+  for (const a of abilities) a._t0 = performance.now(), a._left0 = a.left || 0;
+}
+function useAbility(id) { ws?.send(JSON.stringify({ t: 'ability', id })); }
+function updateActionBar() {
+  const el = document.getElementById('slots'); if (!el || !abilities.length) return;
+  const now = performance.now();
+  el.querySelectorAll('.abslot[data-id]').forEach(d => {
+    const a = abilities[+d.dataset.i]; if (!a) return;
+    const left = Math.max(0, (a._left0 || 0) - (now - (a._t0 || now)) / 1000);
+    const cd = d.querySelector('.cd'), t = d.querySelector('.cdt');
+    if (left > 0.05) { cd.style.setProperty('--p', (left / a.cd * 100) + '%'); t.textContent = left >= 10 ? Math.ceil(left) : left.toFixed(1); }
+    else { cd.style.setProperty('--p', '0%'); t.textContent = ''; }
+  });
 }
 
 // The slot layout is authored on the server (items.js SLOT_INFO) and arrives
@@ -6286,6 +6333,7 @@ function animate() {
   _pf('plates', () => updateNameplates());
   _pf('npcmk', () => updateNpcMarkers());
   _pf('region', () => updateRegionTitle());
+  _pf('abilities', () => updateActionBar());
   _pf('talk', () => updatePendingTalk());
   if (mapOpen) _pf('map', () => drawMap());
   // Flowing river: scroll the water texture along the current + gentle waves.

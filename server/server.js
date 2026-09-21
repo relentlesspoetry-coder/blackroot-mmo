@@ -14,7 +14,7 @@ import { killingfields } from './zones/killingfields.js';
 import {
   PLAYER, ELITE, MONSTER, MONSTER_TEMPLATES,
   maxHpForLevel, xpForLevel, xpTotalForLevel, levelForXp, rollPlayerDamage, scaledMonster, rollLoot, mitigate, REGEN,
-  TICK, DEFAULT_ATTACK_SPEED, STYLES, COMBAT_SKILLS, hpForHitpoints, combatLevel,
+  TICK, DEFAULT_ATTACK_SPEED, CLASSES, DEFAULT_CLASS, classDef, classStats,
   maxHit, rollSwing, rollMonsterSwing, MEDITATION, meditationHealRate,
 } from './balance.js';
 import { ITEMS, SLOTS, SLOT_INFO, DOLL, itemDef, slotOf, valueOf, equipStats, slotsFor, emptySlots } from './items.js';
@@ -839,13 +839,14 @@ function systemChat(msg) { broadcast({ t: 'chat', from: 'System', msg, sys: true
 function grantXp(p, amount) {
   p.xp += amount; // running total; the level is read off the shared 1..99 table
   send(p.ws, { t: 'event', kind: 'xp', amount });
+  let leveled = false;
   while (p.level < levelForXp(p.xp)) {
-    p.level++;
-    // HP is driven by the Hitpoints skill now, so leveling the adventure track
-    // no longer overrides it.
-    send(p.ws, { t: 'event', kind: 'levelup', level: p.level });
-    systemChat(`${p.name} reached level ${p.level}!`);
+    p.level++; leveled = true;
+    const old = p.maxHp; p.maxHp = classStats(p.cls, p.level).hp; p.hp = Math.min(p.maxHp, p.hp + (p.maxHp - old));
+    send(p.ws, { t: 'event', kind: 'levelup', level: p.level, cls: classDef(p.cls).name });
+    systemChat(`${p.name} is now a level ${p.level} ${classDef(p.cls).name}!`);
   }
+  if (leveled) { sendSkills(p); sendAbilities(p); }
 }
 
 function killMonster(m, killer) {
@@ -970,13 +971,11 @@ function minerStats(p) {
 
 function sendSkills(p) {
   const st = minerStats(p);
-  const cs = {};
-  for (const s of COMBAT_SKILLS) cs[s] = { level: p.skills[s].level, xp: Math.floor(p.skills[s].xp), into: Math.floor(p.skills[s].xp - xpTotalForLevel(p.skills[s].level)), next: xpForLevel(p.skills[s].level) };
   const fp = fishingLevelFromXp(p.fishingXp), cp = cookingLevelFromXp(p.cookingXp);
   send(p.ws, { t: 'skills', mining: { level: st.level, xp: p.miningXp, into: st.into, next: st.next, pick: st.pick },
     fishing: { level: fp.level, into: fp.into, next: fp.next, rod: fisherStats(p).rod },
     cooking: { level: cp.level, into: cp.into, next: cp.next },
-    combat: cs, combatLevel: p.combat || combatLevel(p.skills), style: p.style,
+    cls: { id: p.cls, name: classDef(p.cls).name, icon: classDef(p.cls).icon, desc: classDef(p.cls).desc, level: p.level, xp: Math.floor(p.xp), into: Math.floor(p.xp - xpTotalForLevel(p.level)), next: xpForLevel(p.level) },
     meditation: { level: p.meditation.level, xp: Math.floor(p.meditation.xp), into: Math.floor(p.meditation.xp - xpTotalForLevel(p.meditation.level)), next: xpForLevel(p.meditation.level) },
     resting: !!p.resting });
 }
@@ -1241,25 +1240,10 @@ function playerAttackSpeed(p) {
   const w = p.equipment && p.equipment.weapon;
   return (WEAPON_SPEED[w] || DEFAULT_ATTACK_SPEED) * TICK;
 }
-// Combat XP: 4 per damage to the style's skill (split for controlled) + 1.33 to
-// hitpoints. Levels the skill, grows max HP off hitpoints, tracks combat level.
-function addSkillXp(p, skill, amount) {
-  const sk = p.skills[skill]; if (!sk) return;
-  sk.xp += amount; let leveled = false;
-  while (sk.level < levelForXp(sk.xp)) { sk.level++; leveled = true; }
-  if (leveled) {
-    if (skill === 'hitpoints') { const old = p.maxHp; p.maxHp = hpForHitpoints(sk.level); p.hp = Math.min(p.maxHp, p.hp + (p.maxHp - old)); }
-    p.combat = combatLevel(p.skills);
-    send(p.ws, { t: 'event', kind: 'skilllevel', skill, level: sk.level });
-  }
-}
+// Combat XP goes to the class: xpPerDamage per point of damage dealt.
 function awardCombatXp(p, dmg) {
   if (dmg <= 0) return;
-  const s = STYLES[p.style] || STYLES.controlled;
-  if (s.train === 'shared') { addSkillXp(p, 'attack', 1.33 * dmg); addSkillXp(p, 'strength', 1.33 * dmg); addSkillXp(p, 'defence', 1.33 * dmg); }
-  else addSkillXp(p, s.train, 4 * dmg);
-  addSkillXp(p, 'hitpoints', 1.33 * dmg);
-  sendSkills(p);
+  grantXp(p, Math.round(classDef(p.cls).xpPerDamage * dmg));
 }
 // Meditation trains as you rest to heal: xp scales with HP recovered.
 function addMeditationXp(p, amount) {
@@ -1293,11 +1277,64 @@ function doPlayerAttack(p, m) {
   // OSRS accuracy: our attack roll vs the monster's defence roll; damage 0..maxHit.
   // A flat competence (+6 effective) keeps early, gear-less combat from being a
   // miss-fest against low-level foes while still scaling with skills and gear.
-  const eq = equipStats(p.equipment), bonus = eq.atk || 0, COMP = 6;
-  const dmg = rollSwing(p.skills.attack.level + COMP, p.skills.strength.level + COMP, bonus, bonus, p.style, m.defLevel || 1, m.defBonus || 0);
+  playerSwing(p, m, 1);
+}
+// One swing of the player at a monster with the class's rolls (and any
+// damage multiplier from an ability / buff). Returns the damage.
+function playerSwing(p, m, dmgMult) {
+  const eq = equipStats(p.equipment), bonus = eq.atk || 0, cs = classStats(p.cls, p.level);
+  const mult = dmgMult * (p.buffs.war_cry > 0 ? 1.25 : 1);
+  const dmg = rollSwing(cs.atk, cs.str, bonus, bonus, m.defLevel || 1, m.defBonus || 0, mult);
   if (dmg > 0) { m.hp -= dmg; awardCombatXp(p, dmg); }
   broadcast({ t: 'event', kind: 'hit', by: p.id, target: m.id, dmg, targetKind: 'monster' });
   if (m.hp <= 0) killMonster(m, p);
+  return dmg;
+}
+
+// ---- Abilities (the action bar) ----
+function abilityList(p) {
+  return classDef(p.cls).abilities.map(a => ({ id: a.id, name: a.name, icon: a.icon, level: a.level, cd: a.cd, desc: a.desc,
+    locked: p.level < a.level, left: Math.max(0, p.cooldowns[a.id] || 0) }));
+}
+function sendAbilities(p) { send(p.ws, { t: 'abilities', cls: classDef(p.cls).name, list: abilityList(p) }); }
+function useAbility(p, id) {
+  const a = classDef(p.cls).abilities.find(x => x.id === id);
+  const notice = (text) => send(p.ws, { t: 'event', kind: 'notice', text });
+  if (!a || !p.alive) return;
+  if (p.level < a.level) return notice(`${a.name} unlocks at level ${a.level}.`);
+  if ((p.cooldowns[id] || 0) > 0) return notice(`${a.name} is not ready.`);
+  const target = p.combatId != null ? monsters.get(p.combatId) : null;
+  const inReach = target && target.alive && dist2(p.x, p.z, target.x, target.z) <= ATTACK_RANGE * ATTACK_RANGE;
+  switch (id) {
+    case 'power_strike': {
+      if (!inReach) return notice('You need a target in reach.');
+      playerSwing(p, target, 1.6);
+      break;
+    }
+    case 'cleave': {
+      if (!inReach) return notice('You need a target in reach.');
+      const zone = zoneOf(p);
+      playerSwing(p, target, 1.2);
+      if (zone.multiCombat) for (const m of monsters.values()) {
+        if (m === target || !m.alive || m.zoneId !== p.zoneId || m.passive) continue;
+        if (dist2(m.x, m.z, target.x, target.z) <= 3 * 3) playerSwing(p, m, 1.2);
+      }
+      break;
+    }
+    case 'guard': p.buffs.guard = a.dur; break;
+    case 'war_cry': p.buffs.war_cry = a.dur; break;
+    case 'last_stand': p.buffs.last_stand = a.dur; break;
+    case 'second_wind': {
+      if (p.hp >= p.maxHp) return notice('You are already at full health.');
+      const heal = Math.round(p.maxHp * 0.25);
+      p.hp = Math.min(p.maxHp, p.hp + heal);
+      send(p.ws, { t: 'event', kind: 'ate', item: 'Second Wind', heal });
+      break;
+    }
+  }
+  p.cooldowns[id] = a.cd;
+  broadcast({ t: 'event', kind: 'ability', by: p.id, id, name: a.name });
+  sendAbilities(p);
 }
 
 // ---------------------------------------------------------------------------
@@ -1353,8 +1390,9 @@ function stepMonster(m) {
         m.atkTimer = (m.attackSpeed || 4) * TICK;
         // OSRS accuracy: monster attack roll vs the player's defence roll (level
         // + armour), damage 0..monster maxHit.
-        const eq = equipStats(target.equipment);
-        const dmg = rollMonsterSwing(m.atkLevel || 1, m.atkBonus || 0, m.maxHit || 1, target.skills.defence.level, eq.def || 0);
+        const eq = equipStats(target.equipment), tcs = classStats(target.cls, target.level);
+        let dmg = rollMonsterSwing(m.atkLevel || 1, m.atkBonus || 0, m.maxHit || 1, tcs.def * (target.buffs.guard > 0 ? 2 : 1), eq.def || 0);
+        if (target.buffs.last_stand > 0) dmg = Math.floor(dmg / 2);
         if (dmg > 0) { target.hp -= dmg; target.combatTimer = REGEN.combatLockout; }
         engage(target, m);
         // Auto-retaliate: if the player isn't already fighting, strike back.
@@ -1527,6 +1565,8 @@ function stepPlayer(p) {
   p.inSafe = safe;
   p.engagedT = Math.max(0, (p.engagedT || 0) - DT);
   if (p.engagedT <= 0) p.engagedWith = null;
+  for (const k of Object.keys(p.cooldowns)) if (p.cooldowns[k] > 0) p.cooldowns[k] = Math.max(0, p.cooldowns[k] - DT);
+  for (const k of Object.keys(p.buffs)) if (p.buffs[k] > 0) p.buffs[k] = Math.max(0, p.buffs[k] - DT);
 }
 
 function respawnPlayer(p) {
@@ -1603,7 +1643,7 @@ setInterval(() => {
         if (p.zoneId !== zid) continue;
         ps.push({ id: p.id, name: p.name, x: +p.x.toFixed(2), z: +p.z.toFixed(2), y: +(p.y || 0).toFixed(2),
           yaw: +p.yaw.toFixed(2), hp: Math.round(p.hp), maxHp: p.maxHp, level: p.level,
-          combat: p.combat || combatLevel(p.skills),
+          cls: p.cls,
           xp: p.xp - xpTotalForLevel(p.level), xpNext: xpForLevel(p.level), gold: p.gold, alive: p.alive,
           moving: p.moving, inSafe: !!p.inSafe, resting: !!p.resting,
           weapon: p.equipment.weapon || null,     // held item for the paperdoll
@@ -1696,12 +1736,10 @@ wss.on('connection', (ws) => {
         player = {
           id, ws, kind: 'player', name, look, zoneId: START_ZONE,
           x: start.spawn.x, z: start.spawn.z, y: 0, yaw: start.spawn.yaw, moving: false,
-          level: 1, xp: 0, gold: 0, openedChests: new Set(),
-          // OSRS-style combat skills. Hitpoints starts at 10 (=> 80 HP).
-          skills: { attack: { level: 1, xp: 0 }, strength: { level: 1, xp: 0 },
-            defence: { level: 1, xp: 0 }, hitpoints: { level: 10, xp: xpTotalForLevel(10) } },
+          // One class, one class level: `level`/`xp` ARE the class (see CLASSES).
+          cls: DEFAULT_CLASS, level: 1, xp: 0, gold: 0, openedChests: new Set(),
+          cooldowns: {}, buffs: {},   // ability id -> seconds left; buff id -> seconds left
           meditation: { level: 1, xp: 0 }, resting: false,
-          style: 'controlled',
           // Everyone starts able to mine and fish; better tools are earned. The
           // pickaxe starts equipped so it shows in-hand (and swings when mining).
           inventory: ['Fishing Rod'],
@@ -1711,15 +1749,15 @@ wss.on('connection', (ws) => {
           cookingXp: 0, pendingCook: null, cookTimer: 0,
           quests: new Map(), questDone: new Set(), questKills: {},
           questFlags: new Set(), questAnnounced: new Set(),
-          maxHp: hpForHitpoints(10), hp: hpForHitpoints(10), alive: true,
+          maxHp: classStats(DEFAULT_CLASS, 1).hp, hp: classStats(DEFAULT_CLASS, 1).hp, alive: true,
           atkTimer: 0, regen: 0, combatTimer: 0, deathTimer: 0, portalCd: 0, inSafe: true,
           moveTo: null, combatId: null, pendingChest: null, pendingPickup: null, pendingGate: false, input: { f: 0, r: 0, yaw: 0 },
         };
-        player.combat = combatLevel(player.skills);
         players.set(id, player);
         send(ws, { t: 'welcome', id, tickRate: SNAPSHOT_HZ, zone: zoneForClient(start), items: ITEM_CATALOG });
         sendBag(player); // sends the quest payload too
         sendSkills(player);
+        sendAbilities(player);
         systemChat(`${name} has entered ${start.name}.`);
         break;
       }
@@ -1740,9 +1778,9 @@ wss.on('connection', (ws) => {
         }
         break;
       }
-      case 'style': {
+      case 'ability': {
         if (!player) break;
-        if (STYLES[msg.style]) { player.style = msg.style; sendSkills(player); }
+        useAbility(player, String(msg.id || ''));
         break;
       }
       case 'rest': {

@@ -36,26 +36,51 @@ export function progressForXp(total) { const level = levelForXp(total); return {
 // ---------------------------------------------------------------------------
 export const TICK = 0.6;               // one game tick, seconds (OSRS)
 export const DEFAULT_ATTACK_SPEED = 4; // ticks between swings for a typical weapon
-// Attack-style stances: each grants a hidden +bonus to a stat and trains a skill.
-export const STYLES = {
-  accurate:   { atk: 3, str: 0, def: 0, train: 'attack' },
-  aggressive: { atk: 0, str: 3, def: 0, train: 'strength' },
-  defensive:  { atk: 0, str: 0, def: 3, train: 'defence' },
-  controlled: { atk: 1, str: 1, def: 1, train: 'shared' },
+// ---------------------------------------------------------------------------
+// Classes. There are no separate attack/strength/defence/hitpoints skills:
+// a character has one class and one class level (the OSRS 1..99 curve), and
+// the class says what that level is worth in the OSRS combat rolls below —
+// effective attack / strength / defence and the HP pool — plus which
+// abilities sit on the action bar and when they unlock.
+// ---------------------------------------------------------------------------
+export const CLASSES = {
+  fighter: {
+    name: 'Fighter', icon: '⚔️',
+    desc: 'Steel and stubbornness. Hits hard, takes hits, and gets back up.',
+    atk: (L) => 6 + L,             // effective levels fed to the accuracy / max-hit rolls
+    str: (L) => 6 + L,
+    def: (L) => 6 + L,
+    hp:  (L) => 80 + (L - 1) * 10, // max hitpoints
+    xpPerDamage: 5,                // class xp per point of damage dealt
+    abilities: [
+      { id: 'power_strike', name: 'Power Strike', icon: '💥', level: 1, cd: 8,
+        desc: 'An immediate extra swing at your target for up to 1.6× your max hit.' },
+      { id: 'guard', name: 'Guard', icon: '🛡️', level: 3, cd: 24, dur: 8,
+        desc: 'Brace for 8s: your defence roll is doubled.' },
+      { id: 'second_wind', name: 'Second Wind', icon: '💚', level: 5, cd: 45,
+        desc: 'Catch your breath: heal 25% of your max hitpoints.' },
+      { id: 'cleave', name: 'Cleave', icon: '🌀', level: 10, cd: 15,
+        desc: 'A sweeping blow: hits your target and every enemy beside it (multi-combat zones).' },
+      { id: 'war_cry', name: 'War Cry', icon: '📣', level: 15, cd: 60, dur: 12,
+        desc: 'Roar: +25% max hit for 12s.' },
+      { id: 'last_stand', name: 'Last Stand', icon: '🔥', level: 20, cd: 120, dur: 10,
+        desc: 'Refuse to fall: for 10s damage taken is halved.' },
+    ],
+  },
 };
-export const COMBAT_SKILLS = ['attack', 'strength', 'defence', 'hitpoints'];
-// Hitpoints starts at level 10 (like OSRS); HP scales from there.
-export function hpForHitpoints(hpLevel) { return 80 + (hpLevel - 10) * 10; }
-export function combatLevel(sk) {
-  return Math.floor(0.25 * (sk.defence.level + sk.hitpoints.level) + 0.325 * (sk.attack.level + sk.strength.level));
+export const DEFAULT_CLASS = 'fighter';
+export function classDef(id) { return CLASSES[id] || CLASSES[DEFAULT_CLASS]; }
+export function classStats(id, level) {
+  const c = classDef(id);
+  return { atk: c.atk(level), str: c.str(level), def: c.def(level), hp: c.hp(level) };
 }
 // Max hit from strength. The divisor is tuned (vs OSRS's 640) so this game's
 // HP pools die at a similar pace to the old damage model.
-export function maxHit(strLevel, strBonus, styleStr) {
+export function maxHit(strLevel, strBonus, styleStr = 0) {
   const eff = strLevel + styleStr + 8;
   return Math.max(1, Math.floor(0.5 + eff * (strBonus + 64) / 120));
 }
-export function attackRoll(atkLevel, atkBonus, styleAtk) {
+export function attackRoll(atkLevel, atkBonus, styleAtk = 0) {
   return (atkLevel + styleAtk + 8) * (atkBonus + 64);
 }
 export function defenceRoll(defLevel, defBonus) {
@@ -66,12 +91,11 @@ export function hitChance(atkRoll, defRoll) {
   return atkRoll > defRoll ? 1 - (defRoll + 2) / (2 * (atkRoll + 1)) : atkRoll / (2 * (defRoll + 1));
 }
 // One swing. Returns damage (0 = a miss / blocked hit -> blue "0" splat).
-export function rollSwing(atk, str, atkBonus, strBonus, style, defLevel, defBonus) {
-  const s = STYLES[style] || STYLES.controlled;
-  const ar = attackRoll(atk, atkBonus, s.atk);
+export function rollSwing(atk, str, atkBonus, strBonus, defLevel, defBonus, dmgMult = 1) {
+  const ar = attackRoll(atk, atkBonus);
   const dr = defenceRoll(defLevel, defBonus);
   if (Math.random() >= hitChance(ar, dr)) return 0;
-  return Math.floor(Math.random() * (maxHit(str, strBonus, s.str) + 1));
+  return Math.floor(Math.random() * (Math.floor(maxHit(str, strBonus) * dmgMult) + 1));
 }
 // A monster's swing: accuracy from its levels/bonuses, damage 0..its max hit.
 export function rollMonsterSwing(atkLevel, atkBonus, mh, defLevel, defBonus) {
