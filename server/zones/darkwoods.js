@@ -117,8 +117,6 @@ export const darkwoods = {
       idle: 'Cows need feedin’, fences need mendin’. No rest out here.' },
     { id: 'sela',     name: 'Ranger Sela',         x: 48,   z: -70, poi: 'watchtower', model: 'Female', yaw: 2.2,
       idle: 'From the old tower you can see their fires. The Wolf Den grows bolder every night.' },
-    { id: 'tam',      name: 'Trapper Tam',         x: -24,  z: -60, poi: 'hunter',   model: 'Male', yaw: 1.2,
-      idle: 'Set my snares at dawn, find them sprung and empty by noon. Goblins, most like.' },
     { id: 'dorn',     name: 'Prospector Dorn',     x: -34,  z: 42,  poi: 'ravine',   model: 'Male', yaw: 5.0,
       idle: 'That iron seam is mine by right — but the goblins dig it faster than I can chase them off.' },
     { id: 'hermit',   name: 'Hermit of the Grove', x: 9,    z: 4,   poi: 'shrine',   model: 'Male',

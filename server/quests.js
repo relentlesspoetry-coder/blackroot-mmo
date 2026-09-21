@@ -71,20 +71,6 @@ export const QUESTS = {
     reward: { xp: 200, gold: 90 },
   },
 
-  // --- Trapper Tam, Old Hunter's Trail -------------------------------------
-  trapping: {
-    id: 'trapping', name: 'The Trapper\'s Table', giver: 'tam', minLevel: 1,
-    summary: 'Clear the goblins robbing Tam’s snare line.',
-    intro: 'My snares come up empty every morning — goblins off the trail are lifting the catch before I get there. Thin them out along the Old Hunter’s Trail and bring me a few of their teeth so I know it’s done, and I’ll cook you something hot.',
-    active: 'Five goblins off the snare line, and three goblin teeth for Tam.',
-    done: 'Fine hunting. Here — a kebab off the fire, and my thanks.',
-    objectives: [
-      { type: 'kill', target: 'goblin', count: 5, label: 'Goblins driven off' },
-      { type: 'collect', item: 'Goblin Tooth', count: 3, label: 'Goblin teeth' },
-    ],
-    reward: { xp: 130, gold: 45, items: ['Kebab'] },
-  },
-
   // --- Prospector Dorn, Root-Choked Ravine ---------------------------------
   claimjumpers: {
     id: 'claimjumpers', name: 'Claim Jumpers', giver: 'dorn', minLevel: 4, requires: ['shrine'],
