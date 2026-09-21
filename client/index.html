@@ -2247,23 +2247,28 @@ function buildPoi(p) {
 
 // ---- Natural cave walls: line the boundary polygon with rock boulders ----
 function buildCaveWalls(poly, ceilY, yBase = 0) {
-  // Centroid so we can push boulders OUTWARD of the collision boundary; the
-  // walkable edge (the polygon) then lines up with the inner rock face instead
-  // of the player clipping into boulders that bulged inward.
+  // Push boulders out along each edge's OWN normal (not from the centroid) — for
+  // a multi-room cave with narrow tunnels, centroid-push shoves boulders across
+  // the tunnels and seals them. The local normal keeps every wall (room or
+  // tunnel) hugged just outside the walkable line, so the passages stay open.
   let ccx = 0, ccz = 0; for (const p of poly) { ccx += p.x; ccz += p.z; } ccx /= poly.length; ccz /= poly.length;
   const places = { Wall_Boulder_Tall: [], Wall_Boulder_Wide: [] };
   for (let i = 0; i < poly.length; i++) {
     const a = poly[i], bpt = poly[(i + 1) % poly.length];
     const dx = bpt.x - a.x, dz = bpt.z - a.z, len = Math.hypot(dx, dz) || 1;
-    const step = 3.0, n = Math.max(1, Math.round(len / step));
+    const ux = dx / len, uz = dz / len;               // edge direction
+    let nx = -uz, nz = ux;                             // edge normal
+    const mx = (a.x + bpt.x) / 2, mz = (a.z + bpt.z) / 2;
+    if (nx * (mx - ccx) + nz * (mz - ccz) < 0) { nx = -nx; nz = -nz; } // point OUTWARD (away from interior)
+    const step = 2.4, n = Math.max(1, Math.round(len / step));
     for (let k = 0; k <= n; k++) {
       const t = k / n, px = a.x + dx * t, pz = a.z + dz * t;
-      let ox = px - ccx, oz = pz - ccz; const ol = Math.hypot(ox, oz) || 1; ox /= ol; oz /= ol; // outward
-      // Two rows, both outside the boundary, for thickness and a broken top.
-      for (const off of [1.2, 2.8]) {
-        const jx = (Math.random() - 0.5) * 1.3, jz = (Math.random() - 0.5) * 1.3;
-        const model = ((k + (off > 2 ? 1 : 0)) % 2) ? 'Wall_Boulder_Tall' : 'Wall_Boulder_Wide';
-        places[model].push({ x: px + ox * off + jx, z: pz + oz * off + jz, r: Math.random() * 6.28, s: 0.9 + Math.random() * 0.5 });
+      // Two rows just OUTSIDE the wall line (along the local normal); jitter runs
+      // ALONG the wall so boulders never wander inward into a passage.
+      for (const off of [0.5, 1.9]) {
+        const j = (Math.random() - 0.5) * 0.9;
+        const model = ((k + (off > 1 ? 1 : 0)) % 2) ? 'Wall_Boulder_Tall' : 'Wall_Boulder_Wide';
+        places[model].push({ x: px + nx * off + ux * j, z: pz + nz * off + uz * j, r: Math.random() * 6.28, s: 0.85 + Math.random() * 0.4 });
       }
     }
   }
@@ -2303,7 +2308,7 @@ function placeInstances(list, yOf) {
       items.forEach((o, i) => {
         q.setFromAxisAngle(UP, o.r || 0);
         const sVal = o.s || 1; sc.set(sVal, sVal, sVal);
-        mtx.compose(new THREE.Vector3(o.x, yOf(o), o.z), q, sc);
+        mtx.compose(new THREE.Vector3(o.x, o.y != null ? o.y : yOf(o), o.z), q, sc);
         im.setMatrixAt(i, mtx);
       });
       im.instanceMatrix.needsUpdate = true;
@@ -2374,21 +2379,43 @@ function buildCaveRegion(cave) {
     pl.position.set(lx, fY + 7, lz); scene.add(pl);
   }
 }
-// A descending stone tunnel from the surface mouth down to the cave entrance.
+// A natural descending rock tunnel from the surface mouth down to the cave
+// entrance: a dark stone ramp (a triangle strip that follows the descent, at
+// full width so you actually walk on it) lined with boulders on both sides and
+// a rock lid overhead, so it reads as a carved passage, not a grey chute.
 function buildTunnel(t) {
   const dx = t.bx - t.ax, dz = t.bz - t.az, len = Math.hypot(dx, dz) || 1;
-  const drop = t.y0 - t.y1, slope = Math.hypot(len, drop), pitch = Math.atan2(drop, len);
-  const half = t.half, TH = 5;
-  const mat = new THREE.MeshStandardMaterial({ map: loadTexture('dark_stone', 2, 2), color: 0x44474e, roughness: 1, flatShading: true });
-  const g = new THREE.Group();
-  g.position.set(t.ax, t.y0, t.az);
-  g.rotation.y = Math.atan2(dx, dz);   // local +Z runs toward the cave entrance
-  g.rotation.x = pitch;                // tilt so +Z heads downhill
-  const floor = new THREE.Mesh(new THREE.BoxGeometry(half * 2 + 1, 0.5, slope), mat); floor.position.set(0, -0.25, slope / 2); g.add(floor);
-  for (const s of [-1, 1]) { const w = new THREE.Mesh(new THREE.BoxGeometry(0.9, TH, slope), mat); w.position.set(s * (half + 0.45), TH / 2, slope / 2); g.add(w); }
-  const cap = new THREE.Mesh(new THREE.BoxGeometry(half * 2 + 1.8, 0.7, slope), mat); cap.position.set(0, TH, slope / 2); g.add(cap);
-  g.traverse(o => { if (o.isMesh) { o.castShadow = o.receiveShadow = true; } });
-  scene.add(g);
+  const ux = dx / len, uz = dz / len, nx = -uz, nz = ux, half = t.half;
+  const yAt = u => t.y0 + (t.y1 - t.y0) * u;
+  // --- Ramp floor (triangle strip along the slope) ---
+  const N = Math.max(8, Math.round(len / 3)), pos = [], uv = [];
+  for (let i = 0; i < N; i++) {
+    const u0 = i / N, u1 = (i + 1) / N, y0 = yAt(u0), y1 = yAt(u1);
+    const ax0 = t.ax + dx * u0, az0 = t.az + dz * u0, ax1 = t.ax + dx * u1, az1 = t.az + dz * u1;
+    const Lx0 = ax0 + nx * half, Lz0 = az0 + nz * half, Rx0 = ax0 - nx * half, Rz0 = az0 - nz * half;
+    const Lx1 = ax1 + nx * half, Lz1 = az1 + nz * half, Rx1 = ax1 - nx * half, Rz1 = az1 - nz * half;
+    pos.push(Lx0, y0, Lz0, Rx0, y0, Rz0, Lx1, y1, Lz1,  Rx0, y0, Rz0, Rx1, y1, Rz1, Lx1, y1, Lz1);
+    for (let q = 0; q < 6; q++) uv.push(0, 0);
+  }
+  const fg = new THREE.BufferGeometry();
+  fg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  fg.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); fg.computeVertexNormals();
+  const floor = new THREE.Mesh(fg, new THREE.MeshStandardMaterial({ map: loadTexture('dark_stone', 3, 3), color: 0x4a4d55, roughness: 1, flatShading: true }));
+  floor.receiveShadow = true; floor.userData.isGround = true; scene.add(floor);
+  // --- Boulder walls down both sides, only BELOW the surface so the mouth stays
+  // a clean opening (a rock rim frames the very top) and a rock lid roofs the
+  // buried stretch so it reads as a covered passage, not an open trench ---
+  const walls = [], lid = [];
+  for (let i = 0; i <= N; i++) {
+    const u = i / N, y = yAt(u), cxp = t.ax + dx * u, czp = t.az + dz * u;
+    const buried = y < -1.5;
+    for (const s of [-1, 1]) {
+      walls.push({ x: cxp + nx * (half + 0.4) * s, z: czp + nz * (half + 0.4) * s, y: Math.min(y, -0.5), r: Math.random() * 6.28, s: 0.6 + Math.random() * 0.25 });
+    }
+    if (buried && i % 2 === 0) lid.push({ x: cxp, z: czp, y: y + 4.2, r: Math.random() * 6.28, s: 1.0 });
+  }
+  placeInstances(walls.map(w => ({ ...w, m: 'Wall_Boulder_Tall' })), o => o.y);
+  placeInstances(lid.map(w => ({ ...w, m: 'Wall_Boulder_Wide' })), o => o.y);
 }
 
 // ---- The farm gate: a standalone model whose hinge swings open/shut. The

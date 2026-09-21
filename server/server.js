@@ -170,6 +170,7 @@ buildSeamlessWorld();
 // surface play is unchanged.
 // ---------------------------------------------------------------------------
 const CAVE_FLOOR_Y = -22;
+const CAVE_HEIGHT = 5.5;   // a low, close cave roof so stalactites read overhead
 const TUNNEL_HALF = 7;
 function buildCaveIntoWorld() {
   const cave = hiddencave, w = darkwoods;
@@ -189,7 +190,7 @@ function buildCaveIntoWorld() {
   const ent = { x: cave.spawn.x, z: cave.spawn.z };      // tunnel meets the chamber here
   const mouth = { x: mouthPoi.x, z: mouthPoi.z };        // the surface cave entrance
   w.caves = [{
-    boundary: cave.boundary, floorY: CAVE_FLOOR_Y, ceilingY: CAVE_FLOOR_Y + (cave.ceilingY || 8.5),
+    boundary: cave.boundary, floorY: CAVE_FLOOR_Y, ceilingY: CAVE_FLOOR_Y + CAVE_HEIGHT,
     cen: polyCentroid(cave.boundary), scatter: cave._scatter, hanging: cave._hanging, env: cave.env,
     entrance: ent,
   }];
