@@ -658,7 +658,9 @@ function tileFence(zone, seg) {
   const ux = dx / len, uz = dz / len, yaw = Math.atan2(-uz, ux);
   for (let i = 0; i < n; i++) {
     const t = (i + 0.5) * spacing;
-    scat.push({ i: scat.length, m: 'Farm_Fence', x: +(seg.x1 + ux * t).toFixed(2), z: +(seg.z1 + uz * t).toFixed(2), s: +(spacing / FENCE_PANEL).toFixed(3), r: +yaw.toFixed(3), c: 0 });
+    // panels keep their native size and only stretch along the run (`sx`), so
+    // short runs don't come out with dinky posts next to full-size ones
+    scat.push({ i: scat.length, m: 'Farm_Fence', x: +(seg.x1 + ux * t).toFixed(2), z: +(seg.z1 + uz * t).toFixed(2), s: 1, sx: +(spacing / FENCE_PANEL).toFixed(3), r: +yaw.toFixed(3), c: 0 });
   }
   zone._fenceSegs.push({ x1: seg.x1, z1: seg.z1, x2: seg.x2, z2: seg.z2 });
 }

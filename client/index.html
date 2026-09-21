@@ -1194,6 +1194,10 @@ const SKY_STOPS = [
   { t: 0.77, top: 0x18213a, hor: 0x372c44, fog: 0x2a2436, sun: 0x6a5f8e, sunI: 0.50, hemi: 0.66, hemiSky: 0x3b4c68, hemiGr: 0x2a2e38, star: 0.6 },
   { t: 1.00, top: 0x0a0f1c, hor: 0x18263e, fog: 0x1a2536, sun: 0x5265a0, sunI: 0.42, hemi: 0.72, hemiSky: 0x33456a, hemiGr: 0x1c2230, star: 1.0 },
 ];
+// One knob for how bright the world is lit overall. The Dark Woods should sit
+// in a moodier, darker register than a sunny meadow; this scales the sun and
+// sky-fill at every hour of the cycle.
+const WORLD_EXPOSURE = 0.7;
 const _cA = new THREE.Color(), _cB = new THREE.Color();
 function sampleSky(t) {
   let i = 0; while (i < SKY_STOPS.length - 1 && SKY_STOPS[i + 1].t <= t) i++;
@@ -1202,7 +1206,7 @@ function sampleSky(t) {
   const mix = (ka) => _cA.setHex(a[ka]).lerp(_cB.setHex(b[ka]), f).clone();
   return {
     top: mix('top'), hor: mix('hor'), fog: mix('fog'), sun: mix('sun'),
-    sunI: a.sunI + (b.sunI - a.sunI) * f, hemi: a.hemi + (b.hemi - a.hemi) * f,
+    sunI: (a.sunI + (b.sunI - a.sunI) * f) * WORLD_EXPOSURE, hemi: (a.hemi + (b.hemi - a.hemi) * f) * WORLD_EXPOSURE,
     hemiSky: mix('hemiSky'), hemiGr: mix('hemiGr'), star: a.star + (b.star - a.star) * f,
   };
 }
@@ -1347,9 +1351,9 @@ function loadZone(zdata) {
   scene.background = new THREE.Color(bg);
   scene.fog = new THREE.Fog(bg, e.fogNear || 60, e.fogFar || 200);
 
-  hemiLight = new THREE.HemisphereLight(e.hemiSky || 0xaecbe0, e.hemiGround || 0x3a4530, e.hemiInt != null ? e.hemiInt : 1.05);
+  hemiLight = new THREE.HemisphereLight(e.hemiSky || 0xaecbe0, e.hemiGround || 0x3a4530, (e.hemiInt != null ? e.hemiInt : 1.05) * WORLD_EXPOSURE);
   scene.add(hemiLight);
-  sunLight = new THREE.DirectionalLight(e.sun || 0xffe6bf, e.sunInt != null ? e.sunInt : 1.35);
+  sunLight = new THREE.DirectionalLight(e.sun || 0xffe6bf, (e.sunInt != null ? e.sunInt : 1.35) * WORLD_EXPOSURE);
   sunLight.position.set(50, 80, 20); sunLight.castShadow = true; sunLight.shadow.mapSize.set(2048, 2048);
   const s = 90;
   sunLight.shadow.camera.left = -s; sunLight.shadow.camera.right = s;
@@ -1658,7 +1662,7 @@ function buildDirtField(shapes, discs, material, y, T, polys = []) {
     const x = mnx + i * CELL, z = mnz + j * CELL;
     // shades of brown drifting across the ground, the way the grass does
     const hueN = fbm2(x + 57, z - 211, 41), ligN = fbm2(x - 389, z + 133, 43), satN = fbm2(x + 907, z + 619, 47);
-    dirtCol.setHSL(0.055 + hueN * 0.05, 0.26 + satN * 0.32, 0.19 + ligN * 0.26);
+    dirtCol.setHSL(0.055 + hueN * 0.05, 0.26 + satN * 0.32, 0.17 + ligN * 0.2);
     vid[k] = pos.length / 3; pos.push(x, y, z); uv.push(x / T, z / T); col.push(dirtCol.r, dirtCol.g, dirtCol.b, A[k]); return vid[k];
   };
   for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
@@ -1918,11 +1922,15 @@ function buildSpoilBank(mine) {
   const ring = pts.concat([pts[0]]);
   let mnx = 1e9, mxx = -1e9, mnz = 1e9, mxz = -1e9;
   for (const p of pts) { mnx = Math.min(mnx, p.x); mxx = Math.max(mxx, p.x); mnz = Math.min(mnz, p.z); mxz = Math.max(mxz, p.z); }
-  const want = Math.round((mxx - mnx) * (mxz - mnz) / 5);
-  for (let n = 0, guard = 0; n < want && guard < want * 8; guard++) {
-    const x = mnx + rng() * (mxx - mnx), z = mnz + rng() * (mxz - mnz);
-    if (!pointInPoly(x, z, pts) || distToPolyline(x, z, ring) < 0.6) continue;
-    rub.push({ m: 'Rubble_Pile', x, z, y: terrainHeight(x, z) + 0.02, s: 0.1 + rng() * 0.16, r: rng() * 6.28 }); n++;
+  const area = (mxx - mnx) * (mxz - mnz);
+  // small grey rocks, then a much denser sprinkle of tiny brown dirt pebbles
+  const layers = [[Math.round(area / 7), 0.1, 0.16, null], [Math.round(area / 1.6), 0.035, 0.05, 0x7a5636]];
+  for (const [want, s0, s1, tint] of layers) {
+    for (let n = 0, guard = 0; n < want && guard < want * 8; guard++) {
+      const x = mnx + rng() * (mxx - mnx), z = mnz + rng() * (mxz - mnz);
+      if (!pointInPoly(x, z, pts) || distToPolyline(x, z, ring) < 0.5) continue;
+      rub.push({ m: 'Rubble_Pile', x, z, y: terrainHeight(x, z) + 0.02, s: s0 + rng() * s1, r: rng() * 6.28, tint }); n++;
+    }
   }
   for (let i = 0; i < N; i++) {
     if (open(i)) continue;
@@ -2148,9 +2156,9 @@ function buildLowPolyGround(W, D, cx, cz) {
     for (const r of worldRivers()) { if (distToPolyline(wx, wz, r.points) < riverWaterHalf(r.width) + 0.5) { onBed = true; break; } }
     if (onBed) c.setHSL(0.09, 0.34, 0.15 + (ligN - 0.5) * 0.04);            // muddy riverbed
     else {
-      const hue = 0.215 + hueN * 0.16;          // 0.22 yellow-green .. 0.38 blue-green
-      const sat = 0.40 + satN * 0.40;           // washed-out .. vivid
-      const lig = 0.22 + ligN * 0.32;           // deep shade .. bright meadow
+      const hue = 0.225 + hueN * 0.16;          // 0.23 yellow-green .. 0.39 blue-green
+      const sat = 0.34 + satN * 0.36;           // washed-out .. vivid
+      const lig = 0.16 + ligN * 0.24;           // deep shade .. lit meadow (kept off "bright")
       c.setHSL(hue, sat, lig);
     }
     colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
@@ -2965,6 +2973,8 @@ const NATIVE = 0; // sentinel: keep the model's own dimensions
 const oreMeshes = [];   // { mesh, veins: [placement,...] } for instance picking
 // Instance a list of {m,x,z,r,s} placements at heights from yOf(o). Clickable
 // ore veins register into oreMeshes for mining picks.
+const ORE_SINK = 0.22;   // veins sit a little into the ground rather than perched on it
+const _tintC = new THREE.Color();
 function placeInstances(list, yOf) {
   const mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
   const byModel = {};
@@ -2974,12 +2984,17 @@ function placeInstances(list, yOf) {
     if (!parts) continue;
     const items = byModel[model];
     const isOre = /_Ore_Vein$/.test(model);
+    // Per-instance colour (tinted pebbles, fading veins) needs the whole buffer
+    // filled: setColorAt() creates it zeroed, which would turn every untinted
+    // instance black. Meshes that never use it don't get one at all.
+    const colored = isOre || items.some(o => o.tint);
     for (const part of parts) {
       const chunks = chunkedInstances(part.geo, part.mat, items, (o, i, im) => {
         q.setFromAxisAngle(UP, o.r || 0);
-        const sVal = o.s || 1; sc.set(sVal, sVal, sVal);
-        mtx.compose(new THREE.Vector3(o.x, o.y != null ? o.y : yOf(o), o.z), q, sc);
+        const sVal = o.s || 1; sc.set(o.sx || sVal, sVal, sVal);   // `sx`: stretch along the piece's own length only (fence panels)
+        mtx.compose(new THREE.Vector3(o.x, (o.y != null ? o.y : yOf(o)) - (isOre ? ORE_SINK : 0), o.z), q, sc);
         im.setMatrixAt(i, mtx);
+        if (colored) im.setColorAt(i, o.tint ? _tintC.set(o.tint) : _tintC.set(0xffffff));
       }, isOre ? { tag: { pickKind: 'ore', oreName: model.replace(/_Ore_Vein$/, '') } } : {});
       // each chunk keeps its own vein list so instanceId -> vein still lines up
       if (isOre) for (const c of chunks) oreMeshes.push({ mesh: c.im, veins: c.items });
@@ -5678,27 +5693,34 @@ function cookHere(id) {
 }
 function eatItem(name) { ws?.send(JSON.stringify({ t: 'eat', item: name })); }
 
-// Hide mined-out veins and bring them back when the server says so.
-const _mtx = new THREE.Matrix4(), _q = new THREE.Quaternion(), _v3 = new THREE.Vector3(), _s3 = new THREE.Vector3();
+// Mined-out veins don't vanish: they fade to a dull, spent grey (and fade
+// back when the seam comes back). `veinFade` holds each vein's current tint
+// factor; the frame loop eases it toward 1 (rich) or the spent level.
+const VEIN_SPENT = 0.42, VEIN_FADE_RATE = 1.6;   // tint multiplier when worked out; per-second ease
+const veinFade = new Map();   // vein id -> current factor
+const _vc = new THREE.Color();
+let debugDepleted = null;   // ?debug=1 hook: veins forced mined-out to look at the fade
 function applyDepleted(list) {
-  const now = new Set(list || []);
+  const now = new Set([...(list || []), ...(debugDepleted || [])]);
   let changed = false;
   for (const id of now) if (!depletedVeins.has(id)) changed = true;
   for (const id of depletedVeins) if (!now.has(id)) changed = true;
   if (!changed) return;
   depletedVeins.clear();
   for (const id of now) depletedVeins.add(id);
+}
+function updateVeinFade(dt) {
   for (const rec of oreMeshes) {
+    let touched = false;
     rec.veins.forEach((v, i) => {
-      const gone = depletedVeins.has(v.i);
-      _q.setFromAxisAngle(UP, v.r || 0);
-      const sVal = gone ? 0.0001 : (v.s || 1);   // scaled away, not removed
-      _s3.set(sVal, sVal, sVal);
-      _v3.set(v.x, v.y != null ? v.y : 0, v.z);
-      _mtx.compose(_v3, _q, _s3);
-      rec.mesh.setMatrixAt(i, _mtx);
+      const goal = depletedVeins.has(v.i) ? VEIN_SPENT : 1;
+      const cur = veinFade.has(v.i) ? veinFade.get(v.i) : 1;
+      if (Math.abs(cur - goal) < 0.002) { if (cur !== goal) { veinFade.set(v.i, goal); rec.mesh.setColorAt(i, _vc.setScalar(goal)); touched = true; } return; }
+      const next = cur + (goal - cur) * Math.min(1, dt * VEIN_FADE_RATE);
+      veinFade.set(v.i, next);
+      rec.mesh.setColorAt(i, _vc.setScalar(next)); touched = true;
     });
-    rec.mesh.instanceMatrix.needsUpdate = true;
+    if (touched && rec.mesh.instanceColor) rec.mesh.instanceColor.needsUpdate = true;
   }
 }
 
@@ -7233,6 +7255,8 @@ if (location.search.includes('debug')) {
     setDayTime(t) { worldTime = t; timeFrozen = true; },
     openDialogue: (id) => openDialogue(id),
     send: (obj) => ws?.send(JSON.stringify(obj)),
+    deplete: (ids) => { debugDepleted = ids && ids.length ? new Set(ids) : null; },   // fake mined-out veins to look at the fade
+    get oreMeshes() { return oreMeshes; },
     get music() { return music.current; },
     // What is drawn at this normalised screen point, nearest first?
     pick(nx = 0, ny = 0, limit = 6) {
@@ -7400,6 +7424,7 @@ function animate() {
   _pf('plates', () => updateNameplates());
   _pf('npcmk', () => updateNpcMarkers());
   _pf('npcidle', () => animateNpcs(dt));
+  _pf('veins', () => updateVeinFade(dt));
   _pf('region', () => updateRegionTitle());
   _pf('abilities', () => updateActionBar());
   _pf('fx', () => { updateFx(dt); updateAuras(dt); });
