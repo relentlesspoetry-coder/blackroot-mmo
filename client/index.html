@@ -6100,8 +6100,15 @@ function onEvent(m) {
     case 'unequip': addChat('', `You remove the ${m.item}.`, true); break;
     case 'sold': addChat('Merchant', m.text, true); bag.gold = m.gold; setBagGold(); break;
     case 'notice': {
-      // The server's own words, over the character (short) and in chat (full).
-      sfx.play('ui_error', { vol: 0.35, rate: 1.1 }); addChat('', m.text, true);
+      // The server's own words over the character; ability nags ("not ready",
+      // "not enough stamina", "need a target") stay out of the chat log and
+      // don't repeat while you hammer the key.
+      const nag = /not ready|Not enough|need a target|in reach|already under attack|You are busy|haven't learned|unlocks at/.test(m.text);
+      const now = performance.now();
+      if (nag && m.text === lastNotice.text && now - lastNotice.t < 1500) break;
+      lastNotice = { text: m.text, t: now };
+      sfx.play('ui_error', { vol: nag ? 0.2 : 0.35, rate: 1.1 });
+      if (!nag) addChat('', m.text, true);
       const short = m.text.length > 34 ? m.text.slice(0, 32).replace(/\s+\S*$/, '') + '…' : m.text;
       flyText(short, 'dmg'); break;
     }
@@ -6163,6 +6170,7 @@ function hurtFlash(color) {
   hurtTimer = setTimeout(() => hurtEl.classList.remove('show'), 130);
 }
 
+let lastNotice = { text: '', t: 0 };
 function showHit(m) {
   triggerAttackAnim(m.by);
   if (m.target === myId && m.dmg > 0) hurtFlash('#c0392b');
