@@ -115,6 +115,9 @@ export const darkwoods = {
       look: { hair: 8, hairColor: '#2b1d14', skin: '#c49a76', outfit: 3, slots: { cape: 15, head: 0 }, colors: { cape: '#3b4a2f', torso: '#5a3d2a' } },
       idle: 'Keep to the path, and keep your blade where you can reach it.' },
     // Farmstead folk at the Entrance Clearing.
+    { id: 'wren',     name: 'Sergeant Wren',       x: 4,    z: -65, poi: 'entrance', model: 'Male', yaw: 3.1, recruiter: true,
+      look: { hair: 15, hairColor: '#3a2a1a', skin: '#b58a66', outfit: 24, colors: { torso: '#4a3a30' } },
+      idle: 'Nobody walks the woods alone if I can help it. Pick your company.' },
     { id: 'maggie',   name: 'Old Maggie',          x: 18,   z: -79, poi: 'entrance', model: 'Female', yaw: 3.0,
       idle: 'Mind the hens, love — and shut the gate on your way out.' },
     { id: 'bram',     name: 'Farmhand Bram',       x: -19,  z: -77, poi: 'entrance', model: 'Male', yaw: 1.4,

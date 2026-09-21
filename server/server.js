@@ -14,7 +14,7 @@ import { killingfields } from './zones/killingfields.js';
 import {
   PLAYER, ELITE, MONSTER, MONSTER_TEMPLATES,
   maxHpForLevel, xpForLevel, xpTotalForLevel, levelForXp, rollPlayerDamage, attackRoll, defenceRoll, hitChance, scaledMonster, rollLoot, mitigate, REGEN,
-  TICK, DEFAULT_ATTACK_SPEED, CLASSES, DEFAULT_CLASS, classDef, classStats,
+  TICK, DEFAULT_ATTACK_SPEED, CLASSES, DEFAULT_CLASS, classDef, classStats, BOT_CLASSES, botClass, RECRUITS, PARTY_SLOTS,
   maxHit, rollSwing, rollMonsterSwing, MEDITATION, meditationHealRate,
 } from './balance.js';
 import { ITEMS, SLOTS, SLOT_INFO, DOLL, itemDef, slotOf, valueOf, equipStats, slotsFor, emptySlots } from './items.js';
@@ -826,7 +826,7 @@ populate();
 // ---------------------------------------------------------------------------
 // Networking helpers
 // ---------------------------------------------------------------------------
-function send(ws, obj) { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(obj)); }
+function send(ws, obj) { if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify(obj)); }
 function broadcast(obj) {
   const s = JSON.stringify(obj);
   for (const p of players.values()) if (p.ws.readyState === p.ws.OPEN) p.ws.send(s);
@@ -1616,6 +1616,154 @@ function stepClass(p, inCombat) {
 // ---------------------------------------------------------------------------
 // Simulation
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Party / companions: hired class bots that follow their leader, fight by
+// stance, heal, taunt, and get back up after a while. They are ordinary
+// combatants to monsters (same rolls, same single-way rules) and ordinary
+// humans to the client (they ride in the snapshot's players list as bots).
+// ---------------------------------------------------------------------------
+const companions = new Map();          // id -> companion
+let partyTick = 0;
+const COMPANION_RESPAWN = 30;
+const STANCES = ['follow', 'guard', 'assist', 'passive', 'attack'];
+function combatant(id) { return players.get(id) || companions.get(id) || null; }
+function* combatants() { yield* players.values(); yield* companions.values(); }
+function partyOf(p) { return [...companions.values()].filter(c => c.ownerId === p.id); }
+function hireCompanion(p, recruitId) {
+  const r = RECRUITS.find(x => x.id === recruitId);
+  const notice = (text) => send(p.ws, { t: 'event', kind: 'notice', text });
+  if (!r) return;
+  const near = (zoneOf(p).npcs || []).some(n => n.recruiter && dist2(n.x, n.z, p.x, p.z) < 8 * 8);
+  if (!near) return notice('Find a recruiter to hire companions.');
+  const party = partyOf(p);
+  if (party.some(c => c.recruitId === r.id)) return notice(`${r.name} is already with you.`);
+  if (party.length >= PARTY_SLOTS - 1) return notice('Your party is full.');
+  const cls = botClass(r.cls), cs = classStats(r.cls, p.level);
+  const a = Math.random() * Math.PI * 2;
+  const c = {
+    id: nextId++, kind: 'companion', recruitId: r.id, name: r.name, cls: r.cls, ownerId: p.id, zoneId: p.zoneId,
+    x: p.x + Math.sin(a) * 1.5, z: p.z + Math.cos(a) * 1.5, y: p.y || 0, yaw: p.yaw, look: r.look,
+    level: p.level, hp: cs.hp, maxHp: cs.hp, res: cls.res(p.level), resMax: cls.res(p.level), alive: true, deathTimer: 0,
+    stance: 'assist', status: 'following', atkTimer: 0, sigCd: 0, combatId: null, targetId: null,
+    cooldowns: {}, buffs: {}, equipment: emptySlots(), combatTimer: 0, engagedWith: null, engagedT: 0, moving: false, ws: null,
+  };
+  companions.set(c.id, c);
+  systemChat(`${r.name} the ${cls.name} joins ${p.name}.`);
+  sendParty(p);
+}
+function dismissCompanion(p, id) {
+  const c = companions.get(Number(id)); if (!c || c.ownerId !== p.id) return;
+  companions.delete(c.id); sendParty(p);
+}
+function partyPayload(p) {
+  return { t: 'party', slots: PARTY_SLOTS, members: partyOf(p).map(c => {
+    const cls = botClass(c.cls);
+    return { id: c.id, name: c.name, cls: c.cls, clsName: cls.name, icon: cls.icon, level: c.level, hp: Math.round(c.hp), maxHp: c.maxHp,
+      res: Math.round(c.res), resMax: c.resMax, resName: cls.resource, status: c.status, stance: c.stance, alive: c.alive, back: c.alive ? 0 : Math.ceil(c.deathTimer) };
+  }) };
+}
+function sendParty(p) { send(p.ws, partyPayload(p)); }
+function companionSwing(c, m, mult, crit) {
+  const cls = botClass(c.cls), cs = classStats(c.cls, c.level);
+  let dmg = rollSwing(cs.atk, cs.str, 0, 0, monsterDef(m), m.defBonus || 0, mult * takenMult(m));
+  const isCrit = dmg > 0 && Math.random() < (cls.critBase || 0.05) + (crit || 0);
+  if (isCrit) dmg = Math.round(dmg * 1.5);
+  if (dmg > 0) { m.hp -= dmg; m.provoked = true; if (!m.targetId) { m.targetId = c.id; m.state = 'combat'; } }
+  broadcast({ t: 'event', kind: 'hit', by: c.id, target: m.id, dmg, crit: isCrit, targetKind: 'monster' });
+  if (m.hp <= 0) killMonster(m, players.get(c.ownerId) || null);   // the leader takes the xp, loot and quest credit
+  return dmg;
+}
+function pickCompanionTarget(c, owner, zone) {
+  const near = (m, r) => m.alive && m.zoneId === c.zoneId && dist2(m.x, m.z, c.x, c.z) <= r * r;
+  const hostile = (m) => m.alive && !m.passive;
+  // Always answer whatever is hitting us (unless told to stand down).
+  if (c.stance !== 'passive') for (const m of monsters.values()) if (m.targetId === c.id && near(m, 14)) return m;
+  if (c.stance === 'passive' || c.stance === 'follow') return null;
+  const onOwner = [...monsters.values()].filter(m => m.targetId === owner.id && near(m, 16));
+  if (onOwner.length) return onOwner.sort((a, b) => dist2(a.x, a.z, c.x, c.z) - dist2(b.x, b.z, c.x, c.z))[0];
+  if (c.stance === 'guard') return null;
+  const ot = owner.combatId != null ? monsters.get(owner.combatId) : null;
+  if (ot && ot.alive && near(ot, 20)) return ot;
+  if (c.stance === 'attack') {
+    let best = null, bd = 12 * 12;
+    for (const m of monsters.values()) { if (!hostile(m) || m.zoneId !== c.zoneId) continue; const d = dist2(m.x, m.z, owner.x, owner.z); if (d < bd && !inSafeZone(zone, m.x, m.z)) { bd = d; best = m; } }
+    return best;
+  }
+  return null;
+}
+function stepCompanion(c) {
+  const owner = players.get(c.ownerId);
+  if (!owner) { companions.delete(c.id); return; }
+  const cls = botClass(c.cls), zone = zoneOf(owner);
+  c.level = owner.level;
+  const cs = classStats(c.cls, c.level); c.maxHp = cs.hp; c.resMax = cls.res(c.level);
+  c.combatTimer = Math.max(0, (c.combatTimer || 0) - DT);
+  c.engagedT = Math.max(0, (c.engagedT || 0) - DT); if (c.engagedT <= 0) c.engagedWith = null;
+  c.atkTimer = Math.max(0, c.atkTimer - DT); c.sigCd = Math.max(0, c.sigCd - DT);
+  for (const [k, bf] of Object.entries(c.buffs)) { bf.t -= DT; if (bf.t <= 0) delete c.buffs[k]; }
+  if (!c.alive) {
+    c.deathTimer -= DT; c.moving = false;
+    if (c.deathTimer <= 0) { c.alive = true; c.hp = Math.round(c.maxHp * 0.5); c.zoneId = owner.zoneId; c.x = owner.x + 1.2; c.z = owner.z; c.y = owner.y || 0; c.status = 'recovering'; c.targetId = null; c.combatId = null; c._nav = null; }
+    return;
+  }
+  // Zone follow / catch-up.
+  if (c.zoneId !== owner.zoneId || dist2(c.x, c.z, owner.x, owner.z) > 45 * 45) { c.zoneId = owner.zoneId; c.x = owner.x + 1.2; c.z = owner.z + 0.5; c.y = owner.y || 0; c._nav = null; }
+  c.res = Math.min(c.resMax, c.res + cls.resRegen * DT);
+  const target = pickCompanionTarget(c, owner, zone);
+  const inCombat = !!target || c.combatTimer > 0;
+  // Recovering: sit and mend when hurt and nothing is on us.
+  if (!inCombat && (c.status === 'recovering' || c.hp < c.maxHp * 0.5)) {
+    c.status = 'recovering'; c.moving = false;
+    c.hp = Math.min(c.maxHp, c.hp + c.maxHp * 0.04 * DT);
+    if (c.hp >= c.maxHp * 0.9) c.status = 'following';
+    if (dist2(c.x, c.z, owner.x, owner.z) < 30 * 30) return;   // stay put unless the leader is leaving us behind
+  }
+  // Signature behaviours.
+  const sig = cls.signature;
+  if (sig && c.sigCd <= 0 && c.res >= sig.cost) {
+    if (sig.kind === 'heal') {
+      const party = [owner, ...partyOf(owner)].filter(x => x.alive && x.hp < x.maxHp * sig.below && x.zoneId === c.zoneId && dist2(x.x, x.z, c.x, c.z) < 14 * 14);
+      party.sort((a, b) => (a.hp / a.maxHp) - (b.hp / b.maxHp));
+      if (party.length) {
+        const t = party[0], heal = Math.round(t.maxHp * sig.pct);
+        t.hp = Math.min(t.maxHp, t.hp + heal); c.res -= sig.cost; c.sigCd = sig.cd;
+        broadcast({ t: 'event', kind: 'heal', by: c.id, target: t.id, heal, name: sig.name });
+      }
+    } else if (sig.kind === 'taunt') {
+      const m = [...monsters.values()].find(m => m.alive && m.targetId === owner.id && dist2(m.x, m.z, c.x, c.z) < sig.range * sig.range && !engagedElsewhere(c, m));
+      if (m) { m.targetId = c.id; owner.engagedWith = null; engage(c, m); c.res -= sig.cost; c.sigCd = sig.cd; broadcast({ t: 'event', kind: 'ability', by: c.id, id: sig.id, name: sig.name }); }
+    }
+  }
+  if (target) {
+    if (engagedElsewhere(c, target)) { /* single-way: someone else has it; hold */ }
+    c.status = 'fighting'; c.combatId = target.id;
+    const range = cls.range || 2.6, d = Math.hypot(target.x - c.x, target.z - c.z);
+    const los = d <= range && hasLos(zone, c.x, c.z, target.x, target.z);
+    if (d > range || !los) { c.moving = navStep(zone, c, target.x, target.z, los ? range : 0.9, PLAYER_SPEED * 1.05); }
+    else {
+      c.moving = false; c.yaw = Math.atan2(target.x - c.x, target.z - c.z);
+      if (c.atkTimer <= 0) {
+        c.atkTimer = (cls.attackSpeed || 4) * TICK;
+        if (sig && sig.kind === 'burst' && c.sigCd <= 0 && c.res >= sig.cost) { c.res -= sig.cost; c.sigCd = sig.cd; companionSwing(c, target, sig.mult, 0); broadcast({ t: 'event', kind: 'ability', by: c.id, id: sig.id, name: sig.name }); }
+        else companionSwing(c, target, 1, 0);
+        engage(c, target); c.combatTimer = REGEN.combatLockout;
+      }
+    }
+    resolveCollision(zone, c, PLAYER_RADIUS);
+    return;
+  }
+  // Nothing to fight: fall in behind the leader, each on its own spot.
+  c.combatId = null;
+  if (c.status !== 'recovering') c.status = 'following';
+  const idx = partyOf(owner).indexOf(c), ang = owner.yaw + Math.PI + (idx - 2) * 0.55, dist = 2.4 + (idx % 2) * 0.8;
+  const fx = owner.x + Math.sin(ang) * dist, fz = owner.z + Math.cos(ang) * dist;
+  if (dist2(c.x, c.z, fx, fz) > 1.2 * 1.2) c.moving = navStep(zone, c, fx, fz, 0.6, PLAYER_SPEED * 1.08);
+  else { c.moving = false; if (!owner.moving) c.yaw = owner.yaw; }
+  c.y = floorHeightAt(zone, c.x, c.z, c.y || 0);
+  resolveCollision(zone, c, PLAYER_RADIUS);
+}
+
 function stepMonster(m) {
   const zone = zoneOf(m);
   if (!m.alive) {
@@ -1635,11 +1783,11 @@ function stepMonster(m) {
   if ((m.stagger || 0) > 0) { m.stagger -= DT; return; }   // staggered: can't move or swing
   const slowK = (m.debuffs && m.debuffs.bonebreak > 0) ? 0.6 : 1;
 
-  let target = m.targetId ? players.get(m.targetId) : null;
+  let target = m.targetId ? combatant(m.targetId) : null;
   if (target && (!target.alive || target.zoneId !== m.zoneId)) { target = null; m.targetId = null; }
   if (!target && !m.passive) { // passive mobs only fight when attacked
     let best = null, bestD = m.aggro ** 2;
-    for (const p of players.values()) {
+    for (const p of combatants()) {
       if (!p.alive || p.zoneId !== m.zoneId || inSafeZone(zone, p.x, p.z)) continue; // safe zones block aggro
       if (engagedElsewhere(p, m)) continue;                                            // single-way: they're taken
       const d = dist2(m.x, m.z, p.x, p.z);
@@ -1685,6 +1833,7 @@ function stepMonster(m) {
           target.hp = 0; target.alive = false; target.deathTimer = RESPAWN_TIME;
           target.engagedWith = null;
           m.targetId = null; m.provoked = false; m.state = 'idle';
+          if (target.kind === 'companion') { target.deathTimer = COMPANION_RESPAWN; target.combatId = null; target.status = 'dead'; }
           systemChat(`${target.name} was slain by ${m.elite ? m.name : 'a ' + m.name}.`);
           send(target.ws, { t: 'event', kind: 'death' });
         }
@@ -1912,6 +2061,8 @@ setInterval(() => {
   stepGates();
   for (const m of monsters.values()) stepMonster(m);
   for (const p of players.values()) stepPlayer(p);
+  for (const c of companions.values()) stepCompanion(c);
+  partyTick += DT; if (partyTick >= 0.5) { partyTick = 0; for (const p of players.values()) if (partyOf(p).length || p._hadParty) { sendParty(p); p._hadParty = partyOf(p).length > 0; } }
   for (const [id, it] of groundItems) { it.ttl -= DT; if (it.ttl <= 0) groundItems.delete(id); }
 
   const now = Date.now();
@@ -1933,6 +2084,11 @@ setInterval(() => {
           moving: p.moving, inSafe: !!p.inSafe, resting: !!p.resting,
           weapon: p.equipment.weapon || null,     // held item for the paperdoll
           look: p.look });                          // hair / outfit / colours
+      }
+      for (const c of companions.values()) {
+        if (c.zoneId !== zid) continue;
+        ps.push({ id: c.id, name: c.name, bot: true, owner: c.ownerId, cls: c.cls, x: +c.x.toFixed(2), z: +c.z.toFixed(2), y: +(c.y || 0).toFixed(2),
+          yaw: +c.yaw.toFixed(2), hp: Math.round(c.hp), maxHp: c.maxHp, level: c.level, alive: c.alive, moving: !!c.moving, resting: c.status === 'recovering', look: c.look, weapon: null });
       }
       for (const m of monsters.values()) {
         if (m.zoneId !== zid) continue;
@@ -2039,7 +2195,8 @@ wss.on('connection', (ws) => {
           moveTo: null, combatId: null, pendingChest: null, pendingPickup: null, pendingGate: false, input: { f: 0, r: 0, yaw: 0 },
         };
         players.set(id, player);
-        send(ws, { t: 'welcome', id, tickRate: SNAPSHOT_HZ, zone: zoneForClient(start), items: ITEM_CATALOG });
+        send(ws, { t: 'welcome', id, tickRate: SNAPSHOT_HZ, zone: zoneForClient(start), items: ITEM_CATALOG,
+          recruits: RECRUITS.map(r => ({ id: r.id, name: r.name, cls: r.cls, clsName: botClass(r.cls).name, icon: botClass(r.cls).icon, resource: botClass(r.cls).resource, blurb: r.blurb })) });
         sendBag(player); // sends the quest payload too
         sendSkills(player);
         sendAbilities(player); sendStatus(player);
@@ -2066,6 +2223,14 @@ wss.on('connection', (ws) => {
       case 'ability': {
         if (!player) break;
         useAbility(player, String(msg.id || ''));
+        break;
+      }
+      case 'hire': { if (player && player.alive) hireCompanion(player, String(msg.id || '')); break; }
+      case 'dismiss': { if (player) dismissCompanion(player, msg.id); break; }
+      case 'stance': {
+        if (!player) break;
+        const c = companions.get(Number(msg.id));
+        if (c && c.ownerId === player.id && STANCES.includes(msg.stance)) { c.stance = msg.stance; if (msg.stance === 'passive' || msg.stance === 'follow') { c.combatId = null; } sendParty(player); }
         break;
       }
       case 'rest': {
@@ -2255,7 +2420,7 @@ wss.on('connection', (ws) => {
     }
   });
   ws.on('close', () => {
-    if (player) { players.delete(player.id); systemChat(`${player.name} has left the world.`); }
+    if (player) { players.delete(player.id); for (const c of partyOf(player)) companions.delete(c.id); systemChat(`${player.name} has left the world.`); }
   });
 });
 
