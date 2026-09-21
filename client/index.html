@@ -5683,13 +5683,11 @@ const sfx = (() => {
 // ---------------------------------------------------------------------------
 const music = (() => {
   // The RealmFall tracks only (client/music).
+  // Only original pieces composed for the game (tools/compose_music.py). The
+  // Dark Woods has "Under the Blackroot Boughs" by day and "Hollow Lantern"
+  // by night; other zones/situations have no music until theirs is written.
   const tracks = {
-    menu: 'music/menu.mp3',
-    // Dark Woods: two original pieces composed for the zone (tools/compose_music.py)
-    // — "Under the Blackroot Boughs" by day, "Hollow Lantern" by night.
     darkwoods_day: 'music/darkwoods_boughs.mp3', darkwoods_night: 'music/darkwoods_lantern.mp3',
-    killingfields: 'music/killingfields.mp3',
-    cave: 'music/goblincamp.mp3', combat: 'music/combat.mp3', combat2: 'music/combat2.mp3', death: 'music/death.mp3',
   };
   let volume = 0.6, cur = null, els = {}, fading = [];
   function el(name) { if (!els[name]) { const a = new Audio(tracks[name]); a.loop = true; a.preload = 'auto'; a.volume = 0; els[name] = a; } return els[name]; }
@@ -5712,15 +5710,10 @@ const music = (() => {
   function setVolume(v) { volume = Math.max(0, Math.min(1, v)); try { localStorage.setItem('bk.music', String(volume)); } catch (e) {} }
   return { play, update, setVolume, get current() { return cur; } };
 })();
-let combatUntil = 0;   // performance.now() until which we're "in combat" (hits to/from us)
 function musicDirector() {
-  if (!zone) { music.play('menu'); return; }
-  const me = entityMeshes.get(myId), mp = me ? me.mesh.position : null;
-  if (me && me.data && !me.data.alive) return music.play('death', 1.2);
-  if (performance.now() < combatUntil) return music.play(music.current === 'combat2' ? 'combat2' : 'combat', 1.0);
+  if (!zone) { music.play(null); return; }
   const reg = currentRegion();
-  if (reg && reg.underground) return music.play('cave', 3);
-  if (reg && reg.id === 'killingfields') return music.play('killingfields', 3);
+  if (!reg || reg.id !== 'darkwoods') { music.play(null, 3); return; }   // no track written for here yet
   music.play(_sunDir.y > -0.08 ? 'darkwoods_day' : 'darkwoods_night', 4);
 }
 
@@ -6165,7 +6158,6 @@ function hurtFlash(color) {
 
 function showHit(m) {
   triggerAttackAnim(m.by);
-  if (m.by === myId || m.target === myId) combatUntil = performance.now() + 8000;
   if (m.target === myId && m.dmg > 0) hurtFlash('#c0392b');
   const rec = entityMeshes.get(m.target);
   if (!rec) return;
@@ -7107,7 +7099,6 @@ try {
 function currentLook() {
   return { hair: +hairSel.value, hairColor: hairCol.value, skin: skinCol.value, outfit: +outfitSel.value };
 }
-addEventListener('pointerdown', () => { if (!zone) music.play('menu', 1.5); }, { once: true });
 setInterval(() => { if (!zone) music.update(0.1); }, 100); // fades tick on the login screen too (the render loop isn't running yet)
 async function play() {
   const name = nameInput.value.trim() || 'Adventurer';
