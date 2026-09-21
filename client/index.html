@@ -702,6 +702,7 @@ const raycaster = new THREE.Raycaster();
 let ground;
 
 let camYaw = 0, camPitch = 0.55, camDist = 14;
+let camManualUntil = 0; // after arrow/drag input, hold off the auto-follow for a moment
 const camBlockers = [];          // walls the camera must not end up behind
 let camFrozen = false;           // set only through the ?debug=1 hook
 const camRay = new THREE.Raycaster();
@@ -4438,13 +4439,22 @@ function updateControls(dt) {
 
   // Arrow keys rotate the camera (left/right orbit, up/down pitch)
   const ROT = 2.2, PITCH = 1.6;
-  if (keys['arrowleft']) camYaw += ROT * dt;
-  if (keys['arrowright']) camYaw -= ROT * dt;
+  if (keys['arrowleft']) { camYaw += ROT * dt; camManualUntil = performance.now() + 1500; }
+  if (keys['arrowright']) { camYaw -= ROT * dt; camManualUntil = performance.now() + 1500; }
   if (keys['arrowup']) camPitch = Math.min(1.3, camPitch + PITCH * dt);
   if (keys['arrowdown']) camPitch = Math.max(0.15, camPitch - PITCH * dt);
 
   // Camera follows player position
   const rec = entityMeshes.get(myId);
+  // Follow the player's FACING: while they're moving the camera eases round to
+  // sit behind them, so the view turns with them. Arrow keys / drag orbit
+  // freely and pause the follow for a moment; strafing (A/D) doesn't drag the
+  // camera round either, or you'd spiral.
+  const strafing = keys['a'] || keys['d'];
+  if (self.moving && !strafing && performance.now() > camManualUntil) {
+    const behind = rec.mesh.rotation.y - (rec.mesh.userData.faceOffset || 0) + Math.PI;
+    camYaw = lerpAngle(camYaw, behind, Math.min(1, dt * 3.2));
+  }
   // renderWorld has already placed the player this frame at terrain height plus
   // the authoritative floor height (ramps / raised editor floors). Add the jump
   // hop on top of that base rather than recomputing from terrain alone, so the
@@ -4631,7 +4641,7 @@ function addEventListeners() {
     const dx = e.clientX - lastMX, dy = e.clientY - lastMY;
     if (Math.abs(e.clientX - downMX) + Math.abs(e.clientY - downMY) > 5) dragMoved = true;
     lastMX = e.clientX; lastMY = e.clientY;
-    camYaw -= dx * 0.006;
+    camYaw -= dx * 0.006; camManualUntil = performance.now() + 1500;
     camPitch = Math.min(1.3, Math.max(0.15, camPitch - dy * 0.005));
   });
   cv.addEventListener('wheel', (e) => {
