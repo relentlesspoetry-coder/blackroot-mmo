@@ -45,8 +45,8 @@
   .bar > span { position: absolute; inset: 0; display: flex; align-items: center; gap: 8px; padding: 0 7px; font-size: 11px; font-weight: 600; text-shadow: 0 1px 2px #000; color: #fff; }
   .bar > span em { font-style: normal; color: #fff; opacity: .92; } .bar > span b { margin-left: auto; font-weight: 600; }
   .bar > i { position: absolute; inset: 0; transform-origin: left; transition: transform .15s; }
-  #hpfill { background: linear-gradient(90deg,#a41d13,#e0524d); }
-  #stamfill { background: linear-gradient(90deg,#b8862a,#f2c94c); }
+  #hpfill { background: linear-gradient(90deg,#1c6b2a,#3fbf55,#7de08c); }
+  #stamfill { background: linear-gradient(90deg,#5c0c0c,#c62222,#ff6a4a); }
   #momentum { display: flex; gap: 5px; justify-content: center; margin-bottom: 5px; height: 10px; }
   #momentum i { width: 10px; height: 10px; border-radius: 50%; background: #2a2038; border: 1px solid #6a4f9a; }
   #momentum i.on { background: radial-gradient(circle at 40% 35%, #ffd27a, #d8781c); border-color: #ffd27a; box-shadow: 0 0 6px #ffb347aa; }
@@ -354,14 +354,14 @@
 </div>
 
 <div id="hud" style="display:none">
-  <!-- Character card: name, level/sex/class, HP and stamina, class emblem -->
+  <!-- Character card: name, level/sex/class, HP and rage, class emblem -->
   <div id="topleft">
     <div id="charcard">
       <div class="ccl">
         <div id="cname">—</div>
         <div id="csub">Level <b id="clevel">1</b> Male <span id="ccls">Fighter</span></div>
         <div class="bar hp"><i id="hpfill"></i><span><em>HP:</em><b id="hptext">100/100</b></span></div>
-        <div class="bar stam"><i id="stamfill"></i><span><em id="stamlabel">Stamina:</em><b id="stamtext">100/100</b></span></div>
+        <div class="bar stam"><i id="stamfill"></i><span><em id="stamlabel">Rage:</em><b id="stamtext">0/100</b></span></div>
       </div>
       <img id="cemblem" src="ui/fighter/emblem.png" alt="">
     </div>
@@ -1170,7 +1170,7 @@ function handle(m) {
       renderSkills();
       break;
     case 'abilities':
-      abilities = m.list || []; abilityClass = m; abilityResource = m.resource || 'Stamina';
+      abilities = m.list || []; abilityClass = m; abilityResource = m.resource || 'Rage';
       if (m.gcdLeft) gcdUntil = performance.now() + m.gcdLeft * 1000;
       fillBarDefaults(); renderActionBar(); renderSpellbook(); refreshDialogue();
       break;
@@ -6426,11 +6426,11 @@ function updateHudFromSnapshot(snap) {
   document.getElementById('clevel').textContent = me.level;
   document.getElementById('hpfill').style.transform = `scaleX(${Math.max(0, me.hp / me.maxHp)})`;
   document.getElementById('hptext').textContent = `${me.hp}/${me.maxHp}`;
-  if (me.stamMax) {
-    document.getElementById('stamfill').style.transform = `scaleX(${Math.max(0, Math.min(1, me.stam / me.stamMax))})`;
+  if (me.rageMax) {
+    document.getElementById('stamfill').style.transform = `scaleX(${Math.max(0, Math.min(1, me.rage / me.rageMax))})`;
     document.getElementById('stamlabel').textContent = `${abilityResource}:`;
-    document.getElementById('stamtext').textContent = `${me.stam}/${me.stamMax}`;
-    selfStam = me.stam;
+    document.getElementById('stamtext').textContent = `${me.rage}/${me.rageMax}`;
+    selfStam = me.rage;
   }
   if (abilityClass) { document.getElementById('ccls').textContent = abilityClass.cls || 'Fighter'; if (abilityClass.icon) document.getElementById('cemblem').src = abilityClass.icon; }
   if (me.momentum !== selfMomentum) { selfMomentum = me.momentum || 0; renderMomentum(); }
@@ -6770,7 +6770,7 @@ function renderSkillWindow() {
 }
 
 // ---- Action bar: six assignable slots (keys 1-6) fed from the class spellbook ----
-let abilities = [], abilityClass = null, abilityResource = 'Stamina', gcdUntil = 0;
+let abilities = [], abilityClass = null, abilityResource = 'Rage', gcdUntil = 0;
 let selfStam = 0, selfMomentum = 0, buffList = [], castInfo = null;
 let barSlots = [null, null, null, null, null, null];   // ability ids per slot
 let assignId = null;                                   // spellbook pick waiting for a slot

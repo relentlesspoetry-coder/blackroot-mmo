@@ -48,14 +48,16 @@ export const DEFAULT_ATTACK_SPEED = 4; // ticks between swings for a typical wea
 export const CLASSES = {
   fighter: {
     name: 'Fighter', icon: 'ui/fighter/emblem.png', background: 'ui/fighter/background.jpg',
-    desc: 'A two-handed melee bruiser: heavy swings, cleaves, staggers and execute pressure, paid for with stamina and exposure. Not a tank.',
-    resource: 'Stamina',
+    desc: 'A two-handed melee bruiser: heavy swings, cleaves, staggers and execute pressure, paid for with rage and exposure. Not a tank.',
+    resource: 'Rage',
     atk: (L) => 6 + L,             // effective levels fed to the OSRS accuracy / max-hit rolls
     str: (L) => 6 + L,
     def: (L) => 4 + L,             // light armour: a little behind the hitting stats
     hp:  (L) => 80 + (L - 1) * 10, // max hitpoints
-    stam: (L) => 100 + (L - 1) * 12, // stamina pool: 100 at 1, 328 at 20
-    stamRegen: { combat: 8, idle: 18 },
+    // Rage: starts empty and is built by fighting — landing blows, taking
+    // blows, and simply being in the fight — then bleeds away once the fight
+    // is over. Every ability spends it.
+    rage: { max: 100, autoHit: 8, abilityHit: 4, damageTaken: 0.6, combatTick: 2.5, decay: 6, decayDelay: 8 },
     gcd: 1.5,                      // global cooldown between abilities
     // (class xp comes from kills — each monster's xp value — never per hit)
     critBase: 0.05, critMult: 1.5,
@@ -94,7 +96,7 @@ export const CLASSES = {
       { id: 'whirlwind_cleave', name: 'Whirlwind Cleave', level: 13, cost: 82, cd: 30, kind: 'channel', radius: 6, cap: 6, ticks: 3, flat: 55, wd: 0.7,
         desc: 'Spin for 3s, hitting up to 6 enemies within 6m each second. You move at 60% while spinning.' },
       { id: 'final_swing', name: 'Final Swing', level: 14, cost: 76, cd: 12, kind: 'execute', flat: 62, wd: 1.9, momentum: 1,
-        desc: 'Only on targets at or below 30% HP: up to +75% damage the closer they are to death. Refunds 30 stamina on a kill.' },
+        desc: 'Only on targets at or below 30% HP: up to +75% damage the closer they are to death. Refunds 30 rage on a kill.' },
       { id: 'bloodrush', name: 'Bloodrush', level: 15, cost: 90, cd: 180, kind: 'self', buff: { id: 'bloodrush', dur: 300, charges: 10, dmg: 0.18, crit: 0.12, taken: 0.08 },
         desc: '+18% melee damage and +12% crit chance for 10 melee abilities. You take +8% damage while it lasts.' },
       { id: 'shatter_guard', name: 'Shatter Guard', level: 16, cost: 92, cd: 30, kind: 'melee', flat: 70, wd: 1.75, momentum: 1,
@@ -106,7 +108,7 @@ export const CLASSES = {
       { id: 'berserkers_roar', name: "Berserker's Roar", level: 19, cost: 120, cd: 300, kind: 'self', buff: { id: 'berserkers_roar', dur: 300, charges: 8, dmg: 0.15, taken: 0.10, radius: 2 },
         desc: '+15% melee damage and +2m to cleave radius for 8 melee abilities. You take +10% damage.' },
       { id: 'perfect_masterstroke', name: 'Perfect Masterstroke', level: 20, cost: 160, cd: 120, kind: 'melee', flat: 150, wd: 2.8, spendMomentum: { flat: 30, wd: 0.35 }, heavy: true,
-        desc: 'The capstone: spends all Momentum for +30 damage and +35% weapon damage per stack. +15% vs Split Guard. Refunds 50 stamina on a kill.' },
+        desc: 'The capstone: spends all Momentum for +30 damage and +35% weapon damage per stack. +15% vs Split Guard. Refunds 50 rage on a kill.' },
     ],
   },
 };
@@ -117,7 +119,7 @@ export const DEFAULT_CLASS = 'fighter';
 export function classDef(id) { return CLASSES[id] || CLASSES[DEFAULT_CLASS]; }
 export function classStats(id, level) {
   const c = classDef(id);
-  return { atk: c.atk(level), str: c.str(level), def: c.def(level), hp: c.hp(level), stam: c.stam ? c.stam(level) : 0 };
+  return { atk: c.atk(level), str: c.str(level), def: c.def(level), hp: c.hp(level), rage: c.rage ? c.rage.max : 0 };
 }
 // Max hit from strength. The divisor is tuned (vs OSRS's 640) so this game's
 // HP pools die at a similar pace to the old damage model.

@@ -1504,8 +1504,10 @@ function playerSwing(p, m, dmgMult) {
   const eq = equipStats(p.equipment), bonus = eq.atk || 0, cs = classStats(p.cls, p.level);
   const dmg = rollSwing(cs.atk, cs.str, bonus, bonus, monsterDef(m), m.defBonus || 0, dmgMult * (1 + dmgBuff(p, false)) * takenMult(m));
   applyHit(p, m, dmg, false);
+  if (dmg > 0) addRage(p, classDef(p.cls).rage.autoHit);   // landing a blow feeds the rage
   return dmg;
 }
+function addRage(p, n) { const R = classDef(p.cls).rage; if (!R) return; p.rage = Math.min(R.max, (p.rage || 0) + n); p.rageIdle = 0; }
 // Monster effective defence, with Crushed Armour.
 function monsterDef(m) { return (m.defLevel || 1) * ((m.debuffs && m.debuffs.crushed_armor > 0) ? 0.92 : 1); }
 function takenMult(m) { return (m.debuffs && m.debuffs.split_guard > 0) ? 1.08 : 1; }
@@ -1560,6 +1562,7 @@ function abilityHit(p, m, ab, extra = {}) {
   if (crit) mult *= (classDef(p.cls).critMult || 1.5) + (extra.critDmg || 0);
   const dmg = Math.max(1, Math.round(base * mult));
   applyHit(p, m, dmg, crit);
+  addRage(p, classDef(p.cls).rage.abilityHit);   // every blow that lands builds a little more
   p.lastHit = { dmg, crit };   // Heavy Swing's extra stack on a crit reads this
   return dmg;
 }
@@ -1603,7 +1606,7 @@ function sendAbilities(p) {
   const c = classDef(p.cls);
   send(p.ws, { t: 'abilities', cls: c.name, clsId: p.cls, icon: c.icon, background: c.background, resource: c.resource || 'Stamina', gcd: c.gcd || 0, list: abilityList(p), gcdLeft: p.gcd || 0 });
 }
-function sendStatus(p) { // buffs / momentum / stamina, for the HUD
+function sendStatus(p) { // buffs / momentum / rage, for the HUD
   const buffs = Object.entries(p.buffs).filter(([, b]) => b.t > 0).map(([id, b]) => ({ id, t: Math.round(b.t), charges: b.charges || 0 }));
   send(p.ws, { t: 'status', momentum: p.momentum || 0, buffs, riposte: !!(p.buffs.riposte_ready && p.buffs.riposte_ready.t > 0) });
 }
@@ -1617,7 +1620,7 @@ function useAbility(p, id) {
   if (p.channel || p.windup) return notice('You are busy.');
   if ((p.gcd || 0) > 0) return;
   if (a.requires && !(p.buffs[a.requires] && p.buffs[a.requires].t > 0)) return notice(`${a.name} needs an enemy to have just missed you.`);
-  if ((p.stam || 0) < (a.cost || 0)) return notice(`Not enough ${c.resource || 'stamina'}.`);
+  if ((p.rage || 0) < (a.cost || 0)) return notice(`Not enough ${c.resource || 'rage'}.`);
   const target = p.combatId != null ? monsters.get(p.combatId) : null;
   const inReach = target && target.alive && dist2(p.x, p.z, target.x, target.z) <= ATTACK_RANGE * ATTACK_RANGE;
   const needTarget = ['melee', 'execute', 'cone', 'rush'].includes(a.kind);
@@ -1643,7 +1646,7 @@ function useAbility(p, id) {
         if (a.debuff && dmg > 0) { t.debuffs = t.debuffs || {}; t.debuffs[a.debuff.id] = a.debuff.dur; if (a.debuff.id === 'bonebreak') t.debuffs.bonebreak_atk = 8; }
         if (a.selfDebuff) addBuff(p, a.selfDebuff);
         if (a.momentum && dmg > 0) addMomentum(p, a.momentum + (id === 'heavy_swing' && p.lastHit && p.lastHit.crit ? 1 : 0));
-        if (id === 'perfect_masterstroke' && before > 0 && !t.alive && !t.passive) p.stam = Math.min(p.stamMax, p.stam + 50);
+        if (id === 'perfect_masterstroke' && before > 0 && !t.alive && !t.passive) p.rage = Math.min(p.rageMax, p.rage + 50);
         break;
       }
       case 'execute': {
@@ -1651,7 +1654,7 @@ function useAbility(p, id) {
         const bonus = Math.min(0.75, Math.max(0, (missing - 0.7) / 0.3) * 0.75);
         const dmg = abilityHit(p, t, a, { mult: 1 + bonus });
         if (dmg > 0) addMomentum(p, t.alive ? 1 : 2);
-        if (!t.alive) p.stam = Math.min(p.stamMax, p.stam + 30);
+        if (!t.alive) p.rage = Math.min(p.rageMax, p.rage + 30);
         break;
       }
       case 'cone': {
@@ -1688,19 +1691,20 @@ function useAbility(p, id) {
     }
     if (['melee', 'execute', 'cone', 'aoe'].includes(a.kind)) spendCharges(p, a);
   };
-  p.stam -= a.cost || 0;
+  p.rage = Math.max(0, (p.rage || 0) - (a.cost || 0));
   p.cooldowns[id] = a.cd || 0; p.gcd = c.gcd || 0;
   if (a.windup) { p.windup = { id, t: a.windup, fire }; broadcast({ t: 'event', kind: 'ability', by: p.id, id, name: a.name, windup: a.windup }); }
   else { fire(); broadcast({ t: 'event', kind: 'ability', by: p.id, id, name: a.name }); }
   sendAbilities(p); sendStatus(p);
 }
-// Per-tick class upkeep: stamina, cooldowns, buffs, momentum, wind-ups, channels.
+// Per-tick class upkeep: rage, cooldowns, buffs, momentum, wind-ups, channels.
 function stepClass(p, inCombat) {
-  const c = classDef(p.cls);
-  p.stamMax = classStats(p.cls, p.level).stam;
-  if (p.stam == null) p.stam = p.stamMax;
-  const regen = inCombat ? c.stamRegen.combat : c.stamRegen.idle;
-  p.stam = Math.min(p.stamMax, p.stam + regen * DT);
+  const c = classDef(p.cls), R = c.rage;
+  p.rageMax = classStats(p.cls, p.level).rage;
+  if (p.rage == null) p.rage = 0;
+  // Rage builds while in a fight and bleeds away a while after it ends.
+  if (inCombat) { p.rage = Math.min(p.rageMax, p.rage + R.combatTick * DT); p.rageIdle = 0; }
+  else { p.rageIdle = (p.rageIdle || 0) + DT; if (p.rageIdle > R.decayDelay) p.rage = Math.max(0, p.rage - R.decay * DT); }
   p.gcd = Math.max(0, (p.gcd || 0) - DT);
   p.savageCd = Math.max(0, (p.savageCd || 0) - DT);
   for (const k of Object.keys(p.cooldowns)) if (p.cooldowns[k] > 0) p.cooldowns[k] = Math.max(0, p.cooldowns[k] - DT);
@@ -1713,9 +1717,9 @@ function stepClass(p, inCombat) {
   if ((p.momentum || 0) > 0) { p.momentumT -= DT; if (p.momentumT <= 0) { p.momentum = 0; statusDirty = true; } }
   if (p.windup) {
     p.windup.t -= DT;
-    if (p.moving) { // moving breaks the wind-up: give the stamina and cooldown back
+    if (p.moving) { // moving breaks the wind-up: give the rage and cooldown back
       const a = c.abilities.find(x => x.id === p.windup.id);
-      if (a) { p.stam = Math.min(p.stamMax, p.stam + (a.cost || 0)); p.cooldowns[a.id] = 0; }
+      if (a) { p.rage = Math.min(p.rageMax, p.rage + (a.cost || 0)); p.cooldowns[a.id] = 0; }
       p.windup = null; send(p.ws, { t: 'event', kind: 'notice', text: 'Interrupted.' }); sendAbilities(p);
     } else if (p.windup.t <= 0) { const w = p.windup; p.windup = null; w.fire(); }
   }
@@ -1796,7 +1800,7 @@ function stepMonster(m) {
         let dmg = rollMonsterSwing(m.atkLevel || 1, m.atkBonus || 0, m.maxHit || 1, tcs.def, eq.def || 0);
         if (dmg > 0) dmg = Math.max(1, Math.round(dmg * incomingMult(target)));
         else addBuff(target, { id: 'riposte_ready', dur: 300 }); // a miss is a dodge: Heavy Riposte opens up
-        if (dmg > 0) { target.hp -= dmg; target.combatTimer = REGEN.combatLockout; }
+        if (dmg > 0) { target.hp -= dmg; target.combatTimer = REGEN.combatLockout; addRage(target, dmg * classDef(target.cls).rage.damageTaken); }   // pain feeds rage too
         engage(target, m);
         // Auto-retaliate: if the player isn't already fighting, strike back.
         if (target.alive && target.combatId == null && !target.pendingMine) { target.combatId = m.id; target.moveTo = null; }
@@ -1980,7 +1984,7 @@ function stepPlayer(p) {
 
 function respawnPlayer(p) {
   const zone = zoneOf(p);
-  p.x = zone.spawn.x; p.z = zone.spawn.z; p.hp = p.maxHp; p.stam = p.stamMax; p.buffs = {}; p.channel = null; p.windup = null; p.alive = true; p.moving = false; p.resting = false;
+  p.x = zone.spawn.x; p.z = zone.spawn.z; p.hp = p.maxHp; p.rage = 0; p.buffs = {}; p.channel = null; p.windup = null; p.alive = true; p.moving = false; p.resting = false;
   p.moveTo = null; p.combatId = null; p.pendingChest = null; p.pendingPickup = null;
   send(p.ws, { t: 'event', kind: 'respawned' });
 }
@@ -2054,7 +2058,7 @@ setInterval(() => {
           yaw: +p.yaw.toFixed(2), hp: Math.round(p.hp), maxHp: p.maxHp, level: p.level,
           cls: p.cls,
           xp: p.xp - xpTotalForLevel(p.level), xpNext: xpForLevel(p.level), gold: p.gold, alive: p.alive,
-          stam: Math.round(p.stam || 0), stamMax: p.stamMax || 0, momentum: p.momentum || 0,
+          rage: Math.round(p.rage || 0), rageMax: p.rageMax || 0, momentum: p.momentum || 0,
           channel: p.channel ? p.channel.id : null, windup: p.windup ? p.windup.id : null,
           moving: p.moving, inSafe: !!p.inSafe, resting: !!p.resting,
           weapon: p.equipment.weapon || null,     // held item for the paperdoll
@@ -2151,7 +2155,7 @@ wss.on('connection', (ws) => {
           // One class, one class level: `level`/`xp` ARE the class (see CLASSES).
           cls: DEFAULT_CLASS, level: 1, xp: 0, gold: 0, openedChests: new Set(),
           known: new Set(classDef(DEFAULT_CLASS).abilities.filter(a => a.level <= 1).map(a => a.id)), // learned abilities
-          cooldowns: {}, buffs: {}, gcd: 0, momentum: 0, momentumT: 0, stam: classStats(DEFAULT_CLASS, 1).stam, stamMax: classStats(DEFAULT_CLASS, 1).stam,
+          cooldowns: {}, buffs: {}, gcd: 0, momentum: 0, momentumT: 0, rage: 0, rageMax: classStats(DEFAULT_CLASS, 1).rage, rageIdle: 0,
           meditation: { level: 1, xp: 0 }, resting: false,
           // Everyone starts able to mine and fish; better tools are earned. The
           // pickaxe starts equipped so it shows in-hand (and swings when mining).
