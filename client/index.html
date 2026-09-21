@@ -2561,17 +2561,9 @@ function buildPoi(p) {
   switch (art) {
     case 'entrance': addSafeRing(p.r || 10); break;
     case 'shrine': {
+      // The grove is a safe clearing with the hermit and a campfire; the old
+      // code-built stone pillar/orb shrine that stood here is gone.
       addSafeRing(p.r || 11);
-      const base = new THREE.Mesh(new THREE.CylinderGeometry(1.8, 2.2, 0.7, 8), stoneMat()); base.position.y = 0.35; g.add(base);
-      const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.6, 3.2, 6), stoneMat()); pillar.position.y = 2; pillar.castShadow = true; g.add(pillar);
-      const orb = new THREE.Mesh(new THREE.SphereGeometry(0.5, 16, 12),
-        new THREE.MeshStandardMaterial({ color: 0x9fd6ff, emissive: 0x2f6fff, emissiveIntensity: 1.7 })); orb.position.y = 3.9; g.add(orb);
-      const light = new THREE.PointLight(0x6fb0ff, 1.4, 20); light.position.y = 4; g.add(light);
-      // glowing rune ring + offering candles
-      const runes = new THREE.Mesh(new THREE.RingGeometry(2.6, 3.0, 32),
-        new THREE.MeshBasicMaterial({ color: 0x5fa8ff, transparent: true, opacity: 0.5, side: THREE.DoubleSide }));
-      runes.rotation.x = -Math.PI / 2; runes.position.y = 0.06; g.add(runes);
-      for (let i = 0; i < 5; i++) { const a = (i / 5) * Math.PI * 2; const cnd = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 6), new THREE.MeshStandardMaterial({ color: 0xffd080, emissive: 0xffa030, emissiveIntensity: 1.5 })); cnd.position.set(Math.cos(a) * 2.6, 0.3, Math.sin(a) * 2.6); g.add(cnd); }
       break;
     }
     case 'camp': {
