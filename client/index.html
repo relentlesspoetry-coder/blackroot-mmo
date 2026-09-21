@@ -6099,8 +6099,12 @@ function onEvent(m) {
     case 'equip': addChat('', `You equip the ${m.item}.`, true); break;
     case 'unequip': addChat('', `You remove the ${m.item}.`, true); break;
     case 'sold': addChat('Merchant', m.text, true); document.getElementById('cgold').textContent = m.gold; break;
-    case 'notice':
-      sfx.play('ui_error', { vol: 0.35, rate: 1.1 }); addChat('', m.text, true); flyText('Cannot equip', 'dmg'); break;
+    case 'notice': {
+      // The server's own words, over the character (short) and in chat (full).
+      sfx.play('ui_error', { vol: 0.35, rate: 1.1 }); addChat('', m.text, true);
+      const short = m.text.length > 34 ? m.text.slice(0, 32).replace(/\s+\S*$/, '') + '…' : m.text;
+      flyText(short, 'dmg'); break;
+    }
     case 'mineswing': {
       // A swing that produced nothing still needs to read as effort.
       const rec = entityMeshes.get(myId);
