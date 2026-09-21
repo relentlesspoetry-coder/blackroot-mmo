@@ -3900,13 +3900,18 @@ function makeMonsterMesh(type, elite) {
     // The cow and rabbit are quadruped merged meshes — carve legs + head so
     // they stride instead of sliding along stiff.
     else if (type === 'cow' || type === 'rabbit') {
-      // The Rabbit GLB is authored facing +X (its body runs left-right), while
-      // the quad rig and faceOffset both assume +Z forward — so untouched it
-      // walks sideways, scooting along on its haunches. Bake a yaw into the
-      // geometry so nose→tail runs along Z before we carve legs/head.
-      // clone(true) SHARES geometry across clones, so rotate a COPY — mutating the
-      // shared buffer would spin every rabbit (and compound on each new spawn).
-      if (type === 'rabbit') g.traverse(o => { if (o.isMesh && o.geometry) { o.geometry = o.geometry.clone(); o.geometry.rotateY(-Math.PI / 2); } });
+      // splitQuadParts carves in geometry space and assumes Y up with the nose
+      // at +Z. The Rabbit GLB is authored Z-up with the nose along +Y (ears run
+      // along Z, eyes sit at y≈+0.3, tail at y≈-0.35), so unrotated it stands
+      // on its tail with its nose in the air. Stand it up (Z→Y) and turn it to
+      // face +Z. clone(true) SHARES geometry across clones, so rotate a COPY.
+      if (type === 'rabbit') {
+        g.traverse(o => { if (o.isMesh && o.geometry) { o.geometry = o.geometry.clone(); o.geometry.rotateX(-Math.PI / 2); o.geometry.rotateY(Math.PI); } });
+        // cloneModel grounded/centred the unrotated model; redo it for the upright one.
+        const obj = g.children[0]; obj.position.set(0, 0, 0); obj.updateMatrixWorld(true);
+        const bx = new THREE.Box3().setFromObject(obj);
+        obj.position.set(-(bx.min.x + bx.max.x) / 2, -bx.min.y, -(bx.min.z + bx.max.z) / 2);
+      }
       splitQuadParts(g);
     }
     // Humanoid mobs are single merged meshes, so carve them into arms/legs (auto
