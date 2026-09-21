@@ -271,7 +271,9 @@ export function stepCluckifer(ctx, m, dt) {
   }
   if (m.stunT > 0) { m.stunT -= dt; return; }
   const t = target(ctx, m);
-  if (!t) { m.state = 'idle'; return; }
+  // Nobody left standing (the challenger died or left): the event is over —
+  // Cluckifer and his brood vanish rather than roaming the farm.
+  if (!t) { despawnBoss(ctx, m); return; }
   // the ultimate, once, at low health
   if (!m.ultDone && m.hp <= m.maxHp * 0.2) { m.ultDone = true; startScript(m, M.final_cluck(ctx, m, t)); return; }
   m.gcd = Math.max(0, (m.gcd || 0) - dt);
@@ -331,6 +333,14 @@ function explode(ctx, m, r, dmg) {
 export function onMinionKilled(ctx, m) {
   if (m.minion === 'chick') explode(ctx, m, 2.6, 12);
   else if (m.minion === 'ruin_egg' || m.minion === 'rotten_egg') bossFx(ctx, m, 'egg_smash', { mx: +m.x.toFixed(2), mz: +m.z.toFixed(2) });
+}
+// The boss leaves without dying: brood, fires and himself gone; no loot.
+function despawnBoss(ctx, m) {
+  for (const c of ctx.monsters.values()) if (c.ownerId === m.id) ctx.monsters.delete(c.id);
+  const zone = ctx.zoneOf(m); if (zone._bossHazards) zone._bossHazards.length = 0;
+  bossFx(ctx, m, 'vanish');
+  ctx.monsters.delete(m.id);
+  ctx.systemChat('With no one left to torment, Cluckifer sinks back into the earth. For now.');
 }
 // The boss dies: clear its brood and the fires.
 export function onBossKilled(ctx, m) {
