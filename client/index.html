@@ -1137,7 +1137,32 @@ function terrainHeight(x, z) {
   return y;
 }
 // Height an entity should stand at: on a bridge use its deck, else the terrain.
-function groundY(x, z) { const b = bridgeLift(x, z); return b > 0 ? b : terrainHeight(x, z); }
+// The spoil bank around a mining pit is solid ground you walk over, like a
+// bridge deck: its height is one function of position, used both to build
+// the bank mesh and to stand on it. Profile across the rim (distance d
+// outside the scrape's outline): up to a crest ~1 m out, back to the grass by
+// ~3.2 m, roughened by a slow noise along the rim and flattened at the opening.
+const BANK_PROFILE = [[0, 0], [0.5, 0.45], [1.0, 0.8], [1.6, 0.62], [2.2, 0.36], [3.2, 0]];
+function bankLift(x, z) {
+  let best = 0;
+  for (const m of (zone && zone.mines) || []) {
+    if (Math.hypot(x - m.x, z - m.z) > m.r * 1.45 + 4) continue;
+    if (pointInPoly(x, z, m.outline)) continue;
+    const d = distToPolyline(x, z, m.ring || (m.ring = m.outline.concat([m.outline[0]])));
+    if (d >= 3.2) continue;
+    let h = 0;
+    for (let i = 1; i < BANK_PROFILE.length; i++) {
+      const [d0, h0] = BANK_PROFILE[i - 1], [d1, h1] = BANK_PROFILE[i];
+      if (d <= d1) { h = h0 + (h1 - h0) * ((d - d0) / (d1 - d0)); break; }
+    }
+    const rough = 0.7 + 0.6 * vnoise2(x / 4.5, z / 4.5, 77);
+    let da = Math.atan2(z - m.z, x - m.x) - m.gapDir; da = Math.abs(Math.atan2(Math.sin(da), Math.cos(da)));
+    const gap = Math.max(0, Math.min(1, (da - m.gapHalf) / 0.3));   // flat across the way in
+    best = Math.max(best, h * rough * gap * gap);
+  }
+  return best;
+}
+function groundY(x, z) { const b = bridgeLift(x, z); return b > 0 ? b : terrainHeight(x, z) + bankLift(x, z); }
 let worldTime = 0.35, worldWeather = 'clear';
 let riverMesh = null, riverTex = null; // animated flowing water
 let timeFrozen = false;   // set only through the ?debug=1 hook
@@ -1197,7 +1222,7 @@ const SKY_STOPS = [
 // One knob for how bright the world is lit overall. The Dark Woods should sit
 // in a moodier, darker register than a sunny meadow; this scales the sun and
 // sky-fill at every hour of the cycle.
-const WORLD_EXPOSURE = 0.7;
+const WORLD_EXPOSURE = 0.55;
 const _cA = new THREE.Color(), _cB = new THREE.Color();
 function sampleSky(t) {
   let i = 0; while (i < SKY_STOPS.length - 1 && SKY_STOPS[i + 1].t <= t) i++;
@@ -1875,29 +1900,30 @@ function buildZone() {
 // back to the grass. Flat-shaded and jittered so it reads as dug-out earth
 // rather than a smooth ring.
 function buildSpoilBank(mine) {
-  const pts = mine.outline, N = pts.length;
+  const pts0 = mine.outline;
   const rng = mulberry32(Math.round(mine.x * 7 + mine.z * 13));
   const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+  // subdivide the outline so the mesh follows the height function closely
+  const pts = [];
+  for (let i = 0; i < pts0.length; i++) { const a = pts0[i], b = pts0[(i + 1) % pts0.length]; for (let k = 0; k < 3; k++) pts.push({ x: a.x + (b.x - a.x) * k / 3, z: a.z + (b.z - a.z) * k / 3 }); }
+  const N = pts.length;
   const norm = [];
   for (let i = 0; i < N; i++) {
     const a = pts[(i + N - 1) % N], b = pts[(i + 1) % N];
     const tx = b.x - a.x, tz = b.z - a.z, L = Math.hypot(tx, tz) || 1;
     norm.push({ x: tz / L, z: -tx / L });   // outward (outline runs counter-clockwise seen from above)
   }
-  // rings: inner foot (on the scrape), crest, outer foot (on the grass)
-  const off = [0.0, 1.0, 2.0, 3.2], hgt = [0.0, 0.8, 0.5, 0.0];
+  const off = BANK_PROFILE.map(p => p[0]).concat([3.6]);   // rings: from the scrape edge out past the foot
   const pos = [], col = [], idx = [], uv = [], c = new THREE.Color();
   const open = (i) => Math.abs(wrap(Math.atan2(pts[i].z - mine.z, pts[i].x - mine.x) - mine.gapDir)) < mine.gapHalf + 0.12;
   for (let i = 0; i < N; i++) {
-    const sink = open(i) ? 0 : 1;   // the bank flattens out across the opening
     const nz = norm[i], p = pts[i];
-    const bump = 0.7 + rng() * 0.6;
     for (let k = 0; k < off.length; k++) {
-      const o = off[k] + (k === 1 || k === 2 ? (rng() - 0.5) * 0.5 : 0);
-      const x = p.x + nz.x * o, z = p.z + nz.z * o, y = terrainHeight(x, z) + hgt[k] * bump * sink + (k === 1 ? (rng() - 0.5) * 0.14 : 0);
+      const o = off[k], x = p.x + nz.x * o, z = p.z + nz.z * o;
+      const y = terrainHeight(x, z) + bankLift(x, z) - (k === 0 ? 0.02 : 0);
       pos.push(x, y, z); uv.push(x / 3, z / 3);
       const hueN = fbm2(x + 57, z - 211, 41), ligN = fbm2(x - 389, z + 133, 43);
-      c.setHSL(0.06 + hueN * 0.045, 0.42, 0.2 + ligN * 0.16 + (k === 1 ? 0.06 : k === 2 ? 0.03 : 0) + (rng() - 0.5) * 0.05);
+      c.setHSL(0.06 + hueN * 0.045, 0.42, 0.17 + ligN * 0.14 + (k === 2 ? 0.05 : k === 1 || k === 3 ? 0.03 : 0) + (rng() - 0.5) * 0.04);
       col.push(c.r, c.g, c.b);
     }
   }
@@ -1938,8 +1964,7 @@ function buildSpoilBank(mine) {
     const k = 1 + Math.floor(rng() * 2);
     for (let t = 0; t < k; t++) {
       const o = 0.4 + rng() * 1.6, x = p.x + nz.x * o + (rng() - 0.5) * 0.8, z = p.z + nz.z * o + (rng() - 0.5) * 0.8;
-      const h = o < 1 ? 0.8 * (o / 1) : 0.8 - (o - 1) * 0.35;   // roughly the bank profile
-      rub.push({ m: 'Rubble_Pile', x, z, y: terrainHeight(x, z) + Math.max(0, h * 0.7), s: 0.14 + rng() * 0.22, r: rng() * 6.28 });
+      rub.push({ m: 'Rubble_Pile', x, z, y: terrainHeight(x, z) + bankLift(x, z) - 0.03, s: 0.14 + rng() * 0.22, r: rng() * 6.28 });
     }
   }
   placeInstances(rub, () => 0);
@@ -2156,9 +2181,9 @@ function buildLowPolyGround(W, D, cx, cz) {
     for (const r of worldRivers()) { if (distToPolyline(wx, wz, r.points) < riverWaterHalf(r.width) + 0.5) { onBed = true; break; } }
     if (onBed) c.setHSL(0.09, 0.34, 0.15 + (ligN - 0.5) * 0.04);            // muddy riverbed
     else {
-      const hue = 0.225 + hueN * 0.16;          // 0.23 yellow-green .. 0.39 blue-green
-      const sat = 0.34 + satN * 0.36;           // washed-out .. vivid
-      const lig = 0.16 + ligN * 0.24;           // deep shade .. lit meadow (kept off "bright")
+      const hue = 0.23 + hueN * 0.16;           // 0.23 yellow-green .. 0.39 blue-green
+      const sat = 0.30 + satN * 0.34;           // washed-out .. vivid
+      const lig = 0.13 + ligN * 0.2;            // deep shade .. lit meadow (kept off "bright")
       c.setHSL(hue, sat, lig);
     }
     colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;

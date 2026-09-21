@@ -694,7 +694,7 @@ function buildMines(zone) {
       const d = edgeAngle(i), a = outline[i], b = outline[(i + 1) % N];
       if (Math.abs(d) < gapHalf) continue;                                   // the way in
       if (Math.abs(d) < gapHalf + 0.95) tileFence(zone, { x1: a.x, z1: a.z, x2: b.x, z2: b.z });   // short fence runs either side of the opening
-      else zone._fenceSegs.push({ x1: a.x, z1: a.z, x2: b.x, z2: b.z });   // elsewhere the spoil bank itself is the wall
+      // elsewhere the spoil bank is solid ground the player walks over (client groundY), not a wall
     }
     zone._minePits.push({ x: cx, z: cz, r: R, outline, gapDir: +gapDir.toFixed(3), gapHalf });
     // seams: shuffled types, spaced out, inside the outline, off the entrance lane and the middle if asked
