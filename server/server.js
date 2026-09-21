@@ -238,19 +238,23 @@ function resolveCollision(zone, ent, radius) {
     if (d < min && d > 1e-4) { ent.x = o.x + (dx / d) * min; ent.z = o.z + (dz / d) * min; }
   }
 
-  const r = zone.river;
-  if (r) {
+  // Every river is solid (with a passable bridge deck). The fused world can hold
+  // several, each with its own bridge frame cached on the river object.
+  const rivers = zone.rivers || (zone.river ? [zone.river] : []);
+  const paths = zone.paths || (zone.path ? [zone.path] : []);
+  for (const r of rivers) {
     // Bridge frame (path-aligned deck), computed once: matches how the client
     // builds and orients the arched bridge.
-    if (r.bridge && !zone._bridge) {
-      const pd = segDirAt(zone.path || r.points, r.bridge.x, r.bridge.z);
+    if (r.bridge && !r._bridge) {
+      const nearPath = paths.slice().sort((a, b) => closestOnPolyline(r.bridge.x, r.bridge.z, a).dist - closestOnPolyline(r.bridge.x, r.bridge.z, b).dist)[0] || r.points;
+      const pd = segDirAt(nearPath, r.bridge.x, r.bridge.z);
       const rd = segDirAt(r.points, r.bridge.x, r.bridge.z);
       const pl = Math.hypot(pd.dx, pd.dz) || 1, rl = Math.hypot(rd.dx, rd.dz) || 1;
       const sinA = Math.min(1, Math.abs((pd.dx / pl) * (rd.dz / rl) - (pd.dz / pl) * (rd.dx / rl)));
       const L = (r.width + 2 * RIVER_BANK) / Math.max(0.5, sinA) + 9;
-      zone._bridge = { cx: r.bridge.x, cz: r.bridge.z, dx: pd.dx / pl, dz: pd.dz / pl, L, deckW: 6, railHalf: 2.5 };
+      r._bridge = { cx: r.bridge.x, cz: r.bridge.z, dx: pd.dx / pl, dz: pd.dz / pl, L, deckW: 6, railHalf: 2.5 };
     }
-    const B = zone._bridge;
+    const B = r._bridge;
     let onDeck = false;
     if (B) {
       const ex = ent.x - B.cx, ez = ent.z - B.cz;
