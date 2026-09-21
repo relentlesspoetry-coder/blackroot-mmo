@@ -4721,6 +4721,7 @@ function animateEntity(rec, e, kind, dt) {
       for (let i = 0; i < (A.fx || []).length; i++) { const f = A.fx[i]; if (u >= f.at && !an.fired.has(i)) { an.fired.add(i); spawnFx(f.kind, mp.x, mp.y, mp.z, yaw, f); } }
       if (an.t >= an.dur) rig.anim = null;
     }
+    updateWeaponTrail(rec, !!(rig.anim && ABILITY_ANIMS[rig.anim.id].trail !== false), dt);
     if (rig.armL) rig.armL.rotation.set(lArm, 0, lArmZ);
     if (rig.armR) rig.armR.rotation.set(rArm, 0, rArmZ);
     if (rig.legL) rig.legL.rotation.set(lLeg, 0, 0);
@@ -5061,6 +5062,7 @@ function updateControls(dt) {
   }
   camera.position.set(cx, cy, cz);
   camera.lookAt(px, py + 1.6, pz);
+  if (camShake > 0.001) { camera.position.x += (Math.random() - 0.5) * camShake; camera.position.y += (Math.random() - 0.5) * camShake * 0.7; camShake *= Math.exp(-dt * 9); }
   }
 
   // Movement relative to camera yaw
@@ -5502,101 +5504,101 @@ const ABILITY_ANIMS = {
     P.rArm = overhead(u, -2.8, -0.45, 0.45); P.lArm = overhead(u, -2.3, -0.35, 0.45); P.rArmZ = 0.15; P.lArmZ = -0.15;
     P.bodyX = kf(u, [[0, 0], [0.45, -0.18], [0.65, 0.35], [1, 0.05]]); P.bob = -crouch(u, 0.16, 0.65);
     P.lLeg = kf(u, [[0, 0], [0.6, -0.35], [1, 0]]); P.rLeg = kf(u, [[0, 0], [0.6, 0.3], [1, 0]]); P.rShin = kf(u, [[0, 0], [0.6, 0.45], [1, 0]]);
-  }, fx: [{ at: 0.62, kind: 'dust', r: 1.2 }] },
+  }, fx: [{ at: 0.62, kind: 'dust', r: 1.2, shake: 0.06 }, { at: 0.62, kind: 'streak', fwd: 1.2, y: 0.9, len: 1.8 }] },
   cleave: { dur: 0.7, pose(u, P) {                  // wide horizontal arc, torso winds right then sweeps left
     P.bodyY = kf(u, [[0, 0], [0.3, -0.9], [0.7, 1.1], [1, 0]]);
     P.rArm = kf(u, [[0, 0], [0.3, -1.4], [0.7, -1.5], [1, 0]]); P.rArmZ = kf(u, [[0, 0], [0.3, -1.2], [0.7, 0.9], [1, 0]]);
     P.lArm = kf(u, [[0, 0], [0.5, -0.8], [1, 0]]); P.lArmZ = 0.35; P.bob = -crouch(u, 0.08, 0.6);
-  }, fx: [{ at: 0.45, kind: 'arc', r: 2.2, spread: 2.0 }] },
+  }, fx: [{ at: 0.45, kind: 'arc', r: 2.2, spread: 2.0 }, { at: 0.5, kind: 'streak', fwd: 1.6, y: 1.0, len: 3.2 }] },
   battle_rush: { dur: 0.6, pose(u, P) {             // charge: hard forward lean, arms pumping back, long stride
     P.bodyX = kf(u, [[0, 0.1], [0.3, 0.55], [1, 0.1]]); P.rArm = kf(u, [[0, 0], [0.3, 1.1], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.3, 1.1], [1, 0]]);
     P.lLeg = kf(u, [[0, 0], [0.35, -1.0], [0.7, 0.6], [1, 0]]); P.rLeg = kf(u, [[0, 0], [0.35, 0.8], [0.7, -0.9], [1, 0]]); P.lShin = kf(u, [[0, 0], [0.5, 0.9], [1, 0]]);
-  }, fx: [{ at: 0.05, kind: 'dust', r: 1.0 }, { at: 0.5, kind: 'dust', r: 0.8 }] },
+  }, fx: [{ at: 0.05, kind: 'dust', r: 1.0 }, { at: 0.05, kind: 'streak', fwd: -1.5, y: 0.9, len: 4.0, color: 0xdfe8ff }, { at: 0.5, kind: 'dust', r: 0.8 }, { at: 0.55, kind: 'glow', color: 0xfff4d8 }] },
   crushing_blow: { dur: 0.85, pose(u, P) {          // two-handed smash: high hold, then straight down into a crouch
     P.rArm = kf(u, [[0, 0], [0.4, -3.0], [0.55, -3.0], [0.72, -0.5], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.4, -2.9], [0.55, -2.9], [0.72, -0.4], [1, 0]]);
     P.bodyX = kf(u, [[0, 0], [0.5, -0.25], [0.72, 0.5], [1, 0.05]]); P.bob = kf(u, [[0, 0], [0.5, 0.08], [0.72, -0.28], [1, 0]]);
     P.lLeg = kf(u, [[0, 0], [0.72, -0.5], [1, 0]]); P.rLeg = kf(u, [[0, 0], [0.72, 0.4], [1, 0]]); P.lShin = kf(u, [[0, 0], [0.72, 0.7], [1, 0]]); P.rShin = kf(u, [[0, 0], [0.72, 0.5], [1, 0]]);
-  }, fx: [{ at: 0.7, kind: 'dust', r: 1.6 }, { at: 0.7, kind: 'sparks', n: 14, color: 0xcfd8e0 }] },
+  }, fx: [{ at: 0.7, kind: 'dust', r: 1.6, shake: 0.12 }, { at: 0.7, kind: 'sparks', n: 14, color: 0xcfd8e0 }, { at: 0.7, kind: 'cracks', r: 1.1, fwd: 0.9 }, { at: 0.7, kind: 'flash', r: 0.9, color: 0xffffff, fwd: 1.0 }] },
   momentum: { dur: 0.6, pose(u, P) {                // learned / flex: chest up, arms flare out
     P.rArm = kf(u, [[0, 0], [0.4, -0.9], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.4, -0.9], [1, 0]]); P.rArmZ = kf(u, [[0, 0], [0.4, -0.8], [1, 0]]); P.lArmZ = kf(u, [[0, 0], [0.4, 0.8], [1, 0]]);
     P.bodyX = kf(u, [[0, 0], [0.4, -0.15], [1, 0]]);
-  }, fx: [{ at: 0.35, kind: 'ring', r: 1.4, color: 0xffd27a }] },
+  }, fx: [{ at: 0.35, kind: 'ring', r: 1.4, color: 0xffd27a }, { at: 0.35, kind: 'glow', color: 0xffd27a }] },
   groundbreaker: { dur: 0.95, pose(u, P) {          // hop, slam the weapon into the ground, shockwave
     P.bob = kf(u, [[0, 0], [0.3, 0.35], [0.55, -0.3], [1, 0]]);
     P.rArm = kf(u, [[0, 0], [0.3, -3.0], [0.55, -0.55], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.3, -2.8], [0.55, -0.45], [1, 0]]);
     P.bodyX = kf(u, [[0, 0], [0.3, -0.2], [0.55, 0.6], [1, 0.05]]);
     P.lLeg = kf(u, [[0, 0], [0.3, -0.8], [0.55, -0.6], [1, 0]]); P.rLeg = kf(u, [[0, 0], [0.3, -0.8], [0.55, 0.5], [1, 0]]); P.lShin = kf(u, [[0, 0], [0.3, 1.2], [0.55, 0.8], [1, 0]]); P.rShin = kf(u, [[0, 0], [0.3, 1.2], [0.55, 0.6], [1, 0]]);
-  }, fx: [{ at: 0.55, kind: 'shock', r: 6.0 }, { at: 0.55, kind: 'dust', r: 2.2 }] },
-  reckless_strike: { dur: 0.75, pose(u, P) {        // a wild full spin into the strike
+  }, fx: [{ at: 0.55, kind: 'shock', r: 6.0, shake: 0.22 }, { at: 0.55, kind: 'dust', r: 2.2 }, { at: 0.55, kind: 'cracks', r: 2.4, fwd: 0.5 }, { at: 0.55, kind: 'sparks', n: 20, color: 0xc9b48a, fwd: 0.6 }] },
+  reckless_strike: { trailColor: 0xff6a3c, dur: 0.75, pose(u, P) {        // a wild full spin into the strike
     P.spin = kf(u, [[0, 0], [0.75, Math.PI * 2], [1, Math.PI * 2]]);
     P.rArm = kf(u, [[0, 0], [0.2, -1.6], [0.75, -1.4], [1, 0]]); P.rArmZ = kf(u, [[0, 0], [0.2, -1.3], [0.75, 0.6], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.5, -0.6], [1, 0]]); P.lArmZ = 0.6;
     P.bodyX = kf(u, [[0, 0], [0.7, 0.35], [1, 0]]); P.bob = -crouch(u, 0.1, 0.7);
-  }, fx: [{ at: 0.6, kind: 'arc', r: 2.4, spread: 3.2, color: 0xff6a3c }, { at: 0.65, kind: 'sparks', n: 16, color: 0xff7a3c }] },
+  }, fx: [{ at: 0.6, kind: 'arc', r: 2.4, spread: 3.2, color: 0xff6a3c }, { at: 0.65, kind: 'sparks', n: 16, color: 0xff7a3c }, { at: 0.65, kind: 'glow', color: 0xff3a1a }, { at: 0.65, kind: 'flash', r: 1.0, color: 0xff8a4a, fwd: 1.2 }] },
   heavy_riposte: { dur: 0.6, pose(u, P) {           // step back, then a straight-arm thrust
     P.bodyX = kf(u, [[0, 0], [0.25, -0.25], [0.55, 0.4], [1, 0]]);
     P.rArm = kf(u, [[0, 0], [0.25, 0.9], [0.55, -1.7], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.55, 0.7], [1, 0]]);
     P.rLeg = kf(u, [[0, 0], [0.25, 0.6], [0.55, -0.7], [1, 0]]); P.lLeg = kf(u, [[0, 0], [0.55, 0.4], [1, 0]]);
-  }, fx: [{ at: 0.55, kind: 'flash', r: 0.9, color: 0xdfe8ff, fwd: 1.4 }] },
+  }, fx: [{ at: 0.55, kind: 'flash', r: 0.9, color: 0xdfe8ff, fwd: 1.4 }, { at: 0.55, kind: 'streak', fwd: 1.4, y: 1.0, len: 2.6, color: 0xdfe8ff }, { at: 0.2, kind: 'glow', color: 0xc0d8ff }] },
   weapon_flow: { dur: 0.9, pose(u, P) {             // weapon twirl: the arm circles twice, body sways with it
     P.rArm = -1.3 + Math.sin(u * Math.PI * 4) * 1.3; P.rArmZ = Math.cos(u * Math.PI * 4) * 0.9;
     P.lArm = kf(u, [[0, 0], [0.5, -0.5], [1, 0]]); P.bodyZ = Math.sin(u * Math.PI * 4) * 0.08; P.bodyY = Math.sin(u * Math.PI * 2) * 0.25;
-  }, fx: [{ at: 0.3, kind: 'ring', r: 1.2, color: 0xffd27a }, { at: 0.7, kind: 'ring', r: 1.2, color: 0xffd27a }] },
-  armor_splitter: { dur: 0.8, pose(u, P) {          // raise high, drive the weapon down and in
+  }, fx: [{ at: 0.3, kind: 'ring', r: 1.2, color: 0xffd27a }, { at: 0.5, kind: 'glow', color: 0xffd24a }, { at: 0.7, kind: 'ring', r: 1.2, color: 0xffd27a }] },
+  armor_splitter: { trailColor: 0xdfe8ff, dur: 0.8, pose(u, P) {          // raise high, drive the weapon down and in
     P.rArm = kf(u, [[0, 0], [0.35, -2.9], [0.62, -0.9], [1, 0]]); P.rArmZ = kf(u, [[0, 0], [0.35, 0.4], [0.62, -0.3], [1, 0]]);
     P.lArm = kf(u, [[0, 0], [0.62, 0.8], [1, 0]]); P.bodyX = kf(u, [[0, 0], [0.35, -0.2], [0.62, 0.45], [1, 0]]); P.bob = -crouch(u, 0.14, 0.62);
     P.rLeg = kf(u, [[0, 0], [0.62, -0.6], [1, 0]]); P.rShin = kf(u, [[0, 0], [0.62, 0.7], [1, 0]]);
-  }, fx: [{ at: 0.6, kind: 'sparks', n: 18, color: 0xd8dde8, fwd: 1.3 }, { at: 0.6, kind: 'flash', r: 0.7, color: 0xffffff, fwd: 1.3 }] },
+  }, fx: [{ at: 0.6, kind: 'sparks', n: 18, color: 0xd8dde8, fwd: 1.3 }, { at: 0.6, kind: 'flash', r: 0.7, color: 0xffffff, fwd: 1.3 }, { at: 0.6, kind: 'impact', fwd: 0, color: 0xffffff, sparkColor: 0xd8dde8, y: 1.0 }] },
   savage_momentum: { dur: 0.7, pose(u, P) {         // roar: chest thrown back, arms back, head up
     P.bodyX = kf(u, [[0, 0], [0.4, -0.35], [1, 0]]); P.rArm = kf(u, [[0, 0], [0.4, 1.2], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.4, 1.2], [1, 0]]);
     P.rArmZ = kf(u, [[0, 0], [0.4, -0.6], [1, 0]]); P.lArmZ = kf(u, [[0, 0], [0.4, 0.6], [1, 0]]); P.head = kf(u, [[0, 0], [0.4, -0.5], [1, 0]]);
-  }, fx: [{ at: 0.35, kind: 'ring', r: 1.8, color: 0xff8a4a }] },
+  }, fx: [{ at: 0.35, kind: 'ring', r: 1.8, color: 0xff8a4a }, { at: 0.35, kind: 'glow', color: 0x7dff5a }] },
   bonebreaker: { dur: 0.8, pose(u, P) {             // low sweep at the knees from a deep crouch
     P.bob = -crouch(u, 0.4, 0.55); P.bodyX = kf(u, [[0, 0], [0.55, 0.5], [1, 0]]);
     P.rArm = kf(u, [[0, 0], [0.3, -0.6], [0.55, 0.6], [1, 0]]); P.rArmZ = kf(u, [[0, 0], [0.3, -1.3], [0.6, 1.0], [1, 0]]); P.bodyY = kf(u, [[0, 0], [0.3, -0.6], [0.6, 0.7], [1, 0]]);
     P.lLeg = kf(u, [[0, 0], [0.55, -0.9], [1, 0]]); P.rLeg = kf(u, [[0, 0], [0.55, -0.9], [1, 0]]); P.lShin = kf(u, [[0, 0], [0.55, 1.4], [1, 0]]); P.rShin = kf(u, [[0, 0], [0.55, 1.4], [1, 0]]);
-  }, fx: [{ at: 0.55, kind: 'arc', r: 1.8, spread: 1.8, y: 0.5 }, { at: 0.6, kind: 'sparks', n: 8, color: 0xe8e0c8, fwd: 1.2 }] },
+  }, fx: [{ at: 0.55, kind: 'arc', r: 1.8, spread: 1.8, y: 0.5 }, { at: 0.6, kind: 'sparks', n: 8, color: 0xe8e0c8, fwd: 1.2 }, { at: 0.6, kind: 'dust', r: 1.0 }] },
   whirlwind_cleave: { dur: 3.0, loop: true, pose(u, P) { // the 3s spin: arms out, turning all the way round each second
     P.spin = u * Math.PI * 6; P.rArm = -1.5; P.lArm = -1.5; P.rArmZ = -1.2; P.lArmZ = 1.2; P.bodyX = 0.12; P.bob = -0.08 + Math.sin(u * Math.PI * 6) * 0.04;
     P.lLeg = Math.sin(u * Math.PI * 6) * 0.4; P.rLeg = -Math.sin(u * Math.PI * 6) * 0.4;
-  }, fx: [{ at: 0.1, kind: 'arc', r: 2.6, spread: 6.28 }, { at: 0.43, kind: 'arc', r: 2.6, spread: 6.28 }, { at: 0.76, kind: 'arc', r: 2.6, spread: 6.28 }] },
-  final_swing: { dur: 0.95, pose(u, P) {            // the execute: long hold at the top, then everything into the chop
+  }, fx: [{ at: 0.1, kind: 'arc', r: 2.6, spread: 6.28 }, { at: 0.1, kind: 'dust', r: 2.0 }, { at: 0.43, kind: 'arc', r: 2.6, spread: 6.28 }, { at: 0.43, kind: 'dust', r: 2.0 }, { at: 0.76, kind: 'arc', r: 2.6, spread: 6.28 }, { at: 0.76, kind: 'dust', r: 2.0 }] },
+  final_swing: { trailColor: 0xffb060, dur: 0.95, pose(u, P) {            // the execute: long hold at the top, then everything into the chop
     P.rArm = kf(u, [[0, 0], [0.3, -3.0], [0.55, -3.1], [0.7, -0.5], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.3, -2.9], [0.55, -3.0], [0.7, -0.4], [1, 0]]);
     P.bodyX = kf(u, [[0, 0], [0.55, -0.3], [0.7, 0.6], [1, 0.05]]); P.bob = kf(u, [[0, 0], [0.55, 0.1], [0.7, -0.3], [1, 0]]);
     P.lLeg = kf(u, [[0, 0], [0.7, -0.7], [1, 0]]); P.lShin = kf(u, [[0, 0], [0.7, 0.9], [1, 0]]); P.rLeg = kf(u, [[0, 0], [0.7, 0.5], [1, 0]]);
-  }, fx: [{ at: 0.68, kind: 'flash', r: 1.4, color: 0xffe9b0, fwd: 1.3 }, { at: 0.7, kind: 'dust', r: 1.4 }] },
-  bloodrush: { dur: 0.75, pose(u, P) {              // fists to the chest, then flung wide
+  }, fx: [{ at: 0.68, kind: 'flash', r: 1.4, color: 0xffe9b0, fwd: 1.3 }, { at: 0.7, kind: 'dust', r: 1.4, shake: 0.14 }, { at: 0.7, kind: 'cracks', r: 1.0, fwd: 1.0 }, { at: 0.5, kind: 'glow', color: 0xff5a3a }] },
+  bloodrush: { trailColor: 0xff2a1a, dur: 0.75, pose(u, P) {              // fists to the chest, then flung wide
     P.rArm = kf(u, [[0, 0], [0.3, -1.6], [0.6, -0.9], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.3, -1.6], [0.6, -0.9], [1, 0]]);
     P.rArmZ = kf(u, [[0, 0], [0.3, 0.9], [0.6, -1.1], [1, 0]]); P.lArmZ = kf(u, [[0, 0], [0.3, -0.9], [0.6, 1.1], [1, 0]]);
     P.bodyX = kf(u, [[0, 0], [0.3, 0.2], [0.6, -0.25], [1, 0]]);
-  }, fx: [{ at: 0.55, kind: 'ring', r: 1.6, color: 0xd8302a }, { at: 0.55, kind: 'sparks', n: 12, color: 0xff3a2a }] },
-  shatter_guard: { dur: 0.8, pose(u, P) {           // shoulder in, then a full-body thrust
+  }, fx: [{ at: 0.55, kind: 'ring', r: 1.6, color: 0xd8302a }, { at: 0.55, kind: 'sparks', n: 12, color: 0xff3a2a }, { at: 0.55, kind: 'glow', color: 0xff2a1a }] },
+  shatter_guard: { trailColor: 0xdfe8ff, dur: 0.8, pose(u, P) {           // shoulder in, then a full-body thrust
     P.bodyX = kf(u, [[0, 0], [0.3, -0.15], [0.6, 0.55], [1, 0]]); P.bodyY = kf(u, [[0, 0], [0.3, 0.5], [0.6, -0.3], [1, 0]]);
     P.rArm = kf(u, [[0, 0], [0.3, 1.0], [0.6, -1.8], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.6, 0.6], [1, 0]]);
     P.rLeg = kf(u, [[0, 0], [0.6, -0.9], [1, 0]]); P.rShin = kf(u, [[0, 0], [0.6, 0.6], [1, 0]]); P.lLeg = kf(u, [[0, 0], [0.6, 0.5], [1, 0]]);
-  }, fx: [{ at: 0.6, kind: 'sparks', n: 22, color: 0xdfe6f0, fwd: 1.4 }, { at: 0.6, kind: 'flash', r: 1.0, color: 0xdfe8ff, fwd: 1.4 }] },
-  titan_chop: { dur: 1.5, pose(u, P) {              // 1s wind-up held overhead, then the mountain comes down
+  }, fx: [{ at: 0.6, kind: 'sparks', n: 22, color: 0xdfe6f0, fwd: 1.4 }, { at: 0.6, kind: 'flash', r: 1.0, color: 0xdfe8ff, fwd: 1.4, shake: 0.08 }, { at: 0.6, kind: 'impact', color: 0xffffff, sparkColor: 0xdfe6f0, y: 1.1 }] },
+  titan_chop: { trailColor: 0xc48bff, dur: 1.5, pose(u, P) {              // 1s wind-up held overhead, then the mountain comes down
     P.rArm = kf(u, [[0, 0], [0.45, -3.1], [0.66, -3.15], [0.8, -0.5], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.45, -3.0], [0.66, -3.05], [0.8, -0.4], [1, 0]]);
     P.bodyX = kf(u, [[0, 0], [0.6, -0.35], [0.8, 0.65], [1, 0.05]]); P.bob = kf(u, [[0, 0], [0.6, 0.12], [0.8, -0.35], [1, 0]]);
     P.bodyZ = Math.sin(u * 40) * 0.02 * kf(u, [[0, 0], [0.5, 1], [0.66, 1], [0.7, 0]]);   // strain tremor while held
     P.lLeg = kf(u, [[0, 0], [0.8, -0.8], [1, 0]]); P.lShin = kf(u, [[0, 0], [0.8, 1.0], [1, 0]]); P.rLeg = kf(u, [[0, 0], [0.8, 0.6], [1, 0]]);
-  }, fx: [{ at: 0.5, kind: 'ring', r: 1.0, color: 0xc48bff }, { at: 0.79, kind: 'dust', r: 2.4 }, { at: 0.79, kind: 'flash', r: 1.6, color: 0xffffff, fwd: 1.2 }, { at: 0.8, kind: 'shock', r: 3.5 }] },
+  }, fx: [{ at: 0.5, kind: 'ring', r: 1.0, color: 0xc48bff }, { at: 0.55, kind: 'glow', color: 0xc48bff }, { at: 0.79, kind: 'dust', r: 2.4, shake: 0.3 }, { at: 0.79, kind: 'flash', r: 1.6, color: 0xffffff, fwd: 1.2 }, { at: 0.8, kind: 'shock', r: 3.5 }, { at: 0.8, kind: 'cracks', r: 1.8, fwd: 1.0 }] },
   unstoppable_footwork: { dur: 0.7, pose(u, P) {    // fast footwork: quick alternating steps, arms pumping
     const f = Math.sin(u * Math.PI * 8);
     P.lLeg = f * 0.8; P.rLeg = -f * 0.8; P.lShin = Math.max(0, -f) * 1.2; P.rShin = Math.max(0, f) * 1.2; P.rArm = f * 0.7; P.lArm = -f * 0.7; P.bob = Math.abs(f) * 0.1;
-  }, fx: [{ at: 0.1, kind: 'dust', r: 0.8 }, { at: 0.4, kind: 'dust', r: 0.8 }, { at: 0.7, kind: 'dust', r: 0.8 }] },
+  }, fx: [{ at: 0.1, kind: 'dust', r: 0.8 }, { at: 0.3, kind: 'glow', color: 0x5ad8ff }, { at: 0.4, kind: 'dust', r: 0.8 }, { at: 0.7, kind: 'dust', r: 0.8 }] },
   berserkers_roar: { dur: 0.9, pose(u, P) {         // head thrown back, arms wide, the whole body shaking with it
     P.bodyX = kf(u, [[0, 0], [0.35, -0.4], [0.8, -0.35], [1, 0]]); P.head = kf(u, [[0, 0], [0.35, -0.6], [0.8, -0.6], [1, 0]]);
     P.rArm = kf(u, [[0, 0], [0.35, -1.9], [0.8, -1.8], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.35, -1.9], [0.8, -1.8], [1, 0]]);
     P.rArmZ = kf(u, [[0, 0], [0.35, -1.3], [0.8, -1.2], [1, 0]]); P.lArmZ = kf(u, [[0, 0], [0.35, 1.3], [0.8, 1.2], [1, 0]]);
     P.bodyZ = Math.sin(u * 50) * 0.03 * kf(u, [[0.3, 0], [0.4, 1], [0.8, 1], [0.9, 0]]);
-  }, fx: [{ at: 0.4, kind: 'shock', r: 4.0, color: 0xff6a3c }, { at: 0.7, kind: 'ring', r: 2.2, color: 0xff8a4a }] },
+  }, fx: [{ at: 0.4, kind: 'shock', r: 4.0, color: 0xff6a3c, shake: 0.1 }, { at: 0.4, kind: 'glow', color: 0xff7a1a }, { at: 0.7, kind: 'ring', r: 2.2, color: 0xff8a4a }] },
   perfect_masterstroke: { dur: 1.15, pose(u, P) {   // planted stance, weapon drawn far back, a beat, one clean cut
     P.bob = -crouch(u, 0.18, 0.5);
     P.rArm = kf(u, [[0, 0], [0.35, 1.4], [0.58, 1.5], [0.7, -1.6], [1, 0]]); P.rArmZ = kf(u, [[0, 0], [0.35, -0.9], [0.58, -1.0], [0.7, 0.8], [1, 0]]);
     P.lArm = kf(u, [[0, 0], [0.35, -0.6], [0.7, 0.5], [1, 0]]); P.bodyY = kf(u, [[0, 0], [0.35, -1.0], [0.58, -1.05], [0.7, 0.9], [1, 0]]);
     P.bodyX = kf(u, [[0, 0], [0.58, -0.1], [0.7, 0.4], [1, 0]]);
     P.lLeg = kf(u, [[0, 0], [0.4, -0.6], [1, 0]]); P.lShin = kf(u, [[0, 0], [0.4, 0.8], [1, 0]]); P.rLeg = kf(u, [[0, 0], [0.4, 0.5], [1, 0]]);
-  }, fx: [{ at: 0.6, kind: 'ring', r: 1.0, color: 0xfff1c8 }, { at: 0.7, kind: 'arc', r: 2.8, spread: 2.6, color: 0xfff1c8 }, { at: 0.7, kind: 'flash', r: 1.8, color: 0xffffff, fwd: 1.5 }] },
+  }, fx: [{ at: 0.6, kind: 'ring', r: 1.0, color: 0xfff1c8 }, { at: 0.6, kind: 'glow', color: 0xfff1c8 }, { at: 0.7, kind: 'arc', r: 2.8, spread: 2.6, color: 0xfff1c8 }, { at: 0.7, kind: 'flash', r: 1.8, color: 0xffffff, fwd: 1.5, shake: 0.2 }, { at: 0.7, kind: 'streak', fwd: 1.8, y: 1.0, len: 4.5 }] },
 };
 function startAbilityAnim(rec, id) {
   const A = ABILITY_ANIMS[id], rig = rec.mesh.userData.rig;
@@ -5604,12 +5606,103 @@ function startAbilityAnim(rec, id) {
   rig.anim = { id, t: 0, dur: A.dur, fired: new Set() };
 }
 
+// ---- Weapon trail: a fading ribbon swept by the weapon during an ability ----
+const TRAIL_N = 14;
+function updateWeaponTrail(rec, active, dt) {
+  const rig = rec.mesh.userData.rig; if (!rig) return;
+  let tr = rec.trail;
+  if (!tr) {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TRAIL_N * 2 * 3), 3));
+    g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(TRAIL_N * 2 * 3), 3));
+    const idx = []; for (let i = 0; i < TRAIL_N - 1; i++) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+    g.setIndex(idx);
+    const mesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }));
+    mesh.frustumCulled = false; mesh.visible = false; scene.add(mesh);
+    tr = rec.trail = { mesh, pts: [], color: new THREE.Color(0xfff1c8) };
+  }
+  const w = rig.weapon, hand = rig.handR || rig.armR;
+  if (active && rig.anim) tr.color.set(ABILITY_ANIMS[rig.anim.id].trailColor || 0xfff1c8);
+  if (active && w && hand) {
+    const tip = w.localToWorld(new THREE.Vector3(0, -0.85, 0)), base = hand.getWorldPosition(new THREE.Vector3());
+    tr.pts.push({ tip, base, t: 0 });
+    if (tr.pts.length > TRAIL_N) tr.pts.shift();
+  }
+  for (const p of tr.pts) p.t += dt;
+  while (tr.pts.length && tr.pts[0].t > 0.18) tr.pts.shift();
+  if (tr.pts.length < 2) { tr.mesh.visible = false; return; }
+  const pos = tr.mesh.geometry.attributes.position, col = tr.mesh.geometry.attributes.color;
+  for (let i = 0; i < TRAIL_N; i++) {
+    const p = tr.pts[Math.min(i, tr.pts.length - 1)], k = 1 - p.t / 0.18;
+    pos.setXYZ(i * 2, p.base.x, p.base.y, p.base.z); pos.setXYZ(i * 2 + 1, p.tip.x, p.tip.y, p.tip.z);
+    col.setXYZ(i * 2, tr.color.r * k * 0.5, tr.color.g * k * 0.5, tr.color.b * k * 0.5); col.setXYZ(i * 2 + 1, tr.color.r * k, tr.color.g * k, tr.color.b * k);
+  }
+  tr.mesh.geometry.setDrawRange(0, (Math.min(tr.pts.length, TRAIL_N) - 1) * 6);
+  pos.needsUpdate = true; col.needsUpdate = true; tr.mesh.visible = true;
+}
+// ---- Auras: motes orbiting the local player while a visible buff is up, plus
+// golden Momentum motes close to the body, one per stack ----
+const AURA_COLORS = { bloodrush: 0xff2a1a, berserkers_roar: 0xff7a1a, weapon_flow: 0xffd24a, savage: 0x7dff5a, savage_watcher: 0x3fbf3f, footwork: 0x5ad8ff, rushing_force: 0xffffff, riposte_ready: 0xc0d8ff };
+let auraObj = null, momentumObj = null;
+function updateAuras(dt) {
+  const me = entityMeshes.get(myId); if (!me) return;
+  const t = performance.now() / 1000, mp = me.mesh.position;
+  const active = buffList.filter(b => AURA_COLORS[b.id]);
+  if (!auraObj) {
+    const N = 36, pos = new Float32Array(N * 3), col = new Float32Array(N * 3), g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    auraObj = new THREE.Points(g, new THREE.PointsMaterial({ size: 0.13, map: fxDot(), vertexColors: true, transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending }));
+    auraObj.frustumCulled = false; scene.add(auraObj);
+  }
+  if (!active.length) auraObj.visible = false;
+  else {
+    auraObj.visible = true;
+    const pos = auraObj.geometry.attributes.position, col = auraObj.geometry.attributes.color, N = pos.count, c = new THREE.Color();
+    for (let i = 0; i < N; i++) {
+      const b = active[i % active.length]; c.set(AURA_COLORS[b.id]);
+      const a = t * 1.6 + i * 0.7, r = 0.75 + Math.sin(t * 2 + i) * 0.1, h = 0.25 + ((i * 0.37 + t * 0.35) % 1) * 1.7;
+      pos.setXYZ(i, mp.x + Math.cos(a) * r, mp.y + h, mp.z + Math.sin(a) * r); col.setXYZ(i, c.r, c.g, c.b);
+    }
+    pos.needsUpdate = true; col.needsUpdate = true;
+  }
+  if (!momentumObj) {
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(5 * 3), 3));
+    momentumObj = new THREE.Points(g, new THREE.PointsMaterial({ color: 0xffc85a, size: 0.17, map: fxDot(), transparent: true, opacity: 0.95, depthWrite: false, blending: THREE.AdditiveBlending }));
+    momentumObj.frustumCulled = false; scene.add(momentumObj);
+  }
+  momentumObj.visible = selfMomentum > 0;
+  if (momentumObj.visible) {
+    const pos = momentumObj.geometry.attributes.position;
+    for (let i = 0; i < 5; i++) { const on = i < selfMomentum; const a = -t * (2.2 + selfMomentum * 0.3) + i * 1.257; pos.setXYZ(i, on ? mp.x + Math.cos(a) * 0.55 : 0, on ? mp.y + 1.35 + Math.sin(t * 3 + i) * 0.12 : -100, on ? mp.z + Math.sin(a) * 0.55 : 0); }
+    pos.needsUpdate = true;
+  }
+}
+
 // ---- Effects: short-lived sprites and rings at a character's feet ----
 const fxList = [];
 let fxDotTex = null;
 const fxDot = () => (fxDotTex || (fxDotTex = makeSoftDot()));
+// Cracked-earth decal texture (drawn once): radial fractures for ground slams.
+let crackTex = null;
+function crackTexture() {
+  if (crackTex) return crackTex;
+  const s = 256, cv = document.createElement('canvas'); cv.width = cv.height = s;
+  const ctx = cv.getContext('2d'); ctx.clearRect(0, 0, s, s);
+  ctx.strokeStyle = 'rgba(20,14,8,0.95)'; ctx.lineCap = 'round';
+  const rng = mulberry32(77);
+  for (let i = 0; i < 9; i++) {
+    let a = (i / 9) * Math.PI * 2 + rng() * 0.5, x = s / 2, y = s / 2, w = 5;
+    ctx.beginPath(); ctx.moveTo(x, y);
+    for (let k = 0; k < 6; k++) { const L = 12 + rng() * 18; a += (rng() - 0.5) * 0.9; x += Math.cos(a) * L; y += Math.sin(a) * L; ctx.lineWidth = w; ctx.lineTo(x, y); w *= 0.75; }
+    ctx.stroke();
+    if (rng() < 0.7) { ctx.beginPath(); ctx.lineWidth = 2; ctx.moveTo(x, y); const b = a + (rng() - 0.5) * 2; ctx.lineTo(x + Math.cos(b) * 20, y + Math.sin(b) * 20); ctx.stroke(); }
+  }
+  const grd = ctx.createRadialGradient(s / 2, s / 2, 8, s / 2, s / 2, 40); grd.addColorStop(0, 'rgba(30,20,10,0.9)'); grd.addColorStop(1, 'rgba(30,20,10,0)');
+  ctx.fillStyle = grd; ctx.fillRect(0, 0, s, s);
+  crackTex = new THREE.CanvasTexture(cv); return crackTex;
+}
 function spawnFx(kind, x, y, z, yaw, o = {}) {
-  const life = o.life || { dust: 0.55, ring: 0.5, shock: 0.6, flash: 0.22, sparks: 0.6, arc: 0.35 }[kind] || 0.5;
+  const life = o.life || { dust: 0.55, ring: 0.5, shock: 0.6, flash: 0.22, sparks: 0.6, arc: 0.35, cracks: 4.0, impact: 0.25, streak: 0.3, glow: 0.5 }[kind] || 0.5;
   let obj;
   if (kind === 'dust' || kind === 'ring' || kind === 'shock') {
     const col = o.color || (kind === 'dust' ? 0xb9a77c : 0xffffff);
@@ -5631,10 +5724,36 @@ function spawnFx(kind, x, y, z, yaw, o = {}) {
     obj.rotation.order = 'YXZ'; obj.rotation.set(-Math.PI / 2, yaw - Math.PI / 2, 0); // flat, arc centred on the facing
     obj.position.set(x, y + (o.y != null ? o.y : 1.0), z);
   }
+  else if (kind === 'cracks') {   // fractured ground under a slam, fading slowly
+    obj = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: crackTexture(), transparent: true, opacity: 1, depthWrite: false }));
+    obj.rotation.x = -Math.PI / 2; obj.rotation.z = Math.random() * 6.28; obj.position.set(x + Math.sin(yaw) * (o.fwd || 0.6), y + 0.03, z + Math.cos(yaw) * (o.fwd || 0.6));
+    const s = (o.r || 2) * 2; obj.scale.set(s, s, 1);
+  } else if (kind === 'impact') {  // burst on the thing that got hit
+    obj = new THREE.Group();
+    const core = new THREE.Sprite(new THREE.SpriteMaterial({ map: fxDot(), color: o.color || 0xfff0c0, transparent: true, opacity: 1, depthWrite: false, blending: THREE.AdditiveBlending }));
+    core.scale.set(0.6, 0.6, 1); obj.add(core);
+    const n = o.n || 7, pos = new Float32Array(n * 3), vel = [];
+    for (let i = 0; i < n; i++) { const a = Math.random() * 6.28, e = Math.random() * 6.28, sp = 2.5 + Math.random() * 3; vel.push([Math.cos(a) * Math.cos(e) * sp, Math.sin(e) * sp + 1.5, Math.sin(a) * Math.cos(e) * sp]); pos[i * 3] = 0; pos[i * 3 + 1] = 0; pos[i * 3 + 2] = 0; }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const pts = new THREE.Points(g, new THREE.PointsMaterial({ color: o.sparkColor || 0xff9a4a, size: 0.14, map: fxDot(), transparent: true, opacity: 1, depthWrite: false, blending: THREE.AdditiveBlending }));
+    pts.userData.vel = vel; obj.add(pts); obj.userData.core = core; obj.userData.pts = pts;
+    obj.position.set(x, y + (o.y != null ? o.y : 1.1), z);
+  } else if (kind === 'streak') {  // a stretched flash along the facing (dashes, thrusts)
+    obj = new THREE.Sprite(new THREE.SpriteMaterial({ map: fxDot(), color: o.color || 0xfff4d8, transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending, rotation: 0 }));
+    obj.position.set(x + Math.sin(yaw) * (o.fwd || 0), y + (o.y != null ? o.y : 1.0), z + Math.cos(yaw) * (o.fwd || 0));
+    obj.scale.set(o.len || 2.5, 0.35, 1); obj.material.rotation = -yaw + Math.PI / 2; // billboard rotation only roughly follows; fine for a blur
+  } else if (kind === 'glow') {    // a soft pulse around the body (buff activations)
+    obj = new THREE.Sprite(new THREE.SpriteMaterial({ map: fxDot(), color: o.color || 0xffffff, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending }));
+    obj.position.set(x, y + 1.1, z); obj.scale.set(0.5, 0.5, 1);
+  }
   if (!obj) return;
-  obj.frustumCulled = false; scene.add(obj);
+  obj.frustumCulled = false; obj.traverse(c => { c.frustumCulled = false; }); scene.add(obj);
   fxList.push({ kind, obj, t: 0, life, r: o.r || 1 });
+  // Heavy impacts shake the camera when they're close to the player.
+  if (o.shake && me_pos_near(x, z, 18)) camShake = Math.max(camShake, o.shake);
 }
+function me_pos_near(x, z, d) { const r = entityMeshes.get(myId); return !r || Math.hypot(r.mesh.position.x - x, r.mesh.position.z - z) < d; }
+let camShake = 0;
 function updateFx(dt) {
   for (let i = fxList.length - 1; i >= 0; i--) {
     const f = fxList[i]; f.t += dt; const u = f.t / f.life;
@@ -5646,6 +5765,15 @@ function updateFx(dt) {
       for (let k = 0; k < v.length; k++) { v[k][1] -= 12 * dt; pos.setXYZ(k, pos.getX(k) + v[k][0] * dt, Math.max(0.05, pos.getY(k) + v[k][1] * dt), pos.getZ(k) + v[k][2] * dt); }
       pos.needsUpdate = true; f.obj.material.opacity = 1 - u;
     }
+    else if (f.kind === 'cracks') { f.obj.material.opacity = u < 0.7 ? 1 : 1 - (u - 0.7) / 0.3; }
+    else if (f.kind === 'impact') {
+      const core = f.obj.userData.core, pts = f.obj.userData.pts; const cs = 0.5 + 1.6 * u; core.scale.set(cs, cs, 1); core.material.opacity = 1 - u;
+      const pos = pts.geometry.attributes.position, v = pts.userData.vel;
+      for (let k = 0; k < v.length; k++) { v[k][1] -= 9 * dt; pos.setXYZ(k, pos.getX(k) + v[k][0] * dt, pos.getY(k) + v[k][1] * dt, pos.getZ(k) + v[k][2] * dt); }
+      pos.needsUpdate = true; pts.material.opacity = 1 - u;
+    }
+    else if (f.kind === 'streak') { f.obj.material.opacity = 0.8 * (1 - u); const sx = f.obj.scale.x * (1 + dt * 3); f.obj.scale.x = sx; }
+    else if (f.kind === 'glow') { const gs = 0.5 + 3.5 * u; f.obj.scale.set(gs, gs, 1); f.obj.material.opacity = 0.55 * (1 - u); }
     if (u >= 1) { scene.remove(f.obj); f.obj.geometry && f.obj.geometry.dispose(); fxList.splice(i, 1); }
   }
 }
@@ -5890,6 +6018,8 @@ function showHit(m) {
   if (m.target === myId && m.dmg > 0) hurtFlash('#c0392b');
   const rec = entityMeshes.get(m.target);
   if (!rec) return;
+  // Something struck: a burst on the target, bigger and gold on a crit.
+  if (m.dmg > 0) { const mp = rec.mesh.position; spawnFx('impact', mp.x, mp.y, mp.z, 0, { color: m.crit ? 0xffd27a : 0xffe0c0, sparkColor: m.crit ? 0xffb020 : 0xff6a4a, n: m.crit ? 12 : 6, y: 1.1 }); }
   tmpV.copy(rec.mesh.position); tmpV.y += 2.0; tmpV.project(camera);
   // Old School RuneScape hitsplat: blue "0" on a miss, red on a hit. (Skipped if
   // damage numbers are turned off in the menu; the hit flash still plays.)
@@ -6707,7 +6837,7 @@ function animate() {
   _pf('npcmk', () => updateNpcMarkers());
   _pf('region', () => updateRegionTitle());
   _pf('abilities', () => updateActionBar());
-  _pf('fx', () => updateFx(dt));
+  _pf('fx', () => { updateFx(dt); updateAuras(dt); });
   _pf('talk', () => updatePendingTalk());
   if (mapOpen) _pf('map', () => drawMap());
   // Flowing river: scroll the water texture along the current + gentle waves.
