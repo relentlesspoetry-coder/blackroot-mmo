@@ -64,8 +64,8 @@ def pad(freq, dur, vel=1.0, bright=1.0):
         for h in range(1, 9):
             out += np.sin(2 * math.pi * f * h * t + h) / (h ** 1.4)
     out *= env(n, 1.2, 0.5, 0.85, 1.8)
-    out = lowpass(out, 700 + 1400 * bright)
-    return out * vel * 0.035
+    out = lowpass(out, 600 + 900 * bright)
+    return out * vel * 0.04
 
 def pluck(freq, dur, vel=1.0):
     """Karplus-Strong: a noise burst in a feedback delay line = plucked string."""
@@ -81,21 +81,22 @@ def pluck(freq, dur, vel=1.0):
         out[pos:pos + m] = prev[:m]
         nxt = 0.5 * (prev + np.roll(prev, -1)) * 0.996
         prev = nxt; pos += m
-    out *= env(n, 0.002, 0.1, 0.8, 0.25)
-    return out * vel * 0.55
+    out *= env(n, 0.004, 0.1, 0.8, 0.35)
+    out = lowpass(out, 1800)                 # take the pick's edge off
+    return out * vel * 0.3
 
 def bell(freq, dur, vel=1.0):
     n = int(dur * SR); t = np.arange(n) / SR
     out = np.zeros(n)
     for ratio, amp, dec in ((1, 1, 1.6), (2.76, 0.5, 0.9), (5.4, 0.25, 0.5), (8.9, 0.12, 0.3)):
         out += amp * np.sin(2 * math.pi * freq * ratio * t) * np.exp(-t / dec)
-    return out * vel * 0.24 * np.minimum(1, t * 400)
+    return out * vel * 0.13 * np.minimum(1, t * 400)
 
 def drone(freq, dur, vel=1.0):
     n = int(dur * SR); t = np.arange(n) / SR
     lfo = 1 + 0.02 * np.sin(2 * math.pi * 0.07 * t)
     out = np.sin(2 * math.pi * freq * t * lfo) + 0.5 * np.sin(2 * math.pi * freq * 0.5 * t) + 0.25 * np.sin(2 * math.pi * freq * 2.005 * t)
-    return out * env(n, 3, 1, 1, 4) * vel * 0.05
+    return out * env(n, 3, 1, 1, 4) * vel * 0.065
 
 def tom(dur=1.2, vel=1.0, f0=110):
     n = int(dur * SR); t = np.arange(n) / SR
@@ -104,7 +105,7 @@ def tom(dur=1.2, vel=1.0, f0=110):
     body = np.sin(ph) * np.exp(-t * 3.5)
     rng = np.random.default_rng(7)
     click = rng.uniform(-1, 1, n) * np.exp(-t * 60) * 0.4
-    return (body + click) * vel * 0.42
+    return (body + click) * vel * 0.3
 
 def breath(dur, vel=1.0, seed=1):
     n = int(dur * SR); rng = np.random.default_rng(seed)
@@ -119,10 +120,21 @@ def reverb(x, seconds=2.8, mix=0.32, seed=3):
     n = int(seconds * SR); t = np.arange(n) / SR
     ir = rng.uniform(-1, 1, n) * np.exp(-t * 3.0 / seconds * 2.2)
     ir[:int(0.01 * SR)] *= np.linspace(0, 1, int(0.01 * SR))   # no direct spike
-    ir = lowpass(ir, 6000)
+    ir = lowpass(ir, 3200)                 # a darker, further-away room
     ir /= np.max(np.abs(ir)) * 18
     wet = np.fft.irfft(np.fft.rfft(x, len(x) + n) * np.fft.rfft(ir, len(x) + n))[:len(x)]
     return x * (1 - mix) + wet * mix
+
+def loopable(x, xf=8.0):
+    """Crossfade the last xf seconds into the first xf seconds and trim, so the
+    track loops without a seam; ease the very start so it never pops in."""
+    n = int(xf * SR)
+    head, tail = x[:n].copy(), x[-n:].copy()
+    w = np.linspace(0, 1, n)
+    x = x[:-n].copy()
+    x[:n] = head * w + tail * (1 - w)
+    x[:SR] *= np.linspace(0.3, 1, SR)
+    return x
 
 class Score:
     def __init__(self, bpm, bars, beats=4):
@@ -197,7 +209,7 @@ def track_boughs():
             if i == 6: S.add(tom(1.0, 0.35, 90), S.at(bar, 2.5))
     for k in range(0, 64, 8):
         S.add(breath(6, 0.7, seed=k + 1), S.at(k, 2))
-    return reverb(S.buf, 3.2, 0.34)
+    return loopable(reverb(S.buf, 4.0, 0.45))
 
 # ---------------------------------------------------------------------------
 # Track 2 — "Hollow Lantern" (Dark Woods, night). E aeolian/phrygian, 62 bpm.
@@ -233,7 +245,7 @@ def track_lantern():
             if bar < 56: S.add(tom(1.6, 0.4, 95), S.at(bar, 0))
     for k in range(2, 56, 9):
         S.add(breath(7, 0.8, seed=k + 40), S.at(k, 0))
-    return reverb(S.buf, 4.0, 0.4)
+    return loopable(reverb(S.buf, 5.0, 0.5))
 
 if __name__ == '__main__':
     out = sys.argv[1] if len(sys.argv) > 1 else '.'
