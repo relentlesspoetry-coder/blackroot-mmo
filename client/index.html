@@ -4701,6 +4701,21 @@ function animateEntity(rec, e, kind, dt) {
         b.rotation.x = 0.10 * a - 0.12 * punch;        // lean back a touch
       }
     }
+    // An ability animation overrides whatever the walk/attack logic decided.
+    if (rig.anim) {
+      const an = rig.anim, A = ABILITY_ANIMS[an.id];
+      an.t += dt; const u = Math.min(1, an.t / an.dur);
+      const P = {}; A.pose(u, P, rig);
+      if (P.lArm != null) lArm = P.lArm; if (P.rArm != null) rArm = P.rArm; if (P.lArmZ != null) lArmZ = P.lArmZ; if (P.rArmZ != null) rArmZ = P.rArmZ;
+      if (P.lLeg != null) lLeg = P.lLeg; if (P.rLeg != null) rLeg = P.rLeg; if (P.lShin != null) lShin = P.lShin; if (P.rShin != null) rShin = P.rShin;
+      if (P.bodyX != null) b.rotation.x = P.bodyX; if (P.bodyY != null) b.rotation.y = P.bodyY; if (P.bodyZ != null) b.rotation.z = P.bodyZ;
+      if (P.spin != null) b.rotation.y = P.spin; if (P.bob != null) b.position.y = rig.home.y + P.bob;
+      if (rig.head) rig.head.rotation.x = P.head || 0;
+      // Effects keyed to the animation's beats, at the character's feet, facing its yaw.
+      const mp = rec.mesh.position, yaw = rec.mesh.rotation.y;
+      for (let i = 0; i < (A.fx || []).length; i++) { const f = A.fx[i]; if (u >= f.at && !an.fired.has(i)) { an.fired.add(i); spawnFx(f.kind, mp.x, mp.y, mp.z, yaw, f); } }
+      if (an.t >= an.dur) rig.anim = null;
+    }
     if (rig.armL) rig.armL.rotation.set(lArm, 0, lArmZ);
     if (rig.armR) rig.armR.rotation.set(rArm, 0, rArmZ);
     if (rig.legL) rig.legL.rotation.set(lLeg, 0, 0);
@@ -5457,6 +5472,179 @@ function showOptions(title, opts, cx, cy) {
 function hideContextMenu() { ctxEl.style.display = 'none'; }
 
 // ---- Click markers (RuneScape tile flag) ----
+
+// ---------------------------------------------------------------------------
+// Ability animations — one pose track per Fighter ability, keyframed over
+// the rig's limb nodes and the body, plus a small effects layer (dust rings,
+// sparks, flashes, slash arcs) so each swing reads on screen.
+//
+// Rotation conventions (world-aligned nodes): arm/leg rotation.x negative
+// swings forward/up; positive back. Arm rotation.z positive = out to the
+// character's left (+X). Body rotation.y positive turns left.
+// ---------------------------------------------------------------------------
+const smooth = (t) => t * t * (3 - 2 * t);
+// Keyframe track: [[u, value], ...] with smooth blends between keys.
+function kf(u, keys) {
+  if (u <= keys[0][0]) return keys[0][1];
+  for (let i = 1; i < keys.length; i++) if (u <= keys[i][0]) { const [u0, v0] = keys[i - 1], [u1, v1] = keys[i]; return v0 + (v1 - v0) * smooth((u - u0) / (u1 - u0)); }
+  return keys[keys.length - 1][1];
+}
+// Common building blocks.
+const overhead = (u, up = -2.6, down = 0.9, peak = 0.42) => kf(u, [[0, 0], [peak, up], [peak + 0.18, down], [1, 0]]);  // raise, chop, settle
+const crouch = (u, depth, peak = 0.6) => kf(u, [[0, 0], [peak, depth], [1, 0]]);
+const ABILITY_ANIMS = {
+  heavy_swing: { dur: 0.75, pose(u, P) {            // slow heavy two-hander: both arms over, hard chop, body dips
+    P.rArm = overhead(u, -2.8, -0.45, 0.45); P.lArm = overhead(u, -2.3, -0.35, 0.45); P.rArmZ = 0.15; P.lArmZ = -0.15;
+    P.bodyX = kf(u, [[0, 0], [0.45, -0.18], [0.65, 0.35], [1, 0.05]]); P.bob = -crouch(u, 0.16, 0.65);
+    P.lLeg = kf(u, [[0, 0], [0.6, -0.35], [1, 0]]); P.rLeg = kf(u, [[0, 0], [0.6, 0.3], [1, 0]]); P.rShin = kf(u, [[0, 0], [0.6, 0.45], [1, 0]]);
+  }, fx: [{ at: 0.62, kind: 'dust', r: 1.2 }] },
+  cleave: { dur: 0.7, pose(u, P) {                  // wide horizontal arc, torso winds right then sweeps left
+    P.bodyY = kf(u, [[0, 0], [0.3, -0.9], [0.7, 1.1], [1, 0]]);
+    P.rArm = kf(u, [[0, 0], [0.3, -1.4], [0.7, -1.5], [1, 0]]); P.rArmZ = kf(u, [[0, 0], [0.3, -1.2], [0.7, 0.9], [1, 0]]);
+    P.lArm = kf(u, [[0, 0], [0.5, -0.8], [1, 0]]); P.lArmZ = 0.35; P.bob = -crouch(u, 0.08, 0.6);
+  }, fx: [{ at: 0.45, kind: 'arc', r: 2.2, spread: 2.0 }] },
+  battle_rush: { dur: 0.6, pose(u, P) {             // charge: hard forward lean, arms pumping back, long stride
+    P.bodyX = kf(u, [[0, 0.1], [0.3, 0.55], [1, 0.1]]); P.rArm = kf(u, [[0, 0], [0.3, 1.1], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.3, 1.1], [1, 0]]);
+    P.lLeg = kf(u, [[0, 0], [0.35, -1.0], [0.7, 0.6], [1, 0]]); P.rLeg = kf(u, [[0, 0], [0.35, 0.8], [0.7, -0.9], [1, 0]]); P.lShin = kf(u, [[0, 0], [0.5, 0.9], [1, 0]]);
+  }, fx: [{ at: 0.05, kind: 'dust', r: 1.0 }, { at: 0.5, kind: 'dust', r: 0.8 }] },
+  crushing_blow: { dur: 0.85, pose(u, P) {          // two-handed smash: high hold, then straight down into a crouch
+    P.rArm = kf(u, [[0, 0], [0.4, -3.0], [0.55, -3.0], [0.72, -0.5], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.4, -2.9], [0.55, -2.9], [0.72, -0.4], [1, 0]]);
+    P.bodyX = kf(u, [[0, 0], [0.5, -0.25], [0.72, 0.5], [1, 0.05]]); P.bob = kf(u, [[0, 0], [0.5, 0.08], [0.72, -0.28], [1, 0]]);
+    P.lLeg = kf(u, [[0, 0], [0.72, -0.5], [1, 0]]); P.rLeg = kf(u, [[0, 0], [0.72, 0.4], [1, 0]]); P.lShin = kf(u, [[0, 0], [0.72, 0.7], [1, 0]]); P.rShin = kf(u, [[0, 0], [0.72, 0.5], [1, 0]]);
+  }, fx: [{ at: 0.7, kind: 'dust', r: 1.6 }, { at: 0.7, kind: 'sparks', n: 14, color: 0xcfd8e0 }] },
+  momentum: { dur: 0.6, pose(u, P) {                // learned / flex: chest up, arms flare out
+    P.rArm = kf(u, [[0, 0], [0.4, -0.9], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.4, -0.9], [1, 0]]); P.rArmZ = kf(u, [[0, 0], [0.4, -0.8], [1, 0]]); P.lArmZ = kf(u, [[0, 0], [0.4, 0.8], [1, 0]]);
+    P.bodyX = kf(u, [[0, 0], [0.4, -0.15], [1, 0]]);
+  }, fx: [{ at: 0.35, kind: 'ring', r: 1.4, color: 0xffd27a }] },
+  groundbreaker: { dur: 0.95, pose(u, P) {          // hop, slam the weapon into the ground, shockwave
+    P.bob = kf(u, [[0, 0], [0.3, 0.35], [0.55, -0.3], [1, 0]]);
+    P.rArm = kf(u, [[0, 0], [0.3, -3.0], [0.55, -0.55], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.3, -2.8], [0.55, -0.45], [1, 0]]);
+    P.bodyX = kf(u, [[0, 0], [0.3, -0.2], [0.55, 0.6], [1, 0.05]]);
+    P.lLeg = kf(u, [[0, 0], [0.3, -0.8], [0.55, -0.6], [1, 0]]); P.rLeg = kf(u, [[0, 0], [0.3, -0.8], [0.55, 0.5], [1, 0]]); P.lShin = kf(u, [[0, 0], [0.3, 1.2], [0.55, 0.8], [1, 0]]); P.rShin = kf(u, [[0, 0], [0.3, 1.2], [0.55, 0.6], [1, 0]]);
+  }, fx: [{ at: 0.55, kind: 'shock', r: 6.0 }, { at: 0.55, kind: 'dust', r: 2.2 }] },
+  reckless_strike: { dur: 0.75, pose(u, P) {        // a wild full spin into the strike
+    P.spin = kf(u, [[0, 0], [0.75, Math.PI * 2], [1, Math.PI * 2]]);
+    P.rArm = kf(u, [[0, 0], [0.2, -1.6], [0.75, -1.4], [1, 0]]); P.rArmZ = kf(u, [[0, 0], [0.2, -1.3], [0.75, 0.6], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.5, -0.6], [1, 0]]); P.lArmZ = 0.6;
+    P.bodyX = kf(u, [[0, 0], [0.7, 0.35], [1, 0]]); P.bob = -crouch(u, 0.1, 0.7);
+  }, fx: [{ at: 0.6, kind: 'arc', r: 2.4, spread: 3.2, color: 0xff6a3c }, { at: 0.65, kind: 'sparks', n: 16, color: 0xff7a3c }] },
+  heavy_riposte: { dur: 0.6, pose(u, P) {           // step back, then a straight-arm thrust
+    P.bodyX = kf(u, [[0, 0], [0.25, -0.25], [0.55, 0.4], [1, 0]]);
+    P.rArm = kf(u, [[0, 0], [0.25, 0.9], [0.55, -1.7], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.55, 0.7], [1, 0]]);
+    P.rLeg = kf(u, [[0, 0], [0.25, 0.6], [0.55, -0.7], [1, 0]]); P.lLeg = kf(u, [[0, 0], [0.55, 0.4], [1, 0]]);
+  }, fx: [{ at: 0.55, kind: 'flash', r: 0.9, color: 0xdfe8ff, fwd: 1.4 }] },
+  weapon_flow: { dur: 0.9, pose(u, P) {             // weapon twirl: the arm circles twice, body sways with it
+    P.rArm = -1.3 + Math.sin(u * Math.PI * 4) * 1.3; P.rArmZ = Math.cos(u * Math.PI * 4) * 0.9;
+    P.lArm = kf(u, [[0, 0], [0.5, -0.5], [1, 0]]); P.bodyZ = Math.sin(u * Math.PI * 4) * 0.08; P.bodyY = Math.sin(u * Math.PI * 2) * 0.25;
+  }, fx: [{ at: 0.3, kind: 'ring', r: 1.2, color: 0xffd27a }, { at: 0.7, kind: 'ring', r: 1.2, color: 0xffd27a }] },
+  armor_splitter: { dur: 0.8, pose(u, P) {          // raise high, drive the weapon down and in
+    P.rArm = kf(u, [[0, 0], [0.35, -2.9], [0.62, -0.9], [1, 0]]); P.rArmZ = kf(u, [[0, 0], [0.35, 0.4], [0.62, -0.3], [1, 0]]);
+    P.lArm = kf(u, [[0, 0], [0.62, 0.8], [1, 0]]); P.bodyX = kf(u, [[0, 0], [0.35, -0.2], [0.62, 0.45], [1, 0]]); P.bob = -crouch(u, 0.14, 0.62);
+    P.rLeg = kf(u, [[0, 0], [0.62, -0.6], [1, 0]]); P.rShin = kf(u, [[0, 0], [0.62, 0.7], [1, 0]]);
+  }, fx: [{ at: 0.6, kind: 'sparks', n: 18, color: 0xd8dde8, fwd: 1.3 }, { at: 0.6, kind: 'flash', r: 0.7, color: 0xffffff, fwd: 1.3 }] },
+  savage_momentum: { dur: 0.7, pose(u, P) {         // roar: chest thrown back, arms back, head up
+    P.bodyX = kf(u, [[0, 0], [0.4, -0.35], [1, 0]]); P.rArm = kf(u, [[0, 0], [0.4, 1.2], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.4, 1.2], [1, 0]]);
+    P.rArmZ = kf(u, [[0, 0], [0.4, -0.6], [1, 0]]); P.lArmZ = kf(u, [[0, 0], [0.4, 0.6], [1, 0]]); P.head = kf(u, [[0, 0], [0.4, -0.5], [1, 0]]);
+  }, fx: [{ at: 0.35, kind: 'ring', r: 1.8, color: 0xff8a4a }] },
+  bonebreaker: { dur: 0.8, pose(u, P) {             // low sweep at the knees from a deep crouch
+    P.bob = -crouch(u, 0.4, 0.55); P.bodyX = kf(u, [[0, 0], [0.55, 0.5], [1, 0]]);
+    P.rArm = kf(u, [[0, 0], [0.3, -0.6], [0.55, 0.6], [1, 0]]); P.rArmZ = kf(u, [[0, 0], [0.3, -1.3], [0.6, 1.0], [1, 0]]); P.bodyY = kf(u, [[0, 0], [0.3, -0.6], [0.6, 0.7], [1, 0]]);
+    P.lLeg = kf(u, [[0, 0], [0.55, -0.9], [1, 0]]); P.rLeg = kf(u, [[0, 0], [0.55, -0.9], [1, 0]]); P.lShin = kf(u, [[0, 0], [0.55, 1.4], [1, 0]]); P.rShin = kf(u, [[0, 0], [0.55, 1.4], [1, 0]]);
+  }, fx: [{ at: 0.55, kind: 'arc', r: 1.8, spread: 1.8, y: 0.5 }, { at: 0.6, kind: 'sparks', n: 8, color: 0xe8e0c8, fwd: 1.2 }] },
+  whirlwind_cleave: { dur: 3.0, loop: true, pose(u, P) { // the 3s spin: arms out, turning all the way round each second
+    P.spin = u * Math.PI * 6; P.rArm = -1.5; P.lArm = -1.5; P.rArmZ = -1.2; P.lArmZ = 1.2; P.bodyX = 0.12; P.bob = -0.08 + Math.sin(u * Math.PI * 6) * 0.04;
+    P.lLeg = Math.sin(u * Math.PI * 6) * 0.4; P.rLeg = -Math.sin(u * Math.PI * 6) * 0.4;
+  }, fx: [{ at: 0.1, kind: 'arc', r: 2.6, spread: 6.28 }, { at: 0.43, kind: 'arc', r: 2.6, spread: 6.28 }, { at: 0.76, kind: 'arc', r: 2.6, spread: 6.28 }] },
+  final_swing: { dur: 0.95, pose(u, P) {            // the execute: long hold at the top, then everything into the chop
+    P.rArm = kf(u, [[0, 0], [0.3, -3.0], [0.55, -3.1], [0.7, -0.5], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.3, -2.9], [0.55, -3.0], [0.7, -0.4], [1, 0]]);
+    P.bodyX = kf(u, [[0, 0], [0.55, -0.3], [0.7, 0.6], [1, 0.05]]); P.bob = kf(u, [[0, 0], [0.55, 0.1], [0.7, -0.3], [1, 0]]);
+    P.lLeg = kf(u, [[0, 0], [0.7, -0.7], [1, 0]]); P.lShin = kf(u, [[0, 0], [0.7, 0.9], [1, 0]]); P.rLeg = kf(u, [[0, 0], [0.7, 0.5], [1, 0]]);
+  }, fx: [{ at: 0.68, kind: 'flash', r: 1.4, color: 0xffe9b0, fwd: 1.3 }, { at: 0.7, kind: 'dust', r: 1.4 }] },
+  bloodrush: { dur: 0.75, pose(u, P) {              // fists to the chest, then flung wide
+    P.rArm = kf(u, [[0, 0], [0.3, -1.6], [0.6, -0.9], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.3, -1.6], [0.6, -0.9], [1, 0]]);
+    P.rArmZ = kf(u, [[0, 0], [0.3, 0.9], [0.6, -1.1], [1, 0]]); P.lArmZ = kf(u, [[0, 0], [0.3, -0.9], [0.6, 1.1], [1, 0]]);
+    P.bodyX = kf(u, [[0, 0], [0.3, 0.2], [0.6, -0.25], [1, 0]]);
+  }, fx: [{ at: 0.55, kind: 'ring', r: 1.6, color: 0xd8302a }, { at: 0.55, kind: 'sparks', n: 12, color: 0xff3a2a }] },
+  shatter_guard: { dur: 0.8, pose(u, P) {           // shoulder in, then a full-body thrust
+    P.bodyX = kf(u, [[0, 0], [0.3, -0.15], [0.6, 0.55], [1, 0]]); P.bodyY = kf(u, [[0, 0], [0.3, 0.5], [0.6, -0.3], [1, 0]]);
+    P.rArm = kf(u, [[0, 0], [0.3, 1.0], [0.6, -1.8], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.6, 0.6], [1, 0]]);
+    P.rLeg = kf(u, [[0, 0], [0.6, -0.9], [1, 0]]); P.rShin = kf(u, [[0, 0], [0.6, 0.6], [1, 0]]); P.lLeg = kf(u, [[0, 0], [0.6, 0.5], [1, 0]]);
+  }, fx: [{ at: 0.6, kind: 'sparks', n: 22, color: 0xdfe6f0, fwd: 1.4 }, { at: 0.6, kind: 'flash', r: 1.0, color: 0xdfe8ff, fwd: 1.4 }] },
+  titan_chop: { dur: 1.5, pose(u, P) {              // 1s wind-up held overhead, then the mountain comes down
+    P.rArm = kf(u, [[0, 0], [0.45, -3.1], [0.66, -3.15], [0.8, -0.5], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.45, -3.0], [0.66, -3.05], [0.8, -0.4], [1, 0]]);
+    P.bodyX = kf(u, [[0, 0], [0.6, -0.35], [0.8, 0.65], [1, 0.05]]); P.bob = kf(u, [[0, 0], [0.6, 0.12], [0.8, -0.35], [1, 0]]);
+    P.bodyZ = Math.sin(u * 40) * 0.02 * kf(u, [[0, 0], [0.5, 1], [0.66, 1], [0.7, 0]]);   // strain tremor while held
+    P.lLeg = kf(u, [[0, 0], [0.8, -0.8], [1, 0]]); P.lShin = kf(u, [[0, 0], [0.8, 1.0], [1, 0]]); P.rLeg = kf(u, [[0, 0], [0.8, 0.6], [1, 0]]);
+  }, fx: [{ at: 0.5, kind: 'ring', r: 1.0, color: 0xc48bff }, { at: 0.79, kind: 'dust', r: 2.4 }, { at: 0.79, kind: 'flash', r: 1.6, color: 0xffffff, fwd: 1.2 }, { at: 0.8, kind: 'shock', r: 3.5 }] },
+  unstoppable_footwork: { dur: 0.7, pose(u, P) {    // fast footwork: quick alternating steps, arms pumping
+    const f = Math.sin(u * Math.PI * 8);
+    P.lLeg = f * 0.8; P.rLeg = -f * 0.8; P.lShin = Math.max(0, -f) * 1.2; P.rShin = Math.max(0, f) * 1.2; P.rArm = f * 0.7; P.lArm = -f * 0.7; P.bob = Math.abs(f) * 0.1;
+  }, fx: [{ at: 0.1, kind: 'dust', r: 0.8 }, { at: 0.4, kind: 'dust', r: 0.8 }, { at: 0.7, kind: 'dust', r: 0.8 }] },
+  berserkers_roar: { dur: 0.9, pose(u, P) {         // head thrown back, arms wide, the whole body shaking with it
+    P.bodyX = kf(u, [[0, 0], [0.35, -0.4], [0.8, -0.35], [1, 0]]); P.head = kf(u, [[0, 0], [0.35, -0.6], [0.8, -0.6], [1, 0]]);
+    P.rArm = kf(u, [[0, 0], [0.35, -1.9], [0.8, -1.8], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.35, -1.9], [0.8, -1.8], [1, 0]]);
+    P.rArmZ = kf(u, [[0, 0], [0.35, -1.3], [0.8, -1.2], [1, 0]]); P.lArmZ = kf(u, [[0, 0], [0.35, 1.3], [0.8, 1.2], [1, 0]]);
+    P.bodyZ = Math.sin(u * 50) * 0.03 * kf(u, [[0.3, 0], [0.4, 1], [0.8, 1], [0.9, 0]]);
+  }, fx: [{ at: 0.4, kind: 'shock', r: 4.0, color: 0xff6a3c }, { at: 0.7, kind: 'ring', r: 2.2, color: 0xff8a4a }] },
+  perfect_masterstroke: { dur: 1.15, pose(u, P) {   // planted stance, weapon drawn far back, a beat, one clean cut
+    P.bob = -crouch(u, 0.18, 0.5);
+    P.rArm = kf(u, [[0, 0], [0.35, 1.4], [0.58, 1.5], [0.7, -1.6], [1, 0]]); P.rArmZ = kf(u, [[0, 0], [0.35, -0.9], [0.58, -1.0], [0.7, 0.8], [1, 0]]);
+    P.lArm = kf(u, [[0, 0], [0.35, -0.6], [0.7, 0.5], [1, 0]]); P.bodyY = kf(u, [[0, 0], [0.35, -1.0], [0.58, -1.05], [0.7, 0.9], [1, 0]]);
+    P.bodyX = kf(u, [[0, 0], [0.58, -0.1], [0.7, 0.4], [1, 0]]);
+    P.lLeg = kf(u, [[0, 0], [0.4, -0.6], [1, 0]]); P.lShin = kf(u, [[0, 0], [0.4, 0.8], [1, 0]]); P.rLeg = kf(u, [[0, 0], [0.4, 0.5], [1, 0]]);
+  }, fx: [{ at: 0.6, kind: 'ring', r: 1.0, color: 0xfff1c8 }, { at: 0.7, kind: 'arc', r: 2.8, spread: 2.6, color: 0xfff1c8 }, { at: 0.7, kind: 'flash', r: 1.8, color: 0xffffff, fwd: 1.5 }] },
+};
+function startAbilityAnim(rec, id) {
+  const A = ABILITY_ANIMS[id], rig = rec.mesh.userData.rig;
+  if (!A || !rig) return;
+  rig.anim = { id, t: 0, dur: A.dur, fired: new Set() };
+}
+
+// ---- Effects: short-lived sprites and rings at a character's feet ----
+const fxList = [];
+let fxDotTex = null;
+const fxDot = () => (fxDotTex || (fxDotTex = makeSoftDot()));
+function spawnFx(kind, x, y, z, yaw, o = {}) {
+  const life = o.life || { dust: 0.55, ring: 0.5, shock: 0.6, flash: 0.22, sparks: 0.6, arc: 0.35 }[kind] || 0.5;
+  let obj;
+  if (kind === 'dust' || kind === 'ring' || kind === 'shock') {
+    const col = o.color || (kind === 'dust' ? 0xb9a77c : 0xffffff);
+    const inner = kind === 'shock' ? 0.85 : 0.6;
+    obj = new THREE.Mesh(new THREE.RingGeometry(inner, 1, 40), new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false, blending: kind === 'dust' ? THREE.NormalBlending : THREE.AdditiveBlending }));
+    obj.rotation.x = -Math.PI / 2; obj.position.set(x, y + 0.06, z);
+  } else if (kind === 'flash') {
+    obj = new THREE.Sprite(new THREE.SpriteMaterial({ map: fxDot(), color: o.color || 0xffffff, transparent: true, opacity: 0.95, depthWrite: false, blending: THREE.AdditiveBlending }));
+    obj.position.set(x + Math.sin(yaw) * (o.fwd || 0), y + 1.1, z + Math.cos(yaw) * (o.fwd || 0));
+  } else if (kind === 'sparks') {
+    const n = o.n || 12, pos = new Float32Array(n * 3), vel = [];
+    for (let i = 0; i < n; i++) { const a = yaw + (Math.random() - 0.5) * 1.6, sp = 2 + Math.random() * 4; vel.push([Math.sin(a) * sp, 2 + Math.random() * 3, Math.cos(a) * sp]); pos[i * 3] = x + Math.sin(yaw) * (o.fwd || 0.8); pos[i * 3 + 1] = y + 1.0; pos[i * 3 + 2] = z + Math.cos(yaw) * (o.fwd || 0.8); }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    obj = new THREE.Points(g, new THREE.PointsMaterial({ color: o.color || 0xffc070, size: 0.16, map: fxDot(), transparent: true, opacity: 1, depthWrite: false, blending: THREE.AdditiveBlending }));
+    obj.userData.vel = vel;
+  } else if (kind === 'arc') {
+    const spread = o.spread || 2.0;
+    obj = new THREE.Mesh(new THREE.RingGeometry((o.r || 2) * 0.72, o.r || 2, 32, 1, -spread / 2, spread), new THREE.MeshBasicMaterial({ color: o.color || 0xfff2d0, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }));
+    obj.rotation.order = 'YXZ'; obj.rotation.set(-Math.PI / 2, yaw - Math.PI / 2, 0); // flat, arc centred on the facing
+    obj.position.set(x, y + (o.y != null ? o.y : 1.0), z);
+  }
+  if (!obj) return;
+  obj.frustumCulled = false; scene.add(obj);
+  fxList.push({ kind, obj, t: 0, life, r: o.r || 1 });
+}
+function updateFx(dt) {
+  for (let i = fxList.length - 1; i >= 0; i--) {
+    const f = fxList[i]; f.t += dt; const u = f.t / f.life;
+    if (f.kind === 'dust' || f.kind === 'ring' || f.kind === 'shock') { const s = f.r * (0.2 + 0.8 * smooth(Math.min(1, u))); f.obj.scale.set(s, s, s); f.obj.material.opacity = 0.8 * (1 - u); }
+    else if (f.kind === 'flash') { const s = f.r * (0.6 + 1.2 * u); f.obj.scale.set(s, s, 1); f.obj.material.opacity = 0.95 * (1 - u); }
+    else if (f.kind === 'arc') { f.obj.material.opacity = 0.85 * (1 - u); const s = 0.9 + 0.25 * u; f.obj.scale.set(s, s, 1); }
+    else if (f.kind === 'sparks') {
+      const pos = f.obj.geometry.attributes.position, v = f.obj.userData.vel;
+      for (let k = 0; k < v.length; k++) { v[k][1] -= 12 * dt; pos.setXYZ(k, pos.getX(k) + v[k][0] * dt, Math.max(0.05, pos.getY(k) + v[k][1] * dt), pos.getZ(k) + v[k][2] * dt); }
+      pos.needsUpdate = true; f.obj.material.opacity = 1 - u;
+    }
+    if (u >= 1) { scene.remove(f.obj); f.obj.geometry && f.obj.geometry.dispose(); fxList.splice(i, 1); }
+  }
+}
+
 const markers = [];
 // Click-to-move / pickup / attack markers removed (the "click circles").
 function spawnMarker(_x, _z, _color) {}
@@ -5589,9 +5777,12 @@ function onEvent(m) {
     case 'levelup':
       flyText(`${m.cls || 'Level'} ${m.level}!`, 'heal');
       addChat('Class', `You are now a level ${m.level} ${m.cls || ''}.`, true); break;
-    case 'ability':
+    case 'ability': {
+      const arec = entityMeshes.get(m.by); if (arec) startAbilityAnim(arec, m.id);
       if (m.by === myId) { flyText(m.name, 'xp'); gcdUntil = performance.now() + ((abilityClass && abilityClass.gcd) || 1.5) * 1000; } break;
+    }
     case 'learned':
+      { const lrec = entityMeshes.get(myId); if (lrec && m.id === 'momentum') startAbilityAnim(lrec, 'momentum'); }
       flyText(`Learned ${m.name}!`, 'heal'); addChat('Trainer', `You learn ${m.name} for ${m.price} gp. It's in your spellbook (B).`, true); break;
     case 'medlevel':
       flyText(`Meditation level ${m.level}!`, 'heal');
@@ -6334,7 +6525,7 @@ if (location.search.includes('debug')) {
       rec.mesh.userData.id = -999;
       const tick = () => { if (!mesh.parent) return; animateEntity(rec, rec.data, rec.kind, 1 / 60); requestAnimationFrame(tick); };
       tick();
-      return { rec, set(state) { Object.assign(rec.data, state); if (state.weapon !== undefined) updateHeldWeapon(rec, state.weapon); if (state.atk) { const rig = mesh.userData.rig; rig.atk = 1; rig.atkKind = state.atkKind || 0; } }, remove() { scene.remove(mesh); } };
+      return { rec, set(state) { Object.assign(rec.data, state); if (state.weapon !== undefined) updateHeldWeapon(rec, state.weapon); if (state.atk) { const rig = mesh.userData.rig; rig.atk = 1; rig.atkKind = state.atkKind || 0; } if (state.anim) startAbilityAnim(rec, state.anim); }, remove() { scene.remove(mesh); } };
     },
     // Freeze the sky at a given time of day so a screenshot is not at the
     // mercy of the cycle. The server keeps sending the real time; this just
@@ -6508,6 +6699,7 @@ function animate() {
   _pf('npcmk', () => updateNpcMarkers());
   _pf('region', () => updateRegionTitle());
   _pf('abilities', () => updateActionBar());
+  _pf('fx', () => updateFx(dt));
   _pf('talk', () => updatePendingTalk());
   if (mapOpen) _pf('map', () => drawMap());
   // Flowing river: scroll the water texture along the current + gentle waves.
