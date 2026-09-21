@@ -662,17 +662,26 @@ const RIVER_WATER_Y = -0.5, RIVER_BED_Y = -2.2, RIVER_BANK = 4, RIVER_LIP = 2.0;
 // `half + RIVER_LIP`; the coarse terrain here is only ever seen UNDER the water
 // or the ribbon, so it just needs to stay below them.
 function riverWaterHalf(width) { return width / 2 + RIVER_BANK; }
-function terrainHeight(x, z) {
-  if (!zone || !zone.river || zone.enclosed) return 0;
-  const half = riverWaterHalf(zone.river.width);
-  const H = half + RIVER_LIP;                          // grass begins here
-  const d = distToPolyline(x, z, zone.river.points);
-  if (d >= H) return 0;                                // grass beyond the shore
-  if (d >= half) return RIVER_WATER_Y + (0 - RIVER_WATER_Y) * ((d - half) / RIVER_LIP); // dirt bank: -0.5 -> 0
-  const t = d / half;                                  // 0 at centre, 1 at the waterline
-  // Deep basin (cubic) so the channel reads as water; the dirt bank above rises
-  // out of the water as the real, walkable dirt shore.
+// The world can hold several rivers now (fused zones). Helpers return every
+// river / path; single-river zones still work via the legacy fields.
+function worldRivers() { return (zone && (zone.rivers || (zone.river ? [zone.river] : []))) || []; }
+function worldPaths() { return (zone && (zone.paths || (zone.path ? [zone.path] : []))) || []; }
+// Carve for ONE river.
+function riverHeightAt1(river, x, z) {
+  const half = riverWaterHalf(river.width);
+  const H = half + RIVER_LIP;
+  const d = distToPolyline(x, z, river.points);
+  if (d >= H) return 0;
+  if (d >= half) return RIVER_WATER_Y + (0 - RIVER_WATER_Y) * ((d - half) / RIVER_LIP);
+  const t = d / half;
   return RIVER_BED_Y + (RIVER_WATER_Y - RIVER_BED_Y) * (t * t * t);
+}
+function terrainHeight(x, z) {
+  if (!zone || zone.enclosed) return 0;
+  // Deepest carve wins where rivers overlap; grass (0) everywhere else.
+  let y = 0;
+  for (const r of worldRivers()) { const h = riverHeightAt1(r, x, z); if (h < y) y = h; }
+  return y;
 }
 // Height an entity should stand at: on a bridge use its deck, else the terrain.
 function groundY(x, z) { const b = bridgeLift(x, z); return b > 0 ? b : terrainHeight(x, z); }
@@ -1133,10 +1142,12 @@ function buildStripRibbon(points, width, y, material, tile, feather, cutRiver, e
     // Fade the strip out where it crosses the river, so the dirt path never
     // paints over the water under the bridge (the bridge deck is the crossing).
     let rowA = 1;
-    if (cutRiver && zone.river) {
-      const rd = distToPolyline(pts[i].x, pts[i].z, zone.river.points);
-      const edge = riverWaterHalf(zone.river.width);
-      rowA = Math.max(0, Math.min(1, (rd - edge) / 2.5)); // 0 over water -> 1 on the bank
+    if (cutRiver) {
+      for (const r of worldRivers()) {
+        const rd = distToPolyline(pts[i].x, pts[i].z, r.points);
+        const edge = riverWaterHalf(r.width);
+        rowA = Math.min(rowA, Math.max(0, Math.min(1, (rd - edge) / 2.5))); // 0 over water -> 1 on the bank
+      }
     }
     // Taper the two ENDS to transparent so the path melts into the grass rather
     // than stopping on a hard straight edge.
@@ -1253,38 +1264,39 @@ function buildZone() {
     // Hanging_Roots / Corner_Cobweb), placed server-side — see buildScatter().
   }
 
-  // Primary path — one continuous, smoothly-curving dirt trail.
-  if (zone.path) {
-    // The core dirt is opaque; a feathered fringe (vertex-alpha) melts the path
-    // edges into the surrounding grass instead of a hard cut.
+  // Paths — one or more continuous, smoothly-curving dirt trails (the fused
+  // world can hold several). The core dirt is opaque; a feathered fringe melts
+  // the edges into the grass instead of a hard cut.
+  for (const pathPts of worldPaths()) {
     const dirtMat = new THREE.MeshStandardMaterial({ map: loadTexture('dirt', 1, 1), color: 0x8a6a45, roughness: 1,
       side: THREE.DoubleSide, transparent: true, vertexColors: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
-    buildStripRibbon(zone.path, 5, 0.05, dirtMat, 5, 1.8, true, 6);
+    buildStripRibbon(pathPts, 5, 0.05, dirtMat, 5, 1.8, true, 6);
   }
 
-  // River (Blackroot Creek) — deep flowing water sitting in the carved channel.
-  if (zone.river) {
-    riverTex = makeWaterTexture();
-    const waterMat = new THREE.MeshStandardMaterial({ map: riverTex, color: 0x2f74a0, roughness: 0.3, metalness: 0.25, transparent: true, opacity: 0.96, side: THREE.DoubleSide,
+  // Rivers — deep flowing water sitting in the carved channel, one per river.
+  for (const river of worldRivers()) {
+    const rtex = makeWaterTexture();
+    const waterMat = new THREE.MeshStandardMaterial({ map: rtex, color: 0x2f74a0, roughness: 0.3, metalness: 0.25, transparent: true, opacity: 0.96, side: THREE.DoubleSide,
       vertexColors: true, // feathered rim (vertex-alpha) so the waterline melts into the shore
       emissive: 0x11364f, emissiveIntensity: 0.9 }); // faint sheen so it still reads as water at night
     // Dirt bank (flush with the carved terrain, follows the river smoothly,
     // feathers into grass) then flood the channel. The water core ends a little
-    // inside the waterline and feathers across it into the wet dirt, so the
-    // edge is a soft transition rather than a hard geometric line.
-    buildRiverShore(zone.river.points, riverWaterHalf(zone.river.width));
-    riverMesh = buildStripRibbon(zone.river.points, (riverWaterHalf(zone.river.width) - 0.5) * 2, RIVER_WATER_Y, waterMat, 8, 1.7);
-    const br = zone.river.bridge;
-    // Orient the deck along the PATH direction (so you walk straight over it),
-    // and make it long enough to span the river at whatever angle the path
-    // crosses (span = width / sin(angle between path and river)).
-    const pd = nearestSeg(zone.path || zone.river.points, br.x, br.z);
-    const rd = nearestSeg(zone.river.points, br.x, br.z);
+    // inside the waterline and feathers across it into the wet dirt.
+    buildRiverShore(river.points, riverWaterHalf(river.width));
+    const water = buildStripRibbon(river.points, (riverWaterHalf(river.width) - 0.5) * 2, RIVER_WATER_Y, waterMat, 8, 1.7);
+    riverMesh = water; riverTex = rtex; // last river drives the shared flow animation
+    if (!river.bridge) continue;
+    const br = river.bridge;
+    // Orient the deck along the nearest PATH direction (so you walk straight over
+    // it), long enough to span the river at whatever angle the path crosses.
+    const nearPath = worldPaths().sort((a, b) => nearestSeg(a, br.x, br.z).d - nearestSeg(b, br.x, br.z).d)[0] || river.points;
+    const pd = nearestSeg(nearPath, br.x, br.z);
+    const rd = nearestSeg(river.points, br.x, br.z);
     const pl = Math.hypot(pd.dx, pd.dz) || 1, rl = Math.hypot(rd.dx, rd.dz) || 1;
     const sinA = Math.min(1, Math.abs((pd.dx / pl) * (rd.dz / rl) - (pd.dz / pl) * (rd.dx / rl)));
     const phi = Math.atan2(pd.dx, pd.dz); // local +Z runs along the path
     const bridge = new THREE.Group();
-    const span = (riverWaterHalf(zone.river.width) * 2) / Math.max(0.5, sinA);
+    const span = (riverWaterHalf(river.width) * 2) / Math.max(0.5, sinA);
     const L = span + 9, deckW = 6, archH = Math.min(3.8, L * 0.24), N = 14;
     const arch = zz => archH * (1 - Math.pow(2 * zz / L, 2));
     const deckMat = new THREE.MeshStandardMaterial({ map: loadTexture('moss', 2, 2), color: 0x9fb07a, roughness: 0.9 });
@@ -1386,7 +1398,7 @@ function nearestSeg(pts, x, z) {
     const dx = b.x - a.x, dz = b.z - a.z;
     const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / (dx * dx + dz * dz || 1)));
     const cxx = a.x + dx * t, czz = a.z + dz * t, d = Math.hypot(x - cxx, z - czz);
-    if (d < bestD) { bestD = d; best = { dx, dz }; }
+    if (d < bestD) { bestD = d; best = { dx, dz, d }; }
   }
   return best;
 }
@@ -1444,7 +1456,8 @@ function buildLowPolyGround(W, D, cx, cz) {
     if (uv) uv.setXY(i, (lx + W / 2) / 8, (lz + D / 2) / 8);
     // Smooth low-frequency field -> gentle gradients rather than per-triangle jumps.
     const nf = Math.sin(wx * 0.06) * 0.5 + Math.cos(wz * 0.052) * 0.5 + Math.sin((wx + wz) * 0.017) * 0.45;
-    const onBed = half && distToPolyline(wx, wz, zone.river.points) < half + 0.5;
+    let onBed = false;
+    for (const r of worldRivers()) { if (distToPolyline(wx, wz, r.points) < riverWaterHalf(r.width) + 0.5) { onBed = true; break; } }
     if (onBed) c.setHSL(0.09, 0.34, 0.15 + nf * 0.02);                        // muddy riverbed
     else c.setHSL(0.27 + nf * 0.035, 0.48 + nf * 0.08, 0.33 + nf * 0.08);     // gradients of green
     colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
@@ -1477,8 +1490,8 @@ function buildDetails() {
   const clearOK = (x, z, pathClear) =>
     (!zone.boundary || inBoundary(x, z)) &&
     !inFarmYard(x, z, 2) &&
-    distToPolyline(x, z, zone.path) >= pathClear &&
-    (!zone.river || distToPolyline(x, z, zone.river.points) >= riverWaterHalf(zone.river.width) + RIVER_LIP) &&
+    worldPaths().every(p => distToPolyline(x, z, p) >= pathClear) &&
+    worldRivers().every(r => distToPolyline(x, z, r.points) >= riverWaterHalf(r.width) + RIVER_LIP) &&
     !zone.pois.some(p => Math.hypot(x - p.x, z - p.z) < Math.max(3, clearRadius(p) - 3)) &&
     !zone.rocks.some(o => Math.hypot(x - o.x, z - o.z) < o.r + 1);
   const gen = (n, pathClear = 2.5) => {
@@ -1577,9 +1590,9 @@ function buildGrass() {
     side: THREE.DoubleSide, vertexColors: true, roughness: 1,
   });
   const ok = (x, z) => (!zone.boundary || inBoundary(x, z)) &&
-    !(zone.river && distToPolyline(x, z, zone.river.points) < riverWaterHalf(zone.river.width) + RIVER_LIP) &&
+    worldRivers().every(r => distToPolyline(x, z, r.points) >= riverWaterHalf(r.width) + RIVER_LIP) &&
     !zone.rocks.some(o => Math.hypot(x - o.x, z - o.z) < o.r);
-  const onPathSkip = (x, z) => zone.path && distToPolyline(x, z, zone.path) < 2.2 && rng() > 0.12;
+  const onPathSkip = (x, z) => worldPaths().some(p => distToPolyline(x, z, p) < 2.2) && rng() > 0.12;
   const spots = [];
   // Density scales with the zone's area so a larger zone stays as lush.
   const areaK = Math.min(3.2, ((b.maxX - b.minX) * (b.maxZ - b.minZ)) / 37800);
@@ -5188,9 +5201,9 @@ function drawMap() {
     ctx.save(); line(poly, true); ctx.clip();
   }
   // river
-  if (zone.river && zone.river.points) { line(zone.river.points); ctx.strokeStyle = '#2f6f9c'; ctx.lineWidth = Math.max(3, zone.river.width * s * 0.6); ctx.lineJoin = ctx.lineCap = 'round'; ctx.stroke(); }
-  // path (dashed trail)
-  if (zone.path) { line(zone.path); ctx.strokeStyle = '#c9a86a'; ctx.lineWidth = 3; ctx.setLineDash([7, 5]); ctx.lineJoin = 'round'; ctx.stroke(); ctx.setLineDash([]); }
+  for (const r of worldRivers()) { if (!r.points) continue; line(r.points); ctx.strokeStyle = '#2f6f9c'; ctx.lineWidth = Math.max(3, r.width * s * 0.6); ctx.lineJoin = ctx.lineCap = 'round'; ctx.stroke(); }
+  // paths (dashed trails)
+  for (const pth of worldPaths()) { line(pth); ctx.strokeStyle = '#c9a86a'; ctx.lineWidth = 3; ctx.setLineDash([7, 5]); ctx.lineJoin = 'round'; ctx.stroke(); ctx.setLineDash([]); }
   // rocks (faint)
   ctx.fillStyle = '#33425a'; for (const o of (zone.rocks || [])) { ctx.beginPath(); ctx.arc(px(o.x), pz(o.z), Math.max(2, o.r * s * 0.5), 0, 7); ctx.fill(); }
   // fishing spots (cyan ripple), campfires (orange), chests (gold) — the

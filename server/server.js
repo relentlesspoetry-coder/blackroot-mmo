@@ -93,6 +93,75 @@ function scaleZone(zone, k) {
 scaleZone(darkwoods, 1.7); // "double the size" — a much roomier Dark Woods
 
 // ---------------------------------------------------------------------------
+// Seamless world: fuse the outdoor zones into ONE continuous map, so there are
+// no loading screens or transitions between them — you see across the border
+// and walk straight through. Each source zone still generates its own trees and
+// scatter in its own space first (so worldgen keeps avoiding that zone's single
+// path and river), then a neighbour is offset into place and everything is
+// concatenated into one zone. The enclosed Hidden Cave stays a separate area for
+// now (a dark interior does not belong in the open-sky world) and is reached
+// through its cave-mouth portal.
+// ---------------------------------------------------------------------------
+function offsetZone(zone, dx, dz) {
+  const sp = (o) => { if (!o) return; if (o.x != null) o.x += dx; if (o.z != null) o.z += dz; };
+  const b = zone.bounds; if (b) { b.minX += dx; b.maxX += dx; b.minZ += dz; b.maxZ += dz; }
+  (zone.boundary || []).forEach(sp);
+  if (zone.spawn) { zone.spawn.x += dx; zone.spawn.z += dz; }
+  (zone.pois || []).forEach(sp);
+  (zone.npcs || []).forEach(sp);
+  (zone.path || []).forEach(sp);
+  if (zone.river) { (zone.river.points || []).forEach(sp); if (zone.river.bridge) { zone.river.bridge.x += dx; zone.river.bridge.z += dz; } }
+  (zone.rocks || []).forEach(sp);
+  (zone.pools || []).forEach(sp);
+  (zone.chests || []).forEach(sp);
+  (zone.fishingSpots || []).forEach(sp);
+  (zone.campfires || []).forEach(sp);
+  (zone.hazards || []).forEach(sp);
+  (zone.spawns || []).forEach(s => { s.cx += dx; s.cz += dz; });
+  (zone.elites || []).forEach(e => { e.cx += dx; e.cz += dz; });
+  zone._cen = null;
+}
+
+function buildSeamlessWorld() {
+  // Place the Killing Fields directly south of the Dark Woods so their edges meet.
+  offsetZone(killingfields, 0, 340);
+  // Generate each zone's forest/scatter in its own coordinate space up front, so
+  // worldgen still avoids that zone's single path & river before we fuse them.
+  for (const z of [darkwoods, killingfields]) {
+    z._trees = generateTrees(z);
+    z._scatter = generateScatter(z);
+  }
+  const w = darkwoods, kf = killingfields;
+  const cat = (k) => { w[k] = (w[k] || []).concat(kf[k] || []); };
+  ['pois', 'npcs', 'rocks', 'pools', 'chests', 'hazards', 'spawns', 'elites', '_trees', '_scatter'].forEach(cat);
+  // Multiple paths/rivers now — keep each so the client can draw them all.
+  w.paths = [w.path, kf.path].filter(Boolean);
+  w.rivers = [w.river, kf.river].filter(Boolean);
+  // Union bounds + one rectangular boundary wall around the whole world (no
+  // interior wall at the seam, so you walk straight from one zone to the next).
+  const b = w.bounds, kb = kf.bounds;
+  b.minX = Math.min(b.minX, kb.minX); b.maxX = Math.max(b.maxX, kb.maxX);
+  b.minZ = Math.min(b.minZ, kb.minZ); b.maxZ = Math.max(b.maxZ, kb.maxZ);
+  const ins = 3;
+  w.boundary = [
+    { x: b.minX + ins, z: b.minZ + ins }, { x: b.maxX - ins, z: b.minZ + ins },
+    { x: b.maxX - ins, z: b.maxZ - ins }, { x: b.minX + ins, z: b.maxZ - ins },
+  ];
+  w.models = [...new Set([...(w.models || []), ...(kf.models || [])])];
+  w.treeCount = (w.treeCount || 0) + (kf.treeCount || 0);
+  // The world is far bigger than either zone was, and now spans dense forest AND
+  // open fields — push the fog back so the open south isn't a grey wall while the
+  // forest still feels close. A blend of the two zones' original depths.
+  if (w.env) { w.env.fogNear = 55; w.env.fogFar = 340; }
+  w._cen = null;
+  // Killing Fields is now part of the Dark Woods world; drop it as a separate
+  // zone and remove the portal that used to jump between the two.
+  delete ZONES.killingfields;
+  w.portals = (w.portals || []).filter(p => p.to !== 'killingfields');
+}
+buildSeamlessWorld();
+
+// ---------------------------------------------------------------------------
 // Tuning
 // ---------------------------------------------------------------------------
 const TICK_HZ = 20;
@@ -368,8 +437,9 @@ function populate() {
     if (zone.cavern && !zone.boundary) {
       zone.boundary = caveOutline(zone.cavern, zone.bounds);
     }
-    zone._trees = generateTrees(zone);
-    zone._scatter = generateScatter(zone);
+    // The seamless world pre-generates these (per source zone) before the merge.
+    zone._trees = zone._trees || generateTrees(zone);
+    zone._scatter = zone._scatter || generateScatter(zone);
     buildFarm(zone);
     loadOverrides(zone); // player-built objects from the world editor
     zone._hanging = generateHanging(zone);
@@ -1339,6 +1409,7 @@ function zoneForClient(zone) {
   return {
     id: zone.id, name: zone.name, subtitle: zone.subtitle, spawn: zone.spawn,
     bounds: zone.bounds, boundary: zone.boundary, pois: zone.pois, path: zone.path, river: zone.river,
+    paths: zone.paths || (zone.path ? [zone.path] : []), rivers: zone.rivers || (zone.river ? [zone.river] : []),
     rocks: zone.rocks, hazards: zone.hazards, pools: zone.pools, chests: zone.chests,
     fishingSpots: zone.fishingSpots || [], campfires: zone.campfires || [],
     env: zone.env, enclosed: !!zone.enclosed, ceilingY: zone.ceilingY,
