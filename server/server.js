@@ -83,7 +83,7 @@ function scaleZone(zone, k) {
   if (zone.boundaryInset) zone.boundaryInset *= k;
   // Spread mobs out: regions grow with the zone (r*k) but counts grow only
   // linearly, so a bigger zone is LESS densely packed, not more.
-  (zone.spawns || []).forEach(s => { s.cx *= k; s.cz *= k; s.r *= k; s.count = Math.max(1, Math.round(s.count * k)); });
+  (zone.spawns || []).forEach(s => { s.cx *= k; s.cz *= k; s.r *= k; if (s.roam) s.roam *= k; if (!s.fixed) s.count = Math.max(1, Math.round(s.count * k)); }); // `fixed`: an authored camp size
   (zone.elites || []).forEach(e => { e.cx *= k; e.cz *= k; });
   (zone.scatter || []).forEach(s => { if (s.count && !s.fixed) s.count = Math.max(1, Math.round(s.count * A)); }); // `fixed`: an exact count, e.g. a small ore patch
   // Farm layout: scale positions only (prop SIZES stay native meter-scale).
@@ -153,6 +153,14 @@ function buildSeamlessWorld() {
   // Union bounds + one rectangular boundary wall around the whole world (no
   // interior wall at the seam, so you walk straight from one zone to the next).
   const b = w.bounds, kb = kf.bounds;
+  // Each original zone stays its own map page (the M map shows the region the
+  // player is standing in), so remember their own bounds and outlines before
+  // the union below erases them.
+  const rect = (bb) => [{ x: bb.minX, z: bb.minZ }, { x: bb.maxX, z: bb.minZ }, { x: bb.maxX, z: bb.maxZ }, { x: bb.minX, z: bb.maxZ }];
+  w.regions = [
+    { id: 'darkwoods', name: w.name, subtitle: w.subtitle, bounds: { ...b }, boundary: (w.boundary || rect(b)).map(p => ({ x: p.x, z: p.z })) },
+    { id: 'killingfields', name: kf.name, subtitle: kf.subtitle, bounds: { ...kb }, boundary: (kf.boundary || rect(kb)).map(p => ({ x: p.x, z: p.z })) },
+  ];
   b.minX = Math.min(b.minX, kb.minX); b.maxX = Math.max(b.maxX, kb.maxX);
   b.minZ = Math.min(b.minZ, kb.minZ); b.maxZ = Math.max(b.maxZ, kb.maxZ);
   const ins = 3;
@@ -237,6 +245,8 @@ function buildCaveIntoWorld() {
   b.minX = Math.min(b.minX, cb.minX - 4); b.maxX = Math.max(b.maxX, cb.maxX + 4);
   b.minZ = Math.min(b.minZ, cb.minZ - 4); b.maxZ = Math.max(b.maxZ, cb.maxZ + 4);
   for (const s of (cave.spawns || [])) w.spawns.push({ ...s, cave: true }); // cave-tagged mobs
+  w.regions.push({ id: 'hiddencave', name: cave.name, subtitle: cave.subtitle, underground: true,
+    bounds: { ...cb }, boundary: cave.boundary.map(p => ({ x: p.x, z: p.z })), pois: (cave.pois || []).map(p => ({ ...p })) });
   w.models = [...new Set([...(w.models || []), ...(cave.models || [])])];    // load cave props too
   delete ZONES.hiddencave;
   w.portals = (w.portals || []).filter(p => p.to !== 'hiddencave');
@@ -572,6 +582,7 @@ function makeMonster(spec) {
     id, kind: 'monster', zoneId: spec.zoneId, type: spec.type,
     name: spec.name || MONSTER_TEMPLATES[spec.type].name,
     elite: !!spec.elite, level: spec.level, cave: !!spec.cave,
+    roam: spec.roam, // wander leash (roamers around a camp get a wide one)
     y: spec.cave ? CAVE_FLOOR_Y : 0, // cave mobs stand on the chamber floor
     x: pos.x, z: pos.z, home: { x: pos.x, z: pos.z }, yaw: rand(0, Math.PI * 2),
     hp: stats.hp, maxHp: stats.hp, dmg: stats.dmg, speed: stats.speed,
@@ -594,7 +605,7 @@ function populate() {
     const zone = ZONES[zoneId];
     for (const s of (zone.spawns || [])) {
       for (let i = 0; i < s.count; i++) {
-        makeMonster({ zoneId, type: s.type, level: s.level, region: { cx: s.cx, cz: s.cz, r: s.r }, cave: s.cave });
+        makeMonster({ zoneId, type: s.type, level: s.level, region: { cx: s.cx, cz: s.cz, r: s.r }, cave: s.cave, roam: s.roam });
       }
     }
     for (const e of (zone.elites || [])) populateElite(zoneId, e);
@@ -1372,7 +1383,7 @@ function stepMonster(m) {
   if (m.state === 'wander') {
     m.x += m.wanderDir.x * m.speed * 0.4 * DT;
     m.z += m.wanderDir.z * m.speed * 0.4 * DT;
-    if (dist2(m.x, m.z, m.home.x, m.home.z) > 15 ** 2) m.state = 'return';
+    if (dist2(m.x, m.z, m.home.x, m.home.z) > (m.roam || 15) ** 2) m.state = 'return';
   }
   resolveCollision(zone, m, PLAYER_RADIUS);
 }
@@ -1647,6 +1658,7 @@ function zoneForClient(zone) {
     caves: (zone.caves || []).map(c => ({ boundary: c.boundary, rooms: c.rooms, tunnels: c.tunnels, floorY: c.floorY, ceilingY: c.ceilingY,
       scatter: c.scatter || [], hanging: c.hanging || [], env: c.env, entrance: c.entrance })),
     tunnel: zone.tunnel || null,
+    regions: zone.regions || null,
     env: zone.env, enclosed: !!zone.enclosed, ceilingY: zone.ceilingY,
     npcs: zone.npcs || [],
     trees: zone._trees || [],

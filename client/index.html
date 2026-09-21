@@ -1212,7 +1212,7 @@ function updateSky(dt) {
 // Apply per-zone lighting + fog, then (re)build the world. Used on first load
 // and on every zone transition.
 function loadZone(zdata) {
-  zone = zdata;
+  zone = zdata; lastRegionId = null;
   // Sit the camera behind the character's spawn facing. Without this it
   // defaulted to yaw 0 and every new player spawned staring at the north
   // boundary wall with the entire zone behind them.
@@ -6137,13 +6137,30 @@ const POI_STYLE = {
   cave: ['#b79cff', 'Cave'], merchant: ['#e0c060', 'Trader'], landmark: ['#b9c6d6', ''],
 };
 function toggleMap() { if (mapOpen) closeMap(); else openMap(); }
-function openMap() { if (!zone) return; mapOpen = true; mapWin.style.display = 'flex'; if (mapTitle) mapTitle.textContent = (zone.name || 'Zone').toUpperCase(); drawMap(); }
+// The world is seamless, but the map is per zone: whichever region (Dark
+// Woods, Killing Fields, the cave underneath) the player is standing in.
+function currentRegion() {
+  const regs = zone && zone.regions;
+  if (!regs || !regs.length) return null;
+  const me = entityMeshes.get(myId), mp = me ? me.mesh.position : null;
+  if (!mp) return regs[0];
+  if (mp.y < -6) return regs.find(r => r.underground) || regs[0];
+  return regs.find(r => !r.underground && mp.x >= r.bounds.minX && mp.x <= r.bounds.maxX && mp.z >= r.bounds.minZ && mp.z <= r.bounds.maxZ) || regs[0];
+}
+const inRegionXZ = (reg, x, z) => x >= reg.bounds.minX && x <= reg.bounds.maxX && z >= reg.bounds.minZ && z <= reg.bounds.maxZ;
+function openMap() { if (!zone) return; mapOpen = true; mapWin.style.display = 'flex'; const reg = currentRegion(); if (mapTitle) mapTitle.textContent = ((reg && reg.name) || zone.name || 'Zone').toUpperCase(); drawMap(); }
 function closeMap() { mapOpen = false; mapWin.style.display = 'none'; }
 function drawMap() {
   if (!mapOpen || !zone || !zone.bounds) return;
   const ctx = mapCanvas.getContext('2d');
   const W = mapCanvas.width, H = mapCanvas.height, pad = 56;
-  const b = zone.bounds;
+  const reg = currentRegion() || { bounds: zone.bounds, boundary: zone.boundary, name: zone.name };
+  if (mapTitle) mapTitle.textContent = (reg.name || zone.name || 'Zone').toUpperCase();
+  const b = reg.bounds;
+  const under = !!reg.underground;
+  // Only this region's contents: by footprint on the surface, and by depth for
+  // the cave (whose footprint overlaps the woods above it).
+  const inReg = (x, z, y) => inRegionXZ(reg, x, z) && (under ? (y == null || y < -6) : (y == null || y >= -6));
   const s = Math.min((W - 2 * pad) / (b.maxX - b.minX), (H - 2 * pad) / (b.maxZ - b.minZ));
   const offx = (W - (b.maxX - b.minX) * s) / 2, offz = (H - (b.maxZ - b.minZ) * s) / 2;
   const px = x => offx + (x - b.minX) * s;   // world +X -> right
@@ -6151,32 +6168,35 @@ function drawMap() {
   const line = (pts, close) => { ctx.beginPath(); pts.forEach((p, i) => { const X = px(p.x), Y = pz(p.z); i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); }); if (close) ctx.closePath(); };
 
   ctx.clearRect(0, 0, W, H);
-  const poly = zone.boundary;
+  const poly = reg.boundary || zone.boundary;
   if (poly) {
     line(poly, true); ctx.fillStyle = '#12233f'; ctx.fill();
     ctx.strokeStyle = '#3a5170'; ctx.lineWidth = 2; ctx.stroke();
     ctx.save(); line(poly, true); ctx.clip();
   }
   // river
-  for (const r of worldRivers()) { if (!r.points) continue; line(r.points); ctx.strokeStyle = '#2f6f9c'; ctx.lineWidth = Math.max(3, r.width * s * 0.6); ctx.lineJoin = ctx.lineCap = 'round'; ctx.stroke(); }
+  if (!under) for (const r of worldRivers()) { if (!r.points) continue; line(r.points); ctx.strokeStyle = '#2f6f9c'; ctx.lineWidth = Math.max(3, r.width * s * 0.6); ctx.lineJoin = ctx.lineCap = 'round'; ctx.stroke(); }
   // paths (dashed trails)
-  for (const pth of worldPaths()) { line(pth); ctx.strokeStyle = '#c9a86a'; ctx.lineWidth = 3; ctx.setLineDash([7, 5]); ctx.lineJoin = 'round'; ctx.stroke(); ctx.setLineDash([]); }
+  if (!under) for (const pth of worldPaths()) { line(pth); ctx.strokeStyle = '#c9a86a'; ctx.lineWidth = 3; ctx.setLineDash([7, 5]); ctx.lineJoin = 'round'; ctx.stroke(); ctx.setLineDash([]); }
   // rocks (faint)
-  ctx.fillStyle = '#33425a'; for (const o of (zone.rocks || [])) { ctx.beginPath(); ctx.arc(px(o.x), pz(o.z), Math.max(2, o.r * s * 0.5), 0, 7); ctx.fill(); }
+  ctx.fillStyle = '#33425a'; for (const o of (zone.rocks || [])) { if (!inReg(o.x, o.z)) continue; ctx.beginPath(); ctx.arc(px(o.x), pz(o.z), Math.max(2, o.r * s * 0.5), 0, 7); ctx.fill(); }
   // fishing spots (cyan ripple), campfires (orange), chests (gold) — the
   // resource/interaction markers the map used to leave off.
   for (const sp of (zone.fishingSpots || [])) {
+    if (!inReg(sp.x, sp.z)) continue;
     const X = px(sp.x), Y = pz(sp.z);
     ctx.strokeStyle = '#7fc9dd'; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.arc(X, Y, 5, 0, 7); ctx.stroke();
     ctx.beginPath(); ctx.arc(X, Y, 2.2, 0, 7); ctx.fillStyle = '#bfe4ef'; ctx.fill();
   }
   for (const cf of (zone.campfires || [])) {
+    if (!inReg(cf.x, cf.z)) continue;
     const X = px(cf.x), Y = pz(cf.z);
     ctx.fillStyle = '#ff8a3c'; ctx.beginPath(); ctx.arc(X, Y, 3.4, 0, 7); ctx.fill();
     ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1; ctx.stroke();
   }
   for (const ch of (zone.chests || [])) {
+    if (!inReg(ch.x, ch.z, ch.y)) continue;
     const X = px(ch.x), Y = pz(ch.z), r = 3.4;
     ctx.fillStyle = '#ffcf6a'; ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(X, Y - r); ctx.lineTo(X + r, Y); ctx.lineTo(X, Y + r); ctx.lineTo(X - r, Y); ctx.closePath();
@@ -6186,16 +6206,17 @@ function drawMap() {
   for (const [id, rec] of entityMeshes) {
     if (id === myId || !rec.mesh) continue;
     const mp = rec.mesh.position;
+    if (!inReg(mp.x, mp.z, mp.y)) continue;
     if (rec.kind === 'monster') { ctx.fillStyle = '#c0453a'; ctx.beginPath(); ctx.arc(px(mp.x), pz(mp.z), 2.2, 0, 7); ctx.fill(); }
     else if (rec.kind === 'player') { ctx.fillStyle = '#5aa0e0'; ctx.beginPath(); ctx.arc(px(mp.x), pz(mp.z), 3, 0, 7); ctx.fill(); }
   }
   if (poly) ctx.restore();
   // NPCs
-  for (const def of (zone.npcs || [])) { ctx.fillStyle = '#e0c060'; ctx.beginPath(); ctx.arc(px(def.x), pz(def.z), 3.5, 0, 7); ctx.fill(); }
+  for (const def of (zone.npcs || [])) { if (!inReg(def.x, def.z)) continue; ctx.fillStyle = '#e0c060'; ctx.beginPath(); ctx.arc(px(def.x), pz(def.z), 3.5, 0, 7); ctx.fill(); }
   // POIs + labels
   ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-  for (const p of (zone.pois || [])) {
-    if (p.hidden) continue;
+  for (const p of (under ? (reg.pois || []) : (zone.pois || []))) {
+    if (p.hidden || !inRegionXZ(reg, p.x, p.z)) continue;
     const st = POI_STYLE[p.kind] || POI_STYLE.landmark;
     const X = px(p.x), Y = pz(p.z);
     ctx.fillStyle = st[0]; ctx.beginPath(); ctx.arc(X, Y, 4.5, 0, 7); ctx.fill();
@@ -6252,6 +6273,7 @@ function animate() {
   _pf('poi', () => updatePoiLabels());
   _pf('plates', () => updateNameplates());
   _pf('npcmk', () => updateNpcMarkers());
+  _pf('region', () => updateRegionTitle());
   _pf('talk', () => updatePendingTalk());
   if (mapOpen) _pf('map', () => drawMap());
   // Flowing river: scroll the water texture along the current + gentle waves.
@@ -6305,9 +6327,17 @@ function startGame() {
   initThree();
 }
 
-function showZoneTitle() {
-  document.getElementById('ztSub').textContent = zone.subtitle || '';
-  document.getElementById('ztMain').textContent = zone.name || '';
+let lastRegionId = null;
+// Crossing into another region of the seamless world announces it like a zone.
+function updateRegionTitle() {
+  const reg = currentRegion(); if (!reg) return;
+  if (lastRegionId === null) { lastRegionId = reg.id; return; }
+  if (reg.id !== lastRegionId) { lastRegionId = reg.id; showZoneTitle(reg); }
+}
+function showZoneTitle(reg) {
+  const src = reg || zone;
+  document.getElementById('ztSub').textContent = src.subtitle || '';
+  document.getElementById('ztMain').textContent = src.name || '';
   const zt = document.getElementById('zonetitle');
   zt.classList.add('show');
   clearTimeout(showZoneTitle._t);

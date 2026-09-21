@@ -311,23 +311,31 @@ export const darkwoods = {
   // Counts are per-group before the zone scale; regions are wide so mobs are not
   // packed together. Each area is its own creature so groups don't stack.
   spawns: [
+    // Each hostile creature keeps to its own camp: a tight knot of them at
+    // the centre ("core", small r) and a few that roam the woods around it
+    // ("roamers": wider r and a larger wander leash). No two kinds share a camp.
     // --- The farmstead at the Entrance Clearing: livestock penned in the yard ---
     { type: 'chicken', count: 6, cx: 12,  cz: -72, r: 4, level: 1, expect: 1, hint: 'Chicken pen' },
     { type: 'cow',     count: 3, cx: -8,  cz: -71, r: 5, level: 1, expect: 1, hint: 'Cow pen' },
-    // --- Trail: lone goblins & scavengers, well spaced ---
-    { type: 'goblin',           count: 4, cx: -22, cz: -56, r: 20, level: 1, expect: 2, hint: "Old Hunter's Trail" },
-    { type: 'goblin_scavenger', count: 4, cx: 14,  cz: -40, r: 22, level: 2, expect: 2, hint: 'Trail scavengers' },
-    { type: 'goblin',           count: 3, cx: -38, cz: -18, r: 20, level: 2, expect: 3, hint: 'Blackroot Creek' },
-    // --- Bandits through the central woods ---
-    { type: 'bandit',  count: 4, cx: 50,  cz: -30, r: 22, level: 3, expect: 4, hint: 'Rotfen Thicket' },
-    { type: 'bandit',  count: 3, cx: 24,  cz: 18,  r: 24, level: 4, expect: 4, hint: 'Central Woods' },
-    // --- Ravine miners + a goblin camp out at the Wolf Den ---
-    { type: 'goblin_miner',   count: 3, cx: -34, cz: 42, r: 18, level: 4, expect: 5, hint: 'Ravine miners' },
-    { type: 'goblin_warrior', count: 4, cx: 62,  cz: 26, r: 20, level: 4, expect: 5, hint: 'Wolf Den camp' },
-    { type: 'goblin_archer',  count: 2, cx: 72,  cz: 36, r: 14, level: 5, expect: 5, hint: 'Wolf Den camp' },
-    // --- Guards toward the south gate ---
-    { type: 'guard',   count: 2, cx: -32, cz: 46,  r: 18, level: 5, expect: 6, hint: 'Root-Choked Ravine' },
-    { type: 'guard',   count: 2, cx: 10,  cz: 82,  r: 22, level: 6, expect: 7, hint: 'South Gate approach' },
+    // --- Goblin camp on Blackroot Creek, downhill from the Old Hunter's Trail ---
+    { type: 'goblin',  count: 4, cx: -40, cz: -22, r: 5,  level: 1, expect: 2, fixed: true, hint: 'Goblin camp (core)' },
+    { type: 'goblin',  count: 4, cx: -40, cz: -22, r: 22, level: 2, expect: 2, roam: 26, fixed: true, hint: 'Goblin camp (roamers)' },
+    // --- Scavengers picking over Rotfen Thicket ---
+    { type: 'goblin_scavenger', count: 3, cx: 48, cz: -30, r: 5,  level: 2, expect: 2, fixed: true, hint: 'Scavenger camp (core)' },
+    { type: 'goblin_scavenger', count: 3, cx: 48, cz: -30, r: 20, level: 2, expect: 3, roam: 24, fixed: true, hint: 'Scavenger camp (roamers)' },
+    // --- Bandit hideout in the central woods between the shrine and the thicket ---
+    { type: 'bandit',  count: 4, cx: 30,  cz: -4,  r: 6,  level: 3, expect: 4, fixed: true, hint: 'Bandit hideout (core)' },
+    { type: 'bandit',  count: 3, cx: 30,  cz: -4,  r: 20, level: 4, expect: 4, roam: 24, fixed: true, hint: 'Bandit hideout (roamers)' },
+    // --- Goblin miners have jumped Dorn's claim in the Root-Choked Ravine ---
+    { type: 'goblin_miner', count: 4, cx: -36, cz: 44, r: 6,  level: 4, expect: 5, fixed: true, hint: 'Ravine dig (core)' },
+    { type: 'goblin_miner', count: 2, cx: -36, cz: 44, r: 16, level: 4, expect: 5, roam: 20, fixed: true, hint: 'Ravine dig (roamers)' },
+    // --- The goblin war camp at the Wolf Den: warriors with archers behind them ---
+    { type: 'goblin_warrior', count: 4, cx: 62, cz: 28, r: 6,  level: 4, expect: 5, fixed: true, hint: 'Wolf Den camp (core)' },
+    { type: 'goblin_archer',  count: 3, cx: 66, cz: 32, r: 7,  level: 5, expect: 5, fixed: true, hint: 'Wolf Den camp (archers)' },
+    { type: 'goblin_warrior', count: 2, cx: 62, cz: 28, r: 18, level: 4, expect: 5, roam: 22, fixed: true, hint: 'Wolf Den camp (roamers)' },
+    // --- Hill ogres squatting on the South Gate approach ---
+    { type: 'guard',   count: 3, cx: 10,  cz: 80,  r: 8,  level: 6, expect: 7, fixed: true, hint: 'Ogre hollow (core)' },
+    { type: 'guard',   count: 1, cx: 10,  cz: 80,  r: 20, level: 5, expect: 6, roam: 24, fixed: true, hint: 'Ogre hollow (roamer)' },
   ],
 
   // A single low-level optional elite — the zone's capstone, nothing harder.
