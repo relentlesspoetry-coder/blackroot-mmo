@@ -82,6 +82,8 @@ function scaleZone(zone, k) {
     (zone.farm.fences || []).forEach(f => { f.x1 *= k; f.z1 *= k; f.x2 *= k; f.z2 *= k; });
     if (zone.farm.gate) { const g = zone.farm.gate; g.x *= k; g.z *= k; if (g.seg) { g.seg.x1 *= k; g.seg.z1 *= k; g.seg.x2 *= k; g.seg.z2 *= k; } }
     (zone.farm.props || []).forEach(sp);
+    (zone.farm.houses || []).forEach(h => { h.x *= k; h.z *= k; }); // sizes are metres: unscaled
+    if (zone.farm.field) { zone.farm.field.x *= k; zone.farm.field.z *= k; }
     // Keep-out box so the forest/scatter don't grow through the farmyard.
     let mnx = 1e9, mxx = -1e9, mnz = 1e9, mxz = -1e9;
     for (const f of (zone.farm.fences || [])) { mnx = Math.min(mnx, f.x1, f.x2); mxx = Math.max(mxx, f.x1, f.x2); mnz = Math.min(mnz, f.z1, f.z2); mxz = Math.max(mxz, f.z1, f.z2); }
@@ -420,6 +422,11 @@ function resolveCollision(zone, ent, radius) {
     const min = 0.5 + radius;
     if (d < min) { if (d < 1e-4) { ox = 1; oz = 0; d = 1; } ent.x = cx + (ox / d) * min; ent.z = cz + (oz / d) * min; }
   }
+  // Furniture and other round solids (house interiors).
+  for (const o of (zone._solids || [])) {
+    const dx = ent.x - o.x, dz = ent.z - o.z, d = Math.hypot(dx, dz), min = o.r + radius;
+    if (d < min && d > 1e-4) { ent.x = o.x + (dx / d) * min; ent.z = o.z + (dz / d) * min; }
+  }
   // The gate leaf blocks its gap while shut (t small); once it has swung open
   // the gap is passable.
   const G = zone._gate;
@@ -525,7 +532,7 @@ function spawnInRegion(zone, region, opts = {}) {
     if (x < b.minX + 3 || x > b.maxX - 3 || z < b.minZ + 3 || z > b.maxZ - 3) continue;
     if (cave) { if (!caveShapeContains(cave, x, z)) continue; return { x, z }; } // underground: rooms/tunnels only
     if (zone.boundary && !pointInPoly(x, z, zone.boundary)) continue;
-    if (inSafeZone(zone, x, z)) continue;
+    if (!opts.passive && inSafeZone(zone, x, z)) continue;   // pens sit inside the safe village
     if (keepOut && dist2(x, z, zone.spawn.x, zone.spawn.z) < keepOut * keepOut) continue;
     if ((zone.rocks || []).some(o => dist2(x, z, o.x, o.z) < (o.r + 2) ** 2)) continue;
     if (zone.river && closestOnPolyline(x, z, zone.river.points).dist < zone.river.width / 2 + RIVER_BANK + 1) continue;
@@ -625,7 +632,27 @@ function buildFarm(zone) {
   // open/shut state and toggles the gap collision with it.
   if (F.gate) zone._gate = { cx: F.gate.x, cz: F.gate.z, seg: F.gate.seg || null, t: 0, target: 0, dir: 1 };
   for (const p of (F.props || [])) scat.push({ i: scat.length, m: p.m, x: p.x, z: p.z, s: p.s || 1, r: p.yaw || 0, c: p.c || 0 });
+  // Enterable houses: each wall is a solid segment; the door side is split in
+  // two around a DOOR_W gap so you can walk in. Furniture is a round solid.
+  zone._solids = zone._solids || [];
+  for (const h of (F.houses || [])) {
+    const hw = h.w / 2, hd = h.d / 2, x0 = h.x - hw, x1 = h.x + hw, z0 = h.z - hd, z1 = h.z + hd, g = DOOR_W / 2;
+    const side = (name, ax, az, bx, bz) => {
+      if (h.door !== name) { zone._fenceSegs.push({ x1: ax, z1: az, x2: bx, z2: bz }); return; }
+      const mx = (ax + bx) / 2, mz = (az + bz) / 2, ux = Math.sign(bx - ax), uz = Math.sign(bz - az);
+      zone._fenceSegs.push({ x1: ax, z1: az, x2: mx - ux * g, z2: mz - uz * g });
+      zone._fenceSegs.push({ x1: mx + ux * g, z1: mz + uz * g, x2: bx, z2: bz });
+    };
+    side('north', x0, z0, x1, z0); side('south', x0, z1, x1, z1);
+    side('west', x0, z0, x0, z1);  side('east', x1, z0, x1, z1);
+    for (const f of (h.furn || [])) {
+      const r = FURN_R[f.k]; if (!r) continue;
+      zone._solids.push({ x: h.x + f.dx, z: h.z + f.dz, r });
+    }
+  }
 }
+const DOOR_W = 2.6;                       // doorway width (metres)
+const FURN_R = { bed: 1.1, table: 0.9, chest: 0.6, hearth: 1.0, shelf: 0.5, stool: 0.3 };
 
 // The gate only opens/shuts when a player clicks it (see toggleGate); here we
 // just ease the leaf toward its target each tick.
@@ -1570,6 +1597,8 @@ function zoneForClient(zone) {
     hanging: zone._hanging || [],
     models: zone.models || [],
     farmBox: zone._farmBox || null,
+    houses: (zone.farm && zone.farm.houses) || [],
+    field: (zone.farm && zone.farm.field) || null,
     gate: zone.farm && zone.farm.gate ? { x: zone.farm.gate.x, z: zone.farm.gate.z, yaw: zone.farm.gate.yaw || 0, s: zone.farm.gate.s || 1 } : null,
     editObjects: zone._editObjects || [],
     editSpawns: zone._editSpawns || [],

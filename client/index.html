@@ -1382,6 +1382,10 @@ function buildZone() {
   // The farm gate — a standalone model that swings open/shut (server-driven).
   buildFarmGate();
 
+  // Hearthstead village: enterable houses and the crop field.
+  buildHouses();
+  buildField();
+
   // World-editor objects (player-built props), as individual meshes.
   buildEditObjects();
   buildEditSpawns();
@@ -1619,7 +1623,10 @@ function buildGrass() {
   const mat = new THREE.MeshStandardMaterial({
     side: THREE.DoubleSide, vertexColors: true, roughness: 1,
   });
+  const inHouse = (x, z) => (zone.houses || []).some(h => Math.abs(x - h.x) < h.w / 2 + 0.6 && Math.abs(z - h.z) < h.d / 2 + 0.6);
+  const inField = (x, z) => zone.field && Math.abs(x - zone.field.x) < zone.field.w / 2 && Math.abs(z - zone.field.z) < zone.field.d / 2;
   const ok = (x, z) => (!zone.boundary || inBoundary(x, z)) &&
+    !inHouse(x, z) && !inField(x, z) &&
     worldRivers().every(r => distToPolyline(x, z, r.points) >= riverWaterHalf(r.width) + RIVER_LIP) &&
     !zone.rocks.some(o => Math.hypot(x - o.x, z - o.z) < o.r);
   const onPathSkip = (x, z) => worldPaths().some(p => distToPolyline(x, z, p) < 2.2) && rng() > 0.12;
@@ -2499,6 +2506,151 @@ function buildTunnel(t) {
 // ---- The farm gate: a standalone model whose hinge swings open/shut. The
 // server owns the open amount (0 shut .. 1 open) and streams it as `gateTarget`;
 // the client eases the hinge toward it each frame. ----
+
+// ---- Hearthstead: enterable houses + the crop field (procedural — the asset
+// pack has no buildings). Walls are solid on the server; the gable roof hides
+// itself while you're inside so the third-person camera can look in. ----
+const houseRoofs = []; // { h, roof }
+function buildHouses() {
+  houseRoofs.length = 0;
+  const flat = (color, extra) => new THREE.MeshStandardMaterial(Object.assign({ color, roughness: 0.95, flatShading: true }, extra || {}));
+  const box = (w, h, d, mat) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.castShadow = m.receiveShadow = true; return m; };
+  const DOOR_W = 2.6, T = 0.35;
+  for (const h of (zone.houses || [])) {
+    const g = new THREE.Group(); g.position.set(h.x, 0, h.z);
+    const hw = h.w / 2, hd = h.d / 2, H = h.h;
+    const wallMat = flat(h.wall || 0xd9cfb6), beamMat = flat(0x4a3424), roofMat = flat(h.roof || 0x8a5a3a), floorMat = flat(0x8b6a45);
+    // Floor
+    const fl = box(h.w, 0.14, h.d, floorMat); fl.position.y = 0.07; fl.userData.isGround = true; g.add(fl);
+    // Walls (door side split around the doorway, with a lintel over it)
+    const wall = (name, cx, cz, len, alongX) => {
+      const size = alongX ? [len, H, T] : [T, H, len];
+      if (h.door !== name) { const m = box(size[0], size[1], size[2], wallMat); m.position.set(cx, H / 2, cz); m.userData.camBlocker = true; camBlockers.push(m); g.add(m); return; }
+      const seg = (len - DOOR_W) / 2, off = DOOR_W / 2 + seg / 2;
+      for (const sgn of [-1, 1]) {
+        const m = alongX ? box(seg, H, T, wallMat) : box(T, H, seg, wallMat);
+        m.position.set(alongX ? cx + sgn * off : cx, H / 2, alongX ? cz : cz + sgn * off);
+        m.userData.camBlocker = true; camBlockers.push(m); g.add(m);
+      }
+      const lintel = alongX ? box(DOOR_W + 0.4, 0.8, T + 0.1, wallMat) : box(T + 0.1, 0.8, DOOR_W + 0.4, wallMat);
+      lintel.position.set(cx, H - 0.4, cz); g.add(lintel);
+      for (const sgn of [-1, 1]) { // door posts
+        const post = alongX ? box(0.22, H - 0.8, T + 0.2, beamMat) : box(T + 0.2, H - 0.8, 0.22, beamMat);
+        post.position.set(alongX ? cx + sgn * (DOOR_W / 2 + 0.11) : cx, (H - 0.8) / 2, alongX ? cz : cz + sgn * (DOOR_W / 2 + 0.11)); g.add(post);
+      }
+    };
+    wall('north', 0, -hd, h.w + T, true); wall('south', 0, hd, h.w + T, true);
+    wall('west', -hw, 0, h.d + T, false); wall('east', hw, 0, h.d + T, false);
+    // Corner posts + a top plate: timber-frame look.
+    for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) { const post = box(0.36, H + 0.1, 0.36, beamMat); post.position.set(sx * hw, H / 2, sz * hd); g.add(post); }
+    for (const [cx, cz, w, d] of [[0, -hd, h.w + 0.5, 0.45], [0, hd, h.w + 0.5, 0.45], [-hw, 0, 0.45, h.d + 0.5], [hw, 0, 0.45, h.d + 0.5]]) { const plate = box(w, 0.28, d, beamMat); plate.position.set(cx, H + 0.05, cz); g.add(plate); }
+    // Windows (dark panes) on the walls that aren't the door.
+    const paneMat = flat(0x1e2a36, { emissive: 0x334a5c, emissiveIntensity: 0.35 });
+    for (const name of ['north', 'south', 'west', 'east']) {
+      if (name === h.door) continue;
+      const alongX = name === 'north' || name === 'south', sgn = (name === 'north' || name === 'west') ? -1 : 1;
+      const pane = alongX ? box(1.1, 1.0, 0.12, paneMat) : box(0.12, 1.0, 1.1, paneMat);
+      pane.position.set(alongX ? 0 : sgn * (hw + 0.1), H * 0.55, alongX ? sgn * (hd + 0.1) : 0); g.add(pane);
+    }
+    // Gable roof: ridge along the longer axis; two slopes + gable-end triangles.
+    const roof = new THREE.Group();
+    const alongX = h.w >= h.d, span = alongX ? h.d : h.w, run = alongX ? h.w : h.d;
+    const over = 0.8, rise = span * 0.42, half = span / 2 + over, slen = Math.hypot(half, rise), ang = Math.atan2(rise, half);
+    for (const sgn of [-1, 1]) {
+      // Each slope runs from the eave (y=H, at ±half from the ridge line) up to
+      // the ridge; tilted so its outer edge is the low one.
+      if (alongX) {
+        const sl = box(run + over * 2, 0.2, slen, roofMat);
+        sl.position.set(0, H + rise / 2 + 0.1, sgn * half / 2); sl.rotation.x = sgn * ang; roof.add(sl);
+      } else {
+        const sl = box(slen, 0.2, run + over * 2, roofMat);
+        sl.position.set(sgn * half / 2, H + rise / 2 + 0.1, 0); sl.rotation.z = -sgn * ang; roof.add(sl);
+      }
+    }
+    const tri = new THREE.Shape(); tri.moveTo(-span / 2, 0); tri.lineTo(span / 2, 0); tri.lineTo(0, rise); tri.closePath();
+    for (const sgn of [-1, 1]) {
+      const gable = new THREE.Mesh(new THREE.ShapeGeometry(tri), flat(h.wall || 0xd9cfb6, { side: THREE.DoubleSide }));
+      gable.position.set(alongX ? sgn * run / 2 : 0, H, alongX ? 0 : sgn * run / 2);
+      gable.rotation.y = alongX ? Math.PI / 2 : 0; roof.add(gable);
+    }
+    const chimney = box(0.9, rise + 1.4, 0.9, flat(0x6b6b70)); chimney.position.set(alongX ? run * 0.3 : -span * 0.2, H + rise * 0.5 + 0.7, alongX ? -span * 0.2 : run * 0.3); roof.add(chimney);
+    g.add(roof); houseRoofs.push({ h, roof });
+    // Furniture
+    for (const f of (h.furn || [])) {
+      const fg = new THREE.Group(); fg.position.set(f.dx, 0, f.dz); fg.rotation.y = f.yaw || 0;
+      switch (f.k) {
+        case 'bed': {
+          const frame = box(2.3, 0.45, 1.5, beamMat); frame.position.y = 0.3; fg.add(frame);
+          const mat = box(2.1, 0.28, 1.34, flat(0xe8dcc4)); mat.position.y = 0.62; fg.add(mat);
+          const pillow = box(0.5, 0.2, 1.0, flat(0xf4efe4)); pillow.position.set(-0.75, 0.86, 0); fg.add(pillow);
+          const blanket = box(1.35, 0.12, 1.36, flat(0x8a3a3a)); blanket.position.set(0.32, 0.82, 0); fg.add(blanket);
+          for (const [bx, bz] of [[-1.05, -0.65], [1.05, -0.65], [-1.05, 0.65], [1.05, 0.65]]) { const leg = box(0.16, 0.5, 0.16, beamMat); leg.position.set(bx, 0.25, bz); fg.add(leg); }
+          const head = box(0.14, 1.2, 1.5, beamMat); head.position.set(-1.12, 0.6, 0); fg.add(head);
+          break;
+        }
+        case 'table': {
+          const top = box(1.8, 0.12, 1.0, floorMat); top.position.y = 0.86; fg.add(top);
+          for (const [bx, bz] of [[-0.78, -0.4], [0.78, -0.4], [-0.78, 0.4], [0.78, 0.4]]) { const leg = box(0.12, 0.82, 0.12, beamMat); leg.position.set(bx, 0.41, bz); fg.add(leg); }
+          const mug = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.18, 8), flat(0x9a5a3a)); mug.position.set(0.3, 1.0, 0.2); fg.add(mug);
+          break;
+        }
+        case 'stool': { const st = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.26, 0.5, 8), floorMat); st.position.y = 0.25; st.castShadow = true; fg.add(st); break; }
+        case 'chest': {
+          const c = box(1.2, 0.7, 0.72, beamMat); c.position.y = 0.35; fg.add(c);
+          const lid = box(1.22, 0.16, 0.74, flat(0x6a4a2c)); lid.position.y = 0.78; fg.add(lid);
+          const clasp = box(0.16, 0.2, 0.06, flat(0xd8b24a)); clasp.position.set(0, 0.6, 0.38); fg.add(clasp);
+          break;
+        }
+        case 'hearth': {
+          const stone = flat(0x6e6b66);
+          const back = box(1.8, 1.9, 0.5, stone); back.position.set(0, 0.95, -0.25); fg.add(back);
+          for (const sgn of [-1, 1]) { const side = box(0.4, 1.3, 0.9, stone); side.position.set(sgn * 0.7, 0.65, 0.2); fg.add(side); }
+          const mantle = box(1.9, 0.18, 1.0, beamMat); mantle.position.set(0, 1.4, 0.15); fg.add(mantle);
+          const fire = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.7, 8), flat(0xff8a3c, { emissive: 0xff5a1c, emissiveIntensity: 1.5 })); fire.position.set(0, 0.42, 0.2); fg.add(fire);
+          fg.userData.flame = fire;
+          const light = new THREE.PointLight(0xff9a50, 1.3, 12); light.position.set(0, 0.9, 0.8); fg.add(light);
+          break;
+        }
+        case 'shelf': {
+          const back = box(2.0, 1.7, 0.1, beamMat); back.position.set(0, 0.95, -0.14); fg.add(back);
+          for (let i = 0; i < 3; i++) { const b = box(2.0, 0.08, 0.36, floorMat); b.position.set(0, 0.4 + i * 0.55, 0); fg.add(b); }
+          for (let i = 0; i < 5; i++) { const jar = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.22, 8), flat([0x7a5a3a, 0x5a7a4a, 0x8a6a4a, 0x6a5a7a, 0x9a7a3a][i])); jar.position.set(-0.7 + i * 0.35, 0.55 + (i % 3) * 0.55, 0.05); fg.add(jar); }
+          break;
+        }
+      }
+      g.add(fg);
+    }
+    // A warm lamp inside so the room reads with the roof hidden.
+    const lamp = new THREE.PointLight(0xffd9a0, 1.1, Math.max(h.w, h.d) * 1.2); lamp.position.set(0, H - 0.5, 0); g.add(lamp);
+    scene.add(g);
+  }
+}
+// Roofs pop off while the player is inside (or in the doorway) so the camera can see in.
+function updateHouseRoofs() {
+  const me = entityMeshes.get(myId); if (!me) return;
+  const px = me.mesh.position.x, pz = me.mesh.position.z;
+  for (const { h, roof } of houseRoofs) {
+    const inside = Math.abs(px - h.x) < h.w / 2 + 1.2 && Math.abs(pz - h.z) < h.d / 2 + 1.2;
+    roof.visible = !inside;
+  }
+}
+// Tilled field: dark soil with ridged rows and instanced crop plants.
+function buildField() {
+  const f = zone.field; if (!f) return;
+  const soil = new THREE.Mesh(new THREE.PlaneGeometry(f.w, f.d), new THREE.MeshStandardMaterial({ map: loadTexture('dirt', f.w / 4, f.d / 4), color: 0x5a4030, roughness: 1 }));
+  soil.rotation.x = -Math.PI / 2; soil.position.set(f.x, 0.04, f.z); soil.receiveShadow = true; scene.add(soil);
+  const ridgeMat = new THREE.MeshStandardMaterial({ color: 0x6b4a32, roughness: 1, flatShading: true });
+  const rows = Math.max(3, Math.floor(f.d / 2.4)), plants = [];
+  const crops = f.crops && f.crops.length ? f.crops : ['Strawberry_Patch'];
+  for (let i = 0; i < rows; i++) {
+    const z = f.z - f.d / 2 + (i + 0.5) * (f.d / rows);
+    const ridge = new THREE.Mesh(new THREE.BoxGeometry(f.w - 1.2, 0.3, 1.1), ridgeMat); ridge.position.set(f.x, 0.15, z); ridge.receiveShadow = true; scene.add(ridge);
+    const m = crops[i % crops.length], n = Math.floor((f.w - 2) / 1.5);
+    for (let j = 0; j < n; j++) plants.push({ m, x: f.x - f.w / 2 + 1.5 + j * 1.5, z, r: Math.random() * 6.28, s: 0.7 + Math.random() * 0.35 });
+  }
+  placeInstances(plants, () => 0.28);
+}
+
 let farmGate = null;       // { mesh, hinge }
 let gateTarget = 0, gateOpen = 0; // signed: magnitude 0..1, sign = swing direction
 const GATE_MAX_SWING = 1.85; // radians the leaf rotates at full open (sign from gateTarget)
@@ -5501,6 +5653,7 @@ function animate() {
   updateControls(dt);
   updateMarkers(dt);
   updateFarmGate(dt);
+  updateHouseRoofs();
   updatePoiLabels();
   updateNameplates();
   updateNpcMarkers();

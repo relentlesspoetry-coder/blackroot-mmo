@@ -65,7 +65,7 @@ export const darkwoods = {
   // stopped right at the rock by the boundary itself — no inset gap needed.
   boundaryInset: 0,
 
-  spawn: { x: 5, z: -92, yaw: 0 }, // Entrance Clearing, facing south
+  spawn: { x: -29, z: -85, yaw: 1.2 }, // beside the bed, inside the Hearthstead farmhouse (see farm.houses)
 
   // Rendering atmosphere — bright, readable, Old School RuneScape style.
   // Deeper woods: pull the clear-weather fog in so distant trees fade into a
@@ -89,7 +89,7 @@ export const darkwoods = {
   //   gate     — zone exit
   // ------------------------------------------------------------------
   pois: [
-    { key: 'entrance',   name: 'Entrance Clearing',    x: 5,   z: -92, kind: 'safe', r: 10 },
+    { key: 'entrance',   name: 'Hearthstead Farm',     x: -4,  z: -78, kind: 'safe', r: 24 },
     { key: 'hunter',     name: "Old Hunter's Trail",   x: -26, z: -62, kind: 'landmark' },
     { key: 'watchtower', name: 'Fallen Watchtower',    x: 50,  z: -72, kind: 'landmark', optional: true },
     { key: 'creek',      name: 'Blackroot Creek',      x: -40, z: -22, kind: 'landmark' },
@@ -107,12 +107,12 @@ export const darkwoods = {
   // NPCs. `id` matches a quest's `giver`; the client builds a figure here and
   // floats a ! / ? marker over it when that giver has something for you.
   npcs: [
-    { id: 'alric',    name: 'Warden Alric',        x: 11,   z: -88, poi: 'entrance', model: 'Male',
+    { id: 'alric',    name: 'Warden Alric',        x: -12,  z: -66, poi: 'entrance', model: 'Male', yaw: 3.1,
       idle: 'Keep to the path, and keep your blade where you can reach it.' },
     // Farmstead folk at the Entrance Clearing.
-    { id: 'maggie',   name: 'Old Maggie',          x: 6,    z: -82, poi: 'entrance', model: 'Female', yaw: 2.4,
+    { id: 'maggie',   name: 'Old Maggie',          x: 18,   z: -79, poi: 'entrance', model: 'Female', yaw: 3.0,
       idle: 'Mind the hens, love — and shut the gate on your way out.' },
-    { id: 'bram',     name: 'Farmhand Bram',       x: -6,   z: -87, poi: 'entrance', model: 'Male', yaw: 0.6,
+    { id: 'bram',     name: 'Farmhand Bram',       x: -19,  z: -77, poi: 'entrance', model: 'Male', yaw: 1.4,
       idle: 'Cows need feedin’, fences need mendin’. No rest out here.' },
     { id: 'sela',     name: 'Ranger Sela',         x: 48,   z: -70, poi: 'watchtower', model: 'Female', yaw: 2.2,
       idle: 'From the old tower you can see their fires. The Wolf Den grows bolder every night.' },
@@ -129,7 +129,7 @@ export const darkwoods = {
   // Primary progression path (winding). Rendered as a dirt trail; also used to
   // keep the forest clear along the route.
   path: [
-    { x: 5, z: -92 }, { x: -6, z: -76 }, { x: -22, z: -62 }, { x: -30, z: -42 },
+    { x: 3, z: -84 }, { x: 3, z: -66 }, { x: -8, z: -63 }, { x: -18, z: -54 }, { x: -30, z: -42 },
     { x: -34, z: -24 }, { x: -20, z: -8 }, { x: 6, z: 2 }, { x: 6, z: 22 },
     // A straight run through the Mossy Bridge crossing so the deck lines up.
     { x: -2, z: 30 }, { x: -8, z: 35 }, { x: -14, z: 40 },
@@ -303,8 +303,8 @@ export const darkwoods = {
   // packed together. Each area is its own creature so groups don't stack.
   spawns: [
     // --- The farmstead at the Entrance Clearing: livestock penned in the yard ---
-    { type: 'chicken', count: 6, cx: 13,  cz: -85, r: 8, level: 1, expect: 1, hint: 'Farm chicken run' },
-    { type: 'cow',     count: 3, cx: -4,  cz: -84, r: 6, level: 1, expect: 1, hint: 'Farm paddock' },
+    { type: 'chicken', count: 6, cx: 13,  cz: -74, r: 5, level: 1, expect: 1, hint: 'Chicken pen' },
+    { type: 'cow',     count: 3, cx: -8,  cz: -73, r: 5, level: 1, expect: 1, hint: 'Cow pen' },
     // --- Wild rabbits: small game scattered through the open woods ---
     { type: 'rabbit',  count: 5, cx: -18, cz: -40, r: 30, level: 1, expect: 1, hint: 'Woodland rabbits' },
     { type: 'rabbit',  count: 5, cx: 20,  cz: 10,  r: 32, level: 1, expect: 1, hint: 'Woodland rabbits' },
@@ -336,36 +336,71 @@ export const darkwoods = {
   //   gate:   the swing-gate prop that sits in that gap (walkable)
   //   props:  m=model, yaw, s=scale, c=collision radius (0 = pure decor)
   farm: {
+    // Hearthstead: a fenced farm village at the Entrance Clearing. The player
+    // wakes up in the farmhouse. Positions are zone units (scaled ×1.7 at load);
+    // house sizes / furniture offsets are world metres and are NOT scaled.
     fences: [
-      { x1: -16, z1: -94, x2: 24,   z2: -94 },  // north
-      { x1: 24,  z1: -94, x2: 24,   z2: -74 },  // east
-      { x1: -16, z1: -94, x2: -16,  z2: -74 },  // west
-      { x1: -16, z1: -74, x2: -8.7, z2: -74 },  // south-west (up to the gate)
-      { x1: -7.3, z1: -74, x2: 24,  z2: -74 },  // south-east (from the gate)
+      // Village perimeter (north edge is tucked inside the mountain boundary).
+      { x1: -34, z1: -92, x2: 30,  z2: -92 },   // north
+      { x1: 30,  z1: -92, x2: 30,  z2: -62 },   // east
+      { x1: -42, z1: -86, x2: -34, z2: -92 },   // north-west corner
+      { x1: -42, z1: -86, x2: -42, z2: -62 },   // west
+      { x1: -42, z1: -62, x2: -8.7, z2: -62 },  // south-west (up to the gate)
+      { x1: -7.3, z1: -62, x2: 30,  z2: -62 },  // south-east (from the gate)
+      // Cow pen (west of the yard) — opening on its north side.
+      { x1: -16, z1: -80, x2: -10, z2: -80 }, { x1: -6, z1: -80, x2: 0, z2: -80 },
+      { x1: -16, z1: -80, x2: -16, z2: -66 }, { x1: 0, z1: -80, x2: 0, z2: -66 },
+      { x1: -16, z1: -66, x2: 0,   z2: -66 },
+      // Chicken pen (east of the yard) — opening on its west side.
+      { x1: 6,  z1: -80, x2: 20, z2: -80 }, { x1: 6, z1: -68, x2: 20, z2: -68 },
+      { x1: 20, z1: -80, x2: 20, z2: -68 },
+      { x1: 6,  z1: -80, x2: 6,  z2: -76 }, { x1: 6, z1: -72, x2: 6, z2: -68 },
     ],
-    gate: { x: -8, z: -74, yaw: 0, s: 0.9, seg: { x1: -8.7, z1: -74, x2: -7.3, z2: -74 } },
+    gate: { x: -8, z: -62, yaw: 0, s: 0.9, seg: { x1: -8.7, z1: -62, x2: -7.3, z2: -62 } },
+    // Enterable houses: axis-aligned, `door` is the side the doorway is on.
+    // Furniture offsets (dx,dz) are metres from the house centre.
+    houses: [
+      { key: 'farmhouse', name: 'Farmhouse', x: -26, z: -84, w: 16, d: 12, h: 3.4, door: 'south', roof: 0x8a5a3a, wall: 0xd9cfb6,
+        furn: [
+          { k: 'bed',       dx: -5.2, dz: -3.6, yaw: 0 },     // the player's bed (west room)
+          { k: 'chest',     dx: -6.8, dz: -0.2, yaw: 1.57 },
+          { k: 'table',     dx: 3.2,  dz: -1.6, yaw: 0 },
+          { k: 'stool',     dx: 3.2,  dz: 0.6,  yaw: 0 }, { k: 'stool', dx: 5.0, dz: -1.6, yaw: 0 },
+          { k: 'hearth',    dx: 6.6,  dz: -4.4, yaw: 0 },
+          { k: 'shelf',     dx: -1.0, dz: -5.0, yaw: 0 },
+        ] },
+      { key: 'maggie',    name: "Maggie's Cottage", x: 18, z: -86, w: 12, d: 10, h: 3.2, door: 'south', roof: 0x6f5a48, wall: 0xcdc3a8,
+        furn: [ { k: 'bed', dx: -3.4, dz: -3.0, yaw: 0 }, { k: 'table', dx: 2.6, dz: -0.6, yaw: 0 }, { k: 'stool', dx: 2.6, dz: 1.4, yaw: 0 }, { k: 'hearth', dx: 4.6, dz: -3.6, yaw: 0 } ] },
+      { key: 'bram',      name: "Bram's Cottage",   x: -2, z: -86, w: 11, d: 9,  h: 3.1, door: 'south', roof: 0x7a6248, wall: 0xd2c8ae,
+        furn: [ { k: 'bed', dx: 3.0, dz: -2.6, yaw: 0 }, { k: 'chest', dx: -3.8, dz: -2.8, yaw: 0 }, { k: 'table', dx: -2.4, dz: 0.8, yaw: 0 }, { k: 'stool', dx: -0.6, dz: 0.8, yaw: 0 } ] },
+      { key: 'guardhut',  name: "Warden's Hut",     x: 24, z: -68, w: 9,  d: 8,  h: 3.0, door: 'west',  roof: 0x5a5148, wall: 0xc9c2ae,
+        furn: [ { k: 'bed', dx: 2.4, dz: -2.0, yaw: 0 }, { k: 'table', dx: -1.6, dz: 1.4, yaw: 0 }, { k: 'chest', dx: 2.6, dz: 2.2, yaw: 0 } ] },
+    ],
+    // A tilled field of crops west of the cow pen.
+    field: { x: -29, z: -71, w: 30, d: 20, crops: ['Strawberry_Patch', 'Meadow_Sedge', 'Goldenrod_Patch'] },
     props: [
-      // Chicken side (east): coop, house, nests, feeders.
-      { m: 'Walk_In_Chicken_House', x: 17,  z: -90, yaw: 3.14, s: 1.0, c: 2.2 },
-      { m: 'Raised_Chicken_Coop',   x: 20,  z: -83, yaw: 3.6,  s: 1.0, c: 1.3 },
-      { m: 'Nesting_Boxes',         x: 22,  z: -87, yaw: 4.0,  s: 1.0, c: 0.8 },
-      { m: 'Chicken_Feeder',        x: 12,  z: -87, yaw: 0,    s: 1.0, c: 0.4 },
-      { m: 'Chicken_Waterer',       x: 14,  z: -89, yaw: 0,    s: 1.0, c: 0.4 },
-      // Cow side (west): troughs and hay.
-      { m: 'Feeding_Trough',        x: -5,  z: -88, yaw: 1.57, s: 1.0, c: 0.7 },
-      { m: 'Water_Trough',          x: -2,  z: -85, yaw: 1.57, s: 1.0, c: 0.7 },
-      { m: 'Tall_Haystack',         x: -13, z: -90, yaw: 0,    s: 1.0, c: 1.1 },
-      { m: 'Round_Hay_Bale',        x: -11, z: -87, yaw: 0.5,  s: 1.0, c: 0.7 },
-      { m: 'Stacked_Hay_Bales',     x: -14, z: -83, yaw: 1.2,  s: 1.0, c: 0.9 },
-      // Yard clutter near the gate/front.
-      { m: 'Hay_Pile',              x: 18,  z: -78, yaw: 0,    s: 1.0, c: 0.7 },
-      { m: 'Scarecrow',             x: 3,   z: -80, yaw: 3.14, s: 1.0, c: 0.4 },
-      { m: 'Grain_Barrel',          x: -1,  z: -78, yaw: 0,    s: 1.0, c: 0.5 },
-      { m: 'Grain_Sack',            x: 1,   z: -78, yaw: 0.8,  s: 1.0, c: 0.0 },
-      { m: 'Vegetable_Crate',       x: -3,  z: -79, yaw: 0.3,  s: 1.0, c: 0.5 },
-      { m: 'Wheelbarrow',           x: 9,   z: -78, yaw: 2.2,  s: 1.0, c: 0.4 },
-      { m: 'Farm_Handcart',         x: 13,  z: -77, yaw: 1.0,  s: 1.0, c: 0.6 },
-      { m: 'Pitchfork',             x: -12, z: -80, yaw: 0.3,  s: 1.0, c: 0.0 },
+      // Chicken pen: coop, house, nests, feeders.
+      { m: 'Walk_In_Chicken_House', x: 16,  z: -77, yaw: 3.14, s: 1.0, c: 2.2 },
+      { m: 'Raised_Chicken_Coop',   x: 10,  z: -71, yaw: 3.6,  s: 1.0, c: 1.3 },
+      { m: 'Nesting_Boxes',         x: 18,  z: -70, yaw: 4.0,  s: 1.0, c: 0.8 },
+      { m: 'Chicken_Feeder',        x: 12,  z: -76, yaw: 0,    s: 1.0, c: 0.4 },
+      { m: 'Chicken_Waterer',       x: 14,  z: -73, yaw: 0,    s: 1.0, c: 0.4 },
+      // Cow pen: troughs and hay.
+      { m: 'Feeding_Trough',        x: -13, z: -70, yaw: 1.57, s: 1.0, c: 0.7 },
+      { m: 'Water_Trough',          x: -3,  z: -69, yaw: 1.57, s: 1.0, c: 0.7 },
+      { m: 'Round_Hay_Bale',        x: -12, z: -77, yaw: 0.5,  s: 1.0, c: 0.7 },
+      // Yard clutter around the square and the houses.
+      { m: 'Tall_Haystack',         x: 8,   z: -88, yaw: 0,    s: 1.0, c: 1.1 },
+      { m: 'Stacked_Hay_Bales',     x: 11,  z: -85, yaw: 1.2,  s: 1.0, c: 0.9 },
+      { m: 'Hay_Pile',              x: 26,  z: -78, yaw: 0,    s: 1.0, c: 0.7 },
+      { m: 'Scarecrow',             x: -29, z: -71, yaw: 3.14, s: 1.0, c: 0.4 },
+      { m: 'Grain_Barrel',          x: -17, z: -86, yaw: 0,    s: 1.0, c: 0.5 },
+      { m: 'Grain_Sack',            x: -15, z: -87, yaw: 0.8,  s: 1.0, c: 0.0 },
+      { m: 'Vegetable_Crate',       x: -19, z: -87, yaw: 0.3,  s: 1.0, c: 0.5 },
+      { m: 'Wheelbarrow',           x: -12, z: -84, yaw: 2.2,  s: 1.0, c: 0.4 },
+      { m: 'Farm_Handcart',         x: 4,   z: -84, yaw: 1.0,  s: 1.0, c: 0.6 },
+      { m: 'Pitchfork',             x: -16, z: -74, yaw: 0.3,  s: 1.0, c: 0.0 },
+      { m: 'Water_Barrel',          x: 26,  z: -64, yaw: 0,    s: 1.0, c: 0.5 },
     ],
   },
 
