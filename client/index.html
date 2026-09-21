@@ -4590,21 +4590,22 @@ function animateEntity(rec, e, kind, dt) {
   if (rig.rag) { rig.rag = null; b.rotation.set(0, 0, 0); b.position.copy(rig.home); }
   if (rig.deathT > 0) rig.deathT = 0;
 
-  // --- meditation: each class has its own way of gathering itself. The
-  // Fighter's is rage: down on one knee, fist driven into the ground, weapon
-  // arm braced across the raised knee, head bowed, the whole body heaving
-  // with slow furious breaths — and the ground smoulders under him.
+  // --- meditation: lotus. Sat flat on the ground, legs crossed, back
+  // straight, hands resting on the knees, head level — slow, deep breaths.
+  // The class flavour lives in the VFX (the Fighter's is rage); on his flare
+  // beat the chest lifts and the head tips back a touch, nothing more.
   if (kind === 'player' && e.resting) {
     const tt = performance.now() / 1000, breath = Math.sin(tt * 1.1), heave = (breath * 0.5 + 0.5);
-    b.position.set(rig.home.x, rig.home.y - 0.44 + heave * 0.02, rig.home.z);
-    b.rotation.set(0.18 + heave * 0.05, 0, Math.sin(tt * 0.55) * 0.02);
-    if (rig.legR) rig.legR.rotation.set(-1.57, 0, -0.1);   // right knee up: thigh level, shin planted
-    if (rig.shinR) rig.shinR.rotation.set(1.5, 0, 0);
-    if (rig.legL) rig.legL.rotation.set(0.05, 0, 0.15);    // left knee on the ground, shin folded back
-    if (rig.shinL) rig.shinL.rotation.set(1.6, 0, 0);
-    if (rig.armR) rig.armR.rotation.set(-1.0 - heave * 0.05, 0, -0.15);  // right arm braced on the raised knee
-    if (rig.armL) rig.armL.rotation.set(0.45 - heave * 0.1, 0, 0.3);     // left fist clenched low and back
-    if (rig.head) rig.head.rotation.x = 0.5 - heave * 0.12;              // head bowed, lifting with each breath
+    const roar = meditationRoar(rec, tt);
+    b.position.set(rig.home.x, rig.home.y - 0.99 + heave * 0.012 + roar * 0.03, rig.home.z);
+    b.rotation.set(0.03 - heave * 0.03 - roar * 0.12, 0, 0);
+    if (rig.legL) rig.legL.rotation.set(-1.45, 0, 0.78);   // thighs flat, splayed out to the sides
+    if (rig.legR) rig.legR.rotation.set(-1.45, 0, -0.78);
+    if (rig.shinL) rig.shinL.rotation.set(2.35, 0, -0.35);  // shins folded back across each other
+    if (rig.shinR) rig.shinR.rotation.set(2.25, 0, 0.35);
+    if (rig.armL) rig.armL.rotation.set(-0.52 - heave * 0.03, 0, 0.13);   // straight arms, hands resting on the knees
+    if (rig.armR) rig.armR.rotation.set(-0.52 - heave * 0.03, 0, -0.13);
+    if (rig.head) rig.head.rotation.x = 0.06 - heave * 0.04 - roar * 0.3;  // level, tipping back on the flare
     updateMeditationFx(rec, dt);
     return;
   }
@@ -5762,49 +5763,105 @@ const ABILITY_SFX = {
 function playAbilitySfx(key, x, z) { for (const [clip, o] of (ABILITY_SFX[key] || [])) sfx.play(clip, { ...o, x, z }); }
 
 // ---- Meditation VFX (per class; the Fighter's is rage) ----
-// A smouldering ring under the kneeling Fighter, embers drifting up off him,
-// a red glow that swells with each breath, and a burst on every heal tick.
+// The Fighter smoulders while he kneels: a white-hot core at the chest inside
+// a red aura that swells with each breath, flame licks and embers streaming
+// off him, star-flares glinting on and off around the body, and every few
+// breaths a roar — head thrown back with a flash, a burst of sparks and a
+// shockwave of heat. Each heal tick is its own flare. Nothing on the ground.
+const MED_ROAR_PERIOD = 4.2, MED_ROAR_AT = 3.5, MED_ROAR_LEN = 0.7;
+function meditationRoar(rec, tt) {
+  const t0 = rec.medT0 ?? (rec.medT0 = tt);
+  const rc = (tt - t0) % MED_ROAR_PERIOD;
+  return rc > MED_ROAR_AT ? Math.sin((rc - MED_ROAR_AT) / MED_ROAR_LEN * Math.PI) : 0;
+}
+let fxStarTex = null;
+function fxStar() {
+  if (fxStarTex) return fxStarTex;
+  const s = 64, cv = document.createElement('canvas'); cv.width = cv.height = s; const ctx = cv.getContext('2d');
+  const grd = ctx.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2); grd.addColorStop(0, 'rgba(255,255,255,1)'); grd.addColorStop(0.18, 'rgba(255,255,255,0.55)'); grd.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = grd; ctx.fillRect(0, 0, s, s);
+  ctx.globalCompositeOperation = 'lighter';
+  for (const rot of [0, Math.PI / 2, Math.PI / 4, -Math.PI / 4]) {
+    const lg = ctx.createLinearGradient(0, 0, s, 0); const k = rot % (Math.PI / 2) === 0 ? 1 : 0.45;
+    lg.addColorStop(0, 'rgba(255,255,255,0)'); lg.addColorStop(0.5, `rgba(255,255,255,${k})`); lg.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.save(); ctx.translate(s / 2, s / 2); ctx.rotate(rot); ctx.fillStyle = lg; ctx.fillRect(-s / 2, -1.2, s, 2.4); ctx.restore();
+  }
+  fxStarTex = new THREE.CanvasTexture(cv); return fxStarTex;
+}
 function updateMeditationFx(rec, dt) {
-  const mp = rec.mesh.position, t = performance.now() / 1000;
+  const mp = rec.mesh.position, t = performance.now() / 1000, isMe = rec.mesh.userData.id === myId || rec.data.id === myId;
   let fx = rec.medFx;
   if (!fx) {
-    const ring = new THREE.Mesh(new THREE.RingGeometry(0.55, 1.05, 40), new THREE.MeshBasicMaterial({ color: 0xff4a1a, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }));
-    ring.rotation.x = -Math.PI / 2; ring.frustumCulled = false; scene.add(ring);
-    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: fxDot(), color: 0xff3a1a, transparent: true, opacity: 0.35, depthWrite: false, blending: THREE.AdditiveBlending }));
-    glow.frustumCulled = false; scene.add(glow);
-    const N = 26, pos = new Float32Array(N * 3), life = new Float32Array(N).map(() => Math.random()), seed = new Float32Array(N).map(() => Math.random() * 6.28);
+    const sprite = (map, color, opacity) => { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map, color, transparent: true, opacity, depthWrite: false, blending: THREE.AdditiveBlending })); sp.frustumCulled = false; scene.add(sp); return sp; };
+    const core = sprite(fxDot(), 0xffe0b0, 0.7), aura = sprite(fxDot(), 0xff2a10, 0.3), halo = sprite(fxDot(), 0xff6a20, 0.22);
+    const stars = []; for (let i = 0; i < 5; i++) { const st = sprite(fxStar(), 0xffd8b0, 0); st.userData = { on: -1, next: Math.random() * 1.2, dur: 0.35, rot: Math.random() * 6.28, ox: 0, oy: 0, oz: 0 }; stars.push(st); }
+    const flames = []; for (let i = 0; i < 9; i++) { const fl = sprite(fxDot(), 0xff7a2a, 0.6); fl.userData = { life: Math.random(), a: Math.random() * 6.28, r: 0.28 + Math.random() * 0.25, sp: 0.7 + Math.random() * 0.5 }; flames.push(fl); }
+    const N = 70, pos = new Float32Array(N * 3), life = new Float32Array(N).map(() => Math.random()), seed = new Float32Array(N).map(() => Math.random() * 6.28);
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    const embers = new THREE.Points(g, new THREE.PointsMaterial({ color: 0xff7a2a, size: 0.12, map: fxDot(), transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending }));
+    const embers = new THREE.Points(g, new THREE.PointsMaterial({ color: 0xffa040, size: 0.1, map: fxDot(), transparent: true, opacity: 0.95, depthWrite: false, blending: THREE.AdditiveBlending }));
     embers.frustumCulled = false; scene.add(embers);
-    const light = new THREE.PointLight(0xff5a2a, 1.4, 7); scene.add(light);
-    fx = rec.medFx = { ring, glow, embers, light, life, seed, N, t0: t };
-    if (rec.mesh.userData.id === myId || rec.data.id === myId) { spawnFx('shock', mp.x, mp.y, mp.z, 0, { r: 2.2, color: 0xff5a2a }); sfx.play('merc_command', { x: mp.x, z: mp.z, rate: 0.55, vol: 0.5, lowpass: 900 }); }
+    const light = new THREE.PointLight(0xff5a2a, 1.6, 8); scene.add(light);
+    fx = rec.medFx = { core, aura, halo, stars, flames, embers, light, life, seed, N, lastRoar: 0 };
+    rec.medT0 = t;
+    spawnFx('flash', mp.x, mp.y - 0.45, mp.z, 0, { r: 2.6, color: 0xffb070 }); spawnFx('impact', mp.x, mp.y, mp.z, 0, { y: 0.65, n: 18, color: 0xfff0d0, sparkColor: 0xff8a3a });
+    if (isMe) { sfx.play('meditation_start', { x: mp.x, z: mp.z, rate: 0.8, vol: 0.6 }); sfx.play('merc_command', { x: mp.x, z: mp.z, rate: 0.55, vol: 0.5, lowpass: 900 }); }
   }
-  const breath = Math.sin(t * 1.1) * 0.5 + 0.5;
-  fx.ring.position.set(mp.x, mp.y + 0.05, mp.z); fx.ring.material.opacity = 0.22 + breath * 0.28; const rs = 0.95 + breath * 0.12; fx.ring.scale.set(rs, rs, 1);
-  fx.ring.rotation.z += dt * 0.3;
-  fx.glow.position.set(mp.x, mp.y + 0.9, mp.z); const gs = 2.2 + breath * 0.9; fx.glow.scale.set(gs, gs, 1); fx.glow.material.opacity = 0.18 + breath * 0.22;
-  fx.light.position.set(mp.x, mp.y + 1.0, mp.z); fx.light.intensity = 0.9 + breath * 0.9;
+  const breath = Math.sin(t * 1.1) * 0.5 + 0.5, roar = meditationRoar(rec, t), heat = breath * 0.6 + roar;
+  const cx = mp.x, cy = mp.y + 0.62, cz = mp.z;   // chest height while seated
+  fx.core.position.set(cx, cy, cz); const cs = 0.55 + breath * 0.25 + roar * 0.9; fx.core.scale.set(cs, cs, 1); fx.core.material.opacity = 0.5 + breath * 0.25 + roar * 0.3;
+  fx.aura.position.set(cx, cy - 0.05, cz); const as = 2.4 + breath * 0.8 + roar * 1.6; fx.aura.scale.set(as, as, 1); fx.aura.material.opacity = 0.22 + breath * 0.18 + roar * 0.25;
+  fx.halo.position.set(cx, cy + 0.15, cz); const hs = 3.6 + breath * 0.6 + roar * 2.2; fx.halo.scale.set(hs, hs, 1); fx.halo.material.opacity = 0.1 + breath * 0.08 + roar * 0.22;
+  fx.light.position.set(cx, cy + 0.2, cz); fx.light.intensity = 1.0 + breath * 1.0 + roar * 3.5; fx.light.color.setHex(roar > 0.5 ? 0xffb070 : 0xff5a2a);
+  // Star-flares: blink on at a random spot on the body, spin, and blink off.
+  for (const st of fx.stars) {
+    const u = st.userData;
+    if (u.on < 0) { u.next -= dt; if (u.next <= 0) { u.on = 0; const a = Math.random() * 6.28, r = 0.2 + Math.random() * 0.45; u.ox = Math.cos(a) * r; u.oz = Math.sin(a) * r; u.oy = 0.1 + Math.random() * 0.9; u.dur = 0.25 + Math.random() * 0.3; u.rot = Math.random() * 6.28; } }
+    else { u.on += dt / u.dur; if (u.on >= 1) { u.on = -1; u.next = 0.25 + Math.random() * (roar > 0 ? 0.3 : 1.4); st.material.opacity = 0; continue; } }
+    if (u.on >= 0) { const k = Math.sin(u.on * Math.PI); st.position.set(mp.x + u.ox, mp.y + u.oy, mp.z + u.oz); const ss = 0.25 + k * (0.55 + roar * 0.5); st.scale.set(ss, ss, 1); st.material.opacity = k * (0.8 + roar * 0.2); st.material.rotation = u.rot + u.on * 1.5; }
+  }
+  // Flame licks: fat sprites rising close to the body, stretching as they thin out.
+  for (const fl of fx.flames) {
+    const u = fl.userData; u.life += dt * u.sp * (1 + roar * 1.5);
+    if (u.life > 1) { u.life = 0; u.a = Math.random() * 6.28; u.r = 0.28 + Math.random() * 0.25; }
+    const l = u.life, a = u.a + l * 1.2, r = u.r * (1 - l * 0.4);
+    fl.position.set(mp.x + Math.cos(a) * r, mp.y + 0.12 + l * (1.35 + roar * 0.8), mp.z + Math.sin(a) * r);
+    const w = 0.45 * (1 - l) + 0.1, h = 0.45 + l * 0.6; fl.scale.set(w * (1 + roar * 0.4), h, 1);
+    fl.material.opacity = Math.sin(l * Math.PI) * (0.5 + heat * 0.35);
+    fl.material.color.setHex(l < 0.3 ? 0xffd090 : l < 0.65 ? 0xff7a2a : 0xd02a10);
+  }
+  // Embers: many small sparks corkscrewing up and drifting out, faster in a roar.
   const pos = fx.embers.geometry.attributes.position;
   for (let i = 0; i < fx.N; i++) {
-    fx.life[i] += dt * (0.35 + (i % 5) * 0.08);
+    fx.life[i] += dt * (0.4 + (i % 7) * 0.07) * (1 + roar * 2);
     if (fx.life[i] > 1) { fx.life[i] = 0; fx.seed[i] = Math.random() * 6.28; }
-    const l = fx.life[i], a = fx.seed[i] + l * 2.5, r = 0.35 + l * 0.5;
-    pos.setXYZ(i, mp.x + Math.cos(a) * r, mp.y + 0.15 + l * 2.1, mp.z + Math.sin(a) * r);
+    const l = fx.life[i], a = fx.seed[i] + l * 3.5, r = 0.25 + l * (0.7 + roar * 0.8);
+    pos.setXYZ(i, mp.x + Math.cos(a) * r, mp.y + 0.08 + l * 2.2, mp.z + Math.sin(a) * r);
   }
-  pos.needsUpdate = true; fx.embers.material.opacity = 0.6 + breath * 0.3;
+  pos.needsUpdate = true; fx.embers.material.opacity = 0.6 + heat * 0.35; fx.embers.material.size = 0.09 + roar * 0.06;
+  // The roar itself: one big flash and burst as the head goes back.
+  if (roar > 0 && fx.lastRoar === 0) {
+    spawnFx('flash', mp.x, mp.y - 0.45, mp.z, 0, { r: 3.4, color: 0xffc080, life: 0.35 });
+    spawnFx('impact', mp.x, mp.y, mp.z, 0, { y: 0.7, n: 22, color: 0xfff4e0, sparkColor: 0xff9a3a });
+    spawnFx('glow', mp.x, mp.y - 0.45, mp.z, 0, { color: 0xff7a30, life: 0.6 }); spawnFx('sparks', mp.x, mp.y - 0.4, mp.z, 0, { n: 16, fwd: 0, color: 0xffd080 }); spawnFx('sparks', mp.x, mp.y - 0.4, mp.z, Math.PI, { n: 16, fwd: 0, color: 0xff9a40 });
+    if (isMe) { sfx.play('merc_command', { x: mp.x, z: mp.z, rate: 0.5, vol: 0.45, lowpass: 700 }); camShake = Math.max(camShake, 0.12); }
+  }
+  fx.lastRoar = roar;
 }
 function endMeditationFx(rec) {
   const fx = rec.medFx; if (!fx) return;
-  for (const o of [fx.ring, fx.glow, fx.embers, fx.light]) scene.remove(o);
-  rec.medFx = null;
+  for (const o of [fx.core, fx.aura, fx.halo, ...fx.stars, ...fx.flames, fx.embers, fx.light]) scene.remove(o);
+  fx.embers.geometry.dispose();
+  rec.medFx = null; rec.medT0 = undefined;
 }
-// A heal tick while meditating: a red pulse from the ground.
+// A heal tick while meditating: a white-hot flare from the chest and a
+// shower of sparks — a snap of heat, not a ground ring.
 function meditationTickFx() {
   const me = entityMeshes.get(myId); if (!me) return;
   const mp = me.mesh.position;
-  spawnFx('ring', mp.x, mp.y, mp.z, 0, { r: 1.6, color: 0xff6a3a }); spawnFx('glow', mp.x, mp.y, mp.z, 0, { color: 0xff4a2a });
-  sfx.play('hit_thud', { x: mp.x, z: mp.z, rate: 0.5, vol: 0.35, lowpass: 600 });
+  spawnFx('flash', mp.x, mp.y - 0.45, mp.z, 0, { r: 2.2, color: 0xfff0c0, life: 0.28 });
+  spawnFx('impact', mp.x, mp.y, mp.z, 0, { y: 0.65, n: 14, color: 0xffffff, sparkColor: 0xffb050 });
+  spawnFx('glow', mp.x, mp.y - 0.45, mp.z, 0, { color: 0xff5a2a });
+  sfx.play('heal_chime', { x: mp.x, z: mp.z, rate: 0.7, vol: 0.3 }); sfx.play('hit_thud', { x: mp.x, z: mp.z, rate: 0.5, vol: 0.3, lowpass: 600 });
 }
 
 // ---- Weapon trail: a fading ribbon swept by the weapon during an ability ----
