@@ -51,6 +51,9 @@ class W:
         self.parts = []
     def add(self, mesh, color):
         mesh = mesh.copy()
+        # every part must face outward: hand-built prisms/gems/frusta can come
+        # out inside-out, which culls their faces and lights them wrong
+        if mesh.is_watertight and mesh.volume < 0: mesh.invert()
         mesh.visual.face_colors = np.tile(np.array(list(color) + [255], dtype=np.uint8), (len(mesh.faces), 1))
         self.parts.append(mesh)
         return mesh
@@ -81,21 +84,33 @@ class W:
         m.apply_translation(center)
         return self.add(m, color)
     def prism(self, pts, thick, color, y=0, taper=1.0):
-        """Extrude an XZ polygon (counter-clockwise) through Y. taper<1 pinches
-        the back face inward for bevelled blade edges."""
+        """Extrude an XZ polygon (any simple outline, concave included) through
+        Y. taper<1 pinches both faces inward so the edge makes a diamond
+        section, like a bevelled blade."""
+        import shapely.geometry as sg
         n = len(pts)
         pts = np.array(pts, float)
         cx, cz = pts.mean(axis=0)
+        poly = sg.Polygon(pts)
+        if not poly.is_valid: poly = poly.buffer(0)
+        if poly.geom_type != 'Polygon': poly = max(poly.geoms, key=lambda g: g.area)
+        ring = np.array(poly.exterior.coords[:-1])
+        if poly.exterior.is_ccw is False: ring = ring[::-1]
+        # drop repeated points (a pinched blade tip) so the sides stay closed
+        keep = [0] + [i for i in range(1, len(ring)) if np.linalg.norm(ring[i] - ring[i - 1]) > 1e-5]
+        if np.linalg.norm(ring[keep[-1]] - ring[keep[0]]) <= 1e-5: keep = keep[:-1]
+        ring = ring[keep]
+        n = len(ring)
+        cap_v, cap_f = trimesh.creation.triangulate_polygon(sg.Polygon(ring), engine='earcut')
+        # map cap vertices back onto ring indices (earcut keeps the input order)
         v = []
         for yy, t in ((y - thick / 2, taper), (y + thick / 2, taper)):
-            for x, z in pts:
-                v.append([cx + (x - cx) * t, yy, cz + (z - cz) * t])
-        # a full-size mid layer so tapered edges make a diamond section
+            for x, z in ring: v.append([cx + (x - cx) * t, yy, cz + (z - cz) * t])
         if taper < 1:
-            for x, z in pts: v.append([x, y, z])
+            for x, z in ring: v.append([x, y, z])
         f = []
-        for i in range(1, n - 1):
-            f.append([0, i + 1, i]); f.append([n, n + i, n + i + 1])
+        for a, b, c in cap_f:
+            f.append([a, c, b]); f.append([n + a, n + b, n + c])
         if taper < 1:
             for i in range(n):
                 j = (i + 1) % n
@@ -105,6 +120,7 @@ class W:
                 j = (i + 1) % n
                 f += [[i, j, n + j], [i, n + j, n + i]]
         m = trimesh.Trimesh(np.array(v), np.array(f), process=False)
+        m.merge_vertices()
         return self.add(m, color)
     def blade(self, z0, z1, w, color=None, tip=0.14, thick=0.05, taper=0.55, ridge=True, y=0, x=0, notches=0, hi=None):
         """A straight double-edged blade: a bevelled body plus a lighter ridge."""
@@ -573,18 +589,20 @@ def r_runebound_flail(w):
     spiked_ball(w, (0.08, 0, 0.52), 0.13, C['black'], C['purple'], n=8)
     w.gem((0.08, -0.11, 0.52), 0.03, C['purple_hi'])
 def r_shadow_reaver_scythe(w):
-    polearm_shaft(w, -1.05, 0.55, C['wood_lo'], r=0.024, wraps=(-0.3, 0.2), wrap_color=C['violet'])
+    polearm_shaft(w, -1.05, 0.5, C['wood_lo'], r=0.024, wraps=(-0.3, 0.2), wrap_color=C['violet'])
     w.crystal((0, 0, -1.05), (0, 0, -1), 0.16, 0.035, C['violet'], n=4)
-    w.box((0.1, 0.08, 0.12), (0, 0, 0.56), C['shadow']); w.gem((0, -0.06, 0.56), 0.04, C['purple_hi'])
-    pts = []
-    for i in range(10):
-        t = i / 9; a = t * 1.9
-        pts.append((-0.02 - math.sin(a) * 0.62, 0.56 + (1 - math.cos(a)) * 0.34 + t * 0.06))
-    inner = [(x + 0.14 * (1 - (i / 9) ** 1.5) + 0.02, z - 0.05 * (1 - i / 9)) for i, (x, z) in enumerate(pts)]
-    w.prism(pts + inner[::-1], 0.035, C['shadow'], taper=0.6)
-    edge = [(x, z) for x, z in pts]; edge_in = [(x + 0.04 * (1 - (i / 9)) + 0.005, z - 0.015) for i, (x, z) in enumerate(pts)]
-    w.prism(edge + edge_in[::-1], 0.04, C['purple'])
-    w.crystal((-0.06, 0, 0.6), (-1, 0, -0.4), 0.14, 0.03, C['violet'], n=4)
+    w.box((0.1, 0.08, 0.14), (0, 0, 0.52), C['shadow']); w.gem((0, -0.06, 0.52), 0.04, C['purple_hi'])
+    # the blade: a long crescent sweeping out to -X and curling up at the tip
+    outer, inner = [], []
+    for i in range(11):
+        t = i / 10; a = t * 2.3
+        outer.append((0.0 - math.sin(a) * 0.9, 0.5 + (1 - math.cos(a)) * 0.42))
+        wdt = 0.3 * (1 - t) ** 0.7 + 0.012
+        inner.append((outer[-1][0] + wdt * math.cos(a * 0.5), outer[-1][1] - wdt * math.sin(a * 0.5 + 0.3) - 0.04 * (1 - t)))
+    w.prism(outer + inner[::-1], 0.035, C['shadow'], taper=0.6)
+    edge_in = [(x + 0.05 * (1 - (i / 10)) + 0.005, z - 0.02) for i, (x, z) in enumerate(outer)]
+    w.prism(outer + edge_in[::-1], 0.04, C['purple'])
+    w.crystal((-0.06, 0, 0.56), (-1, 0, -0.5), 0.16, 0.03, C['violet'], n=4)
 def r_dragonfire_blade(w):
     sword(w, blade_len=0.88, width=0.16, blade=C['dark'], hi=C['orange'], guard=C['gold'], guard_w=0.34, guard_gem=C['red'], grip=C['leather'], grip_len=0.24, pommel=C['gold'], pommel_gem=None, thick=0.055, tip=0.18, notches=4, blade_gems=((0.35, C['red']), (0.6, C['ember'])))
 def r_frostbite_maul(w):
@@ -625,16 +643,14 @@ def r_kingsguard_greataxe(w):
 def r_arcane_crescent_staff(w):
     polearm_shaft(w, -0.9, 0.5, C['violet'], r=0.024, wraps=(-0.6, -0.1, 0.3), wrap_color=C['gold'])
     w.pommel(-0.92, C['gold'], 0.04, shape='spike')
-    # the crescent: a thick ring with a bite out of it
-    pts = []
-    for i in range(11):
-        a = -0.6 + i / 10 * (math.pi + 1.2)
-        pts.append((math.cos(a) * 0.24, 0.62 + math.sin(a) * 0.24))
-    inner = [(math.cos(a) * 0.14 + 0.06, 0.62 + math.sin(a) * 0.14 + 0.02) for a in [(-0.6 + i / 10 * (math.pi + 1.2)) for i in range(11)]]
-    w.prism(pts + inner[::-1], 0.06, C['shadow'])
-    w.prism([(x * 1.02, z + 0.002) for x, z in pts] + [(x * 0.9, z) for x, z in pts][::-1], 0.065, C['gold'])
-    w.gem((0.02, 0, 0.66), 0.07, C['purple'], stretch=1.5)
-    for (x, y, z) in ((0.12, 0.02, 0.78), (-0.06, -0.04, 0.8), (0.08, 0.04, 0.55)): w.gem((x, y, z), 0.022, C['purple_hi'], stretch=1.7)
+    # the crescent: a thick arc open toward +X, horns pointing right
+    R, r_in, cz = 0.26, 0.17, 0.66
+    outer = [(math.cos(a) * R, cz + math.sin(a) * R) for a in np.linspace(-1.05, math.pi + 1.05, 16)]
+    inner = [(math.cos(a) * r_in + 0.1, cz + math.sin(a) * r_in) for a in np.linspace(-1.2, math.pi + 1.2, 16)]
+    w.prism(outer + inner[::-1], 0.06, C['shadow'])
+    w.prism([(x * 1.03, cz + (z - cz) * 1.03) for x, z in outer] + [(x * 0.93, cz + (z - cz) * 0.93) for x, z in outer][::-1], 0.066, C['gold'])
+    w.gem((0.06, 0, cz), 0.075, C['purple'], stretch=1.5)
+    for (x, y, z) in ((0.14, 0.02, cz + 0.16), (-0.02, -0.04, cz + 0.2), (0.16, 0.04, cz - 0.1)): w.gem((x, y, z), 0.022, C['purple_hi'], stretch=1.7)
 def r_doomspike_lance(w):
     polearm_shaft(w, -1.0, 0.7, C['black'], r=0.024, wraps=(-0.55, 0.15, 0.55), wrap_color=C['red'])
     w.crystal((0, 0, -1.0), (0, 0, -1), 0.16, 0.035, C['red'], n=4)
