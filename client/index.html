@@ -406,6 +406,8 @@
       <h3>Options</h3>
       <div class="row"><span>Show damage numbers</span><button class="sbtn on" id="optSplats">On</button></div>
       <div class="row"><span>Sound effects</span><input type="range" id="optSfx" min="0" max="100" value="80" style="width:120px;pointer-events:auto"></div>
+      <div class="row"><span>Music</span><input type="range" id="optMusic" min="0" max="100" value="60" style="width:120px;pointer-events:auto"></div>
+      <div class="row"><span>Ambience</span><input type="range" id="optAmb" min="0" max="100" value="35" style="width:120px;pointer-events:auto"></div>
       <button class="resume" id="resumeBtn">Resume</button>
     </div>
   </div>
@@ -4517,35 +4519,68 @@ function animateEntity(rec, e, kind, dt) {
   const g = GAIT[rig.style] || GAIT.biped;
   const b = rig.body;
 
-  // --- death: topple forward, then lie there until the corpse is cleaned up
+  // --- death: a ragdoll. The body is a rigid trunk that tips over under
+  // gravity (a kick from the blow decides which way), bounces once when it
+  // hits the ground and settles; every limb node is a damped pendulum that
+  // gets a random jolt and then swings toward hanging under the trunk's
+  // current tilt. Different creatures fall differently: bipeds pitch over,
+  // quadrupeds/birds roll onto a side, spiders/bats flip onto their backs.
   if (!e.alive) {
-    // Bipeds pitch over; four-legged things and birds roll onto their side
-    // (pitching a cow -90° stood it on its nose); spiders and bats flip onto
-    // their backs.
     const onSide = rig.style === 'quad' || rig.style === 'bird';
     const onBack = rig.style === 'spider' || rig.style === 'flier';
-    const dx = onBack ? Math.PI : onSide ? 0 : -Math.PI / 2, dz = onSide ? Math.PI / 2 : 0;
-    if (rig.deathT === 0) {
-      // Measure how far the toppled body would sink: pose it flat, take its
-      // bounds, and lift it so the lowest point rests on the ground instead
-      // of half the torso clipping through the turf.
-      const keepX = b.rotation.x, keepZ = b.rotation.z, keepY = b.position.y;
-      b.rotation.x = dx; b.rotation.z = dz; b.position.y = rig.home.y;
+    if (!rig.rag) {
+      // Rest pose of the fall (which axis, how far), and how far the flat body
+      // would sink so it can rest on the turf instead of clipping through it.
+      const dirSign = Math.random() < 0.6 ? 1 : -1;
+      const endX = onBack ? Math.PI : onSide ? 0 : -Math.PI / 2 * dirSign, endZ = onSide ? Math.PI / 2 * (Math.random() < 0.5 ? 1 : -1) : 0;
+      const keepX = b.rotation.x, keepZ = b.rotation.z, keepY = b.position.y, keepYaw = b.rotation.y;
+      b.rotation.set(endX, 0, endZ); b.position.y = rig.home.y;
       if (rig.baseScale) b.scale.copy(rig.baseScale);
       rec.mesh.updateMatrixWorld(true);
       const box = new THREE.Box3().setFromObject(b);
-      rig.deathLift = Number.isFinite(box.min.y) ? rec.mesh.position.y - box.min.y : 0;
-      b.rotation.x = keepX; b.rotation.z = keepZ; b.position.y = keepY;
+      const lift = Number.isFinite(box.min.y) ? rec.mesh.position.y - box.min.y : 0;
+      b.rotation.set(keepX, keepYaw, keepZ); b.position.y = keepY;
+      const limbs = [];
+      for (const n of [rig.armL, rig.armR, rig.legL, rig.legR, rig.shinL, rig.shinR, rig.head, rig.wingL, rig.wingR, ...(rig.qlegs || []).map(q => q.node)]) {
+        if (!n) continue;
+        limbs.push({ n, ax: n.rotation.x, az: n.rotation.z, vx: (Math.random() - 0.5) * 9, vz: (Math.random() - 0.5) * 6, k: 0.6 + Math.random() * 0.5 });
+      }
+      rig.rag = { endX, endZ, ax: keepX, az: keepZ, vx: (endX - keepX) * 0.9 + (Math.random() - 0.5) * 1.2, vz: (endZ - keepZ) * 0.9, lift, y: 0, vy: 0.6, limbs, settled: 0, slide: (Math.random() - 0.5) * 0.4, yaw: keepYaw, vyaw: (Math.random() - 0.5) * 2.5 };
     }
-    rig.deathT = Math.min(1, rig.deathT + dt / 0.55);
-    const t = rig.deathT * rig.deathT * (3 - 2 * rig.deathT); // smoothstep
-    b.rotation.x = dx * t;
-    b.rotation.z = dz * t;
-    b.position.set(rig.home.x, rig.home.y + (rig.deathLift || 0) * t, rig.home.z);
+    const R = rig.rag, GRAV = 11;
+    // Trunk: accelerate toward the ground angle, hit it, bounce, settle.
+    for (const [ang, vel, end] of [['ax', 'vx', 'endX'], ['az', 'vz', 'endZ']]) {
+      const a = R[ang], goal = R[end];
+      if (Math.abs(goal - a) > 0.01) {
+        R[vel] += Math.sign(goal - a) * GRAV * 0.55 * dt * (0.4 + Math.abs(goal - a));
+        R[ang] += R[vel] * dt;
+        if ((goal - a) * (goal - R[ang]) <= 0) { // crossed the ground: bounce
+          R[ang] = goal; R[vel] = -R[vel] * 0.28; if (Math.abs(R[vel]) < 0.35) R[vel] = 0;
+          if (R.settled === 0) { const mp = rec.mesh.position; spawnFx('dust', mp.x, mp.y, mp.z, rec.mesh.rotation.y, { r: 0.9 }); sfx.play('hit_thud', { x: mp.x, z: mp.z, rate: 0.6, vol: 0.5 }); }
+          R.settled++;
+        }
+      } else R[vel] *= 0.9;
+    }
+    // A little slide and twist as it goes down, then still.
+    R.vyaw *= Math.exp(-dt * 2.5); R.yaw += R.vyaw * dt;
+    const down = Math.min(1, (Math.abs(R.ax) + Math.abs(R.az)) / (Math.abs(R.endX) + Math.abs(R.endZ) || 1));
+    b.rotation.set(R.ax, R.yaw, R.az);
+    b.position.set(rig.home.x + R.slide * down, rig.home.y + R.lift * down, rig.home.z);
+    // Limbs: damped pendulums jolted by the blow, swinging toward "hanging"
+    // relative to the tilted trunk, going limp as everything settles.
+    const damp = 3.2 + R.settled * 1.5;
+    for (const L of R.limbs) {
+      const hangX = -R.ax * L.k * 0.8, hangZ = -R.az * L.k * 0.6;
+      L.vx += ((hangX - L.ax) * 14 - L.vx * damp) * dt; L.vz += ((hangZ - L.az) * 14 - L.vz * damp) * dt;
+      L.ax += L.vx * dt; L.az += L.vz * dt;
+      L.n.rotation.x = L.ax; L.n.rotation.z = L.az;
+    }
     if (rig.baseScale) b.scale.copy(rig.baseScale);
+    rig.deathT = 1;
     return;
   }
-  if (rig.deathT > 0) { rig.deathT = 0; b.rotation.set(0, 0, 0); b.position.copy(rig.home); }
+  if (rig.rag) { rig.rag = null; b.rotation.set(0, 0, 0); b.position.copy(rig.home); }
+  if (rig.deathT > 0) rig.deathT = 0;
 
   // --- meditation: sit cross-legged and breathe slowly while resting (R).
   if (kind === 'player' && e.resting) {
@@ -5616,7 +5651,7 @@ function startAbilityAnim(rec, id) {
 const sfx = (() => {
   let ctx = null, master = null, buffers = {}, volume = 0.8, unlocked = false;
   const FILES = ['attack_slash', 'attack_claw', 'hit_thud', 'magic_cast', 'heal_chime', 'cave_rock', 'thunder_roll', 'enemy_die',
-    'level_up', 'item_equip', 'ui_select', 'ui_open', 'ui_close', 'ui_error', 'footstep_dirt', 'footstep_stone', 'merc_command', 'coin_pickup', 'quest_complete', 'loot_item', 'target_select', 'forest_wind'];
+    'level_up', 'item_equip', 'ui_select', 'ui_open', 'ui_close', 'ui_error', 'footstep_dirt', 'footstep_stone', 'merc_command', 'coin_pickup', 'quest_complete', 'loot_item', 'target_select', 'forest_wind', 'bird_chirp', 'insect_trill', 'owl_hoot', 'cave_drip'];
   function init() {
     if (ctx) return;
     try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; }
@@ -5640,8 +5675,121 @@ const sfx = (() => {
     g.connect(master); src.start(ctx.currentTime + (o.delay || 0));
   }
   function setVolume(v) { volume = Math.max(0, Math.min(1, v)); if (master) master.gain.value = volume; try { localStorage.setItem('bk.sfx', String(volume)); } catch (e) {} }
-  return { play, setVolume, init, get ready() { return !!ctx; } };
+  // A looping bed (ambience) with its own gain, outside the sfx master so the
+  // Ambience slider controls it. Returns { set(gain), stop() }.
+  function loop(url, gainNode) {
+    const h = { g: null, src: null, target: 0, set(v) { h.target = v; }, stop() { try { h.src && h.src.stop(); } catch (e) {} } };
+    const start = () => {
+      if (!ctx) return;
+      fetch(url).then(r => r.arrayBuffer()).then(b => ctx.decodeAudioData(b)).then(buf => {
+        h.g = ctx.createGain(); h.g.gain.value = 0; h.g.connect(gainNode());
+        h.src = ctx.createBufferSource(); h.src.buffer = buf; h.src.loop = true; h.src.connect(h.g); h.src.start();
+      }).catch(() => {});
+    };
+    if (ctx) start(); else { const once = () => { removeEventListener('pointerdown', once); removeEventListener('keydown', once); setTimeout(start, 50); }; addEventListener('pointerdown', once); addEventListener('keydown', once); }
+    return h;
+  }
+  function makeGain() { init(); if (!ctx) return null; const g = ctx.createGain(); g.connect(ctx.destination); return g; }
+  return { play, setVolume, init, loop, makeGain, get ctx() { return ctx; }, get ready() { return !!ctx; } };
 })();
+
+// ---------------------------------------------------------------------------
+// Music director: one track at a time with crossfades, chosen from where you
+// are and what's happening — menu, the zone's theme (the farm has its own),
+// the goblin war camp, the cave, combat, death.
+// ---------------------------------------------------------------------------
+const music = (() => {
+  const tracks = {
+    menu: 'music/menu.mp3', darkwoods: 'music/darkwoods.mp3', killingfields: 'music/killingfields.mp3', farm: 'music/town_lantern_loop.ogg',
+    cave: 'music/silk_web_cavern_loop.ogg', goblincamp: 'music/goblincamp.mp3', combat: 'music/combat.mp3', combat2: 'music/combat2.mp3', death: 'music/death.mp3',
+  };
+  let volume = 0.6, cur = null, els = {}, fading = [];
+  function el(name) { if (!els[name]) { const a = new Audio(tracks[name]); a.loop = true; a.preload = 'auto'; a.volume = 0; els[name] = a; } return els[name]; }
+  function play(name, fade = 2.0) {
+    if (cur === name) return;
+    if (cur && els[cur]) fading.push({ a: els[cur], from: els[cur].volume, t: 0, dur: fade, to: 0 });
+    cur = name;
+    if (!name) return;
+    const a = el(name); a.volume = 0; a.currentTime = 0; a.play().catch(() => {});
+    fading.push({ a, from: 0, t: 0, dur: fade, to: 1 });
+  }
+  function update(dt) {
+    for (let i = fading.length - 1; i >= 0; i--) {
+      const f = fading[i]; f.t += dt; const u = Math.min(1, f.t / f.dur);
+      f.a.volume = Math.max(0, Math.min(1, (f.from + (f.to - f.from) * u) * volume));
+      if (u >= 1) { if (f.to === 0) f.a.pause(); fading.splice(i, 1); }
+    }
+    if (cur && els[cur] && !fading.some(f => f.a === els[cur])) els[cur].volume = volume;
+  }
+  function setVolume(v) { volume = Math.max(0, Math.min(1, v)); try { localStorage.setItem('bk.music', String(volume)); } catch (e) {} }
+  return { play, update, setVolume, get current() { return cur; } };
+})();
+let combatUntil = 0;   // performance.now() until which we're "in combat" (hits to/from us)
+function musicDirector() {
+  if (!zone) { music.play('menu'); return; }
+  const me = entityMeshes.get(myId), mp = me ? me.mesh.position : null;
+  if (me && me.data && !me.data.alive) return music.play('death', 1.2);
+  if (performance.now() < combatUntil) return music.play(music.current === 'combat2' ? 'combat2' : 'combat', 1.0);
+  const reg = currentRegion();
+  if (reg && reg.underground) return music.play('cave', 3);
+  if (reg && reg.id === 'killingfields') return music.play('killingfields', 3);
+  if (mp) {
+    const farm = (zone.pois || []).find(p => p.key === 'entrance');
+    if (farm && Math.hypot(mp.x - farm.x, mp.z - farm.z) < (farm.r || 24) + 6) return music.play('farm', 3);
+    const den = (zone.pois || []).find(p => p.key === 'wolfden');
+    if (den && Math.hypot(mp.x - den.x, mp.z - den.z) < 34) return music.play('goblincamp', 3);
+  }
+  music.play('darkwoods', 3);
+}
+
+// ---------------------------------------------------------------------------
+// Ambience: layered beds that follow where you stand (wind, the river, a
+// campfire, the farmyard, the cave) plus one-shots on their own clocks —
+// birds by day, insects at dusk, owls at night, drips underground, thunder
+// in the rain.
+// ---------------------------------------------------------------------------
+const ambience = (() => {
+  // Ambience is background: it sits well under the music (the slider's 100%
+  // is only ~45% of full scale) and the beds themselves are mixed quiet.
+  const SCALE = 0.45;
+  let volume = 0.35, gain = null, beds = null, timers = {};
+  const G = () => { if (!gain) { gain = sfx.makeGain(); if (gain) gain.gain.value = volume * SCALE; } return gain; };
+  function ensure() {
+    if (beds || !sfx.ctx) return;
+    G();
+    beds = {
+      wind: sfx.loop('music/forest_wind.ogg', G), water: sfx.loop('music/water_lap.ogg', G), fire: sfx.loop('music/campfire_crackle.ogg', G),
+      town: sfx.loop('music/town_murmur.ogg', G), cave: sfx.loop('music/cave_ambience_loop.ogg', G),
+    };
+  }
+  const near = (list, x, z) => { let d = 1e9; for (const p of list) d = Math.min(d, Math.hypot(p.x - x, p.z - z)); return d; };
+  function update(dt) {
+    ensure(); if (!beds) return;
+    const me = entityMeshes.get(myId); if (!me || !zone) return;
+    const mp = me.mesh.position, reg = currentRegion(), under = !!(reg && reg.underground);
+    const day = _sunDir.y > 0.05, dusk = _sunDir.y > -0.25 && _sunDir.y <= 0.05, rainy = worldWeather === 'rain', misty = worldWeather === 'mist';
+    const riverD = Math.min(...worldRivers().map(r => Math.min(...r.points.map(p => Math.hypot(p.x - mp.x, p.z - mp.z)))), 1e9);
+    const fireD = near(cookFires, mp.x, mp.z);
+    const farm = (zone.pois || []).find(p => p.key === 'entrance'); const farmD = farm ? Math.hypot(mp.x - farm.x, mp.z - farm.z) : 1e9;
+    const want = {
+      wind: under ? 0 : (rainy ? 0.45 : misty ? 0.25 : 0.18), water: under ? 0 : Math.max(0, 1 - riverD / 28) * 0.6,
+      fire: Math.max(0, 1 - fireD / 14) * 0.7, town: (under || !day) ? 0 : Math.max(0, 1 - farmD / 34) * 0.35, cave: under ? 0.6 : 0,
+    };
+    for (const k of Object.keys(beds)) { const b = beds[k]; if (b.g) b.g.gain.value += (want[k] - b.g.gain.value) * Math.min(1, dt * 1.5); }
+    // one-shots
+    const t = performance.now() / 1000;
+    const fire = (key, every, fn) => { if (!timers[key]) timers[key] = t + Math.random() * every; if (t >= timers[key]) { timers[key] = t + every * (0.6 + Math.random() * 0.8); fn(); } };
+    const vol = volume * 0.55;   // one-shots (birds, owls, drips) stay soft too
+    if (!under && day && !rainy) fire('bird', 7, () => sfx.play('bird_chirp', { vol: 0.5 * vol, rate: 0.9 + Math.random() * 0.3, vary: 0 }));
+    if (!under && (dusk || !day)) fire('insect', 8, () => sfx.play('insect_trill', { vol: 0.35 * vol, rate: 0.9 + Math.random() * 0.2 }));
+    if (!under && !day) fire('owl', 18, () => sfx.play('owl_hoot', { vol: 0.45 * vol, rate: 0.95 + Math.random() * 0.1 }));
+    if (under) fire('drip', 5, () => sfx.play('cave_drip', { vol: 0.5 * vol, rate: 0.8 + Math.random() * 0.5 }));
+    if (rainy && !under) fire('thunder', 28, () => sfx.play('thunder_roll', { vol: 0.7 * vol, rate: 0.85 + Math.random() * 0.3, lowpass: 1800 }));
+  }
+  function setVolume(v) { volume = Math.max(0, Math.min(1, v)); if (gain) gain.gain.value = volume * SCALE; try { localStorage.setItem('bk.amb', String(volume)); } catch (e) {} }
+  return { update, setVolume };
+})();
+
 // Ability sound layers: [clip, options] lists fired at the beat given by `at`
 // in each animation's fx list (kind 'sfx').
 const ABILITY_SFX = {
@@ -6082,6 +6230,7 @@ function hurtFlash(color) {
 
 function showHit(m) {
   triggerAttackAnim(m.by);
+  if (m.by === myId || m.target === myId) combatUntil = performance.now() + 8000;
   if (m.target === myId && m.dmg > 0) hurtFlash('#c0392b');
   const rec = entityMeshes.get(m.target);
   if (!rec) return;
@@ -6547,6 +6696,10 @@ document.getElementById('optSplats').onclick = (e) => {
   e.target.classList.toggle('on', showSplats); e.target.textContent = showSplats ? 'On' : 'Off';
 };
 document.getElementById('optSfx').oninput = (e) => sfx.setVolume(+e.target.value / 100);
+document.getElementById('optMusic').oninput = (e) => music.setVolume(+e.target.value / 100);
+document.getElementById('optAmb').oninput = (e) => ambience.setVolume(+e.target.value / 100);
+try { const v = localStorage.getItem('bk.music'); if (v != null) { document.getElementById('optMusic').value = Math.round(+v * 100); music.setVolume(+v); } } catch (e) {}
+try { const v = localStorage.getItem('bk.amb'); if (v != null) { document.getElementById('optAmb').value = Math.round(+v * 100); ambience.setVolume(+v); } } catch (e) {}
 try { const v = localStorage.getItem('bk.sfx'); if (v != null) { document.getElementById('optSfx').value = Math.round(+v * 100); sfx.setVolume(+v); } } catch (e) {}
 
 const dialogueEl = document.getElementById('dialogue');
@@ -6741,6 +6894,8 @@ if (location.search.includes('debug')) {
     // overrides what the client draws with.
     setDayTime(t) { worldTime = t; timeFrozen = true; },
     openDialogue: (id) => openDialogue(id),
+    send: (obj) => ws?.send(JSON.stringify(obj)),
+    get music() { return music.current; },
     // What is drawn at this normalised screen point, nearest first?
     pick(nx = 0, ny = 0, limit = 6) {
       const rc = new THREE.Raycaster();
@@ -6909,6 +7064,7 @@ function animate() {
   _pf('region', () => updateRegionTitle());
   _pf('abilities', () => updateActionBar());
   _pf('fx', () => { updateFx(dt); updateAuras(dt); });
+  _pf('audio', () => { music.update(dt); if ((frameCount & 15) === 0) musicDirector(); ambience.update(dt); });
   _pf('talk', () => updatePendingTalk());
   if (mapOpen) _pf('map', () => drawMap());
   // Flowing river: scroll the water texture along the current + gentle waves.
@@ -7018,6 +7174,8 @@ try {
 function currentLook() {
   return { hair: +hairSel.value, hairColor: hairCol.value, skin: skinCol.value, outfit: +outfitSel.value };
 }
+addEventListener('pointerdown', () => { if (!zone) music.play('menu', 1.5); }, { once: true });
+setInterval(() => { if (!zone) music.update(0.1); }, 100); // fades tick on the login screen too (the render loop isn't running yet)
 async function play() {
   const name = nameInput.value.trim() || 'Adventurer';
   const look = currentLook();
