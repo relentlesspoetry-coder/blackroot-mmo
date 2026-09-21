@@ -83,14 +83,14 @@ def pluck(freq, dur, vel=1.0):
         prev = nxt; pos += m
     out *= env(n, 0.004, 0.1, 0.8, 0.35)
     out = lowpass(out, 1800)                 # take the pick's edge off
-    return out * vel * 0.3
+    return out * vel * 0.2
 
 def bell(freq, dur, vel=1.0):
     n = int(dur * SR); t = np.arange(n) / SR
     out = np.zeros(n)
     for ratio, amp, dec in ((1, 1, 1.6), (2.76, 0.5, 0.9), (5.4, 0.25, 0.5), (8.9, 0.12, 0.3)):
         out += amp * np.sin(2 * math.pi * freq * ratio * t) * np.exp(-t / dec)
-    return out * vel * 0.13 * np.minimum(1, t * 400)
+    return out * vel * 0.08 * np.minimum(1, t * 400)
 
 def drone(freq, dur, vel=1.0):
     n = int(dur * SR); t = np.arange(n) / SR
@@ -105,7 +105,7 @@ def tom(dur=1.2, vel=1.0, f0=110):
     body = np.sin(ph) * np.exp(-t * 3.5)
     rng = np.random.default_rng(7)
     click = rng.uniform(-1, 1, n) * np.exp(-t * 60) * 0.4
-    return (body + click) * vel * 0.3
+    return (body + click) * vel * 0.2
 
 def breath(dur, vel=1.0, seed=1):
     n = int(dur * SR); rng = np.random.default_rng(seed)
@@ -125,7 +125,7 @@ def reverb(x, seconds=2.8, mix=0.32, seed=3):
     wet = np.fft.irfft(np.fft.rfft(x, len(x) + n) * np.fft.rfft(ir, len(x) + n))[:len(x)]
     return x * (1 - mix) + wet * mix
 
-def level(x, target=0.09, win=1.0, ceiling=0.6):
+def level(x, target=0.055, win=1.0, ceiling=0.45):
     """Keep the loudness flat: ride the gain so every second sits near the
     target RMS (slow, so it never pumps), then soft-clip anything left."""
     n = int(win * SR)
@@ -162,7 +162,8 @@ class Score:
         if m > 0: self.buf[i:i + m] += sig[:m] * gain
 
 def write_wav(path, x):
-    x = x / max(1e-6, np.max(np.abs(x))) * 0.7   # headroom: these are background pieces
+    x = lowpass(x, 2600)                         # soft top end: nothing sharp to notice
+    x = x / max(1e-6, np.max(np.abs(x))) * 0.5   # plenty of headroom: these are background pieces
     with wave.open(path, 'wb') as w:
         w.setnchannels(1); w.setsampwidth(2); w.setframerate(SR)
         w.writeframes((x * 32767).astype('<i2').tobytes())
@@ -219,7 +220,7 @@ def track_boughs():
             if i == 6: S.add(tom(1.0, 0.35, 90), S.at(bar, 2.5))
     for k in range(0, 64, 8):
         S.add(breath(6, 0.7, seed=k + 1), S.at(k, 2))
-    return loopable(level(reverb(S.buf, 4.0, 0.45)))
+    return loopable(level(reverb(S.buf, 5.0, 0.55)))
 
 # ---------------------------------------------------------------------------
 # Track 2 — "Hollow Lantern" (Dark Woods, night). E aeolian/phrygian, 62 bpm.
@@ -255,7 +256,7 @@ def track_lantern():
             if bar < 56: S.add(tom(1.6, 0.4, 95), S.at(bar, 0))
     for k in range(2, 56, 9):
         S.add(breath(7, 0.8, seed=k + 40), S.at(k, 0))
-    return loopable(level(reverb(S.buf, 5.0, 0.5)))
+    return loopable(level(reverb(S.buf, 6.0, 0.6)))
 
 if __name__ == '__main__':
     out = sys.argv[1] if len(sys.argv) > 1 else '.'

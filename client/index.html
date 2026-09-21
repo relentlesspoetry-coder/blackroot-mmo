@@ -406,7 +406,7 @@
       <h3>Options</h3>
       <div class="row"><span>Show damage numbers</span><button class="sbtn on" id="optSplats">On</button></div>
       <div class="row"><span>Sound effects</span><input type="range" id="optSfx" min="0" max="100" value="80" style="width:120px;pointer-events:auto"></div>
-      <div class="row"><span>Music</span><input type="range" id="optMusic" min="0" max="100" value="32" style="width:120px;pointer-events:auto"></div>
+      <div class="row"><span>Music</span><input type="range" id="optMusic" min="0" max="100" value="18" style="width:120px;pointer-events:auto"></div>
       <button class="resume" id="resumeBtn">Resume</button>
     </div>
   </div>
@@ -5692,9 +5692,9 @@ const music = (() => {
   const tracks = {
     darkwoods_day: 'music/darkwoods_boughs.mp3', darkwoods_night: 'music/darkwoods_lantern.mp3',
   };
-  let volume = 0.32, cur = null, els = {}, fading = [];   // music sits under the game by default
+  let volume = 0.18, cur = null, els = {}, fading = [];   // music sits well under the game by default
   function el(name) { if (!els[name]) { const a = new Audio(tracks[name]); a.loop = true; a.preload = 'auto'; a.volume = 0; els[name] = a; } return els[name]; }
-  function play(name, fade = 6.0) {
+  function play(name, fade = 12.0) {
     if (cur === name) return;
     if (cur && els[cur]) fading.push({ a: els[cur], from: els[cur].volume, t: 0, dur: fade, to: 0 });
     cur = name;
