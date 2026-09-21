@@ -6276,42 +6276,114 @@ function projectile(o) {
   scene.add(grp);
   fxList.push({ kind: 'proj', obj: grp, spr, trail, t: 0, life: o.dur, from: o.from, to: o.to, arc: o.arc || 0, r: 1 });
 }
-// A flame-shaped sprite: bright core low down, tapering to a tip, so a cloud
-// of them reads as fire rather than as dots.
-let fxFlameTex = null;
-function fxFlame() {
-  if (fxFlameTex) return fxFlameTex;
-  const s = 64, cv = document.createElement('canvas'); cv.width = cv.height = s; const ctx = cv.getContext('2d');
-  const grd = ctx.createRadialGradient(s / 2, s * 0.68, 2, s / 2, s * 0.6, s * 0.46);
-  grd.addColorStop(0, 'rgba(255,255,255,1)'); grd.addColorStop(0.35, 'rgba(255,255,255,0.7)'); grd.addColorStop(1, 'rgba(255,255,255,0)');
-  ctx.fillStyle = grd;
-  ctx.beginPath(); ctx.moveTo(s / 2, 2); ctx.bezierCurveTo(s * 0.95, s * 0.45, s * 0.9, s * 0.95, s / 2, s * 0.98); ctx.bezierCurveTo(s * 0.1, s * 0.95, s * 0.05, s * 0.45, s / 2, 2); ctx.closePath(); ctx.fill();
-  fxFlameTex = new THREE.CanvasTexture(cv); return fxFlameTex;
-}
-// One Points cloud of flames (a single draw call): each point is born at the
-// base, rises, and shifts yellow -> orange -> dark red as it dies. Poison is
-// the same cloud in greens, rising slower. `place(i)` gives a birth spot.
-function makeFlameCloud(n, size, fire) {
-  const pos = new Float32Array(n * 3), col = new Float32Array(n * 3), life = new Float32Array(n).map(() => Math.random()), seed = new Float32Array(n).map(() => Math.random() * 6.28);
-  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-  const pts = new THREE.Points(g, new THREE.PointsMaterial({ map: fxFlame(), size, vertexColors: true, transparent: true, opacity: 1, depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true }));
-  pts.frustumCulled = false;
-  return { pts, n, life, seed, fire, rise: fire ? 1.4 : 0.9, speed: fire ? 1.1 : 0.55 };
-}
-function updateFlameCloud(fc, dt, place, fade = 1) {
-  const pos = fc.pts.geometry.attributes.position, col = fc.pts.geometry.attributes.color;
-  for (let i = 0; i < fc.n; i++) {
-    fc.life[i] += dt * fc.speed * (0.7 + (i % 4) * 0.15);
-    if (fc.life[i] > 1) { fc.life[i] = 0; fc.seed[i] = Math.random() * 6.28; }
-    const l = fc.life[i], p = place(i, fc.seed[i]);
-    pos.setXYZ(i, p.x + Math.sin(fc.seed[i] + l * 7) * 0.12 * l, p.y + l * fc.rise, p.z + Math.cos(fc.seed[i] * 1.3 + l * 6) * 0.12 * l);
-    // colour ramp; additive blending, so darkening = fading out
-    let r, g, b;
-    if (fc.fire) { if (l < 0.25) { r = 1; g = 0.7 + 0.15 * (1 - l / 0.25); b = 0.25; } else if (l < 0.6) { const k = (l - 0.25) / 0.35; r = 1; g = 0.6 - 0.4 * k; b = 0.08 * (1 - k); } else { const k = (l - 0.6) / 0.4; r = 0.8 * (1 - k); g = 0.2 * (1 - k); b = 0; } }
-    else { if (l < 0.3) { r = 0.75; g = 1; b = 0.5; } else { const k = (l - 0.3) / 0.7; r = 0.4 * (1 - k); g = 0.9 * (1 - k); b = 0.25 * (1 - k); } }
-    col.setXYZ(i, r * fade, g * fade, b * fade);
+// ---- Fire: a field of flame tongues -----------------------------------------
+// Every flame in the world (fire patches, poison, burning players) is one
+// instance in a single InstancedBufferGeometry: a camera-facing quad whose
+// fragment shader draws a tongue-shaped mask distorted by scrolling noise, so
+// each one flickers, stretches and licks upward. One draw call for all of it,
+// and only a time uniform changes per frame for ground fire.
+const FLAME_MAX = 2400;
+let flameField = null;
+function makeFlameMask() {
+  const w = 64, h = 128, cv = document.createElement('canvas'); cv.width = w; cv.height = h; const ctx = cv.getContext('2d');
+  const img = ctx.createImageData(w, h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const v = 1 - y / h;                       // 1 at the bottom, 0 at the tip
+    const halfW = 0.5 * Math.pow(Math.max(0, 1 - Math.pow(1 - v, 1.6)), 0.6) * (0.35 + 0.65 * Math.sin(Math.min(1, v * 1.4) * Math.PI / 2));
+    const dx = Math.abs(x / w - 0.5);
+    const edge = Math.max(0, 1 - dx / Math.max(halfW, 0.02));
+    const m = Math.pow(edge, 1.4) * Math.min(1, (1 - v) * 4) * (v < 0.08 ? v / 0.08 : 1);
+    const i = (y * w + x) * 4; img.data[i] = img.data[i + 1] = img.data[i + 2] = Math.round(255 * Math.min(1, m)); img.data[i + 3] = 255;
   }
-  pos.needsUpdate = true; col.needsUpdate = true;
+  ctx.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(cv); t.wrapS = THREE.ClampToEdgeWrapping; t.wrapT = THREE.ClampToEdgeWrapping; return t;
+}
+function makeNoiseTex() {
+  const s = 128, cv = document.createElement('canvas'); cv.width = cv.height = s; const ctx = cv.getContext('2d');
+  const img = ctx.createImageData(s, s);
+  for (let y = 0; y < s; y++) for (let x = 0; x < s; x++) {
+    const n = vnoise2(x / 14, y / 14, 91) * 0.55 + vnoise2(x / 5, y / 5, 92) * 0.3 + vnoise2(x / 2.2, y / 2.2, 93) * 0.15;
+    const i = (y * s + x) * 4; img.data[i] = img.data[i + 1] = img.data[i + 2] = Math.round(255 * n); img.data[i + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; return t;
+}
+function getFlameField() {
+  if (flameField) return flameField;
+  const base = new THREE.PlaneGeometry(1, 1);
+  const geo = new THREE.InstancedBufferGeometry(); geo.index = base.index; geo.attributes.position = base.attributes.position; geo.attributes.uv = base.attributes.uv;
+  const iPos = new Float32Array(FLAME_MAX * 3), iSize = new Float32Array(FLAME_MAX), iPhase = new Float32Array(FLAME_MAX), iKind = new Float32Array(FLAME_MAX), iOn = new Float32Array(FLAME_MAX);
+  geo.setAttribute('iPos', new THREE.InstancedBufferAttribute(iPos, 3));
+  geo.setAttribute('iSize', new THREE.InstancedBufferAttribute(iSize, 1));
+  geo.setAttribute('iPhase', new THREE.InstancedBufferAttribute(iPhase, 1));
+  geo.setAttribute('iKind', new THREE.InstancedBufferAttribute(iKind, 1));
+  geo.setAttribute('iOn', new THREE.InstancedBufferAttribute(iOn, 1));
+  geo.instanceCount = FLAME_MAX;
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { uTime: { value: 0 }, uMask: { value: makeFlameMask() }, uNoise: { value: makeNoiseTex() }, uRight: { value: new THREE.Vector3(1, 0, 0) } },
+    transparent: true, depthWrite: false, depthTest: true, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+    vertexShader: `
+      attribute vec3 iPos; attribute float iSize; attribute float iPhase; attribute float iKind; attribute float iOn;
+      uniform float uTime; uniform vec3 uRight;
+      varying vec2 vUv; varying float vPhase; varying float vKind; varying float vOn;
+      void main() {
+        vUv = uv; vPhase = iPhase; vKind = iKind; vOn = iOn;
+        float t = uTime + iPhase * 6.2831;
+        float h = iSize * (1.2 + 0.35 * sin(t * 6.0) * sin(t * 2.3 + 1.0));       // breathing height
+        float w = iSize * 1.15;
+        float sway = sin(t * 4.5) * 0.18 * iSize * uv.y;                            // the tip leans about
+        vec3 p = iPos + uRight * (position.x * w + sway) + vec3(0.0, (position.y + 0.5) * h, 0.0);
+        gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
+      }`,
+    fragmentShader: `
+      uniform float uTime; uniform sampler2D uMask; uniform sampler2D uNoise;
+      varying vec2 vUv; varying float vPhase; varying float vKind; varying float vOn;
+      void main() {
+        if (vOn < 0.5) discard;
+        float speed = vKind > 0.5 ? 0.7 : 1.5;
+        // two layers of noise scrolling up the tongue tear its edges into licks
+        float n1 = texture2D(uNoise, vec2(vUv.x * 1.3 + vPhase * 3.0, vUv.y * 1.6 - uTime * speed + vPhase * 7.0)).r;
+        float n2 = texture2D(uNoise, vec2(vUv.x * 2.6 - vPhase * 5.0, vUv.y * 3.0 - uTime * speed * 1.7 + vPhase * 2.0)).r;
+        float n = n1 * 0.65 + n2 * 0.35;
+        vec2 duv = vec2(vUv.x + (n - 0.5) * (0.22 + 0.5 * vUv.y), vUv.y + (n - 0.5) * 0.12);
+        float m = texture2D(uMask, clamp(duv, 0.0, 1.0)).r;
+        m *= 0.75 + 0.5 * n;                                   // brightness ripples through it
+        float core = pow(m, 3.0);
+        vec3 col;
+        if (vKind > 0.5) col = mix(vec3(0.25, 0.85, 0.15), vec3(0.85, 1.0, 0.55), core) * mix(1.0, 0.35, vUv.y);
+        else {
+          vec3 body = mix(vec3(1.0, 0.42, 0.04), vec3(0.85, 0.12, 0.0), smoothstep(0.35, 1.0, vUv.y));   // orange -> red toward the tip
+          col = mix(body, vec3(1.0, 0.95, 0.65), core * (1.0 - vUv.y * 0.6));                             // white-yellow core near the base
+        }
+        float a = m * (1.0 - smoothstep(0.7, 1.0, vUv.y) * 0.5);
+        gl_FragColor = vec4(col * a, a);
+      }`,
+  });
+  const mesh = new THREE.Mesh(geo, mat); mesh.frustumCulled = false; mesh.renderOrder = 5; scene.add(mesh);
+  flameField = { mesh, geo, free: [], next: 0 };
+  return flameField;
+}
+// Take `n` flames; returns their instance indices.
+function allocFlames(n) {
+  const F = getFlameField(), out = [];
+  for (let k = 0; k < n; k++) { if (F.free.length) out.push(F.free.pop()); else if (F.next < FLAME_MAX) out.push(F.next++); else break; }
+  return out;
+}
+function setFlame(i, x, y, z, size, kind, phase) {
+  const g = getFlameField().geo, P = g.attributes.iPos;
+  P.setXYZ(i, x, y, z); g.attributes.iSize.setX(i, size); g.attributes.iKind.setX(i, kind); g.attributes.iPhase.setX(i, phase != null ? phase : Math.random()); g.attributes.iOn.setX(i, 1);
+  P.needsUpdate = g.attributes.iSize.needsUpdate = g.attributes.iKind.needsUpdate = g.attributes.iPhase.needsUpdate = g.attributes.iOn.needsUpdate = true;
+}
+function freeFlames(list) {
+  const F = getFlameField(); if (!F) return;
+  for (const i of list) { F.geo.attributes.iOn.setX(i, 0); F.free.push(i); }
+  F.geo.attributes.iOn.needsUpdate = true;
+}
+function updateFlameField(dt) {
+  if (!flameField) return;
+  const u = flameField.mesh.material.uniforms; u.uTime.value += dt;
+  // billboard axis: the camera's right vector flattened onto the ground
+  const r = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion); r.y = 0; r.normalize(); u.uRight.value.copy(r);
 }
 // Fire / poison patches from the snapshot: a scorched disc, an ember glow and
 // a flame cloud, kept while the server says so. No lights: a light per patch
@@ -6328,23 +6400,30 @@ function syncHazards(list) {
     disc.rotation.x = -Math.PI / 2; disc.position.y = 0.07; g.add(disc);
     const glow = new THREE.Mesh(new THREE.CircleGeometry(h.r * 0.9, 28), new THREE.MeshBasicMaterial({ color: fire ? 0xff5a10 : 0x6ad830, transparent: true, opacity: 0.3, depthWrite: false, blending: THREE.AdditiveBlending }));
     glow.rotation.x = -Math.PI / 2; glow.position.y = 0.09; g.add(glow);
-    const fc = makeFlameCloud(Math.round(14 + h.r * 9), fire ? 1.0 + h.r * 0.08 : 0.8, fire);
-    const spots = []; for (let i = 0; i < fc.n; i++) { const a = Math.random() * 6.28, rr = Math.sqrt(Math.random()) * h.r * 0.88; spots.push({ x: Math.cos(a) * rr, y: 0.05, z: Math.sin(a) * rr }); }
-    g.add(fc.pts); scene.add(g);
-    hazardFx.set(h.id, { g, fc, spots, glow, t: h.t, fire, r: h.r });
+    scene.add(g);
+    // the flames: tongues of varied size across the patch, bigger toward the middle
+    const flames = allocFlames(Math.round(10 + h.r * 5));
+    const y = g.position.y + 0.02;
+    flames.forEach((i, k) => {
+      const a = Math.random() * 6.28, rr = Math.sqrt(Math.random()) * h.r * 0.85;
+      const size = (fire ? 0.7 : 0.55) * (0.6 + 0.9 * Math.random()) * (1.15 - 0.5 * rr / h.r) * (1 + h.r * 0.05);
+      setFlame(i, h.x + Math.cos(a) * rr, y, h.z + Math.sin(a) * rr, size, fire ? 0 : 1, Math.random());
+    });
+    hazardFx.set(h.id, { g, flames, glow, t: h.t, fire, r: h.r });
   }
-  for (const [id, hz] of hazardFx) if (!seen.has(id)) { scene.remove(hz.g); hz.fc.pts.geometry.dispose(); hazardFx.delete(id); }
+  for (const [id, hz] of hazardFx) if (!seen.has(id)) { scene.remove(hz.g); freeFlames(hz.flames); hazardFx.delete(id); }
 }
 // One shared light for all the fire: parked on the patch nearest the player.
 let hazardLight = null, bossLight = null;
 function updateHazardFx(dt) {
+  updateFlameField(dt);
   const tt = performance.now() / 1000;
   const me = entityMeshes.get(myId), mp = me ? me.mesh.position : null;
   let near = null, nd = 1e9;
   for (const hz of hazardFx.values()) {
     const fade = Math.min(1, hz.t / 1.5);
-    updateFlameCloud(hz.fc, dt, (i) => hz.spots[i], fade);
     hz.glow.material.opacity = (0.22 + 0.1 * Math.sin(tt * 9 + hz.r)) * fade;
+    if (fade < 1 && !hz.fading) { hz.fading = true; const g = getFlameField().geo; for (const i of hz.flames) g.attributes.iSize.setX(i, g.attributes.iSize.getX(i) * 0.6); g.attributes.iSize.needsUpdate = true; }   // dying down
     if (mp && hz.fire) { const d = Math.hypot(hz.g.position.x - mp.x, hz.g.position.z - mp.z); if (d < nd) { nd = d; near = hz; } }
   }
   if (near && hazardLight) {
@@ -6415,22 +6494,22 @@ function bossEvent(m) {
 function flyTextAt(p, text, cls) { const rec = entityMeshes.get(myId); if (rec && Math.hypot(rec.mesh.position.x - p.x, rec.mesh.position.z - p.z) < 30) flyText(text, cls); }
 // A player who is burning or poisoned wears it: a flame (or poison-bubble)
 // cloud around the body for a moment after each tick of that damage.
-const statusFx = new Map();   // entity id -> { fc, t, fire }
+const statusFx = new Map();   // entity id -> { flames, t, fire }
 function markStatus(id, kind) {
   if (kind !== 'burn' && kind !== 'poison') return;
   const rec = entityMeshes.get(id); if (!rec) return;
   const fire = kind === 'burn';
   let st = statusFx.get(id);
-  if (st && st.fire !== fire) { scene.remove(st.fc.pts); statusFx.delete(id); st = null; }
-  if (!st) { const fc = makeFlameCloud(fire ? 34 : 22, fire ? 0.9 : 0.7, fire); scene.add(fc.pts); st = { fc, t: 0, fire }; statusFx.set(id, st); }
-  st.t = 1.6;
+  if (st && st.fire !== fire) { freeFlames(st.flames); statusFx.delete(id); st = null; }
+  if (!st) { st = { flames: allocFlames(fire ? 9 : 7), t: 0, fire, seeds: [] }; for (const _ of st.flames) st.seeds.push([Math.random() * 6.28, 0.1 + Math.random() * 1.2, 0.35 + Math.random() * 0.35, Math.random()]); statusFx.set(id, st); }
+  st.t = 1.8;
 }
 function updateStatusFx(dt) {
   for (const [id, st] of statusFx) {
     const rec = entityMeshes.get(id); st.t -= dt;
-    if (!rec || st.t <= 0) { scene.remove(st.fc.pts); st.fc.pts.geometry.dispose(); statusFx.delete(id); continue; }
-    const mp = rec.mesh.position, fade = Math.min(1, st.t / 0.6);
-    updateFlameCloud(st.fc, dt, (i, seed) => ({ x: mp.x + Math.cos(seed) * 0.32, y: mp.y + 0.15 + (i % 5) * 0.3, z: mp.z + Math.sin(seed) * 0.32 }), fade);
+    if (!rec || st.t <= 0) { freeFlames(st.flames); statusFx.delete(id); continue; }
+    const mp = rec.mesh.position, fade = Math.min(1, st.t / 0.7);
+    st.flames.forEach((i, k) => { const [a, h, sz, ph] = st.seeds[k]; setFlame(i, mp.x + Math.cos(a) * 0.3, mp.y + h, mp.z + Math.sin(a) * 0.3, sz * fade, st.fire ? 0 : 1, ph); });
   }
 }
 // Marks over marked players, the boss's phase-2 burning aura, and the chicks'
