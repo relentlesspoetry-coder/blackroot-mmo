@@ -24,7 +24,7 @@ import {
 } from './worldgen.js';
 import {
   MINING, ORES, PICKAXES, oreFromModel, bestPickaxe, swingChance, swingTime,
-  miningLevelFromXp, canMine,
+  miningLevelFromXp, canMine, veinYield,
 } from './mining.js';
 import {
   FISHING, FISH, RODS, bestRod, fishingLevelFromXp, catchChance, castTime,
@@ -377,7 +377,8 @@ function populate() {
     zone._veins = new Map();
     for (const o of zone._scatter) {
       const ore = oreFromModel(o.m);
-      if (ore) zone._veins.set(o.i, { id: o.i, ore, x: o.x, z: o.z, depleted: 0 });
+      // `remaining` is how many ores are left in this vein before it works out.
+      if (ore) zone._veins.set(o.i, { id: o.i, ore, x: o.x, z: o.z, depleted: 0, remaining: veinYield(ore) });
     }
   }
 }
@@ -716,15 +717,21 @@ function mineSwing(p, vein) {
     p.pendingMine = null; return false;
   }
   send(p.ws, { t: 'event', kind: 'mineswing', id: vein.id });
+  // Each swing has a chance to knock loose one ore, so it takes a random number
+  // of swings — the animation reads as real work, not a single instant grab.
   if (Math.random() >= swingChance(vein.ore, st.level, st.power)) return false;
 
   const ore = ORES[vein.ore];
   p.inventory.push(ore.ore);
-  vein.depleted = ore.respawn;
+  if (vein.remaining == null) vein.remaining = veinYield(vein.ore);
+  vein.remaining -= 1;
   send(p.ws, { t: 'event', kind: 'mined', id: vein.id, item: ore.ore, xp: ore.xp });
   grantMiningXp(p, ore.xp);
   sendBag(p);
-  return true;
+  // The vein is only worked out (and starts its respawn) once it is empty; until
+  // then the miner keeps swinging and pulling ore from the same node.
+  if (vein.remaining <= 0) { vein.depleted = ore.respawn; return true; }
+  return false;
 }
 
 function stepMining(p) {
@@ -738,7 +745,7 @@ function stepMining(p) {
   p.mineTimer -= DT;
   if (p.mineTimer <= 0) {
     p.mineTimer = swingTime(st.power || 1);
-    if (mineSwing(p, vein)) p.pendingMine = null; // one ore per click, like the veins deplete
+    if (mineSwing(p, vein)) p.pendingMine = null; // keep swinging until the vein is worked out
   }
 }
 
@@ -842,7 +849,7 @@ function stepVeins() {
     for (const v of (zone._veins || new Map()).values()) {
       if (v.depleted > 0) {
         v.depleted -= DT;
-        if (v.depleted <= 0) v.depleted = 0;
+        if (v.depleted <= 0) { v.depleted = 0; v.remaining = veinYield(v.ore); } // refill on respawn
       }
     }
   }

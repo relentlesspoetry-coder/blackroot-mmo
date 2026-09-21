@@ -14,19 +14,27 @@ export const MINING = {
   maxLevel: 60,
 };
 
-// `level` gates the vein, `xp` is per ore mined, `respawn` is seconds, and
-// `hardness` sets how often a swing actually yields (see rollSwing).
+// `level` gates the vein, `xp` is per ore mined, `respawn` is seconds,
+// `hardness` sets how often a swing actually yields (see rollSwing), and
+// `yield` is the [min,max] number of ores a fresh vein holds before it is
+// worked out — richer for common ore, leaner for the rare tiers.
 export const ORES = {
-  Copper:     { level: 1,  xp: 18,  ore: 'Copper Ore',     respawn: 10, hardness: 1.0, value: 8 },
-  Tin:        { level: 1,  xp: 18,  ore: 'Tin Ore',        respawn: 10, hardness: 1.0, value: 8 },
-  Iron:       { level: 8,  xp: 35,  ore: 'Iron Ore',       respawn: 14, hardness: 1.5, value: 24 },
-  Silver:     { level: 12, xp: 40,  ore: 'Silver Ore',     respawn: 60, hardness: 1.8, value: 60 },
-  Coal:       { level: 16, xp: 50,  ore: 'Coal',           respawn: 30, hardness: 2.2, value: 45 },
-  Gold:       { level: 22, xp: 65,  ore: 'Gold Ore',       respawn: 60, hardness: 2.6, value: 140 },
-  Mithril:    { level: 30, xp: 80,  ore: 'Mithril Ore',    respawn: 120, hardness: 3.4, value: 320 },
-  Adamantite: { level: 38, xp: 95,  ore: 'Adamantite Ore', respawn: 240, hardness: 4.2, value: 700 },
-  Runite:     { level: 46, xp: 125, ore: 'Runite Ore',     respawn: 600, hardness: 5.5, value: 2400 },
+  Copper:     { level: 1,  xp: 18,  ore: 'Copper Ore',     respawn: 10, hardness: 1.0, value: 8,    yield: [3, 6] },
+  Tin:        { level: 1,  xp: 18,  ore: 'Tin Ore',        respawn: 10, hardness: 1.0, value: 8,    yield: [3, 6] },
+  Iron:       { level: 8,  xp: 35,  ore: 'Iron Ore',       respawn: 14, hardness: 1.5, value: 24,   yield: [3, 5] },
+  Silver:     { level: 12, xp: 40,  ore: 'Silver Ore',     respawn: 60, hardness: 1.8, value: 60,   yield: [2, 4] },
+  Coal:       { level: 16, xp: 50,  ore: 'Coal',           respawn: 30, hardness: 2.2, value: 45,   yield: [4, 7] },
+  Gold:       { level: 22, xp: 65,  ore: 'Gold Ore',       respawn: 60, hardness: 2.6, value: 140,  yield: [2, 4] },
+  Mithril:    { level: 30, xp: 80,  ore: 'Mithril Ore',    respawn: 120, hardness: 3.4, value: 320, yield: [2, 3] },
+  Adamantite: { level: 38, xp: 95,  ore: 'Adamantite Ore', respawn: 240, hardness: 4.2, value: 700, yield: [1, 3] },
+  Runite:     { level: 46, xp: 125, ore: 'Runite Ore',     respawn: 600, hardness: 5.5, value: 2400, yield: [1, 2] },
 };
+
+// How many ores a fresh vein of this type holds (random within its range).
+export function veinYield(oreKey) {
+  const y = (ORES[oreKey] && ORES[oreKey].yield) || [2, 4];
+  return y[0] + Math.floor(Math.random() * (y[1] - y[0] + 1));
+}
 
 // The model name a scatter spec uses maps straight to an ore.
 export function oreFromModel(model) {
