@@ -1320,7 +1320,10 @@ function buildZone() {
     buildStripRibbon(tr, 0.9, 0.05, dirtMat(), 2, 0.8, false, 1.6);
     buildRoundPatch(tr[0].x, tr[0].z, 0.75, 0.8, dirtMat());
   }
-  for (const h of (zone.houses || [])) if (h.key === 'farmhouse') buildRoundPatch(h.x, h.z + h.d / 2 + 1.2, 1.1, 1.0, dirtMat());
+  for (const h of (zone.houses || [])) {
+    const o = h.door === 'south' ? [0, h.d / 2 + 1.3] : h.door === 'north' ? [0, -h.d / 2 - 1.3] : h.door === 'east' ? [h.w / 2 + 1.3, 0] : [-h.w / 2 - 1.3, 0];
+    buildRoundPatch(h.x + o[0], h.z + o[1], 1.0, 1.0, dirtMat());
+  }
 
   // Rivers — deep flowing water sitting in the carved channel, one per river.
   for (const river of worldRivers()) {
@@ -2660,14 +2663,31 @@ function updateHouseRoofs() {
 // Tilled field: dark soil with ridged rows and instanced crop plants.
 function buildField() {
   const f = zone.field; if (!f) return;
-  const soil = new THREE.Mesh(new THREE.PlaneGeometry(f.w, f.d), new THREE.MeshStandardMaterial({ map: loadTexture('dirt', f.w / 4, f.d / 4), color: 0x5a4030, roughness: 1 }));
-  soil.rotation.x = -Math.PI / 2; soil.position.set(f.x, 0.04, f.z); soil.receiveShadow = true; scene.add(soil);
+  // Soil: a rounded rectangle whose rim fades into the grass (vertex alpha) —
+  // no hard square edge on the field.
+  const FE = 2.2, CR = 3.0, W = f.w + FE * 2, D = f.d + FE * 2, seg = 36;
+  const sg = new THREE.PlaneGeometry(W, D, seg, seg); sg.rotateX(-Math.PI / 2);
+  const spos = sg.attributes.position, scol = [];
+  for (let i = 0; i < spos.count; i++) {
+    const px = spos.getX(i), pz = spos.getZ(i);
+    // signed distance to the inner rounded rect (0 on its edge, >0 outside)
+    const qx = Math.abs(px) - (f.w / 2 - CR), qz = Math.abs(pz) - (f.d / 2 - CR);
+    const sd = Math.hypot(Math.max(qx, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qz), 0) - CR;
+    const a = Math.max(0, Math.min(1, 1 - sd / FE));
+    scol.push(1, 1, 1, a);
+  }
+  sg.setAttribute('color', new THREE.Float32BufferAttribute(scol, 4));
+  const soil = new THREE.Mesh(sg, new THREE.MeshStandardMaterial({ map: loadTexture('dirt', W / 4, D / 4), color: 0x5a4030, roughness: 1,
+    transparent: true, vertexColors: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }));
+  soil.position.set(f.x, 0.04, f.z); soil.receiveShadow = true; scene.add(soil);
   const ridgeMat = new THREE.MeshStandardMaterial({ color: 0x6b4a32, roughness: 1, flatShading: true });
   const rows = Math.max(3, Math.floor(f.d / 2.4)), plants = [];
   const crops = f.crops && f.crops.length ? f.crops : ['Strawberry_Patch'];
   for (let i = 0; i < rows; i++) {
     const z = f.z - f.d / 2 + (i + 0.5) * (f.d / rows);
-    const ridge = new THREE.Mesh(new THREE.BoxGeometry(f.w - 1.2, 0.3, 1.1), ridgeMat); ridge.position.set(f.x, 0.15, z); ridge.receiveShadow = true; scene.add(ridge);
+    // A real dirt mound: round in section with rounded ends, sunk a little into the soil.
+    const ridge = new THREE.Mesh(new THREE.CapsuleGeometry(0.55, f.w - 2.6, 2, 8), ridgeMat);
+    ridge.rotation.z = Math.PI / 2; ridge.position.set(f.x, 0.08, z); ridge.receiveShadow = ridge.castShadow = true; scene.add(ridge);
     const m = crops[i % crops.length], n = Math.floor((f.w - 2) / 1.5);
     for (let j = 0; j < n; j++) plants.push({ m, x: f.x - f.w / 2 + 1.5 + j * 1.5, z, r: Math.random() * 6.28, s: 0.7 + Math.random() * 0.35 });
   }
@@ -2696,7 +2716,9 @@ function buildFarmGate() {
     wrap.rotation.y = yaw;
     wrap.traverse(o => { if (o.isMesh) { o.castShadow = o.receiveShadow = true; o.userData.pickKind = 'gate'; } });
     // On a double gate the two latch-side posts would meet in the middle: hide them.
-    if (g.double) for (const post of findByName(wrap, /^Gate_Post\.001$/)) post.visible = false;
+    // (the loader renames 'Gate_Post.001' -> 'Gate_Post001', so go by position: the
+    //  latch post is the one on the +X end of the leaf)
+    if (g.double) for (const post of findByName(wrap, /^Gate_Post/)) if (post.position.x > 0) post.visible = false;
     scene.add(wrap);
     return { mesh: wrap, hinge: findByName(wrap, /CTRL_Gate_Hinge/)[0] || null, width: box.max.x - box.min.x };
   };

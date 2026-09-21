@@ -129,7 +129,7 @@ export const darkwoods = {
   // Primary progression path (winding). Rendered as a dirt trail; also used to
   // keep the forest clear along the route.
   path: [
-    { x: -26, z: -79.5 }, { x: -25, z: -70 }, { x: -24, z: -63 }, { x: -25, z: -55 }, { x: -30, z: -42 },
+    { x: -26, z: -78.9 }, { x: -25, z: -70 }, { x: -24, z: -63 }, { x: -25, z: -55 }, { x: -30, z: -42 },
     { x: -34, z: -24 }, { x: -20, z: -8 }, { x: 6, z: 2 }, { x: 6, z: 22 },
     // A straight run through the Mossy Bridge crossing so the deck lines up.
     { x: -2, z: 30 }, { x: -8, z: 35 }, { x: -14, z: 40 },
@@ -303,8 +303,8 @@ export const darkwoods = {
   // packed together. Each area is its own creature so groups don't stack.
   spawns: [
     // --- The farmstead at the Entrance Clearing: livestock penned in the yard ---
-    { type: 'chicken', count: 6, cx: 13,  cz: -74, r: 5, level: 1, expect: 1, hint: 'Chicken pen' },
-    { type: 'cow',     count: 3, cx: -8,  cz: -73, r: 5, level: 1, expect: 1, hint: 'Cow pen' },
+    { type: 'chicken', count: 6, cx: 12,  cz: -72, r: 4, level: 1, expect: 1, hint: 'Chicken pen' },
+    { type: 'cow',     count: 3, cx: -8,  cz: -71, r: 5, level: 1, expect: 1, hint: 'Cow pen' },
     // --- Wild rabbits: small game scattered through the open woods ---
     { type: 'rabbit',  count: 5, cx: -18, cz: -40, r: 30, level: 1, expect: 1, hint: 'Woodland rabbits' },
     { type: 'rabbit',  count: 5, cx: 20,  cz: 10,  r: 32, level: 1, expect: 1, hint: 'Woodland rabbits' },
@@ -347,24 +347,27 @@ export const darkwoods = {
       { x1: -42, z1: -86, x2: -42, z2: -62 },   // west
       { x1: -42, z1: -62, x2: -25.8, z2: -62 }, // south-west (up to the double gate)
       { x1: -22.2, z1: -62, x2: 30, z2: -62 },  // south-east (from the double gate)
-      // Cow pen (west of the yard) — opening on its north side.
-      { x1: -16, z1: -80, x2: -10, z2: -80 }, { x1: -6, z1: -80, x2: 0, z2: -80 },
-      { x1: -16, z1: -80, x2: -16, z2: -66 }, { x1: 0, z1: -80, x2: 0, z2: -66 },
-      { x1: -16, z1: -66, x2: 0,   z2: -66 },
-      // Chicken pen (east of the yard) — opening on its west side.
-      { x1: 6,  z1: -80, x2: 20, z2: -80 }, { x1: 6, z1: -68, x2: 20, z2: -68 },
-      { x1: 20, z1: -80, x2: 20, z2: -68 },
-      { x1: 6,  z1: -80, x2: 6,  z2: -76 }, { x1: 6, z1: -72, x2: 6, z2: -68 },
+      // Cow pen (west of the yard), set back from the houses — opening on its north side.
+      { x1: -16, z1: -78, x2: -10, z2: -78 }, { x1: -6, z1: -78, x2: 0, z2: -78 },
+      { x1: -16, z1: -78, x2: -16, z2: -64 }, { x1: 0, z1: -78, x2: 0, z2: -64 },
+      { x1: -16, z1: -64, x2: 0,   z2: -64 },
+      // Chicken pen (east of the yard), well clear of the Warden's hut — opening on its west side.
+      { x1: 6,  z1: -78, x2: 17, z2: -78 }, { x1: 6, z1: -66, x2: 17, z2: -66 },
+      { x1: 17, z1: -78, x2: 17, z2: -66 },
+      { x1: 6,  z1: -78, x2: 6,  z2: -75 }, { x1: 6, z1: -71, x2: 6, z2: -66 },
     ],
-    // A double gate (two leaves meeting in the middle) wide enough for a cart.
     gate: { x: -24, z: -62, yaw: 0, double: true, seg: { x1: -25.8, z1: -62, x2: -22.2, z2: -62 } },
     // Footpaths from each doorstep to the road. Authored so they walk AROUND
     // the pens (never through a fence): the yard lane runs along z=-83 north of
     // both pens; the Warden's hut path skirts south of the chicken pen.
+    // Doorsteps sit ~2.5m in FRONT of each front wall (walls: Bram -83.35,
+    // Maggie -83.06, hut west wall x 23.35), the lane runs through the front
+    // yard between the houses and the pens, and spurs lead into each pen's opening.
     trails: [
-      [ { x: 18, z: -82.8 }, { x: 8, z: -83.6 }, { x: -2, z: -83.2 }, { x: -14, z: -82 }, { x: -24, z: -78 } ], // yard lane: Maggie's -> road
-      [ { x: -2, z: -83.2 }, { x: -2, z: -81.6 } ],                                                           // Bram's doorstep
-      [ { x: 21.2, z: -68 }, { x: 23.2, z: -72 }, { x: 23, z: -80 }, { x: 19, z: -83 } ],                     // Warden's hut, east of the chicken pen
+      [ { x: 18, z: -81.55 }, { x: 8, z: -81.4 }, { x: -2, z: -81.85 }, { x: -14, z: -80.9 }, { x: -25, z: -77.5 } ], // yard lane: Maggie's door -> Bram's door -> road
+      [ { x: 21.85, z: -67 }, { x: 21.9, z: -72 }, { x: 21, z: -78.2 }, { x: 18.5, z: -81.3 } ],                 // Warden's hut door -> lane (east of the chicken pen)
+      [ { x: -8, z: -76.8 }, { x: -8, z: -81.1 } ],                                                              // cow pen opening -> lane
+      [ { x: 7.2, z: -73 }, { x: 4.2, z: -73 }, { x: 4.2, z: -79.5 }, { x: 5.5, z: -81.45 } ],                    // chicken pen opening -> lane
     ],
     // Enterable houses: axis-aligned, `door` is the side the doorway is on.
     // Furniture offsets (dx,dz) are metres from the house centre.
@@ -382,27 +385,27 @@ export const darkwoods = {
         furn: [ { k: 'bed', dx: -3.4, dz: -3.0, yaw: 0 }, { k: 'table', dx: 2.6, dz: -0.6, yaw: 0 }, { k: 'stool', dx: 2.6, dz: 1.4, yaw: 0 }, { k: 'hearth', dx: 4.6, dz: -3.6, yaw: 0 } ] },
       { key: 'bram',      name: "Bram's Cottage",   x: -2, z: -86, w: 11, d: 9,  h: 3.1, door: 'south', roof: 0x7a6248, wall: 0xd2c8ae,
         furn: [ { k: 'bed', dx: 3.0, dz: -2.6, yaw: 0 }, { k: 'chest', dx: -3.8, dz: -2.8, yaw: 0 }, { k: 'table', dx: -2.4, dz: 0.8, yaw: 0 }, { k: 'stool', dx: -0.6, dz: 0.8, yaw: 0 } ] },
-      { key: 'guardhut',  name: "Warden's Hut",     x: 24, z: -68, w: 9,  d: 8,  h: 3.0, door: 'west',  roof: 0x5a5148, wall: 0xc9c2ae,
+      { key: 'guardhut',  name: "Warden's Hut",     x: 26, z: -67, w: 9,  d: 8,  h: 3.0, door: 'west',  roof: 0x5a5148, wall: 0xc9c2ae,
         furn: [ { k: 'bed', dx: 2.4, dz: -2.0, yaw: 0 }, { k: 'table', dx: -1.6, dz: 1.4, yaw: 0 }, { k: 'chest', dx: 2.6, dz: 2.2, yaw: 0 } ] },
     ],
     // A tilled field of crops west of the cow pen.
-    field: { x: -34, z: -71, w: 22, d: 20, crops: ['Strawberry_Patch', 'Meadow_Sedge', 'Goldenrod_Patch'] },
+    field: { x: -35, z: -71, w: 22, d: 20, crops: ['Strawberry_Patch', 'Meadow_Sedge', 'Goldenrod_Patch'] },
     props: [
       // Chicken pen: coop, house, nests, feeders.
-      { m: 'Walk_In_Chicken_House', x: 16,  z: -77, yaw: 3.14, s: 1.0, c: 2.2 },
-      { m: 'Raised_Chicken_Coop',   x: 10,  z: -71, yaw: 3.6,  s: 1.0, c: 1.3 },
-      { m: 'Nesting_Boxes',         x: 18,  z: -70, yaw: 4.0,  s: 1.0, c: 0.8 },
-      { m: 'Chicken_Feeder',        x: 12,  z: -76, yaw: 0,    s: 1.0, c: 0.4 },
-      { m: 'Chicken_Waterer',       x: 14,  z: -73, yaw: 0,    s: 1.0, c: 0.4 },
+      { m: 'Walk_In_Chicken_House', x: 13.5, z: -75, yaw: 3.14, s: 1.0, c: 2.2 },
+      { m: 'Raised_Chicken_Coop',   x: 10,  z: -68.5, yaw: 3.6, s: 1.0, c: 1.3 },
+      { m: 'Nesting_Boxes',         x: 15,  z: -68, yaw: 4.0,  s: 1.0, c: 0.8 },
+      { m: 'Chicken_Feeder',        x: 12,  z: -71.5, yaw: 0,  s: 1.0, c: 0.4 },
+      { m: 'Chicken_Waterer',       x: 14.5, z: -71, yaw: 0,   s: 1.0, c: 0.4 },
       // Cow pen: troughs and hay.
-      { m: 'Feeding_Trough',        x: -13, z: -70, yaw: 1.57, s: 1.0, c: 0.7 },
-      { m: 'Water_Trough',          x: -3,  z: -69, yaw: 1.57, s: 1.0, c: 0.7 },
-      { m: 'Round_Hay_Bale',        x: -12, z: -77, yaw: 0.5,  s: 1.0, c: 0.7 },
+      { m: 'Feeding_Trough',        x: -13, z: -68, yaw: 1.57, s: 1.0, c: 0.7 },
+      { m: 'Water_Trough',          x: -3,  z: -67, yaw: 1.57, s: 1.0, c: 0.7 },
+      { m: 'Round_Hay_Bale',        x: -13, z: -75, yaw: 0.5,  s: 1.0, c: 0.7 },
       // Yard clutter around the square and the houses.
       { m: 'Tall_Haystack',         x: 8,   z: -88, yaw: 0,    s: 1.0, c: 1.1 },
       { m: 'Stacked_Hay_Bales',     x: 11,  z: -85, yaw: 1.2,  s: 1.0, c: 0.9 },
-      { m: 'Hay_Pile',              x: 26,  z: -78, yaw: 0,    s: 1.0, c: 0.7 },
-      { m: 'Scarecrow',             x: -34, z: -71, yaw: 3.14, s: 1.0, c: 0.4 },
+      { m: 'Hay_Pile',              x: 27,  z: -80, yaw: 0,    s: 1.0, c: 0.7 },
+      { m: 'Scarecrow',             x: -35, z: -71, yaw: 3.14, s: 1.0, c: 0.4 },
       { m: 'Grain_Barrel',          x: -17, z: -86, yaw: 0,    s: 1.0, c: 0.5 },
       { m: 'Grain_Sack',            x: -15, z: -87, yaw: 0.8,  s: 1.0, c: 0.0 },
       { m: 'Vegetable_Crate',       x: -19, z: -87, yaw: 0.3,  s: 1.0, c: 0.5 },
