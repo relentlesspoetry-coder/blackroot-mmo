@@ -916,7 +916,7 @@ function pickupItem(p, itemId) {
 // What every item is, for bag tooltips / Examine: sent once on join.
 const ITEM_CATALOG = Object.fromEntries(Object.entries(ITEMS).map(([n, d]) => [n, {
   slot: d.slot || null, atk: d.atk || 0, def: d.def || 0, level: d.level || 1, value: d.value || 0,
-  heal: d.heal || 0, desc: d.desc || null, gear: d.gear || null, model: d.model || null, len: d.len || null, tier: d.tier || 0, set: d.set || null,
+  heal: d.heal || 0, desc: d.desc || null, gear: d.gear || null, model: d.model || null, len: d.len || null, tier: d.tier || 0, set: d.set || null, rarity: d.rarity || null,
 }]));
 function sendBag(p) {
   send(p.ws, { t: 'bag', items: p.inventory, gold: p.gold,

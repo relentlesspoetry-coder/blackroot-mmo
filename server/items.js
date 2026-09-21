@@ -141,6 +141,46 @@ export const WEAPON_ITEMS = {
   'Greataxe':      { atk: 18, level: 8, tier: 5, value: 2400, model: '07_Greataxe',      len: 1.3,  desc: 'A double-bitted greataxe. Two hands, no mercy.' },
   'Greatsword':    { atk: 20, level: 9, tier: 5, value: 3000, model: '04_Greatsword',    len: 1.5,  desc: 'A blade as tall as a man. Whoever carried it, carried the field.' },
 };
+// The 30 rarity weapons (BlackRoot_30_Rarity_Weapons pack), Common through
+// Mythic. Rarity maps onto the same tiers as the armour (Mythic is a sixth
+// tier above anything else in the game).
+const RARITY_TIER = { Common: 1, Uncommon: 2, Rare: 3, Epic: 4, Legendary: 5, Mythic: 6 };
+const RARITY_WEAPONS = [
+  // [name, rarity, atk, level, value, model, len, desc]
+  ['Rusted Training Sword', 'Common', 3, 1, 25, '01_Rusted_Training_Sword', 0.8, 'The drill yard\'s cast-off. It still has an edge, mostly.'],
+  ['Ashwood Club', 'Common', 4, 1, 30, '02_Ashwood_Club', 0.75, 'A knotted ash club studded with nails.'],
+  ['Copper Dagger', 'Common', 3, 1, 35, '03_Copper_Dagger', 0.45, 'Soft metal, sharp enough.'],
+  ['Hunter Shortbow', 'Common', 4, 1, 60, '04_Hunter_Shortbow', 1.1, 'A hunter\'s bow, wrapped in green cord.'],
+  ['Iron Spear', 'Uncommon', 6, 2, 120, '05_Iron_Spear', 1.9, 'An iron-headed spear with a blue pennant.'],
+  ['Bronze War Axe', 'Uncommon', 7, 2, 150, '06_Bronze_War_Axe', 0.95, 'A double-bitted bronze axe.'],
+  ['Falcon Scimitar', 'Uncommon', 7, 3, 180, '07_Falcon_Scimitar', 0.95, 'A curved blade with a falcon-wing guard.'],
+  ['Guard Mace', 'Uncommon', 8, 3, 200, '08_Guard_Mace', 0.8, 'Town guard issue. Dents helmets and skulls alike.'],
+  ['Steel Longsword', 'Rare', 10, 4, 420, '09_Steel_Longsword', 1.1, 'Bright steel, gold-hilted, blue-wrapped.'],
+  ['Ranger Crossbow', 'Rare', 10, 4, 440, '10_Ranger_Crossbow', 0.8, 'A ranger\'s crossbow set with green stones.'],
+  ['Knight Halberd', 'Rare', 11, 5, 500, '11_Knight_Halberd', 2.0, 'A knight\'s halberd with a blue pennant.'],
+  ['Moonfang Twin Daggers', 'Rare', 10, 5, 520, '12_Moonfang_Twin_Daggers', 0.5, 'A matched pair of curved steel fangs.'],
+  ['Stormcaller Staff', 'Rare', 11, 5, 560, '13_Stormcaller_Staff', 1.7, 'Ice-blue crystal crowns a storm-scarred staff.'],
+  ['Ember Warhammer', 'Rare', 12, 6, 620, '14_Ember_Warhammer', 1.0, 'A stone hammer head veined with living ember.'],
+  ['Serpent Whip', 'Epic', 13, 6, 1100, '15_Serpent_Whip', 1.2, 'A segmented whip that ends in a serpent\'s head.'],
+  ['Crystal Greatbow', 'Epic', 14, 7, 1300, '16_Crystal_Greatbow', 1.5, 'A greatbow grown over with ice crystal.'],
+  ['Sunforged Claymore', 'Epic', 16, 7, 1500, '17_Sunforged_Claymore', 1.5, 'A claymore whose guard is a blazing sun.'],
+  ['Void Pike', 'Epic', 15, 7, 1400, '18_Void_Pike', 2.0, 'A black pike tipped with void crystal.'],
+  ['Runebound Flail', 'Epic', 16, 8, 1600, '19_Runebound_Flail', 0.9, 'A flail whose head is bound with purple runes.'],
+  ['Shadow Reaver Scythe', 'Epic', 17, 8, 1800, '20_Shadow_Reaver_Scythe', 1.8, 'A reaper\'s scythe edged in violet shadow.'],
+  ['Dragonfire Blade', 'Legendary', 19, 8, 3200, '21_Dragonfire_Blade', 1.1, 'A blade cracked with dragonfire that never cools.'],
+  ['Frostbite Maul', 'Legendary', 21, 9, 3600, '22_Frostbite_Maul', 1.05, 'A maul sheathed in ice that never melts.'],
+  ['Phoenix Talons', 'Legendary', 19, 9, 3400, '23_Phoenix_Talons', 0.5, 'Gold talons on crimson gauntlets, hot to the touch.'],
+  ['Leviathan Trident', 'Legendary', 20, 9, 3600, '24_Leviathan_Trident', 1.9, 'A trident from the deep, still wet.'],
+  ['Celestial Wand', 'Legendary', 18, 9, 3800, '25_Celestial_Wand', 0.5, 'A gold ring holding a star that never sets.'],
+  ['Kingsguard Greataxe', 'Mythic', 25, 10, 8000, '26_Kingsguard_Greataxe', 1.4, 'The lion-crested axe of the old Kingsguard.'],
+  ['Arcane Crescent Staff', 'Mythic', 24, 10, 8500, '27_Arcane_Crescent_Staff', 1.8, 'A crescent moon of black stone cradling arcane crystal.'],
+  ['Doomspike Lance', 'Mythic', 27, 10, 9000, '28_Doomspike_Lance', 2.1, 'A barbed black lance with a blood-red spike.'],
+  ['Worldroot Glaive', 'Mythic', 26, 10, 9000, '29_Worldroot_Glaive', 1.9, 'A glaive grown, not forged, from the Worldroot.'],
+  ['Crownbreaker Relicblade', 'Mythic', 30, 10, 12000, '30_Crownbreaker_Relicblade', 1.4, 'The relic blade that ended a dynasty.'],
+];
+for (const [name, rarity, atk, level, value, model, len, desc] of RARITY_WEAPONS) {
+  WEAPON_ITEMS[name] = { atk, level, tier: RARITY_TIER[rarity], rarity, value, model, len, desc };
+}
 for (const d of Object.values(WEAPON_ITEMS)) d.slot = 'weapon';
 
 export const ITEMS = {

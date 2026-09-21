@@ -371,7 +371,9 @@ export function scaledMonster(type, level) {
 // for a random piece of that tier (armour = any of the 32 pieces of the four
 // sets at that tier; weapon = any weapon of that tier). Rarity climbs with the
 // camps: the creek goblins spill tier-1 kit, the ogre hollow and the zone's
-// elite are where tier 4-5 turns up, and every step up is a longer shot.
+// elite are where tier 4-5 turns up, and every step up is a longer shot. The
+// 30 rarity weapons share these tiers (Common..Legendary = 1..5); Mythic is a
+// sixth tier only the top creatures and elites can drop, at very long odds.
 // ---------------------------------------------------------------------------
 const GEAR_DROPS = {
   goblin:           [['armor', 1, 40],  ['weapon', 1, 60],  ['armor', 2, 400], ['weapon', 2, 500]],
@@ -380,14 +382,14 @@ const GEAR_DROPS = {
   goblin_miner:     [['armor', 2, 110], ['weapon', 2, 150], ['armor', 3, 600], ['weapon', 3, 800]],
   goblin_warrior:   [['armor', 2, 100], ['weapon', 2, 140], ['armor', 3, 300], ['weapon', 3, 400], ['armor', 4, 1500], ['weapon', 4, 2000]],
   goblin_archer:    [['armor', 2, 100], ['weapon', 2, 140], ['armor', 3, 300], ['weapon', 3, 400], ['armor', 4, 1500], ['weapon', 4, 2000]],
-  goblin_chief:     [['armor', 3, 60],  ['weapon', 3, 80],  ['armor', 4, 250], ['weapon', 4, 350], ['armor', 5, 2000], ['weapon', 5, 2500]],
-  guard:            [['armor', 3, 120], ['weapon', 3, 160], ['armor', 4, 500], ['weapon', 4, 700], ['armor', 5, 3000], ['weapon', 5, 4000]],
+  goblin_chief:     [['armor', 3, 60],  ['weapon', 3, 80],  ['armor', 4, 250], ['weapon', 4, 350], ['armor', 5, 2000], ['weapon', 5, 2500], ['weapon', 6, 12000]],
+  guard:            [['armor', 3, 120], ['weapon', 3, 160], ['armor', 4, 500], ['weapon', 4, 700], ['armor', 5, 3000], ['weapon', 5, 4000], ['weapon', 6, 15000]],
   cow:              [['armor', 1, 400], ['weapon', 1, 600]],
   chicken:          [['armor', 1, 800], ['weapon', 1, 1200]],
   // dragons at the woods' edge: the top of the table, and not stingy about it
-  ember_dragon:     [['armor', 4, 12], ['weapon', 4, 16], ['armor', 5, 60], ['weapon', 5, 80]],
-  frost_dragon:     [['armor', 4, 12], ['weapon', 4, 16], ['armor', 5, 60], ['weapon', 5, 80]],
-  venom_dragon:     [['armor', 4, 12], ['weapon', 4, 16], ['armor', 5, 60], ['weapon', 5, 80]],
+  ember_dragon:     [['armor', 4, 12], ['weapon', 4, 16], ['armor', 5, 60], ['weapon', 5, 80], ['weapon', 6, 500]],
+  frost_dragon:     [['armor', 4, 12], ['weapon', 4, 16], ['armor', 5, 60], ['weapon', 5, 80], ['weapon', 6, 500]],
+  venom_dragon:     [['armor', 4, 12], ['weapon', 4, 16], ['armor', 5, 60], ['weapon', 5, 80], ['weapon', 6, 500]],
 };
 // A named elite rolls its type's gear table at much better odds and always
 // gets one extra shot at the tier above its best.
@@ -410,7 +412,8 @@ export function rollGear(type, elite = false) {
     }
   }
   if (elite) {
-    const tier = Math.min(5, top + 1), kind = Math.random() < 0.6 ? 'armor' : 'weapon';
+    // (mythic weapons are the sixth tier; armour stops at five)
+    const tier = Math.min(6, top + 1), kind = tier > 5 || Math.random() >= 0.6 ? 'weapon' : 'armor';
     if (Math.random() < 1 / 3) { const pool = gearPools[kind][tier]; if (pool && pool.length) drops.push({ item: pool[Math.floor(Math.random() * pool.length)], qty: 1 }); }
   }
   return drops;

@@ -6548,6 +6548,7 @@ let itemCatalog = {}; // name -> { slot, atk, def, level, value, heal, desc } fr
 function metaFor(name) { const c = itemCatalog[name]; if (c && c.slot) return c; return ITEM_META[name] || null; }
 function itemInfo(name) { return itemCatalog[name] || null; }
 function isEdible(name) { const c = itemCatalog[name]; return c ? c.heal > 0 : EDIBLE.has(name); }
+const RARITY_COLOR = { Common: '#c9c2b5', Uncommon: '#5fbf4a', Rare: '#4a8cff', Epic: '#b45cff', Legendary: '#ff9d2e', Mythic: '#e04cff' };
 function statText(m) {
   if (!m) return '';
   const bits = [];
@@ -6824,7 +6825,9 @@ function renderBag() {
     const n = names[i];
     if (!n) { html += '<div class="slot"></div>'; continue; } // empty slot
     const m = metaFor(n), info = itemInfo(n);
-    const lines = [`<b>${escapeHtml(n)}</b>${counts[n] > 1 ? ` <span class="dim">×${counts[n]}</span>` : ''}`];
+    const lines = [`<b${info && info.rarity ? ` style="color:${RARITY_COLOR[info.rarity] || '#fff'}"` : ''}>${escapeHtml(n)}</b>${counts[n] > 1 ? ` <span class="dim">×${counts[n]}</span>` : ''}`];
+    if (info && info.rarity) lines.push(`<span style="color:${RARITY_COLOR[info.rarity]}">${info.rarity}</span>`);
+    else if (info && info.set) lines.push(`<span class="dim">${escapeHtml(info.set)} set · tier ${info.tier}</span>`);
     const st = statText(m).replace(/^ \(|\)$/g, '');
     if (st) lines.push(st);
     if (info && info.heal) lines.push(`Heals ${info.heal}`);
