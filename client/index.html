@@ -49,26 +49,6 @@
   #stamfill { background: linear-gradient(90deg,#b8862a,#f2c94c); }
   #partyhead { display: flex; justify-content: space-between; align-items: baseline; margin: 8px 2px 0; font-size: 11px; font-weight: 700; letter-spacing: 1px; color: #ffdf9e; text-shadow: 0 1px 2px #000; }
   #partyhead #partyslots { letter-spacing: 0; font-weight: 400; color: #b9ad90; }
-  #partylist { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
-  .pcard { pointer-events: auto; display: flex; gap: 10px; padding: 8px 10px; border-radius: 8px; background: #2e2820; border: 2px solid #1c150e; box-shadow: 0 6px 18px #000a; position: relative; }
-  .pcard.dead { opacity: .7; }
-  .pcard .pl { flex: 1; min-width: 0; }
-  .pcard .pn { font-size: 15px; font-weight: 700; color: #ffdf9e; text-shadow: 0 1px 2px #000; line-height: 1.1; }
-  .pcard .ps { font-size: 11px; color: #b9ad90; margin: 1px 0 5px; }
-  .pcard .pst { font-size: 11px; color: #d8cba8; margin-bottom: 5px; }
-  .pcard .bar { height: 14px; margin-bottom: 4px; } .pcard .bar > span { font-size: 10px; }
-  .pcard .res.mana i { background: linear-gradient(90deg,#2f5aa0,#5aa0e0); } .pcard .res.focus i { background: linear-gradient(90deg,#2a7a4a,#5fd08a); } .pcard .res.stamina i { background: linear-gradient(90deg,#b8862a,#f2c94c); }
-  .pcard .pem { width: 46px; height: 46px; flex: none; background: #1d1913; border: 1px solid #4a3d2a; border-radius: 8px; padding: 3px; box-sizing: border-box; }
-  .pcard .stances { display: flex; gap: 4px; margin-top: 2px; }
-  .pcard .stances button { flex: 1; font-size: 10px; padding: 3px 0; background: #1d1913; color: #cdbf9e; border: 1px solid #4a3d2a; border-radius: 4px; cursor: pointer; font-family: inherit; }
-  .pcard .stances button:hover { border-color: #c9a44a; color: #ffe9b0; }
-  .pcard .stances button.on { background: #5a4a34; color: #ffdf9e; border-color: #c9a44a; }
-  .pcard .dis { position: absolute; top: 4px; right: 6px; font-size: 11px; color: #8a7d63; cursor: pointer; background: none; border: none; }
-  .pcard .dis:hover { color: #ff9a8a; }
-  .d-recruit { display: flex; gap: 8px; align-items: center; padding: 5px 0; border-top: 1px solid #3a3020; }
-  .d-recruit img { width: 34px; height: 34px; border-radius: 6px; background: #1d1913; border: 1px solid #4a3d2a; }
-  .d-recruit .rn { font-weight: 700; color: #ffe9b0; font-size: 12px; } .d-recruit .rb { font-size: 10.5px; color: #9d917a; }
-  .d-recruit button { margin-left: auto; padding: 3px 9px; font-size: 11px; }
   #momentum { display: flex; gap: 5px; justify-content: center; margin-bottom: 5px; height: 10px; }
   #momentum i { width: 10px; height: 10px; border-radius: 50%; background: #2a2038; border: 1px solid #6a4f9a; }
   #momentum i.on { background: radial-gradient(circle at 40% 35%, #ffd27a, #d8781c); border-color: #ffd27a; box-shadow: 0 0 6px #ffb347aa; }
@@ -374,8 +354,7 @@
       </div>
       <img id="cemblem" src="ui/fighter/emblem.png" alt="">
     </div>
-    <div id="partyhead"><span>PARTY / COMPANIONS</span><span id="partyslots">1/6 party slots</span></div>
-    <div id="partylist"></div>
+    <div id="partyhead"><span>PARTY / COMPANIONS</span><span id="partyslots">0/6 party slots</span></div>
   </div>
   <!-- Action bar: class xp above, six ability slots (keys 1-6) below -->
   <div id="actionbar">
@@ -1015,7 +994,7 @@ function connect(name, look) {
 function handle(m) {
   switch (m.t) {
     case 'welcome':
-      myId = m.id; zone = m.zone; if (m.items) itemCatalog = m.items; if (m.recruits) recruits = m.recruits; startGame();
+      myId = m.id; zone = m.zone; if (m.items) itemCatalog = m.items; startGame();
       if (EDIT.on) { editInit(); ws?.send(JSON.stringify({ t: 'edit:list', key: EDIT.key })); }
       break;
     case 'snapshot':
@@ -1059,9 +1038,6 @@ function handle(m) {
       break;
     case 'status':
       selfMomentum = m.momentum || 0; buffList = m.buffs || []; renderMomentum(); renderBuffs();
-      break;
-    case 'party':
-      party = m; renderParty(); refreshDialogue();
       break;
     case 'quests':
       questData = { active: m.active || [], available: m.available || [], completed: m.completed || [], markers: m.markers || {} };
@@ -5522,7 +5498,7 @@ function updateNameplates() {
     plate.className = 'plate ' + (rec.kind === 'monster' ? 'mob ' + (d.elite ? 'ogre' : d.type) : '')
       + (id === targetId ? ' target' : '') + (d.elite ? ' elite' : '');
     plate.querySelector('.nm').textContent = rec.kind === 'monster'
-      ? `${d.elite ? '★ ' : ''}${d.name} · Lv ${d.level}` : d.bot ? `${d.name} · ${d.owner === myId ? 'Companion' : 'Bot'} Lv ${d.level}` : `${d.name} · Lv ${d.level}`;
+      ? `${d.elite ? '★ ' : ''}${d.name} · Lv ${d.level}` : `${d.name} · Lv ${d.level}`;
     plate.querySelector('.hpp > i').style.transform = `scaleX(${Math.max(0, d.hp / d.maxHp)})`;
     i++;
   }
@@ -5684,12 +5660,6 @@ function onEvent(m) {
       addChat('', `You eat the ${m.item}. It heals ${m.heal}.`, true);
       flyText(`+${m.heal}`, 'heal');
       break;
-    case 'heal': {
-      const who = entityMeshes.get(m.by), tgt = entityMeshes.get(m.target);
-      if (m.target === myId) flyText(`+${m.heal}`, 'heal');
-      if (who && who.data && tgt && tgt.data) addChat('', `${who.data.name} casts ${m.name} on ${m.target === myId ? 'you' : tgt.data.name} (+${m.heal}).`, true);
-      break;
-    }
     case 'hit': showHit(m); break;
     case 'death': showDeath(); break;
     case 'respawned': hideDeath(); break;
@@ -6224,15 +6194,7 @@ function openDialogue(npcId) {
       : '<div class="q-obj"><span>Nothing to sell.</span><span></span></div>';
     html += '</div>';
   }
-  // Recruiters hire out companions.
-  if (rec.def.recruiter) {
-    const have = new Set(party.members.map(c => c.name)), full = 1 + party.members.length >= (party.slots || 6);
-    html += `<div class="d-quest"><div class="q-name">Companions for hire · ${1 + party.members.length}/${party.slots || 6} party slots</div>` +
-      recruits.map(r => `<div class="d-recruit"><img src="${r.icon}" alt=""><div><div class="rn">${escapeHtml(r.name)} <span style="color:#b9ad90;font-weight:400">· ${escapeHtml(r.clsName)}</span></div><div class="rb">${escapeHtml(r.blurb || '')}</div></div>` +
-        `<button data-hire="${r.id}" ${have.has(r.name) ? 'disabled' : full ? 'disabled title="Party full"' : ''}>${have.has(r.name) ? 'In party' : 'Hire'}</button></div>`).join('') + '</div>';
-  }
   document.getElementById('dQuests').innerHTML = html;
-  dialogueEl.querySelectorAll('[data-hire]').forEach(b => { b.onclick = () => ws?.send(JSON.stringify({ t: 'hire', id: b.dataset.hire })); });
   dialogueEl.querySelectorAll('[data-sell]').forEach(b => {
     b.onclick = () => ws?.send(JSON.stringify({ t: 'sell', item: b.dataset.sell }));
   });
@@ -6245,35 +6207,6 @@ function openDialogue(npcId) {
   dialogueEl.style.display = 'block';
 }
 function closeDialogue() { dialogueEl.style.display = 'none'; dialogueNpc = null; }
-
-// ---- Party / companions panel (under the character card) ----
-let party = { slots: 6, members: [] }, recruits = [];
-const STANCE_LABEL = { follow: 'Follow', guard: 'Guard', assist: 'Assist', passive: 'Passive', attack: 'Attack' };
-function statusText(c) {
-  if (!c.alive) return `Down · back in ${c.back}s`;
-  if (c.status === 'recovering') return 'Recovering · Meditating';
-  if (c.status === 'fighting') return 'Fighting';
-  return { follow: 'Following', guard: 'Guarding you', assist: 'Following', passive: 'Standing down', attack: 'Hunting' }[c.stance] || 'Following';
-}
-function renderParty() {
-  const el = document.getElementById('partylist'); if (!el) return;
-  document.getElementById('partyslots').textContent = `${1 + party.members.length}/${party.slots || 6} party slots`;
-  el.innerHTML = party.members.map(c => {
-    const rk = (c.resName || 'Mana').toLowerCase();
-    return `<div class="pcard${c.alive ? '' : ' dead'}" data-id="${c.id}">` +
-      `<div class="pl"><div class="pn">${escapeHtml(c.name)}</div><div class="ps">${escapeHtml(c.clsName)} Bot · Lv ${c.level}</div>` +
-      `<div class="pst">${statusText(c)}</div>` +
-      `<div class="bar hp"><i style="transform:scaleX(${Math.max(0, c.hp / c.maxHp)}); background: linear-gradient(90deg,#a41d13,#e0524d)"></i><span><em>HP:</em><b>${c.hp}/${c.maxHp}</b></span></div>` +
-      `<div class="bar res ${rk}"><i style="transform:scaleX(${Math.max(0, c.res / (c.resMax || 1))})"></i><span><em>${escapeHtml(c.resName)}:</em><b>${c.res}/${c.resMax}</b></span></div>` +
-      `<div class="stances">${['follow', 'guard', 'assist', 'passive', 'attack'].map(st => `<button data-stance="${st}" class="${c.stance === st ? 'on' : ''}">${STANCE_LABEL[st]}</button>`).join('')}</div></div>` +
-      `<img class="pem" src="${c.icon}" alt=""><button class="dis" title="Dismiss">✕</button></div>`;
-  }).join('');
-  el.querySelectorAll('.pcard').forEach(card => {
-    const id = +card.dataset.id;
-    card.querySelectorAll('[data-stance]').forEach(b => b.onclick = () => ws?.send(JSON.stringify({ t: 'stance', id, stance: b.dataset.stance })));
-    card.querySelector('.dis').onclick = () => { const c = party.members.find(x => x.id === id); if (c && confirm(`Dismiss ${c.name}?`)) ws?.send(JSON.stringify({ t: 'dismiss', id })); };
-  });
-}
 document.getElementById('dClose').onclick = closeDialogue;
 
 // Redraw an open dialogue when the server sends new quest state.
@@ -6386,7 +6319,6 @@ if (location.search.includes('debug')) {
     // overrides what the client draws with.
     setDayTime(t) { worldTime = t; timeFrozen = true; },
     openDialogue: (id) => openDialogue(id),
-    send: (obj) => ws?.send(JSON.stringify(obj)),
     // What is drawn at this normalised screen point, nearest first?
     pick(nx = 0, ny = 0, limit = 6) {
       const rc = new THREE.Raycaster();

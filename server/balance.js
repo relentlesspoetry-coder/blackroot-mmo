@@ -108,69 +108,10 @@ export const CLASSES = {
     ],
   },
 };
-// ---------------------------------------------------------------------------
-// Companion ("bot") classes. Companions use the same OSRS rolls with their
-// class's stats; each has one signature behaviour the bot runs on its own
-// (a heal, a taunt, a burst shot) paid from its resource. Full player kits
-// for these classes come later — the specs are in Class Spells/.
-// ---------------------------------------------------------------------------
-export const BOT_CLASSES = {
-  assassin: {
-    name: 'Assassin', icon: 'ui/assassin/emblem.png', resource: 'Focus', role: 'ranged',
-    atk: (L) => 7 + L, str: (L) => 5 + L, def: (L) => 3 + L, hp: (L) => 70 + (L - 1) * 8,
-    res: () => 100, resRegen: 8, range: 8, attackSpeed: 3, critBase: 0.15,
-    // Marked Shot: a 1.8× shot for 30 focus, every 9s
-    signature: { id: 'marked_shot', name: 'Marked Shot', cost: 30, cd: 9, kind: 'burst', mult: 1.8 },
-  },
-  warden: {
-    name: 'Warden', icon: 'ui/warden/emblem.png', resource: 'Mana', role: 'tank',
-    atk: (L) => 5 + L, str: (L) => 5 + L, def: (L) => 10 + L, hp: (L) => 110 + (L - 1) * 14,
-    res: (L) => 100 + (L - 1) * 24, resRegen: 2.5, range: 2.6, attackSpeed: 4, critBase: 0.05,
-    // Root Grasp: pulls whatever is on the leader onto the Warden, 12 mana, every 8s
-    signature: { id: 'root_grasp', name: 'Root Grasp', cost: 12, cd: 8, kind: 'taunt', range: 9 },
-  },
-  enchanter: {
-    name: 'Enchanter', icon: 'ui/enchanter/emblem.png', resource: 'Mana', role: 'ranged',
-    atk: (L) => 6 + L, str: (L) => 4 + L, def: (L) => 3 + L, hp: (L) => 65 + (L - 1) * 8,
-    res: (L) => 125 + (L - 1) * 32, resRegen: 3, range: 7, attackSpeed: 4, critBase: 0.05,
-    // Rune of Mending: heals the most hurt party member 22% for 30 mana, every 10s
-    signature: { id: 'rune_of_mending', name: 'Rune of Mending', cost: 30, cd: 10, kind: 'heal', pct: 0.22, below: 0.7 },
-  },
-  cleric: {
-    name: 'Cleric', icon: 'ui/cleric/emblem.png', resource: 'Mana', role: 'ranged',
-    atk: (L) => 5 + L, str: (L) => 4 + L, def: (L) => 5 + L, hp: (L) => 80 + (L - 1) * 9,
-    res: (L) => 125 + (L - 1) * 34, resRegen: 3, range: 6, attackSpeed: 4, critBase: 0.05,
-    // Minor Heal: heals the most hurt party member 30% for 25 mana, every 7s
-    signature: { id: 'minor_heal', name: 'Minor Heal', cost: 25, cd: 7, kind: 'heal', pct: 0.30, below: 0.75 },
-  },
-  fighter: {
-    name: 'Fighter', icon: 'ui/fighter/emblem.png', resource: 'Stamina', role: 'melee',
-    atk: (L) => 6 + L, str: (L) => 6 + L, def: (L) => 4 + L, hp: (L) => 80 + (L - 1) * 10,
-    res: (L) => 100 + (L - 1) * 12, resRegen: 8, range: 2.6, attackSpeed: 4, critBase: 0.05,
-    signature: { id: 'heavy_swing', name: 'Heavy Swing', cost: 12, cd: 3, kind: 'burst', mult: 1.5 },
-  },
-};
-export function botClass(id) { return BOT_CLASSES[id] || BOT_CLASSES.fighter; }
-// Companions for hire (Sergeant Wren at Hearthstead). A party is the leader
-// plus up to PARTY_SLOTS - 1 companions.
-export const PARTY_SLOTS = 6;
-export const RECRUITS = [
-  { id: 'maelin', name: 'Maelin', cls: 'assassin', look: { hair: 24, hairColor: '#1e1712', skin: '#c9a07c', outfit: 23 },
-    blurb: 'Quiet, quick, and never where the goblin is looking.' },
-  { id: 'calder', name: 'Calder', cls: 'warden', look: { hair: 2, hairColor: '#5a4a3a', skin: '#b78b68', outfit: 17 },
-    blurb: 'Stands in front. Stays standing.' },
-  { id: 'luma', name: 'Luma', cls: 'enchanter', look: { hair: 22, hairColor: '#d8c6a0', skin: '#dcb18e', outfit: 5 },
-    blurb: 'Runes and mending. Keeps the party on its feet.' },
-  { id: 'aldric', name: 'Brother Aldric', cls: 'cleric', look: { hair: 1, hairColor: '#8a8a80', skin: '#cba281', outfit: 16 },
-    blurb: 'Prayers first, hammer second.' },
-  { id: 'tobin', name: 'Tobin', cls: 'fighter', look: { hair: 5, hairColor: '#7a4a24', skin: '#c49a76', outfit: 3 },
-    blurb: 'Big swings. Bigger appetite.' },
-];
-
 export const DEFAULT_CLASS = 'fighter';
 export function classDef(id) { return CLASSES[id] || CLASSES[DEFAULT_CLASS]; }
 export function classStats(id, level) {
-  const c = CLASSES[id] || BOT_CLASSES[id] || CLASSES[DEFAULT_CLASS];
+  const c = classDef(id);
   return { atk: c.atk(level), str: c.str(level), def: c.def(level), hp: c.hp(level), stam: c.stam ? c.stam(level) : 0 };
 }
 // Max hit from strength. The divisor is tuned (vs OSRS's 640) so this game's
