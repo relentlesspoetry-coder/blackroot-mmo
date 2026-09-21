@@ -125,7 +125,7 @@ def reverb(x, seconds=2.8, mix=0.32, seed=3):
     wet = np.fft.irfft(np.fft.rfft(x, len(x) + n) * np.fft.rfft(ir, len(x) + n))[:len(x)]
     return x * (1 - mix) + wet * mix
 
-def tame_partials(x, N=8192, ratio=3.0):
+def tame_partials(x, N=8192, ratio=1.8):
     """Spectral limiter: no single partial may tower over its neighbours. STFT
     with a Hann window at 50% overlap; each bin is capped at `ratio` times the
     local spectral envelope (a wide running mean), keeping the phase."""
@@ -137,10 +137,15 @@ def tame_partials(x, N=8192, ratio=3.0):
         mag = np.abs(fr); envl = np.convolve(np.pad(mag, (k, k), mode='edge'), kern, mode='valid') + 1e-9
         cap = envl * ratio
         scale = np.minimum(1.0, cap / (mag + 1e-12))
+        scale *= NOTCH
         y = np.fft.irfft(fr * scale, N) * win
         out[i:i + N] += y; norm[i:i + N] += win ** 2
     norm[norm < 1e-6] = 1
     return (out / norm)[:len(x)]
+
+# A gentle dip around C5 (the note both progressions share), -8 dB at 523 Hz.
+_f = np.fft.rfftfreq(8192, 1 / SR)
+NOTCH = 1 - 0.6 * np.exp(-((_f - 523) / 40) ** 2)
 
 def level(x, target=0.055, win=1.0, ceiling=0.45):
     """Keep the loudness flat: ride the gain so every second sits near the
