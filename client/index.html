@@ -642,15 +642,17 @@ let critters = [];               // ambient flying bugs (butterflies by day, mot
 let targetRing = null;
 let hemiLight = null, sunLight = null;
 let sky = {};
-let bridgeInfo = null; // arched bridge: {x,z,phi,L,archH,deckW} for walking up & over
-// Height of the bridge deck at world (x,z), or 0 if not on the bridge span.
+let bridgeInfos = []; // arched bridges: {x,z,phi,L,archH,deckW} for walking up & over
+// Height of the bridge deck at world (x,z), or 0 if not on any bridge span.
 function bridgeLift(x, z) {
-  const bi = bridgeInfo; if (!bi) return 0;
-  const dx = x - bi.x, dz = z - bi.z, sf = Math.sin(bi.phi), cf = Math.cos(bi.phi);
-  const along = dx * sf + dz * cf;   // across the river (deck length axis)
-  const across = dx * cf - dz * sf;  // along the deck's walkable width
-  if (Math.abs(along) > bi.L / 2 || Math.abs(across) > bi.deckW / 2 + 0.4) return 0;
-  return bi.archH * (1 - Math.pow(2 * along / bi.L, 2)) + 0.35; // arch + deck-top offset
+  for (const bi of bridgeInfos) {
+    const dx = x - bi.x, dz = z - bi.z, sf = Math.sin(bi.phi), cf = Math.cos(bi.phi);
+    const along = dx * sf + dz * cf;   // across the river (deck length axis)
+    const across = dx * cf - dz * sf;  // along the deck's walkable width
+    if (Math.abs(along) > bi.L / 2 || Math.abs(across) > bi.deckW / 2 + 0.4) continue;
+    return bi.archH * (1 - Math.pow(2 * along / bi.L, 2)) + 0.35; // arch + deck-top offset
+  }
+  return 0;
 }
 // River channel profile: a carved bed so the water sits deep with banks rising
 // above it. terrainHeight is the ground height at (x,z) — 0 on flat land, the
@@ -1214,7 +1216,7 @@ function buildRiverShore(points, half) {
 }
 
 function buildZone() {
-  bridgeInfo = null; riverMesh = null; riverTex = null; // rebuilt below per zone
+  bridgeInfos = []; riverMesh = null; riverTex = null; // rebuilt below per river
   const b = zone.bounds;
   const W = b.maxX - b.minX, D = b.maxZ - b.minZ, cx = (b.minX + b.maxX) / 2, cz = (b.minZ + b.maxZ) / 2;
 
@@ -1325,7 +1327,7 @@ function buildZone() {
     bridge.position.set(br.x, 0, br.z);
     bridge.rotation.y = phi;
     scene.add(bridge);
-    bridgeInfo = { x: br.x, z: br.z, phi, L, archH, deckW };
+    bridgeInfos.push({ x: br.x, z: br.z, phi, L, archH, deckW });
   }
 
   // Rocks (collision) — textured stone
