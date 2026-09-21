@@ -449,6 +449,7 @@
 <script type="module">
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // ---------------------------------------------------------------------------
 // 3D model assets (GLB). Loaded once up front.
@@ -508,6 +509,52 @@ async function loadModels(list, onProgress) {
 }
 
 // Clone a model normalized to a target height with its base at y=0, centered.
+// Node names the procedural rigs drive (buildRig / animateEntity). Everything
+// hanging under one of these that isn't itself a rig node moves rigidly with
+// it, so those meshes can be fused into one mesh per segment.
+const RIG_NODE = /^(Wing_[LR]|Arm_[LR]|Leg_[LR]|Shin_[LR]|Head|Weapon|Shield|Leg_[LR]_\d|QLeg_(FL|FR|BL|BR)|CTRL_.*|.*Club.*)$/;
+// A character glTF arrives as a hundred-odd little meshes with a few dozen
+// flat-colour materials (a goblin archer was 125 meshes). Each is a draw call
+// and a per-frame matrix update, and with every mob of the seamless world
+// resident in the scene that was ~10k meshes. None of them use textures, so
+// bake each material's colour into vertex colours and fuse every rigid
+// segment (body + each rig node) down to ONE mesh with one material. Run on a
+// clone after the leg/arm carving so the split parts get fused too.
+function mergeRigidParts(wrap) {
+  const body = wrap.children[0]; if (!body) return;
+  wrap.updateMatrixWorld(true);
+  const isRig = o => o !== body && RIG_NODE.test(o.name || '');
+  const roots = [body]; body.traverse(o => { if (isRig(o)) roots.push(o); });
+  const inv = new THREE.Matrix4(), rel = new THREE.Matrix4();
+  for (const r of roots) {
+    const meshes = [];
+    const walk = o => { for (const c of o.children) { if (isRig(c)) continue; if (c.isMesh && !c.isSkinnedMesh && !Array.isArray(c.material) && !c.morphTargetInfluences && c.material.color && !c.material.map) meshes.push(c); walk(c); } };
+    walk(r);
+    if (!meshes.length) continue;
+    inv.copy(r.matrixWorld).invert();
+    const geos = [];
+    for (const m of meshes) {
+      let geo = m.geometry.clone();
+      geo.applyMatrix4(rel.multiplyMatrices(inv, m.matrixWorld));
+      for (const attr of Object.keys(geo.attributes)) if (!['position', 'normal'].includes(attr)) geo.deleteAttribute(attr);
+      if (!geo.attributes.normal) geo.computeVertexNormals();
+      if (geo.index) geo = geo.toNonIndexed();
+      const n = geo.attributes.position.count, col = new Float32Array(n * 3), c = m.material.color;
+      for (let i = 0; i < n; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
+      geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+      geos.push(geo);
+      m.removeFromParent();
+    }
+    const g = geos.length === 1 ? geos[0] : mergeGeometries(geos, false);
+    if (!g) continue;
+    const mesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, metalness: 0 }));
+    mesh.name = 'Merged'; mesh.castShadow = mesh.receiveShadow = true; r.add(mesh);
+  }
+  // Drop the now-empty wrapper nodes so the clone tree stays small.
+  const prune = o => { for (const c of [...o.children]) { prune(c); if (!isRig(c) && !c.isMesh && c.children.length === 0) o.remove(c); } };
+  prune(body);
+}
+
 function cloneModel(name, targetH, byMax) {
   const src = LOADED[name];
   if (!src) return null;
@@ -551,11 +598,36 @@ function bakeModel(name, targetH) {
   const box = new THREE.Box3().setFromObject(src);
   const s = targetH ? targetH / ((box.max.y - box.min.y) || 1) : 1;
   const cx = (box.min.x + box.max.x) / 2, cz = (box.min.z + box.max.z) / 2, minY = box.min.y;
-  const parts = [];
+  // Merge every sub-mesh that shares a material into ONE geometry. The tree
+  // models are built from dozens of separate leaf-cluster meshes; instancing
+  // each one separately meant ~100 draw calls (and shadow casters) per species
+  // and ~9,000 in the whole world. Merged, a tree is 2-3 parts.
+  const byMat = new Map();
   for (const m of meshes) {
-    const geo = m.geometry.clone(); geo.applyMatrix4(m.matrixWorld);
-    geo.scale(s, s, s); geo.translate(-cx * s, -minY * s, -cz * s);
-    parts.push({ geo, mat: m.material });
+    const mats = Array.isArray(m.material) ? m.material : [m.material];
+    for (let gi = 0; gi < mats.length; gi++) {
+      let geo = m.geometry.clone();
+      if (Array.isArray(m.material)) { // keep only this material's group
+        const g = geo.groups[gi]; if (!g) continue;
+        const idx = geo.index ? Array.from(geo.index.array).slice(g.start, g.start + g.count) : null;
+        if (idx) geo.setIndex(idx); geo.clearGroups();
+      }
+      geo.applyMatrix4(m.matrixWorld);
+      geo.scale(s, s, s); geo.translate(-cx * s, -minY * s, -cz * s);
+      // drop attributes the others may lack so merge succeeds
+      for (const attr of Object.keys(geo.attributes)) if (!['position', 'normal', 'uv'].includes(attr)) geo.deleteAttribute(attr);
+      if (!geo.attributes.normal) geo.computeVertexNormals();
+      if (!geo.attributes.uv) geo.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(geo.attributes.position.count * 2), 2));
+      if (geo.index) geo = geo.toNonIndexed();
+      const mat = mats[gi];
+      if (!byMat.has(mat)) byMat.set(mat, []);
+      byMat.get(mat).push(geo);
+    }
+  }
+  const parts = [];
+  for (const [mat, geos] of byMat) {
+    const merged = geos.length === 1 ? geos[0] : mergeGeometries(geos, false);
+    if (merged) parts.push({ geo: merged, mat });
   }
   bakeCache[key] = parts; return parts;
 }
@@ -570,6 +642,7 @@ function speciesFor(list, x, z) {
 let ws = null, myId = null, zone = null;
 let snapPrev = null, snapCur = null, snapPrevT = 0, snapCurT = 0;
 const SNAP_INTERP = 100; // ms behind for smooth interpolation
+const ENTITY_CULL_D = 150; // mobs further than this from the camera aren't drawn
 
 function connect(name) {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -846,8 +919,13 @@ function updateSky(dt) {
   // Sun/moon arc across the sky.
   const ang = (worldTime - 0.25) * Math.PI * 2;
   _sunDir.set(Math.cos(ang) * 0.55, Math.sin(ang), 0.35).normalize();
-  sunLight.position.copy(_sunDir).multiplyScalar(140);
   const camP = camera.position;
+  // The shadow box rides with the camera (snapped to whole units so shadow
+  // edges don't shimmer as it moves): a fixed box around the origin lit only
+  // spawn and still shadow-rendered every caster inside it each frame.
+  const sx = Math.round(camP.x), sz = Math.round(camP.z);
+  sunLight.target.position.set(sx, 0, sz);
+  sunLight.position.set(sx + _sunDir.x * 140, _sunDir.y * 140, sz + _sunDir.z * 140);
   sky.sun.position.set(camP.x + _sunDir.x * 380, _sunDir.y * 380, camP.z + _sunDir.z * 380);
   sky.moon.position.set(camP.x - _sunDir.x * 380, -_sunDir.y * 380, camP.z - _sunDir.z * 380);
   sky.sun.lookAt(camP); sky.moon.lookAt(camP);
@@ -897,10 +975,10 @@ function loadZone(zdata) {
   scene.add(hemiLight);
   sunLight = new THREE.DirectionalLight(e.sun || 0xffe6bf, e.sunInt != null ? e.sunInt : 1.35);
   sunLight.position.set(50, 80, 20); sunLight.castShadow = true; sunLight.shadow.mapSize.set(2048, 2048);
-  const s = 120;
+  const s = 90;
   sunLight.shadow.camera.left = -s; sunLight.shadow.camera.right = s;
   sunLight.shadow.camera.top = s; sunLight.shadow.camera.bottom = -s; sunLight.shadow.camera.far = 400;
-  scene.add(sunLight);
+  scene.add(sunLight); scene.add(sunLight.target);
 
   buildZone();
 
@@ -913,6 +991,7 @@ function loadZone(zdata) {
     new THREE.MeshBasicMaterial({ color: 0xff5a4a, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false }));
   targetRing.rotation.x = -Math.PI / 2; targetRing.visible = false; scene.add(targetRing);
 
+  _lightGroupState._init = false; // scene rebuilt: re-apply light groups next frame
   showZoneTitle();
 }
 
@@ -1614,17 +1693,44 @@ function buildLowPolyGround(W, D, cx, cz) {
 }
 
 
-// Scatter a geometry as an InstancedMesh over given placements.
+// ---- Spatially chunked instancing ----
+// One InstancedMesh spanning the whole world has a bounding sphere the size
+// of the world, so three.js can never frustum-cull it: every tuft, tree and
+// rock is drawn (and shadow-rendered) every frame no matter where the camera
+// looks. Splitting the same instances into CHUNK-sized cells gives each cell
+// its own tight bounds, so only the cells in view (or in the shadow box) draw.
+const CHUNK = 40;
+// items: placements with x/z. fill(item, index, im) sets that instance's matrix
+// (and colour). Returns [{ im, items }] — one entry per non-empty cell — so a
+// caller can map instanceId back to its placement.
+function chunkedInstances(geo, mat, items, fill, opts = {}) {
+  const cells = new Map();
+  for (const it of items) {
+    const k = Math.floor(it.x / CHUNK) + ':' + Math.floor(it.z / CHUNK);
+    (cells.get(k) || cells.set(k, []).get(k)).push(it);
+  }
+  const out = [];
+  for (const list of cells.values()) {
+    const im = new THREE.InstancedMesh(geo, mat, list.length);
+    im.castShadow = opts.castShadow !== false; im.receiveShadow = opts.receiveShadow !== false;
+    list.forEach((it, i) => fill(it, i, im));
+    im.instanceMatrix.needsUpdate = true;
+    if (im.instanceColor) im.instanceColor.needsUpdate = true;
+    im.computeBoundingSphere();
+    if (opts.tag) Object.assign(im.userData, opts.tag);
+    scene.add(im); out.push({ im, items: list });
+  }
+  return out;
+}
+
+// Scatter a geometry as instances over given placements.
 function instScatter(geo, mat, places, yFn, squash = 1) {
   if (!places.length) return null;
-  const im = new THREE.InstancedMesh(geo, mat, places.length);
-  im.castShadow = true; im.receiveShadow = true;
   const mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
-  places.forEach((p, i) => {
+  return chunkedInstances(geo, mat, places, (p, i, im) => {
     q.setFromAxisAngle(UP, p.r); sc.set(p.s, p.s * squash, p.s);
     mtx.compose(new THREE.Vector3(p.x, yFn(p), p.z), q, sc); im.setMatrixAt(i, mtx);
   });
-  scene.add(im); return im;
 }
 
 function buildDetails() {
@@ -1759,19 +1865,15 @@ function buildGrass() {
     if (!ok(x, z) || onPathSkip(x, z)) continue;
     spots.push({ x, z }); singles--;
   }
-  const im = new THREE.InstancedMesh(geo, mat, spots.length);
-  im.receiveShadow = true; im.castShadow = false;
   const mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), col = new THREE.Color();
-  spots.forEach((p, i) => {
+  chunkedInstances(geo, mat, spots, (p, i, im) => {
     q.setFromAxisAngle(UP, rng() * 6.28);
     const s = 0.45 + rng() * 0.5; sc.set(s, 0.5 + rng() * 0.55, s);
     mtx.compose(new THREE.Vector3(p.x, 0, p.z), q, sc); im.setMatrixAt(i, mtx);
     // every blade a different gradient of green (yellow-green -> deep green);
     // multiplied by the baked dark-base/bright-tip vertex gradient
     col.setHSL(0.24 + rng() * 0.13, 0.5 + rng() * 0.35, 0.4 + rng() * 0.22); im.setColorAt(i, col);
-  });
-  im.instanceColor.needsUpdate = true;
-  scene.add(im);
+  }, { castShadow: false });
 }
 
 function makeSoftDot() {
@@ -2048,14 +2150,11 @@ function instanceModels(placements, speciesList, targetH, baseScale, bark) {
           const m2 = part.mat.clone(); m2.map = makeLeafTexture(); m2.needsUpdate = true; part.mat = m2;
         }
       }
-      const im = new THREE.InstancedMesh(part.geo, part.mat, list.length);
-      im.castShadow = im.receiveShadow = true;
-      list.forEach((t, i) => {
+      chunkedInstances(part.geo, part.mat, list, (t, i, im) => {
         q.setFromAxisAngle(UP, t.r || 0);
         const s = (t.s || 1) * baseScale; sc.set(s, s, s);
         mtx.compose(new THREE.Vector3(t.x, 0, t.z), q, sc); im.setMatrixAt(i, mtx);
       });
-      scene.add(im);
     }
   }
 }
@@ -2400,10 +2499,7 @@ function buildCaveWalls(poly, ceilY, yBase = 0) {
     const parts = bakeModel(model, ceilY * (model === 'Wall_Boulder_Tall' ? 1.3 : 0.95));
     if (!parts) continue;
     for (const part of parts) {
-      const im = new THREE.InstancedMesh(part.geo, part.mat, list.length);
-      im.castShadow = im.receiveShadow = true;
-      list.forEach((o, i) => { q.setFromAxisAngle(UP, o.r); sc.set(o.s, o.s, o.s); mtx.compose(new THREE.Vector3(o.x, yBase, o.z), q, sc); im.setMatrixAt(i, mtx); });
-      scene.add(im);
+      chunkedInstances(part.geo, part.mat, list, (o, i, im) => { q.setFromAxisAngle(UP, o.r); sc.set(o.s, o.s, o.s); mtx.compose(new THREE.Vector3(o.x, yBase, o.z), q, sc); im.setMatrixAt(i, mtx); });
     }
   }
 }
@@ -2424,22 +2520,16 @@ function placeInstances(list, yOf) {
     const parts = bakeModel(model, NATIVE);
     if (!parts) continue;
     const items = byModel[model];
+    const isOre = /_Ore_Vein$/.test(model);
     for (const part of parts) {
-      const im = new THREE.InstancedMesh(part.geo, part.mat, items.length);
-      im.castShadow = im.receiveShadow = true;
-      items.forEach((o, i) => {
+      const chunks = chunkedInstances(part.geo, part.mat, items, (o, i, im) => {
         q.setFromAxisAngle(UP, o.r || 0);
         const sVal = o.s || 1; sc.set(sVal, sVal, sVal);
         mtx.compose(new THREE.Vector3(o.x, o.y != null ? o.y : yOf(o), o.z), q, sc);
         im.setMatrixAt(i, mtx);
-      });
-      im.instanceMatrix.needsUpdate = true;
-      if (/_Ore_Vein$/.test(model)) {
-        im.userData.pickKind = 'ore';
-        im.userData.oreName = model.replace(/_Ore_Vein$/, '');
-        oreMeshes.push({ mesh: im, veins: items });
-      }
-      scene.add(im);
+      }, isOre ? { tag: { pickKind: 'ore', oreName: model.replace(/_Ore_Vein$/, '') } } : {});
+      // each chunk keeps its own vein list so instanceId -> vein still lines up
+      if (isOre) for (const c of chunks) oreMeshes.push({ mesh: c.im, veins: c.items });
     }
   }
 }
@@ -2529,10 +2619,7 @@ function buildCaveRegion(cave) {
     const list = byModel[model], parts = bakeModel(model, wallH * (model === 'Wall_Boulder_Tall' ? 1.25 : 0.95));
     if (!parts) continue;
     for (const part of parts) {
-      const im = new THREE.InstancedMesh(part.geo, part.mat, list.length);
-      im.castShadow = im.receiveShadow = true;
-      list.forEach((o, i) => { q.setFromAxisAngle(UP, o.r); sc.set(o.s, o.s, o.s); mtx.compose(new THREE.Vector3(o.x, fY, o.z), q, sc); im.setMatrixAt(i, mtx); });
-      scene.add(im);
+      chunkedInstances(part.geo, part.mat, list, (o, i, im) => { q.setFromAxisAngle(UP, o.r); sc.set(o.s, o.s, o.s); mtx.compose(new THREE.Vector3(o.x, fY, o.z), q, sc); im.setMatrixAt(i, mtx); });
     }
   }
   // --- Ceiling: a dark rock lid over the ENTIRE underground, far past the cave
@@ -2563,15 +2650,17 @@ function buildCaveRegion(cave) {
   placeInstances((cave.scatter || []).filter(inside), () => fY);
   placeInstances((cave.hanging || []).filter(inside), () => cY - 0.05);
   // --- Lighting: a warm glow at the entrance, a cool crystal glow in every room ---
-  const el = new THREE.PointLight(0xffd9a0, 2.4, 70); el.position.set(cave.entrance.x, fY + 4, cave.entrance.z); scene.add(el);
+  // All cave lights are tagged so they're only switched on while underground —
+  // every point light costs on every pixel, above ground too.
+  const el = new THREE.PointLight(0xffd9a0, 2.4, 70); el.position.set(cave.entrance.x, fY + 4, cave.entrance.z); el.userData.lightGroup = 'cave'; scene.add(el);
   rooms.forEach((r, i) => {
     const pl = new THREE.PointLight(i % 2 ? 0xa8d8f0 : 0x9cc4e4, 2.6, r.r * 3.2);
-    pl.position.set(r.x, fY + wallH - 0.6, r.z); scene.add(pl);
+    pl.position.set(r.x, fY + wallH - 0.6, r.z); pl.userData.lightGroup = 'cave'; scene.add(pl);
   });
   // Light the tunnels too so the passages between rooms are visible, not black gaps.
   for (const t of tunnels) {
     const pl = new THREE.PointLight(0x9cc4e4, 1.6, 40);
-    pl.position.set((t.ax + t.bx) / 2, fY + wallH - 0.8, (t.az + t.bz) / 2); scene.add(pl);
+    pl.position.set((t.ax + t.bx) / 2, fY + wallH - 0.8, (t.az + t.bz) / 2); pl.userData.lightGroup = 'cave'; scene.add(pl);
   }
 }
 // A natural descending rock tunnel from the surface mouth down to the cave
@@ -2718,7 +2807,7 @@ function buildHouses() {
           const mantle = box(1.9, 0.18, 1.0, beamMat); mantle.position.set(0, 1.4, 0.15); fg.add(mantle);
           const fire = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.7, 8), flat(0xff8a3c, { emissive: 0xff5a1c, emissiveIntensity: 1.5 })); fire.position.set(0, 0.42, 0.2); fg.add(fire);
           fg.userData.flame = fire;
-          const light = new THREE.PointLight(0xff9a50, 1.3, 12); light.position.set(0, 0.9, 0.8); fg.add(light);
+          const light = new THREE.PointLight(0xff9a50, 1.3, 12); light.position.set(0, 0.9, 0.8); light.userData.lightGroup = 'village'; fg.add(light);
           break;
         }
         case 'shelf': {
@@ -2731,11 +2820,32 @@ function buildHouses() {
       g.add(fg);
     }
     // A warm lamp inside so the room reads with the roof hidden.
-    const lamp = new THREE.PointLight(0xffd9a0, 1.1, Math.max(h.w, h.d) * 1.2); lamp.position.set(0, H - 0.5, 0); g.add(lamp);
+    const lamp = new THREE.PointLight(0xffd9a0, 1.1, Math.max(h.w, h.d) * 1.2); lamp.position.set(0, H - 0.5, 0); lamp.userData.lightGroup = 'village'; g.add(lamp);
     scene.add(g);
   }
 }
 // Roofs pop off while the player is inside (or in the doorway) so the camera can see in.
+// Point lights are expensive for every pixel on screen, so groups of them are
+// only switched on when they can matter: cave lights underground, village
+// lamps/hearths when you're near the farm. Hysteresis keeps the light count
+// (and so the shader programs) stable rather than flickering at the edge.
+const _lightGroupState = {};
+function updateLightGroups() {
+  const me = entityMeshes.get(myId); if (!me) return;
+  const px = me.mesh.position.x, pz = me.mesh.position.z, py = me.mesh.position.y;
+  const want = {};
+  want.cave = py < -3 || (_lightGroupState.cave && py < 1);
+  const fb = zone.farmBox;
+  if (fb) {
+    const d = Math.hypot(px - (fb.minX + fb.maxX) / 2, pz - (fb.minZ + fb.maxZ) / 2);
+    want.village = d < 80 || (_lightGroupState.village && d < 100);
+  } else want.village = true;
+  let changed = false;
+  for (const k of Object.keys(want)) if (!!_lightGroupState[k] !== !!want[k]) { _lightGroupState[k] = !!want[k]; changed = true; }
+  if (!changed && _lightGroupState._init) return;
+  _lightGroupState._init = true;
+  scene.traverse(o => { if (o.isPointLight && o.userData.lightGroup) o.visible = !!_lightGroupState[o.userData.lightGroup]; });
+}
 function updateHouseRoofs() {
   const me = entityMeshes.get(myId); if (!me) return;
   const px = me.mesh.position.x, pz = me.mesh.position.z;
@@ -3383,6 +3493,7 @@ function buildNpcs() {
     // Use a real humanoid model (Male/Female) when one is given and loaded.
     if (def.model && LOADED[def.model]) {
       g = cloneModel(def.model, 2.3);
+      if (g) mergeRigidParts(g);
       if (g) g.rotation.y = def.yaw != null ? def.yaw : Math.PI;
     }
     if (!g) {
@@ -3503,6 +3614,7 @@ function makePlayerMesh(isSelf) {
   const g = cloneModel('Male', 2.3);
   if (g) {
     splitHumanoid(g, MALE_BONES);
+    mergeRigidParts(g);
     // The Male model faces +Z, so no yaw flip — otherwise it walks backwards.
     g.rotation.y = 0; g.userData.faceOffset = 0;
     g.userData.rig = buildRig(g, 'hero');
@@ -3801,6 +3913,7 @@ function makeMonsterMesh(type, elite) {
     // bones from the model's own bbox) — otherwise the biped rig has nothing to
     // move and they just slide along the ground.
     else if (HUMANOID_SPLIT.has(type)) splitHumanoid(g, null);
+    mergeRigidParts(g);
     // Most GLB characters face -Z (flip with MODEL_YAW); the Chicken, the cow and
     // the humanoid mobs (goblins, bandits) face +Z, so they need no flip or they
     // walk backwards.
@@ -4292,7 +4405,11 @@ function renderWorld(dt) {
       // Corpses stay up briefly so the topple can play, then vanish.
       if (e.alive) rec.deadFor = 0;
       else rec.deadFor = (rec.deadFor || 0) + dt;
-      rec.mesh.visible = e.alive || rec.deadFor < 2.2;
+      // Anything past the fog is invisible anyway; hiding it also skips its
+      // animation and matrix updates (matrixWorldAutoUpdate) entirely.
+      const far = e.id !== myId && (Math.hypot(x - camera.position.x, z - camera.position.z) > ENTITY_CULL_D);
+      rec.mesh.visible = (e.alive || rec.deadFor < 2.2) && !far;
+      rec.mesh.matrixWorldAutoUpdate = rec.mesh.visible;
       rec.mesh.position.x = x; rec.mesh.position.z = z;
       // Players ride the server's floor height (walk up onto placed floors/ramps);
       // monsters just follow the terrain.
@@ -4869,7 +4986,7 @@ function applyDepleted(list) {
       _q.setFromAxisAngle(UP, v.r || 0);
       const sVal = gone ? 0.0001 : (v.s || 1);   // scaled away, not removed
       _s3.set(sVal, sVal, sVal);
-      _v3.set(v.x, 0, v.z);
+      _v3.set(v.x, v.y != null ? v.y : 0, v.z);
       _mtx.compose(_v3, _q, _s3);
       rec.mesh.setMatrixAt(i, _mtx);
     });
@@ -5171,14 +5288,16 @@ function showHit(m) {
     rec.mesh.traverse(o => {
       if (!o.isMesh || !o.material) return;
       for (const mm of (Array.isArray(o.material) ? o.material : [o.material])) {
-        if (!mm.color || seen.has(mm)) continue;
+        if (!mm.emissive || seen.has(mm)) continue;
         seen.add(mm);
-        if (!mm._flashing) { mm._flashOrig = mm.color.clone(); mm._flashing = true; }
-        mm.color.set(0xffffff);
+        // Flash through emissive: the fused character materials carry their
+        // colour in vertex colours, which material.color can't override.
+        if (!mm._flashing) { mm._flashOrig = mm.emissive.clone(); mm._flashOrigI = mm.emissiveIntensity; mm._flashing = true; }
+        mm.emissive.set(0xffffff); mm.emissiveIntensity = 0.9;
         const token = (mm._flashTok = (mm._flashTok || 0) + 1);
         setTimeout(() => {
           if (mm._flashTok !== token) return;      // a newer flash owns it now
-          if (mm._flashOrig) mm.color.copy(mm._flashOrig);
+          if (mm._flashOrig) { mm.emissive.copy(mm._flashOrig); mm.emissiveIntensity = mm._flashOrigI; }
           mm._flashing = false;
         }, 90);
       }
@@ -5653,6 +5772,7 @@ if (location.search.includes('debug')) {
     THREE,
     get scene() { return scene; },
     get camera() { return camera; },
+    get renderer() { return renderer; },
     get zone() { return zone; },
     get quests() { return questData; },
     get entities() { return entityMeshes; },
@@ -5801,21 +5921,25 @@ function drawMap() {
 document.getElementById('mapBtn').addEventListener('click', toggleMap);
 mapWin.addEventListener('click', (e) => { if (e.target === mapWin) closeMap(); });
 
+// ?debug=1 profiling: `__bk.prof = {}` then read it back — ms accumulated per
+// frame step, so a stall can be pinned to the function that causes it.
+const _pf = (name, fn) => { const P = window.__bkProf; if (!P) return fn(); const t = performance.now(); fn(); P[name] = (P[name] || 0) + performance.now() - t; };
 function animate() {
   requestAnimationFrame(animate);
   frameCount++;
   const dt = Math.min(0.05, clock.getDelta());
-  renderWorld(dt);
-  updateSky(dt);
-  updateControls(dt);
-  updateMarkers(dt);
-  updateFarmGate(dt);
-  updateHouseRoofs();
-  updatePoiLabels();
-  updateNameplates();
-  updateNpcMarkers();
-  updatePendingTalk();
-  if (mapOpen) drawMap();
+  _pf('renderWorld', () => renderWorld(dt));
+  _pf('sky', () => updateSky(dt));
+  _pf('controls', () => updateControls(dt));
+  _pf('markers', () => updateMarkers(dt));
+  _pf('gate', () => updateFarmGate(dt));
+  _pf('roofs', () => updateHouseRoofs());
+  _pf('lights', () => updateLightGroups());
+  _pf('poi', () => updatePoiLabels());
+  _pf('plates', () => updateNameplates());
+  _pf('npcmk', () => updateNpcMarkers());
+  _pf('talk', () => updatePendingTalk());
+  if (mapOpen) _pf('map', () => drawMap());
   // Flowing river: scroll the water texture along the current + gentle waves.
   if (riverTex) riverTex.offset.y = (riverTex.offset.y - dt * 0.12 + 1) % 1;
   if (riverMesh) {
@@ -5849,8 +5973,9 @@ function animate() {
     }
     fireflies.geometry.attributes.position.needsUpdate = true;
   }
-  updateCritters(dt);
-  renderer.render(scene, camera);
+  _pf('critters', () => updateCritters(dt));
+  _pf('render', () => renderer.render(scene, camera));
+  if (window.__bkProf) window.__bkProf.frames = (window.__bkProf.frames || 0) + 1;
 }
 
 // ---------------------------------------------------------------------------

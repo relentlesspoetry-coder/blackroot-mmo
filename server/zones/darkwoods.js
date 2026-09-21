@@ -399,7 +399,7 @@ export const darkwoods = {
     // Nature inside the fence: a few trees and bushes/flowers around the yard
     // (worldgen keeps the wild forest out of the farm, so these are placed by hand).
     trees: [
-      { x: -38, z: -90, s: 1.15 }, { x: -12, z: -90.5, s: 1.0 }, { x: 8, z: -90.5, s: 1.05 }, { x: 27.5, z: -88, s: 0.95 },
+      { x: -12, z: -90.5, s: 1.0 }, { x: 8, z: -90.5, s: 1.05 }, { x: 27.5, z: -88, s: 0.95 },
       { x: -39, z: -79, s: 0.9 }, { x: 28.5, z: -75, s: 1.0 }, { x: 3, z: -63.6, s: 0.85 }, { x: -36, z: -63.2, s: 0.8 },
       { x: -2, z: -91.2, s: 0.8 }, { x: 22, z: -90.8, s: 0.9 }, { x: -30, z: -90.5, s: 0.85 }, { x: 29, z: -68, s: 0.85 },
       { x: -20, z: -63.6, s: 0.75 }, { x: 14, z: -63.6, s: 0.8 },
