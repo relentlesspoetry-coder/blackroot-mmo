@@ -95,8 +95,8 @@ def bell(freq, dur, vel=1.0):
 def drone(freq, dur, vel=1.0):
     n = int(dur * SR); t = np.arange(n) / SR
     lfo = 1 + 0.02 * np.sin(2 * math.pi * 0.07 * t)
-    out = np.sin(2 * math.pi * freq * t * lfo) + 0.5 * np.sin(2 * math.pi * freq * 0.5 * t) + 0.25 * np.sin(2 * math.pi * freq * 2.005 * t)
-    return out * env(n, 3, 1, 1, 4) * vel * 0.065
+    out = np.sin(2 * math.pi * freq * t * lfo) + 0.35 * np.sin(2 * math.pi * freq * 2.005 * t) + 0.2 * np.sin(2 * math.pi * freq * 3.0 * t)
+    return out * env(n, 3, 1, 1, 4) * vel * 0.028   # felt, not heard: the drone must never lead
 
 def tom(dur=1.2, vel=1.0, f0=110):
     n = int(dur * SR); t = np.arange(n) / SR
@@ -125,6 +125,20 @@ def reverb(x, seconds=2.8, mix=0.32, seed=3):
     wet = np.fft.irfft(np.fft.rfft(x, len(x) + n) * np.fft.rfft(ir, len(x) + n))[:len(x)]
     return x * (1 - mix) + wet * mix
 
+def level(x, target=0.09, win=1.0, ceiling=0.6):
+    """Keep the loudness flat: ride the gain so every second sits near the
+    target RMS (slow, so it never pumps), then soft-clip anything left."""
+    n = int(win * SR)
+    rms = np.array([np.sqrt(np.mean(x[i:i + n] ** 2)) + 1e-6 for i in range(0, len(x), n)])
+    g = target / rms
+    g = np.minimum(g, 1.25)   # never boost quiet passages much — that turned the drone into a foghorn
+    # smooth the gain curve over ~6 s so it breathes instead of pumping
+    k = 6; g = np.convolve(np.pad(g, (k, k), mode='edge'), np.ones(2 * k + 1) / (2 * k + 1), mode='valid')
+    gain = np.interp(np.arange(len(x)), np.arange(len(g)) * n + n / 2, g)
+    y = x * gain
+    y = y - lowpass(y, 45)     # nothing below ~45 Hz: no sub rumble sitting under everything
+    return np.tanh(y / ceiling) * ceiling
+
 def loopable(x, xf=8.0):
     """Crossfade the last xf seconds into the first xf seconds and trim, so the
     track loops without a seam; ease the very start so it never pops in."""
@@ -148,7 +162,7 @@ class Score:
         if m > 0: self.buf[i:i + m] += sig[:m] * gain
 
 def write_wav(path, x):
-    x = x / max(1e-6, np.max(np.abs(x))) * 0.89
+    x = x / max(1e-6, np.max(np.abs(x))) * 0.7   # headroom: these are background pieces
     with wave.open(path, 'wb') as w:
         w.setnchannels(1); w.setsampwidth(2); w.setframerate(SR)
         w.writeframes((x * 32767).astype('<i2').tobytes())
@@ -167,12 +181,12 @@ def track_boughs():
     ]
     # drone through everything, swelling
     for k in range(0, 64, 16):
-        S.add(drone(note(D - 12), 16 * 4 * S.spb + 3, 0.9), S.at(k, 0))
+        S.add(drone(note(D), 16 * 4 * S.spb + 3, 0.9), S.at(k, 0))
     # pads: 2-bar chords, alternating brightness by section
     for cyc in range(4):
         for i, (ro, ints) in enumerate(prog):
             bar = cyc * 16 + i * 2
-            bright = 0.4 if cyc in (0, 3) else 0.9
+            bright = 0.45
             for it in ints:
                 S.add(pad(note(D + ro + it + 12), 2 * 4 * S.spb + 1.5, 0.8, bright), S.at(bar, 0))
     # lute motif (dorian): phrases over 4 bars, entering at bar 8
@@ -190,10 +204,6 @@ def track_boughs():
         var = variants[j % len(variants)]
         for (n, b, v) in var:
             S.add(pluck(note(D + 12 + scale.get(n, n)), 2.2, v * 0.9), S.at(bar, b))
-        # a second, quieter lute an octave up on some phrases, slightly late
-        if j % 3 == 1:
-            for (n, b, v) in var[::2]:
-                S.add(pluck(note(D + 24 + scale.get(n, n)), 1.6, v * 0.35), S.at(bar, b + 0.02))
     # bells answering in the pad-only sections
     rng = np.random.default_rng(11)
     for bar in list(range(16, 24)) + list(range(48, 56)):
@@ -205,11 +215,11 @@ def track_boughs():
     for cyc in range(4):
         for i in (4, 5, 6, 7):
             bar = cyc * 16 + i * 2
-            S.add(tom(1.4, 0.55 if cyc >= 1 else 0.3), S.at(bar, 0))
+            S.add(tom(1.4, 0.3), S.at(bar, 0))
             if i == 6: S.add(tom(1.0, 0.35, 90), S.at(bar, 2.5))
     for k in range(0, 64, 8):
         S.add(breath(6, 0.7, seed=k + 1), S.at(k, 2))
-    return loopable(reverb(S.buf, 4.0, 0.45))
+    return loopable(level(reverb(S.buf, 4.0, 0.45)))
 
 # ---------------------------------------------------------------------------
 # Track 2 — "Hollow Lantern" (Dark Woods, night). E aeolian/phrygian, 62 bpm.
@@ -222,7 +232,7 @@ def track_lantern():
     prog = [(0, (0, 7, 12)), (0, (0, 7, 12)), (1, (0, 7, 12)), (1, (0, 7, 12)),   # Em  F (phrygian)
             (-4, (0, 7, 12)), (-4, (0, 7, 12)), (-2, (0, 7, 12)), (-2, (0, 7, 12))]  # C   D
     for k in range(0, 56, 14):
-        S.add(drone(note(E - 12), 14 * 4 * S.spb + 3, 1.0), S.at(k, 0))
+        S.add(drone(note(E), 14 * 4 * S.spb + 3, 0.9), S.at(k, 0))
     for cyc in range(4):
         for i, (ro, ints) in enumerate(prog):
             bar = cyc * 14 + i * 2
@@ -245,7 +255,7 @@ def track_lantern():
             if bar < 56: S.add(tom(1.6, 0.4, 95), S.at(bar, 0))
     for k in range(2, 56, 9):
         S.add(breath(7, 0.8, seed=k + 40), S.at(k, 0))
-    return loopable(reverb(S.buf, 5.0, 0.5))
+    return loopable(level(reverb(S.buf, 5.0, 0.5)))
 
 if __name__ == '__main__':
     out = sys.argv[1] if len(sys.argv) > 1 else '.'
