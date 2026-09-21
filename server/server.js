@@ -674,6 +674,11 @@ function buildFarm(zone) {
     for (const f of (h.furn || [])) {
       const r = FURN_R[f.k]; if (!r) continue;
       zone._solids.push({ x: h.x + f.dx, z: h.z + f.dz, r });
+      // A hearth is a cooking station like the campfires outside.
+      if (f.k === 'hearth') {
+        zone.campfires = zone.campfires || [];
+        if (!zone.campfires.some(c => c.id === 'cf_' + h.key)) zone.campfires.push({ id: 'cf_' + h.key, x: h.x + f.dx, z: h.z + f.dz + 0.35, hearth: true });
+      }
     }
   }
   // Thin dirt trails from each doorstep to the nearest point on the road, with
