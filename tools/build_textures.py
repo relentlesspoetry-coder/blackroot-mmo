@@ -74,52 +74,52 @@ def stripes(size, count, wobble, rng, axis=0):
 # ---------------------------------------------------------------- the tiles
 def t_grass(rng):
     fine = fbm(S, 32, 3, rng); blades = stripes(S, 48, 0.06, rng, axis=1) * 0.35 + stripes(S, 40, 0.08, rng, axis=0) * 0.2
-    return centre(fine * 0.7 + blades * 0.6 + fbm(S, 6, 2, rng) * 0.5, 0.34)
+    return centre(fine * 0.7 + blades * 0.6 + fbm(S, 6, 2, rng) * 0.5, 0.61)
 def t_dirt(rng):
     d1, _, _ = worley(S, 90, rng); clods = norm(d1) * 0.5
-    return centre(fbm(S, 12, 4, rng) * 0.8 + clods * 0.5 + value_noise(S, 64, rng, smooth=False) * 0.25, 0.36)
+    return centre(fbm(S, 12, 4, rng) * 0.8 + clods * 0.5 + value_noise(S, 64, rng, smooth=False) * 0.25, 0.65)
 def t_rock(rng):
     d1, d2, _ = worley(S, 26, rng); cracks = np.clip((d2 - d1) / 12, 0, 1)
-    return centre(fbm(S, 8, 4, rng) * 0.7 + cracks * 0.9 + fbm(S, 40, 2, rng) * 0.2, 0.42)
+    return centre(fbm(S, 8, 4, rng) * 0.7 + cracks * 0.9 + fbm(S, 40, 2, rng) * 0.2, 0.76)
 def t_stone(rng):
     d1, d2, idx = worley(S, 14, rng); mortar = np.clip((d2 - d1) / 6, 0, 1)
     tone = rng.random(14)[idx] * 0.3
-    return centre(mortar * 0.9 + tone + fbm(S, 24, 2, rng) * 0.25, 0.4)
+    return centre(mortar * 0.9 + tone + fbm(S, 24, 2, rng) * 0.25, 0.72)
 def t_wood(rng):
     y, x = np.mgrid[0:S, 0:S].astype(float)
     rings = 0.5 + 0.5 * np.sin((x / S + value_noise(S, 3, rng) * 0.35) * 14 * 2 * math.pi)
     grain = stripes(S, 90, 0.03, rng, axis=1)
-    return centre(rings * 0.6 + grain * 0.35 + fbm(S, 16, 2, rng) * 0.3, 0.34)
+    return centre(rings * 0.6 + grain * 0.35 + fbm(S, 16, 2, rng) * 0.3, 0.61)
 def t_bark(rng):
     ridges = stripes(S, 22, 0.12, rng, axis=1); d1, _, _ = worley(S, 40, rng)
-    return centre(ridges * 0.7 + norm(d1) * 0.4 + fbm(S, 10, 3, rng) * 0.5, 0.46)
+    return centre(ridges * 0.7 + norm(d1) * 0.4 + fbm(S, 10, 3, rng) * 0.5, 0.83)
 def t_leaf(rng):
     d1, d2, _ = worley(S, 60, rng); veins = np.clip((d2 - d1) / 5, 0, 1)
-    return centre(veins * 0.6 + fbm(S, 12, 3, rng) * 0.6 + value_noise(S, 48, rng) * 0.3, 0.32)
+    return centre(veins * 0.6 + fbm(S, 12, 3, rng) * 0.6 + value_noise(S, 48, rng) * 0.3, 0.58)
 def t_hay(rng):
     a = stripes(S, 70, 0.25, rng, axis=1); b = stripes(S, 60, 0.3, rng, axis=0)
-    return centre(np.maximum(a, b * 0.8) * 0.8 + fbm(S, 20, 2, rng) * 0.4, 0.4)
+    return centre(np.maximum(a, b * 0.8) * 0.8 + fbm(S, 20, 2, rng) * 0.4, 0.72)
 def t_skin(rng):
     pores = value_noise(S, 96, rng, smooth=False)
-    return centre(fbm(S, 6, 3, rng) * 0.7 + pores * 0.25, 0.14)
+    return centre(fbm(S, 6, 3, rng) * 0.7 + pores * 0.25, 0.25)
 def t_cloth(rng):
     weave = (stripes(S, 64, 0.0, rng, axis=0) * stripes(S, 64, 0.0, rng, axis=1))
-    return centre(weave * 0.6 + fbm(S, 8, 2, rng) * 0.4, 0.2)
+    return centre(weave * 0.6 + fbm(S, 8, 2, rng) * 0.4, 0.36)
 def t_leather(rng):
     d1, d2, _ = worley(S, 120, rng); grain = np.clip((d2 - d1) / 4, 0, 1)
-    return centre(grain * 0.5 + fbm(S, 10, 3, rng) * 0.6, 0.26)
+    return centre(grain * 0.5 + fbm(S, 10, 3, rng) * 0.6, 0.47)
 def t_metal(rng):
     brushed = stripes(S, 120, 0.02, rng, axis=0) * 0.5; dents = fbm(S, 5, 3, rng)
-    return centre(brushed + dents * 0.6 + value_noise(S, 128, rng, smooth=False) * 0.15, 0.24)
+    return centre(brushed + dents * 0.6 + value_noise(S, 128, rng, smooth=False) * 0.15, 0.43)
 def t_water(rng):
     d1, d2, _ = worley(S, 30, rng); caustic = np.clip((d2 - d1) / 10, 0, 1) ** 2
-    return centre(caustic * 0.8 + fbm(S, 8, 3, rng) * 0.5, 0.36)
+    return centre(caustic * 0.8 + fbm(S, 8, 3, rng) * 0.5, 0.65)
 def t_sand(rng):
-    return centre(value_noise(S, 128, rng, smooth=False) * 0.4 + fbm(S, 10, 3, rng) * 0.6, 0.22)
+    return centre(value_noise(S, 128, rng, smooth=False) * 0.4 + fbm(S, 10, 3, rng) * 0.6, 0.4)
 def t_fur(rng):
-    return centre(stripes(S, 80, 0.4, rng, axis=0) * 0.6 + fbm(S, 12, 3, rng) * 0.5, 0.3)
+    return centre(stripes(S, 80, 0.4, rng, axis=0) * 0.6 + fbm(S, 12, 3, rng) * 0.5, 0.54)
 def t_bone(rng):
-    return centre(fbm(S, 6, 3, rng) * 0.7 + stripes(S, 30, 0.2, rng, axis=1) * 0.15 + value_noise(S, 96, rng) * 0.15, 0.16)
+    return centre(fbm(S, 6, 3, rng) * 0.7 + stripes(S, 30, 0.2, rng, axis=1) * 0.15 + value_noise(S, 96, rng) * 0.15, 0.29)
 
 TILES = ['grass', 'dirt', 'rock', 'stone', 'wood', 'bark', 'leaf', 'hay', 'skin', 'cloth', 'leather', 'metal', 'water', 'sand', 'fur', 'bone']
 MAKERS = { 'grass': t_grass, 'dirt': t_dirt, 'rock': t_rock, 'stone': t_stone, 'wood': t_wood, 'bark': t_bark, 'leaf': t_leaf, 'hay': t_hay,

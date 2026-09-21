@@ -601,7 +601,7 @@ function detailize(mat, tile, opts = {}) {
   if (!mat || !mat.isMeshStandardMaterial) return mat;
   const idx = tile == null ? -1 : (typeof tile === 'string' ? DETAIL_INDEX[tile] : tile);
   if ((idx == null || idx < 0) && !opts.attr) return mat;
-  const D = mat.userData.detail = { tile: idx == null ? -1 : idx, scale: opts.scale || 2.2, strength: opts.strength != null ? opts.strength : 0.9, attr: !!opts.attr };
+  const D = mat.userData.detail = { tile: idx == null ? -1 : idx, scale: opts.scale || 2.2, strength: opts.strength != null ? opts.strength : 1.0, attr: !!opts.attr };
   if (opts.attr) mat.defines = Object.assign(mat.defines || {}, { USE_DETAIL_ATTR: 1 });
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.uDetailAtlas = { value: getDetailAtlas() };
@@ -1047,7 +1047,7 @@ function makeHuman(look, targetH) {
     }
     const outfitGeo = await outfitGeometry(look);
     if (!wrap.parent) return;
-    addSkinned(outfitGeoCache.get(bodyKey), detailize(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 }), null, { attr: true, scale: 0.9, strength: 0.7 }), 'Body');
+    addSkinned(outfitGeoCache.get(bodyKey), detailize(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 }), null, { attr: true, scale: 0.9, strength: 0.9 }), 'Body');
     addSkinned(outfitGeo, detailize(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8 }), null, { attr: true, scale: 0.9 }), 'Outfit');
     if (items.some(it => it.slot === 'helmet')) return;
     const h = await hairAsset(look.hair);
@@ -2285,7 +2285,7 @@ function buildLowPolyGround(W, D, cx, cz) {
   pos.needsUpdate = true;
   geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
   geo.computeVertexNormals(); // shared vertices -> smooth shading, no triangle facets
-  ground = new THREE.Mesh(geo, detailize(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }), 'grass', { scale: 2.5, strength: 0.8 }));
+  ground = new THREE.Mesh(geo, detailize(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }), 'grass', { scale: 2.2, strength: 1.0 }));
   ground.position.set(cx, 0, cz); ground.receiveShadow = true; ground.userData.isGround = true; scene.add(ground);
 }
 
