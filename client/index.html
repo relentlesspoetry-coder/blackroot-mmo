@@ -32,22 +32,23 @@
 
   /* ---- HUD ---- */
   #hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
-  #topleft { position: absolute; top: 12px; left: 12px; width: 372px; }
-  #charcard { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 12px;
-    background: linear-gradient(135deg, #1a1210 0%, #241a14 55%, #1a1210 100%); border: 2px solid #6b5333; box-shadow: 0 4px 16px #000a, inset 0 0 0 1px #2a1f16, inset 0 0 28px #000a; position: relative; }
-  #charcard::before { content: ''; position: absolute; inset: 3px; border: 1px solid #8a6a3a55; border-radius: 9px; pointer-events: none; }
+  #topleft { position: absolute; top: 12px; left: 12px; width: 300px; }
+  /* Character card: the same panel language as the bag / skills / quest
+     windows (dark wood panel, dark border, gold headings, inset slots). */
+  #charcard { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 8px;
+    background: #2e2820; border: 2px solid #1c150e; box-shadow: 0 8px 24px #000a; }
   #charcard .ccl { flex: 1; min-width: 0; }
-  #cname { font-family: Georgia, 'Times New Roman', serif; font-size: 26px; font-weight: 700; letter-spacing: 2px; color: #f3e6c8; text-transform: uppercase; text-shadow: 0 2px 4px #000; line-height: 1.05; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  #csub { font-size: 12px; color: #d8c8a6; margin: 3px 0 9px; text-shadow: 0 1px 2px #000; } #csub b { color: #ffd47a; }
-  #cemblem { width: 84px; height: 84px; flex: none; filter: drop-shadow(0 3px 6px #000c); }
-  .bar { height: 18px; border-radius: 5px; background: #120c0a; border: 1px solid #5a4630; overflow: hidden; position: relative; margin-bottom: 6px; box-shadow: inset 0 1px 3px #000c; }
-  .bar > span { position: absolute; inset: 0; display: flex; align-items: center; gap: 8px; padding: 0 8px; font-size: 12px; font-weight: 700; font-family: 'Courier New', monospace; text-shadow: 0 1px 2px #000; color: #fff; }
-  .bar > span em { font-style: normal; color: #fff3e0; } .bar > span b { margin-left: 10px; }
+  #cname { font-size: 18px; font-weight: 700; color: #ffdf9e; text-shadow: 0 1px 2px #000; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #csub { font-size: 11.5px; color: #b9ad90; margin: 2px 0 8px; } #csub b { color: #ffd24a; } #csub #cgold { color: #ffd24a; }
+  #cemblem { width: 64px; height: 64px; flex: none; background: #1d1913; border: 1px solid #4a3d2a; border-radius: 8px; padding: 4px; box-sizing: border-box; }
+  .bar { height: 16px; border-radius: 5px; background: #1d1913; border: 1px solid #4a3d2a; overflow: hidden; position: relative; margin-bottom: 5px; }
+  .bar > span { position: absolute; inset: 0; display: flex; align-items: center; gap: 8px; padding: 0 7px; font-size: 11px; font-weight: 600; text-shadow: 0 1px 2px #000; color: #fff; }
+  .bar > span em { font-style: normal; color: #fff; opacity: .92; } .bar > span b { margin-left: auto; font-weight: 600; }
   .bar > i { position: absolute; inset: 0; transform-origin: left; transition: transform .15s; }
-  #hpfill { background: linear-gradient(180deg,#e04a40,#a41d13); }
-  #stamfill { background: linear-gradient(180deg,#f2c94c,#b8862a); }
-  #partyhead { display: flex; justify-content: space-between; align-items: baseline; margin: 10px 4px 0; font-size: 11px; letter-spacing: 2px; color: #cfc2a6; text-shadow: 0 1px 2px #000; }
-  #partyhead #partyslots { letter-spacing: 0; color: #a3967c; font-size: 11px; }
+  #hpfill { background: linear-gradient(90deg,#a41d13,#e0524d); }
+  #stamfill { background: linear-gradient(90deg,#b8862a,#f2c94c); }
+  #partyhead { display: flex; justify-content: space-between; align-items: baseline; margin: 8px 2px 0; font-size: 11px; font-weight: 700; letter-spacing: 1px; color: #ffdf9e; text-shadow: 0 1px 2px #000; }
+  #partyhead #partyslots { letter-spacing: 0; font-weight: 400; color: #b9ad90; }
   #momentum { display: flex; gap: 5px; justify-content: center; margin-bottom: 5px; height: 10px; }
   #momentum i { width: 10px; height: 10px; border-radius: 50%; background: #2a2038; border: 1px solid #6a4f9a; }
   #momentum i.on { background: radial-gradient(circle at 40% 35%, #ffd27a, #d8781c); border-color: #ffd27a; box-shadow: 0 0 6px #ffb347aa; }
