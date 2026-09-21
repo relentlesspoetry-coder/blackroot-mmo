@@ -1293,11 +1293,12 @@ function buildZone() {
   // Paths — one or more continuous, smoothly-curving dirt trails (the fused
   // world can hold several). The core dirt is opaque; a feathered fringe melts
   // the edges into the grass instead of a hard cut.
-  for (const pathPts of worldPaths()) {
-    const dirtMat = new THREE.MeshStandardMaterial({ map: loadTexture('dirt', 1, 1), color: 0x8a6a45, roughness: 1,
-      side: THREE.DoubleSide, transparent: true, vertexColors: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
-    buildStripRibbon(pathPts, 5, 0.05, dirtMat, 5, 1.8, true, 6);
-  }
+  const dirtMat = () => new THREE.MeshStandardMaterial({ map: loadTexture('dirt', 1, 1), color: 0x8a6a45, roughness: 1,
+    side: THREE.DoubleSide, transparent: true, vertexColors: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
+  // A narrow cart track, not a highway.
+  for (const pathPts of worldPaths()) buildStripRibbon(pathPts, 1.6, 0.05, dirtMat(), 3, 0.5, true, 6);
+  // Footpaths from the road to every doorstep — thinner still.
+  for (const tr of (zone.trails || [])) buildStripRibbon(tr, 0.9, 0.05, dirtMat(), 2, 0.35, false, 0);
 
   // Rivers — deep flowing water sitting in the carved channel, one per river.
   for (const river of worldRivers()) {

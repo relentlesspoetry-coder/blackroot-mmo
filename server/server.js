@@ -650,6 +650,19 @@ function buildFarm(zone) {
       zone._solids.push({ x: h.x + f.dx, z: h.z + f.dz, r });
     }
   }
+  // Thin dirt trails from each doorstep to the nearest point on the road, with
+  // a bend part-way so they don't read as ruler-straight.
+  zone._trails = [];
+  const road = zone.path || [];
+  if (road.length > 1) {
+    for (const h of (F.houses || [])) {
+      const off = h.door === 'south' ? [0, h.d / 2] : h.door === 'north' ? [0, -h.d / 2] : h.door === 'east' ? [h.w / 2, 0] : [-h.w / 2, 0];
+      const step = { x: h.x + off[0] + Math.sign(off[0]) * 1.2, z: h.z + off[1] + Math.sign(off[1]) * 1.2 };
+      const c = closestOnPolyline(step.x, step.z, road);
+      const mid = { x: (step.x + c.x) / 2 + (c.z - step.z) * 0.12, z: (step.z + c.z) / 2 - (c.x - step.x) * 0.12 };
+      zone._trails.push([step, mid, { x: c.x, z: c.z }]);
+    }
+  }
 }
 const DOOR_W = 2.6;                       // doorway width (metres)
 const FURN_R = { bed: 1.1, table: 0.9, chest: 0.6, hearth: 1.0, shelf: 0.5, stool: 0.3 };
@@ -1598,6 +1611,7 @@ function zoneForClient(zone) {
     models: zone.models || [],
     farmBox: zone._farmBox || null,
     houses: (zone.farm && zone.farm.houses) || [],
+    trails: zone._trails || [],
     field: (zone.farm && zone.farm.field) || null,
     gate: zone.farm && zone.farm.gate ? { x: zone.farm.gate.x, z: zone.farm.gate.z, yaw: zone.farm.gate.yaw || 0, s: zone.farm.gate.s || 1 } : null,
     editObjects: zone._editObjects || [],
