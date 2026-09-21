@@ -76,8 +76,8 @@ def t_grass(rng):
     fine = fbm(S, 32, 3, rng); blades = stripes(S, 48, 0.06, rng, axis=1) * 0.35 + stripes(S, 40, 0.08, rng, axis=0) * 0.2
     return centre(fine * 0.7 + blades * 0.6 + fbm(S, 6, 2, rng) * 0.5, 0.61)
 def t_dirt(rng):
-    d1, _, _ = worley(S, 90, rng); clods = norm(d1) * 0.5
-    return centre(fbm(S, 12, 4, rng) * 0.8 + clods * 0.5 + value_noise(S, 64, rng, smooth=False) * 0.25, 0.65)
+    d1, d2, _ = worley(S, 40, rng); clods = norm(d1) * 0.5; cracks = np.clip((d2 - d1) / 9, 0, 1) * 0.6
+    return centre(fbm(S, 6, 4, rng) * 0.9 + clods * 0.6 + cracks + value_noise(S, 64, rng, smooth=False) * 0.3, 0.9)
 def t_rock(rng):
     d1, d2, _ = worley(S, 26, rng); cracks = np.clip((d2 - d1) / 12, 0, 1)
     return centre(fbm(S, 8, 4, rng) * 0.7 + cracks * 0.9 + fbm(S, 40, 2, rng) * 0.2, 0.76)

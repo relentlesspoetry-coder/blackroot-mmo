@@ -644,8 +644,10 @@ float detailSample(float tile, vec2 uv) {
 #endif
   if (tile >= 0.0) {
     vec3 n = abs(vDetailNrm); n = n / max(n.x + n.y + n.z, 1e-4);
-    vec3 p = vDetailPos / uDetailScale;
-    float g = detailSample(tile, p.zy) * n.x + detailSample(tile, p.xz) * n.y + detailSample(tile, p.xy) * n.z;
+    vec3 p = vDetailPos / uDetailScale, q = p * 0.23;
+    float g1 = detailSample(tile, p.zy) * n.x + detailSample(tile, p.xz) * n.y + detailSample(tile, p.xy) * n.z;   // fine grain
+    float g2 = detailSample(tile, q.zy) * n.x + detailSample(tile, q.xz) * n.y + detailSample(tile, q.xy) * n.z;   // broad patches (reads at distance)
+    float g = (g1 + g2) * 0.5;
     diffuseColor.rgb *= mix(1.0, g * 2.0, uDetailStrength);
   }
 }`);
@@ -2055,7 +2057,7 @@ function buildSpoilBank(mine) {
   for (const p of pts) { mnx = Math.min(mnx, p.x); mxx = Math.max(mxx, p.x); mnz = Math.min(mnz, p.z); mxz = Math.max(mxz, p.z); }
   const area = (mxx - mnx) * (mxz - mnz);
   // small grey rocks, then a much denser sprinkle of tiny brown dirt pebbles
-  const layers = [[Math.round(area / 7), 0.1, 0.16, null], [Math.round(area / 1.6), 0.035, 0.05, 0x7a5636]];
+  const layers = [[Math.round(area / 7), 0.1, 0.16, [2.3, 1.75, 1.25]], [Math.round(area / 1.6), 0.035, 0.05, [2.0, 1.5, 1.05]]];   // earth-brown rocks and pebbles (the rubble model is dark cave grey, so the tint lifts it)
   for (const [want, s0, s1, tint] of layers) {
     for (let n = 0, guard = 0; n < want && guard < want * 8; guard++) {
       const x = mnx + rng() * (mxx - mnx), z = mnz + rng() * (mxz - mnz);
@@ -2069,7 +2071,7 @@ function buildSpoilBank(mine) {
     const k = 1 + Math.floor(rng() * 2);
     for (let t = 0; t < k; t++) {
       const o = 0.4 + rng() * 1.6, x = p.x + nz.x * o + (rng() - 0.5) * 0.8, z = p.z + nz.z * o + (rng() - 0.5) * 0.8;
-      rub.push({ m: 'Rubble_Pile', x, z, y: terrainHeight(x, z) + bankLift(x, z) - 0.03, s: 0.14 + rng() * 0.22, r: rng() * 6.28 });
+      rub.push({ m: 'Rubble_Pile', x, z, y: terrainHeight(x, z) + bankLift(x, z) - 0.03, s: 0.14 + rng() * 0.22, r: rng() * 6.28, tint: [2.3, 1.75, 1.25] });
     }
   }
   placeInstances(rub, () => 0);
@@ -3113,7 +3115,7 @@ function placeInstances(list, yOf) {
         const sVal = o.s || 1; sc.set(o.sx || sVal, sVal, sVal);   // `sx`: stretch along the piece's own length only (fence panels)
         mtx.compose(new THREE.Vector3(o.x, (o.y != null ? o.y : yOf(o)) - (isOre ? ORE_SINK : 0), o.z), q, sc);
         im.setMatrixAt(i, mtx);
-        if (colored) im.setColorAt(i, o.tint ? _tintC.set(o.tint) : _tintC.set(0xffffff));
+        if (colored) im.setColorAt(i, Array.isArray(o.tint) ? _tintC.setRGB(o.tint[0], o.tint[1], o.tint[2]) : o.tint ? _tintC.set(o.tint) : _tintC.set(0xffffff));   // an [r,g,b] tint may exceed 1 to lift a dark model
       }, isOre ? { tag: { pickKind: 'ore', oreName: model.replace(/_Ore_Vein$/, '') } } : {});
       // each chunk keeps its own vein list so instanceId -> vein still lines up
       if (isOre) for (const c of chunks) oreMeshes.push({ mesh: c.im, veins: c.items });
