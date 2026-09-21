@@ -641,6 +641,8 @@ let fireflies = null;
 let critters = [];               // ambient flying bugs (butterflies by day, moths by night)
 let targetRing = null;
 let hemiLight = null, sunLight = null;
+let caveMix = 0; // 0 = surface, 1 = deep underground; smoothly eased by player depth
+const _caveFog = new THREE.Color(0x0a0c10);
 let sky = {};
 let bridgeInfos = []; // arched bridges: {x,z,phi,L,archH,deckW} for walking up & over
 // Height of the bridge deck at world (x,z), or 0 if not on any bridge span.
@@ -821,6 +823,24 @@ function updateSky(dt) {
   sunLight.color.copy(pal.sun);
   sunLight.intensity = pal.sunI * (1 - 0.55 * w);
 
+  // Underground: as the player descends into the cave, pull the world into dark
+  // (short black fog, dim sun/hemi) so the chamber reads as a cave even though
+  // the scene shares one sky. Eased by depth so entering/leaving is smooth.
+  const selfRec = entityMeshes.get(myId);
+  const depth = selfRec ? -selfRec.mesh.position.y : 0;      // >0 underground
+  const caveTarget = Math.max(0, Math.min(1, (depth - 2) / 10));
+  caveMix += (caveTarget - caveMix) * Math.min(1, dt * 2.5);
+  if (caveMix > 0.001) {
+    scene.fog.color.lerp(_caveFog, caveMix);
+    scene.background.lerp(_caveFog, caveMix);
+    scene.fog.near = scene.fog.near * (1 - caveMix) + 6 * caveMix;
+    scene.fog.far = scene.fog.far * (1 - caveMix) + 70 * caveMix;
+    // Keep a little sky fill so the cave is dim, not pitch black — the point
+    // lights do the rest.
+    hemiLight.intensity = hemiLight.intensity * (1 - caveMix) + 0.85 * caveMix;
+    sunLight.intensity *= (1 - 0.85 * caveMix);
+  }
+
   // Sun/moon arc across the sky.
   const ang = (worldTime - 0.25) * Math.PI * 2;
   _sunDir.set(Math.cos(ang) * 0.55, Math.sin(ang), 0.35).normalize();
@@ -905,15 +925,18 @@ function mulberry32(a) {
     return ((t ^ t >>> 14) >>> 0) / 4294967296;
   };
 }
-function inBoundary(x, z) {
-  const poly = zone.boundary;
-  if (!poly) return true;
+function pointInPoly(x, z, poly) {
   let inside = false;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
     const xi = poly[i].x, zi = poly[i].z, xj = poly[j].x, zj = poly[j].z;
     if (((zi > z) !== (zj > z)) && (x < (xj - xi) * (z - zi) / (zj - zi) + xi)) inside = !inside;
   }
   return inside;
+}
+function inBoundary(x, z) {
+  const poly = zone.boundary;
+  if (!poly) return true;
+  return pointInPoly(x, z, poly);
 }
 
 function distToPolyline(x, z, pts) {
@@ -1368,6 +1391,10 @@ function buildZone() {
   // Fishing spots + cooking campfires (clickable)
   buildFishingSpots();
   for (const cf of (zone.campfires || [])) buildCampfire(cf);
+
+  // Underground cave chamber(s) + the tunnel(s) that descend into them.
+  for (const cave of (zone.caves || [])) buildCaveRegion(cave);
+  if (zone.tunnel) buildTunnel(zone.tunnel);
 
   // Environmental hazard areas
   if (zone.hazards) buildHazards();
@@ -2219,7 +2246,7 @@ function buildPoi(p) {
 }
 
 // ---- Natural cave walls: line the boundary polygon with rock boulders ----
-function buildCaveWalls(poly, ceilY) {
+function buildCaveWalls(poly, ceilY, yBase = 0) {
   // Centroid so we can push boulders OUTWARD of the collision boundary; the
   // walkable edge (the polygon) then lines up with the inner rock face instead
   // of the player clipping into boulders that bulged inward.
@@ -2248,7 +2275,7 @@ function buildCaveWalls(poly, ceilY) {
     for (const part of parts) {
       const im = new THREE.InstancedMesh(part.geo, part.mat, list.length);
       im.castShadow = im.receiveShadow = true;
-      list.forEach((o, i) => { q.setFromAxisAngle(UP, o.r); sc.set(o.s, o.s, o.s); mtx.compose(new THREE.Vector3(o.x, 0, o.z), q, sc); im.setMatrixAt(i, mtx); });
+      list.forEach((o, i) => { q.setFromAxisAngle(UP, o.r); sc.set(o.s, o.s, o.s); mtx.compose(new THREE.Vector3(o.x, yBase, o.z), q, sc); im.setMatrixAt(i, mtx); });
       scene.add(im);
     }
   }
@@ -2260,42 +2287,108 @@ function buildCaveWalls(poly, ceilY) {
 // let the per-placement scale do the work.
 const NATIVE = 0; // sentinel: keep the model's own dimensions
 const oreMeshes = [];   // { mesh, veins: [placement,...] } for instance picking
+// Instance a list of {m,x,z,r,s} placements at heights from yOf(o). Clickable
+// ore veins register into oreMeshes for mining picks.
+function placeInstances(list, yOf) {
+  const mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
+  const byModel = {};
+  for (const o of list) (byModel[o.m] || (byModel[o.m] = [])).push(o);
+  for (const model of Object.keys(byModel)) {
+    const parts = bakeModel(model, NATIVE);
+    if (!parts) continue;
+    const items = byModel[model];
+    for (const part of parts) {
+      const im = new THREE.InstancedMesh(part.geo, part.mat, items.length);
+      im.castShadow = im.receiveShadow = true;
+      items.forEach((o, i) => {
+        q.setFromAxisAngle(UP, o.r || 0);
+        const sVal = o.s || 1; sc.set(sVal, sVal, sVal);
+        mtx.compose(new THREE.Vector3(o.x, yOf(o), o.z), q, sc);
+        im.setMatrixAt(i, mtx);
+      });
+      im.instanceMatrix.needsUpdate = true;
+      if (/_Ore_Vein$/.test(model)) {
+        im.userData.pickKind = 'ore';
+        im.userData.oreName = model.replace(/_Ore_Vein$/, '');
+        oreMeshes.push({ mesh: im, veins: items });
+      }
+      scene.add(im);
+    }
+  }
+}
 function buildScatter() {
   oreMeshes.length = 0;
-  const mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
-  const place = (list, yOf) => {
-    const byModel = {};
-    for (const o of list) (byModel[o.m] || (byModel[o.m] = [])).push(o);
-    for (const model of Object.keys(byModel)) {
-      const parts = bakeModel(model, NATIVE);
-      if (!parts) continue;
-      const items = byModel[model];
-      for (const part of parts) {
-        const im = new THREE.InstancedMesh(part.geo, part.mat, items.length);
-        im.castShadow = im.receiveShadow = true;
-        items.forEach((o, i) => {
-          q.setFromAxisAngle(UP, o.r || 0);
-          const sVal = o.s || 1; sc.set(sVal, sVal, sVal);
-          mtx.compose(new THREE.Vector3(o.x, yOf(o), o.z), q, sc);
-          im.setMatrixAt(i, mtx);
-        });
-        im.instanceMatrix.needsUpdate = true;
-        // Ore veins are clickable. An InstancedMesh raycast gives back an
-        // instanceId, which indexes straight into this list.
-        if (/_Ore_Vein$/.test(model)) {
-          im.userData.pickKind = 'ore';
-          im.userData.oreName = model.replace(/_Ore_Vein$/, '');
-          oreMeshes.push({ mesh: im, veins: items });
-        }
-        scene.add(im);
-      }
-    }
-  };
-  place(zone.scatter || [], () => 0);
+  placeInstances(zone.scatter || [], () => 0);
   // Hanging pieces are modelled downward from their origin, so they mount at
   // the ceiling rather than the floor.
   const ceil = (zone.ceilingY || 13) - 0.1;
-  place(zone.hanging || [], () => ceil);
+  placeInstances(zone.hanging || [], () => ceil);
+}
+
+// ---- Underground cave chamber(s), built into the open world at their floorY.
+// The cave outline (rooms + connecting tunnels traced by caveOutline) becomes a
+// walled-off open interior, so the tunnels between rooms stay clear. ----
+function polyBBox(poly) {
+  let mnx = 1e9, mxx = -1e9, mnz = 1e9, mxz = -1e9;
+  for (const p of poly) { mnx = Math.min(mnx, p.x); mxx = Math.max(mxx, p.x); mnz = Math.min(mnz, p.z); mxz = Math.max(mxz, p.z); }
+  return { mnx, mxx, mnz, mxz, W: mxx - mnx, D: mxz - mnz, cx: (mnx + mxx) / 2, cz: (mnz + mxz) / 2 };
+}
+function buildCaveRegion(cave) {
+  const poly = cave.boundary, fY = cave.floorY, cY = cave.ceilingY;
+  const bb = polyBBox(poly), W = bb.W + 12, D = bb.D + 12, cx = bb.cx, cz = bb.cz;
+  // Dark faceted stone floor, clipped to the cave outline, at the chamber floor.
+  const seg = Math.max(24, Math.round(Math.max(W, D) / 5));
+  const src = new THREE.PlaneGeometry(W, D, seg, seg).toNonIndexed(); src.rotateX(-Math.PI / 2);
+  const sp = src.attributes.position, positions = [], colors = [], uvs = [], c = new THREE.Color();
+  for (let i = 0; i < sp.count; i += 3) {
+    const mxw = (sp.getX(i) + sp.getX(i + 1) + sp.getX(i + 2)) / 3 + cx;
+    const mzw = (sp.getZ(i) + sp.getZ(i + 1) + sp.getZ(i + 2)) / 3 + cz;
+    if (!pointInPoly(mxw, mzw, poly)) continue;
+    const j = 0.85 + Math.random() * 0.3; c.setRGB(0.34 * j, 0.35 * j, 0.4 * j);
+    for (let k = 0; k < 3; k++) { const lx = sp.getX(i + k), lz = sp.getZ(i + k); positions.push(lx, fY, lz); colors.push(c.r, c.g, c.b); uvs.push((lx + W / 2) / 7, (lz + D / 2) / 7); }
+  }
+  const fg = new THREE.BufferGeometry();
+  fg.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  fg.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  fg.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2)); fg.computeVertexNormals();
+  const floor = new THREE.Mesh(fg, new THREE.MeshStandardMaterial({ map: loadTexture('dark_stone', 1, 1), vertexColors: true, flatShading: true, roughness: 1 }));
+  floor.position.set(cx, 0, cz); floor.receiveShadow = true; floor.userData.isGround = true; scene.add(floor);
+  // Rock walls tracing the outline (interior rooms/tunnels stay open), rising
+  // from the floor, and a dark ceiling capping the chamber.
+  buildCaveWalls(poly, cY - fY, fY);
+  const ceilMap = loadTexture('rock', W / 12, D / 12);
+  const ceil = new THREE.Mesh(new THREE.PlaneGeometry(W, D), new THREE.MeshStandardMaterial({ map: ceilMap, color: 0x3a3d44, roughness: 1, side: THREE.DoubleSide }));
+  ceil.rotation.x = Math.PI / 2; ceil.position.set(cx, cY, cz); scene.add(ceil);
+  // Crystals / ore veins / mushrooms on the floor; stalactites from the ceiling.
+  placeInstances(cave.scatter || [], () => fY);
+  placeInstances(cave.hanging || [], () => cY - 0.1);
+  // Cave lighting: a warm glow at the entrance plus a grid of cool crystal glows
+  // across the whole chamber so it reads as a lit cave, not a black void.
+  const el = new THREE.PointLight(0xffd9a0, 2.4, 70); el.position.set(cave.entrance.x, fY + 5, cave.entrance.z); scene.add(el);
+  const gx = 3, gz = 4;
+  for (let ix = 0; ix < gx; ix++) for (let iz = 0; iz < gz; iz++) {
+    const lx = bb.mnx + bb.W * (ix + 0.5) / gx, lz = bb.mnz + bb.D * (iz + 0.5) / gz;
+    if (!pointInPoly(lx, lz, poly)) continue;
+    const warm = (ix + iz) % 2 === 0;
+    const pl = new THREE.PointLight(warm ? 0x9fd0e8 : 0x8fb8d8, 1.5, 80);
+    pl.position.set(lx, fY + 7, lz); scene.add(pl);
+  }
+}
+// A descending stone tunnel from the surface mouth down to the cave entrance.
+function buildTunnel(t) {
+  const dx = t.bx - t.ax, dz = t.bz - t.az, len = Math.hypot(dx, dz) || 1;
+  const drop = t.y0 - t.y1, slope = Math.hypot(len, drop), pitch = Math.atan2(drop, len);
+  const half = t.half, TH = 5;
+  const mat = new THREE.MeshStandardMaterial({ map: loadTexture('dark_stone', 2, 2), color: 0x44474e, roughness: 1, flatShading: true });
+  const g = new THREE.Group();
+  g.position.set(t.ax, t.y0, t.az);
+  g.rotation.y = Math.atan2(dx, dz);   // local +Z runs toward the cave entrance
+  g.rotation.x = pitch;                // tilt so +Z heads downhill
+  const floor = new THREE.Mesh(new THREE.BoxGeometry(half * 2 + 1, 0.5, slope), mat); floor.position.set(0, -0.25, slope / 2); g.add(floor);
+  for (const s of [-1, 1]) { const w = new THREE.Mesh(new THREE.BoxGeometry(0.9, TH, slope), mat); w.position.set(s * (half + 0.45), TH / 2, slope / 2); g.add(w); }
+  const cap = new THREE.Mesh(new THREE.BoxGeometry(half * 2 + 1.8, 0.7, slope), mat); cap.position.set(0, TH, slope / 2); g.add(cap);
+  g.traverse(o => { if (o.isMesh) { o.castShadow = o.receiveShadow = true; } });
+  scene.add(g);
 }
 
 // ---- The farm gate: a standalone model whose hinge swings open/shut. The
@@ -3799,7 +3892,9 @@ function renderWorld(dt) {
       // Players ride the server's floor height (walk up onto placed floors/ramps);
       // monsters just follow the terrain.
       let py = groundY(x, z);
-      if (kind === 'player' && e.y != null) py += (prev && prev.y != null) ? prev.y + (e.y - prev.y) * t : e.y;
+      // e.y is the floor offset above terrain (placed floors, and the cave/tunnel
+      // descent). Players and cave monsters both ride it; surface mobs send 0.
+      if (e.y != null) py += (prev && prev.y != null) ? prev.y + (e.y - prev.y) * t : e.y;
       rec.mesh.position.y = py;
       rec.mesh.rotation.y = yaw + (rec.mesh.userData.faceOffset || 0);
       rec.data = e;

@@ -162,6 +162,72 @@ function buildSeamlessWorld() {
 buildSeamlessWorld();
 
 // ---------------------------------------------------------------------------
+// Underground cave: fold the Hidden Cave into the world as a chamber you walk
+// DOWN into through a cave mouth — no transition, no loading. It sits below the
+// outdoor footprint (floor at CAVE_FLOOR_Y) so the grass overhead is its roof;
+// a ramped tunnel drops from the surface mouth to the cave entrance. Every cave
+// branch in movement/floor is guarded on being underground or in the tunnel, so
+// surface play is unchanged.
+// ---------------------------------------------------------------------------
+const CAVE_FLOOR_Y = -22;
+const TUNNEL_HALF = 7;
+function buildCaveIntoWorld() {
+  const cave = hiddencave, w = darkwoods;
+  // Keep the cave at native scale — scaleZone doesn't transform `cavern`, so
+  // scaling here would desync the traced outline, spawn and rooms. Trace the
+  // outline first, THEN offset the whole thing (outline + spawn together) so the
+  // tunnel exit lands inside the chamber.
+  if (!cave.boundary) cave.boundary = caveOutline(cave.cavern, cave.bounds);
+  // Line the cave up directly under the existing surface "Hidden Cave Entrance"
+  // so you descend right where the cave mouth already is. The entrance room is
+  // dropped a little south of the mouth so the tunnel is a short walkable ramp.
+  const mouthPoi = (w.pois || []).find(p => p.key === 'cave') || { x: -102, z: 98.6 };
+  const ent0 = cave.spawn;                                 // native entrance-room position
+  offsetZone(cave, mouthPoi.x - ent0.x, (mouthPoi.z + 22) - ent0.z);
+  cave._scatter = generateScatter(cave);                 // crystals / ore / mushrooms
+  cave._hanging = generateHanging(cave);                 // stalactites
+  const ent = { x: cave.spawn.x, z: cave.spawn.z };      // tunnel meets the chamber here
+  const mouth = { x: mouthPoi.x, z: mouthPoi.z };        // the surface cave entrance
+  w.caves = [{
+    boundary: cave.boundary, floorY: CAVE_FLOOR_Y, ceilingY: CAVE_FLOOR_Y + (cave.ceilingY || 8.5),
+    cen: polyCentroid(cave.boundary), scatter: cave._scatter, hanging: cave._hanging, env: cave.env,
+    entrance: ent,
+  }];
+  w.tunnel = { ax: mouth.x, az: mouth.z, bx: ent.x, bz: ent.z, half: TUNNEL_HALF, y0: 0, y1: CAVE_FLOOR_Y };
+  // Expand the world bounds so the underground chamber isn't clamped off (the
+  // outdoor boundary polygon still fences surface players into the woods).
+  const cb = cave.bounds, b = w.bounds;
+  b.minX = Math.min(b.minX, cb.minX - 4); b.maxX = Math.max(b.maxX, cb.maxX + 4);
+  b.minZ = Math.min(b.minZ, cb.minZ - 4); b.maxZ = Math.max(b.maxZ, cb.maxZ + 4);
+  for (const s of (cave.spawns || [])) w.spawns.push({ ...s, cave: true }); // cave-tagged mobs
+  w.models = [...new Set([...(w.models || []), ...(cave.models || [])])];    // load cave props too
+  delete ZONES.hiddencave;
+  w.portals = (w.portals || []).filter(p => p.to !== 'hiddencave');
+}
+buildCaveIntoWorld();
+
+// Which cave (if any) a world point lies in. `underground` gates surface points
+// that sit ABOVE a cave (grass roof) from the chamber below — pass the entity's
+// current y so only descended entities resolve to the cave.
+function caveAt(zone, x, z, underground) {
+  if (!underground) return null;
+  for (const c of (zone.caves || [])) if (pointInPoly(x, z, c.boundary)) return c;
+  return null;
+}
+// Distance along the tunnel corridor [0..1] and lateral offset, or null if outside it.
+function tunnelParam(zone, x, z) {
+  const t = zone.tunnel; if (!t) return null;
+  const dx = t.bx - t.ax, dz = t.bz - t.az, L2 = dx * dx + dz * dz || 1;
+  let u = ((x - t.ax) * dx + (z - t.az) * dz) / L2;
+  if (u < -0.05 || u > 1.05) return null;
+  u = Math.max(0, Math.min(1, u));
+  const cx = t.ax + dx * u, cz = t.az + dz * u;
+  const lat = Math.hypot(x - cx, z - cz);
+  if (lat > t.half + 1) return null;
+  return { u, lat, cx, cz };
+}
+
+// ---------------------------------------------------------------------------
 // Tuning
 // ---------------------------------------------------------------------------
 const TICK_HZ = 20;
@@ -215,7 +281,17 @@ function primTopAt(o, x, z) {
 }
 // The walkable floor height under (x,z), reachable from fromY (ground = 0).
 function floorHeightAt(zone, x, z, fromY) {
-  let best = 0;
+  let base = 0;
+  // The tunnel is a ramp from the surface mouth (y0) down to the cave floor (y1).
+  const tp = tunnelParam(zone, x, z);
+  if (tp) {
+    const t = zone.tunnel; base = t.y0 + (t.y1 - t.y0) * tp.u;
+  } else {
+    // Below the surface and inside a cave polygon -> stand on the cave floor.
+    const c = caveAt(zone, x, z, (fromY || 0) < -6);
+    if (c) base = c.floorY;
+  }
+  let best = base;
   for (const o of (zone._editObjects || [])) {
     if (typeof o.m !== 'string' || !o.m.startsWith('prim:')) continue;
     const top = primTopAt(o, x, z);
@@ -346,10 +422,28 @@ function resolveCollision(zone, ent, radius) {
     if (d < min && d > 1e-4) { ent.x = t.x + (dx / d) * min; ent.z = t.z + (dz / d) * min; }
   }
 
-  // Organic boundary: keep the entity inside the zone's polygon shape, and at
-  // least `boundaryInset` from the edge so it stops at the mountain range that
-  // rings the border rather than walking into the rock.
-  if (zone.boundary) {
+  // Region-aware containment. Underground (in a cave) or in the descent tunnel,
+  // the entity is bounded by that region; otherwise by the outdoor boundary. The
+  // surface path is exactly as before, so above-ground play is unchanged.
+  const underground = (ent.y || 0) < -6;
+  const cave = caveAt(zone, ent.x, ent.z, underground) || (underground && ent.cave ? (zone.caves || [])[0] : null);
+  const tp = tunnelParam(zone, ent.x, ent.z);
+  if (cave) {
+    // Keep inside the cave polygon.
+    if (!pointInPoly(ent.x, ent.z, cave.boundary)) {
+      const closed = cave.boundary.concat([cave.boundary[0]]);
+      const c = closestOnPolyline(ent.x, ent.z, closed);
+      let dx = cave.cen.x - c.x, dz = cave.cen.z - c.z, d = Math.hypot(dx, dz) || 1;
+      ent.x = c.x + (dx / d) * radius; ent.z = c.z + (dz / d) * radius;
+    }
+  } else if (tp && underground) {
+    // In the tunnel: clamp to the corridor.
+    const t = zone.tunnel, lim = t.half - radius;
+    if (tp.lat > lim) {
+      const dx = ent.x - tp.cx, dz = ent.z - tp.cz, d = Math.hypot(dx, dz) || 1;
+      ent.x = tp.cx + (dx / d) * lim; ent.z = tp.cz + (dz / d) * lim;
+    }
+  } else if (zone.boundary) {
     const inset = zone.boundaryInset || 0;
     const inside = pointInPoly(ent.x, ent.z, zone.boundary);
     if (!inside || inset > 0) {
@@ -376,11 +470,13 @@ function spawnInRegion(zone, region, opts = {}) {
   // Aggressive mobs are kept out of the ring around the zone's arrival point,
   // so a fresh character is never in combat before they can look around.
   const keepOut = opts.passive ? 0 : (zone.safeSpawnRadius || 0);
+  const cave = opts.cave ? (zone.caves || [])[0] : null; // cave mobs live in the chamber
   for (let i = 0; i < 40; i++) {
     const a = rand(0, Math.PI * 2), rr = Math.sqrt(Math.random()) * region.r;
     const x = region.cx + Math.cos(a) * rr, z = region.cz + Math.sin(a) * rr;
     const b = zone.bounds;
     if (x < b.minX + 3 || x > b.maxX - 3 || z < b.minZ + 3 || z > b.maxZ - 3) continue;
+    if (cave) { if (!pointInPoly(x, z, cave.boundary)) continue; return { x, z }; } // underground: cave polygon only
     if (zone.boundary && !pointInPoly(x, z, zone.boundary)) continue;
     if (inSafeZone(zone, x, z)) continue;
     if (keepOut && dist2(x, z, zone.spawn.x, zone.spawn.z) < keepOut * keepOut) continue;
@@ -405,12 +501,13 @@ function makeMonster(spec) {
   const zone = ZONES[spec.zoneId];
   const stats = scaledMonster(spec.type, spec.level);
   const passive = !!MONSTER_TEMPLATES[spec.type].passive;
-  const pos = spawnInRegion(zone, spec.region, { passive });
+  const pos = spawnInRegion(zone, spec.region, { passive, cave: spec.cave });
   const id = nextId++;
   const m = {
     id, kind: 'monster', zoneId: spec.zoneId, type: spec.type,
     name: spec.name || MONSTER_TEMPLATES[spec.type].name,
-    elite: !!spec.elite, level: spec.level,
+    elite: !!spec.elite, level: spec.level, cave: !!spec.cave,
+    y: spec.cave ? CAVE_FLOOR_Y : 0, // cave mobs stand on the chamber floor
     x: pos.x, z: pos.z, home: { x: pos.x, z: pos.z }, yaw: rand(0, Math.PI * 2),
     hp: stats.hp, maxHp: stats.hp, dmg: stats.dmg, speed: stats.speed,
     aggro: stats.aggro, xp: stats.xp, passive: !!MONSTER_TEMPLATES[spec.type].passive,
@@ -432,7 +529,7 @@ function populate() {
     const zone = ZONES[zoneId];
     for (const s of (zone.spawns || [])) {
       for (let i = 0; i < s.count; i++) {
-        makeMonster({ zoneId, type: s.type, level: s.level, region: { cx: s.cx, cz: s.cz, r: s.r } });
+        makeMonster({ zoneId, type: s.type, level: s.level, region: { cx: s.cx, cz: s.cz, r: s.r }, cave: s.cave });
       }
     }
     for (const e of (zone.elites || [])) populateElite(zoneId, e);
@@ -1369,7 +1466,7 @@ setInterval(() => {
       for (const m of monsters.values()) {
         if (m.zoneId !== zid) continue;
         ms.push({ id: m.id, type: m.type, name: m.name, level: m.level, elite: m.elite,
-          x: +m.x.toFixed(2), z: +m.z.toFixed(2), yaw: +m.yaw.toFixed(2),
+          x: +m.x.toFixed(2), z: +m.z.toFixed(2), yaw: +m.yaw.toFixed(2), y: +(m.y || 0).toFixed(2), cave: m.cave || undefined,
           hp: Math.round(m.hp), maxHp: m.maxHp, alive: m.alive });
       }
       const items = [];
@@ -1416,6 +1513,9 @@ function zoneForClient(zone) {
     paths: zone.paths || (zone.path ? [zone.path] : []), rivers: zone.rivers || (zone.river ? [zone.river] : []),
     rocks: zone.rocks, hazards: zone.hazards, pools: zone.pools, chests: zone.chests,
     fishingSpots: zone.fishingSpots || [], campfires: zone.campfires || [],
+    caves: (zone.caves || []).map(c => ({ boundary: c.boundary, floorY: c.floorY, ceilingY: c.ceilingY,
+      scatter: c.scatter || [], hanging: c.hanging || [], env: c.env, entrance: c.entrance })),
+    tunnel: zone.tunnel || null,
     env: zone.env, enclosed: !!zone.enclosed, ceilingY: zone.ceilingY,
     npcs: zone.npcs || [],
     trees: zone._trees || [],
