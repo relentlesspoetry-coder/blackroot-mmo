@@ -199,12 +199,12 @@ export const darkwoods = {
   // Mining pits: an open dirt scrape fenced off with a gap on the road side,
   // with a mix of ore seams spread out inside. `r` is the pit radius (zone
   // units, scaled with the zone); `veins` is how many of each seam; `inner`
-  // keeps the middle clear (the ravine's roots sit there). The pit sits at the
+  // keeps the middle clear (the goblin dig crew stands there). The pit sits at the
   // POI of the same key.
   mines: [
     { key: 'copperhollow', r: 9,  veins: { Copper: 4, Tin: 3, Iron: 1 } },
     { key: 'tinscrape',    r: 9,  veins: { Tin: 4, Copper: 3, Coal: 1 } },
-    { key: 'ravine',       r: 12, inner: 5.5, veins: { Iron: 4, Tin: 2, Coal: 2, Silver: 1 } },
+    { key: 'ravine',       r: 12, inner: 3, veins: { Iron: 4, Tin: 2, Coal: 2, Silver: 1 } },
   ],
 
   // Surface ore, so mining can be started before the cave is survivable. The

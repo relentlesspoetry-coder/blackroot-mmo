@@ -2706,15 +2706,7 @@ function buildPoi(p) {
       break;
     }
     case 'rotfen': addDeadGrove(g, 8, 7); break;
-    case 'ravine': {
-      const rootMat = new THREE.MeshStandardMaterial({ color: 0x3b2f22, roughness: 1, flatShading: true });
-      for (let i = 0; i < 7; i++) {
-        const a = (i / 7) * Math.PI * 2;
-        const root = new THREE.Mesh(new THREE.TorusGeometry(1.6, 0.35, 6, 8, Math.PI), rootMat);
-        root.position.set(Math.cos(a) * 4, 0, Math.sin(a) * 4); root.rotation.x = Math.PI / 2; root.rotation.z = a; root.castShadow = true; g.add(root);
-      }
-      break;
-    }
+    case 'ravine': break;   // the mining pit (dirt, fence, seams) is the landmark now
     case 'wolfden': {
       const denMat = new THREE.MeshStandardMaterial({ color: 0x2f2a26, roughness: 1, flatShading: true });
       const mound = new THREE.Mesh(new THREE.SphereGeometry(5, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), denMat);
@@ -2838,10 +2830,7 @@ function buildPoi(p) {
       break;
     }
 
-    default: {
-      const ob = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.9, 3.2, 6), stoneMat());
-      ob.position.y = 1.6; ob.castShadow = true; g.add(ob);
-    }
+    default: break;   // landmarks without authored art get nothing (no placeholder obelisk)
   }
   scene.add(g);
 }
