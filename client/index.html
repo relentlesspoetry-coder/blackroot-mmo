@@ -106,8 +106,6 @@
   .abslot:hover .tip { display: block; position: absolute; bottom: 110%; left: 50%; transform: translateX(-50%); width: 200px; white-space: normal;
     background: #14100bee; color: #ffe9b0; font-size: 11px; line-height: 1.35; padding: 5px 8px; border-radius: 5px; border: 1px solid #6a5636; z-index: 5; text-align: left; }
   .abslot .tip b { color: #ffd24a; } .abslot .tip .dim { color: #b3a385; }
-  #charline { color: #dbe6f3; font-size: 13px; margin-bottom: 6px; text-shadow: 0 1px 2px #000; display:flex; gap:10px; }
-  #charline b { color: #ffd47a; }
 
   #nameplates { position: absolute; inset: 0; overflow: hidden; }
   .plate { position: absolute; transform: translate(-50%,-100%); text-align: center; will-change: transform; }
@@ -5754,9 +5752,13 @@ function updateHudFromSnapshot(snap) {
   }
   if (abilityClass) { document.getElementById('ccls').textContent = abilityClass.cls || 'Fighter'; if (abilityClass.icon) document.getElementById('cemblem').src = abilityClass.icon; }
   if (me.momentum !== selfMomentum) { selfMomentum = me.momentum || 0; renderMomentum(); }
-  const cb = document.getElementById('castbar');
-  if (me.windup || me.channel) { const a = abilities.find(x => x.id === (me.windup || me.channel)); cb.style.display = 'block'; cb.querySelector('span').textContent = a ? a.name : ''; cb.querySelector('i').style.transform = `scaleX(${((performance.now() / 1000) % 1)})`; }
-  else cb.style.display = 'none';
+  const cb = document.getElementById('castbar'), castId = me.windup || me.channel;
+  if (castId) {
+    const a = abilities.find(x => x.id === castId);
+    if (!castInfo || castInfo.id !== castId) castInfo = { id: castId, start: performance.now(), dur: me.windup ? 1 : 3 };
+    cb.style.display = 'block'; cb.querySelector('span').textContent = a ? a.name : '';
+    cb.querySelector('i').style.transform = `scaleX(${Math.min(1, (performance.now() - castInfo.start) / 1000 / castInfo.dur)})`;
+  } else { cb.style.display = 'none'; castInfo = null; }
   if (me.gold != null) document.getElementById('cgold').textContent = me.gold;
   if (me.xpNext) {
     const pct = Math.max(0, Math.min(1, me.xp / me.xpNext));
@@ -5768,7 +5770,6 @@ function updateHudFromSnapshot(snap) {
 }
 
 // XP + gold come via events (server-authoritative running totals)
-let curXpPct = 0;
 function onEvent(m) {
   const rec = entityMeshes.get(myId);
   const at = rec ? rec.mesh.position : null;
@@ -6042,7 +6043,7 @@ function renderSkillWindow() {
 
 // ---- Action bar: six assignable slots (keys 1-6) fed from the class spellbook ----
 let abilities = [], abilityClass = null, abilityResource = 'Stamina', gcdUntil = 0;
-let selfStam = 0, selfMomentum = 0, buffList = [];
+let selfStam = 0, selfMomentum = 0, buffList = [], castInfo = null;
 let barSlots = [null, null, null, null, null, null];   // ability ids per slot
 let assignId = null;                                   // spellbook pick waiting for a slot
 const iconFor_ab = (id) => `ui/${(abilityClass && abilityClass.clsId) || 'fighter'}/icons/${id}.png`;

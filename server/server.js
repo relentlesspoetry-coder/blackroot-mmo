@@ -12,8 +12,8 @@ import { darkwoods } from './zones/darkwoods.js';
 import { hiddencave } from './zones/hiddencave.js';
 import { killingfields } from './zones/killingfields.js';
 import {
-  PLAYER, ELITE, MONSTER, MONSTER_TEMPLATES,
-  maxHpForLevel, xpForLevel, xpTotalForLevel, levelForXp, rollPlayerDamage, attackRoll, defenceRoll, hitChance, scaledMonster, rollLoot, mitigate, REGEN,
+  PLAYER, ELITE, MONSTER_TEMPLATES,
+  xpForLevel, xpTotalForLevel, levelForXp, attackRoll, defenceRoll, hitChance, scaledMonster, rollLoot, REGEN,
   TICK, DEFAULT_ATTACK_SPEED, CLASSES, DEFAULT_CLASS, classDef, classStats, abilityCost,
   maxHit, rollSwing, rollMonsterSwing, MEDITATION, meditationHealRate,
 } from './balance.js';
@@ -1432,7 +1432,6 @@ function addBuff(p, spec) { p.buffs[spec.id] = { ...spec, t: spec.dur, charges: 
 function applyHit(p, m, dmg, crit) {
   if (dmg > 0) { m.hp -= dmg; m.provoked = true; m.targetId = p.id; m.state = 'combat'; } // class xp comes with the kill (killMonster), not per hit
   broadcast({ t: 'event', kind: 'hit', by: p.id, target: m.id, dmg, crit: !!crit, targetKind: 'monster' });
-  p._lastCrit = !!crit;
   if (crit) savageTrigger(p);
   if (m.hp <= 0) killMonster(m, p);
 }
@@ -1466,6 +1465,7 @@ function abilityHit(p, m, ab, extra = {}) {
   if (crit) mult *= (classDef(p.cls).critMult || 1.5) + (extra.critDmg || 0);
   const dmg = Math.max(1, Math.round(base * mult));
   applyHit(p, m, dmg, crit);
+  p.lastHit = { dmg, crit };   // Heavy Swing's extra stack on a crit reads this
   return dmg;
 }
 function monstersNear(p, x, z, r, cap, coneDeg) {
@@ -1519,7 +1519,8 @@ function useAbility(p, id) {
   if (!p.known.has(id)) return notice(`You haven't learned ${a.name}.`);
   if (p.level < a.level) return notice(`${a.name} unlocks at level ${a.level}.`);
   if ((p.cooldowns[id] || 0) > 0) return notice(`${a.name} is not ready.`);
-  if ((p.gcd || 0) > 0 || p.channel || p.windup) return;
+  if (p.channel || p.windup) return notice('You are busy.');
+  if ((p.gcd || 0) > 0) return;
   if (a.requires && !(p.buffs[a.requires] && p.buffs[a.requires].t > 0)) return notice(`${a.name} needs an enemy to have just missed you.`);
   if ((p.stam || 0) < (a.cost || 0)) return notice(`Not enough ${c.resource || 'stamina'}.`);
   const target = p.combatId != null ? monsters.get(p.combatId) : null;
@@ -1529,6 +1530,7 @@ function useAbility(p, id) {
   if (['melee', 'execute', 'cone'].includes(a.kind) && !inReach) return notice('You need to be in reach.');
   if (a.kind === 'execute' && target.hp > target.maxHp * 0.3) return notice(`${a.name} needs the target at 30% health or less.`);
   if (a.kind === 'rush' && dist2(p.x, p.z, target.x, target.z) > a.range * a.range) return notice('Too far to rush.');
+  if (a.kind === 'rush' && !lineClear(zoneOf(p), p.x, p.z, target.x, target.z)) return notice('No clear path to rush.');
 
   const fire = () => {
     const t = p.combatId != null ? monsters.get(p.combatId) : null;
@@ -1545,7 +1547,7 @@ function useAbility(p, id) {
         const before = t.hp, dmg = abilityHit(p, t, a, extra);
         if (a.debuff && dmg > 0) { t.debuffs = t.debuffs || {}; t.debuffs[a.debuff.id] = a.debuff.dur; if (a.debuff.id === 'bonebreak') t.debuffs.bonebreak_atk = 8; }
         if (a.selfDebuff) addBuff(p, a.selfDebuff);
-        if (a.momentum && dmg > 0) addMomentum(p, a.momentum + (id === 'heavy_swing' && p._lastCrit ? 1 : 0));
+        if (a.momentum && dmg > 0) addMomentum(p, a.momentum + (id === 'heavy_swing' && p.lastHit && p.lastHit.crit ? 1 : 0));
         if (id === 'perfect_masterstroke' && before > 0 && !t.alive && !t.passive) p.stam = Math.min(p.stamMax, p.stam + 50);
         break;
       }
@@ -1614,7 +1616,14 @@ function stepClass(p, inCombat) {
     if (bf.t <= 0) { delete p.buffs[k]; statusDirty = true; }
   }
   if ((p.momentum || 0) > 0) { p.momentumT -= DT; if (p.momentumT <= 0) { p.momentum = 0; statusDirty = true; } }
-  if (p.windup) { p.windup.t -= DT; if (p.moving) { p.windup = null; send(p.ws, { t: 'event', kind: 'notice', text: 'Interrupted.' }); } else if (p.windup.t <= 0) { const w = p.windup; p.windup = null; w.fire(); } }
+  if (p.windup) {
+    p.windup.t -= DT;
+    if (p.moving) { // moving breaks the wind-up: give the stamina and cooldown back
+      const a = c.abilities.find(x => x.id === p.windup.id);
+      if (a) { p.stam = Math.min(p.stamMax, p.stam + (a.cost || 0)); p.cooldowns[a.id] = 0; }
+      p.windup = null; send(p.ws, { t: 'event', kind: 'notice', text: 'Interrupted.' }); sendAbilities(p);
+    } else if (p.windup.t <= 0) { const w = p.windup; p.windup = null; w.fire(); }
+  }
   if (p.channel) {
     const ch = p.channel, a = c.abilities.find(x => x.id === ch.id);
     ch.t -= DT;
