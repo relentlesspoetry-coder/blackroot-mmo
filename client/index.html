@@ -1850,6 +1850,7 @@ function buildZone() {
     const o = h.door === 'south' ? [0, h.d / 2 + 1.0] : h.door === 'north' ? [0, -h.d / 2 - 1.0] : h.door === 'east' ? [h.w / 2 + 1.0, 0] : [-h.w / 2 - 1.0, 0];
     discs.push({ x: h.x + o[0], z: h.z + o[1], r: 0.9, fr: 0.9 });
   }
+  for (const m of (zone.mines || [])) discs.push({ x: m.x, z: m.z, r: m.r, fr: m.fr });   // the mining pits' bare scrapes
   buildDirtField(shapes, discs, dirtMat, 0.05, 3);
 
   // Rivers — deep flowing water sitting in the carved channel, one per river.
@@ -2226,8 +2227,9 @@ function buildGrass() {
   });
   const inHouse = (x, z) => (zone.houses || []).some(h => Math.abs(x - h.x) < h.w / 2 + 0.6 && Math.abs(z - h.z) < h.d / 2 + 0.6);
   const inField = (x, z) => zone.field && Math.abs(x - zone.field.x) < zone.field.w / 2 && Math.abs(z - zone.field.z) < zone.field.d / 2;
+  const inMine = (x, z) => (zone.mines || []).some(m => Math.hypot(x - m.x, z - m.z) < m.r + m.fr * 0.5);
   const ok = (x, z) => (!zone.boundary || inBoundary(x, z)) &&
-    !inHouse(x, z) && !inField(x, z) &&
+    !inHouse(x, z) && !inField(x, z) && !inMine(x, z) &&
     worldRivers().every(r => distToPolyline(x, z, r.points) >= riverWaterHalf(r.width) + RIVER_LIP) &&
     !zone.rocks.some(o => Math.hypot(x - o.x, z - o.z) < o.r);
   const onPathSkip = (x, z) => (worldPaths().some(p => distToPolyline(x, z, p) < 2.2) || (zone.trails || []).some(t => distToPolyline(x, z, t) < 1.5)) && rng() > 0.12;
@@ -2772,6 +2774,7 @@ function buildPoi(p) {
       break;
     }
     case 'bridge': break; // structure built with the river
+    case 'mine': break;   // the pit itself (dirt, fence, seams) is the landmark
 
     // ---- Hidden Cave landmarks ----
     case 'exitup': {
@@ -6247,7 +6250,7 @@ function updateNameplates() {
 // ---- POI labels (static world markers projected to screen) ----
 const poiLayer = document.getElementById('poilabels');
 const poiEls = [];
-const POI_ICON = { safe: '🔥', boss: '☠', gate: '⛩', cave: '🕳', landmark: '◈', merchant: '🪙',
+const POI_ICON = { safe: '🔥', boss: '☠', gate: '⛩', cave: '🕳', landmark: '◈', merchant: '🪙', mine: '⛏',
   exitup: '⬆', pool: '💧', cache: '📦', crystal: '💎', deep: '☠' };
 function updatePoiLabels() {
   // Floating in-world place/landmark names are disabled — the world is left
@@ -7184,7 +7187,7 @@ const mapCanvas = document.getElementById('mapCanvas');
 const mapTitle = document.getElementById('mapTitle');
 const POI_STYLE = {
   safe: ['#6fe0a0', 'Rest'], boss: ['#e0524d', 'Elite'], gate: ['#d8bd76', 'Gate'],
-  cave: ['#b79cff', 'Cave'], merchant: ['#e0c060', 'Trader'], landmark: ['#b9c6d6', ''],
+  cave: ['#b79cff', 'Cave'], merchant: ['#e0c060', 'Trader'], landmark: ['#b9c6d6', ''], mine: ['#d2a86a', 'Mine'],
 };
 function toggleMap() { if (mapOpen) closeMap(); else openMap(); }
 // The world is seamless, but the map is per zone: whichever region (Dark

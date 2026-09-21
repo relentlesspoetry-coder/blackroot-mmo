@@ -18,7 +18,7 @@ import {
   maxHit, rollSwing, rollMonsterSwing, MEDITATION, meditationHealPerTick, rollGear } from './balance.js';
 import { ITEMS, SLOTS, SLOT_INFO, DOLL, itemDef, slotOf, valueOf, equipStats, slotsFor, emptySlots } from './items.js';
 import {
-  dist2, closestOnPolyline, pointInPoly, polyCentroid, generateTrees, generateScatter, generateHanging,
+  dist2, closestOnPolyline, mulberry32, pointInPoly, polyCentroid, generateTrees, generateScatter, generateHanging,
   caveOutline,
 } from './worldgen.js';
 import {
@@ -112,6 +112,7 @@ function scaleZone(zone, k) {
     for (const f of (zone.farm.fences || [])) { mnx = Math.min(mnx, f.x1, f.x2); mxx = Math.max(mxx, f.x1, f.x2); mnz = Math.min(mnz, f.z1, f.z2); mxz = Math.max(mxz, f.z1, f.z2); }
     zone._farmBox = { minX: mnx, maxX: mxx, minZ: mnz, maxZ: mxz };
   }
+  (zone.mines || []).forEach(m => { m.r *= k; if (m.inner) m.inner *= k; });
   if (zone.treeCount != null) zone.treeCount = Math.round(zone.treeCount * A);
   zone._cen = null; // recompute the cached centroid lazily
 }
@@ -630,6 +631,7 @@ function populate() {
     zone._trees = zone._trees || generateTrees(zone);
     zone._scatter = zone._scatter || generateScatter(zone);
     buildFarm(zone);
+    buildMines(zone);
     loadOverrides(zone); // player-built objects from the world editor
     zone._hanging = generateHanging(zone);
     // Any scattered ore vein becomes a minable node, addressed by its index.
@@ -647,20 +649,68 @@ function populate() {
 // and place the props. Panels are native meter-scale; the zone scale only moved
 // the endpoints, so we tile the native panel width across the scaled length.
 const FENCE_PANEL = 2.0; // Farm_Fence native width (local +X)
+// One fence run: Farm_Fence panels tiled along the segment (into the render
+// scatter) plus a wall-collision segment.
+function tileFence(zone, seg) {
+  const scat = zone._scatter;
+  const dx = seg.x2 - seg.x1, dz = seg.z2 - seg.z1, len = Math.hypot(dx, dz) || 1;
+  const n = Math.max(1, Math.round(len / FENCE_PANEL)), spacing = len / n;
+  const ux = dx / len, uz = dz / len, yaw = Math.atan2(-uz, ux);
+  for (let i = 0; i < n; i++) {
+    const t = (i + 0.5) * spacing;
+    scat.push({ i: scat.length, m: 'Farm_Fence', x: +(seg.x1 + ux * t).toFixed(2), z: +(seg.z1 + uz * t).toFixed(2), s: +(spacing / FENCE_PANEL).toFixed(3), r: +yaw.toFixed(3), c: 0 });
+  }
+  zone._fenceSegs.push({ x1: seg.x1, z1: seg.z1, x2: seg.x2, z2: seg.z2 });
+}
+// Mining pits (zone.mines): a fenced ring of Farm_Fence with a gap facing the
+// road, a dirt scrape the client draws under it (a few overlapping discs so
+// the edge isn't a perfect circle), and the ore seams spread out inside with
+// the types shuffled together so no pit is one colour of rock.
+function buildMines(zone) {
+  zone._fenceSegs = zone._fenceSegs || [];
+  zone._minePatches = [];
+  const scat = zone._scatter;
+  for (const mine of (zone.mines || [])) {
+    const poi = (zone.pois || []).find(q => q.key === mine.key); if (!poi) continue;
+    const cx = poi.x, cz = poi.z, R = mine.r;
+    const rng = mulberry32(((zone.scatterSeed || 7) * 31 + mine.key.length * 7) | 0);
+    // dirt: the pit plus three lobes, feathering into the grass
+    // (the lobes stay inside the fence; only the fringe feathers out under it)
+    zone._minePatches.push({ x: cx, z: cz, r: +(R * 0.92).toFixed(1), fr: 2.2 });
+    for (let i = 0; i < 3; i++) { const a = rng() * Math.PI * 2, d = R * 0.4; zone._minePatches.push({ x: +(cx + Math.cos(a) * d).toFixed(1), z: +(cz + Math.sin(a) * d).toFixed(1), r: +(R * 0.6).toFixed(1), fr: 2.5 }); }
+    // fence ring just outside the pit, with the gap on the side nearest the road
+    const near = zone.path && zone.path.length > 1 ? closestOnPolyline(cx, cz, zone.path) : null;
+    const gapDir = near ? Math.atan2(near.z - cz, near.x - cx) : 0;
+    const FR = R + 1.2, n = Math.max(10, Math.round((2 * Math.PI * FR) / 4.4)), gapHalf = 2.6 / FR;
+    for (let i = 0; i < n; i++) {
+      const a0 = (i / n) * Math.PI * 2, a1 = ((i + 1) / n) * Math.PI * 2, am = (a0 + a1) / 2;
+      let d = am - gapDir; d = Math.atan2(Math.sin(d), Math.cos(d));
+      if (Math.abs(d) < gapHalf + Math.PI / n) continue;   // the opening
+      tileFence(zone, { x1: +(cx + Math.cos(a0) * FR).toFixed(2), z1: +(cz + Math.sin(a0) * FR).toFixed(2), x2: +(cx + Math.cos(a1) * FR).toFixed(2), z2: +(cz + Math.sin(a1) * FR).toFixed(2) });
+    }
+    // seams: shuffled types, spaced out, kept off the middle if asked
+    const list = []; for (const [ore, count] of Object.entries(mine.veins || {})) for (let i = 0; i < count; i++) list.push(ore);
+    for (let i = list.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [list[i], list[j]] = [list[j], list[i]]; }
+    const placed = [], inner = mine.inner || 0, SPACING = 3.6;
+    for (const ore of list) {
+      let x = cx, z = cz, ok = false;
+      for (let tries = 0; tries < 60 && !ok; tries++) {
+        const a = rng() * Math.PI * 2, rr = inner + Math.sqrt(rng()) * (R - 1.8 - inner);
+        x = +(cx + Math.cos(a) * rr).toFixed(1); z = +(cz + Math.sin(a) * rr).toFixed(1);
+        const spaced = placed.every(q => dist2(x, z, q.x, q.z) >= SPACING * SPACING) && !scat.some(o => o.c > 0 && dist2(x, z, o.x, o.z) < 2.4 * 2.4);
+        const inGapLane = Math.abs(Math.atan2(Math.sin(a - gapDir), Math.cos(a - gapDir))) < 0.35 && rr > R - 4;   // keep the way in clear
+        ok = spaced && !inGapLane;
+      }
+      placed.push({ x, z });
+      scat.push({ i: scat.length, m: `${ore}_Ore_Vein`, x, z, s: +(0.9 + rng() * 0.35).toFixed(2), r: +(rng() * 6.28).toFixed(2), c: 0.8 });
+    }
+  }
+}
 function buildFarm(zone) {
   const F = zone.farm; if (!F) return;
   const scat = zone._scatter;
-  zone._fenceSegs = [];
-  for (const seg of (F.fences || [])) {
-    const dx = seg.x2 - seg.x1, dz = seg.z2 - seg.z1, len = Math.hypot(dx, dz) || 1;
-    const n = Math.max(1, Math.round(len / FENCE_PANEL)), spacing = len / n;
-    const ux = dx / len, uz = dz / len, yaw = Math.atan2(-uz, ux);
-    for (let i = 0; i < n; i++) {
-      const t = (i + 0.5) * spacing;
-      scat.push({ i: scat.length, m: 'Farm_Fence', x: +(seg.x1 + ux * t).toFixed(2), z: +(seg.z1 + uz * t).toFixed(2), s: +(spacing / FENCE_PANEL).toFixed(3), r: +yaw.toFixed(3), c: 0 });
-    }
-    zone._fenceSegs.push({ x1: seg.x1, z1: seg.z1, x2: seg.x2, z2: seg.z2 });
-  }
+  zone._fenceSegs = zone._fenceSegs || [];
+  for (const seg of (F.fences || [])) tileFence(zone, seg);
   // The gate is rendered as a standalone, animated model on the client (it
   // swings), so it is NOT baked into the instanced scatter. The server owns its
   // open/shut state and toggles the gap collision with it.
@@ -2047,6 +2097,7 @@ function zoneForClient(zone) {
     houses: (zone.farm && zone.farm.houses) || [],
     trails: zone._trails || [],
     field: (zone.farm && zone.farm.field) || null,
+    mines: zone._minePatches || [],
     gate: zone.farm && zone.farm.gate ? (g => ({ x: g.x, z: g.z, yaw: g.yaw || 0, s: g.s || 1, double: !!g.double,
       gap: g.seg ? Math.hypot(g.seg.x2 - g.seg.x1, g.seg.z2 - g.seg.z1) : 2.4 }))(zone.farm.gate) : null,
     editObjects: zone._editObjects || [],

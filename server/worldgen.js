@@ -15,6 +15,14 @@ function inFarm(zone, x, z, m = 0) {
   return x > b.minX - m && x < b.maxX + m && z > b.minZ - m && z < b.maxZ + m;
 }
 export function dist2(ax, az, bx, bz) { const dx = ax - bx, dz = az - bz; return dx * dx + dz * dz; }
+// The mining pits (zone.mines, each at the POI of its key), as circles to keep
+// the forest and scatter out of, with a margin for the fence and dirt fringe.
+export function mineAreas(zone) {
+  if (zone._mineAreas) return zone._mineAreas;
+  zone._mineAreas = (zone.mines || []).map(m => { const p = (zone.pois || []).find(q => q.key === m.key); return p ? { x: p.x, z: p.z, r: m.r } : null; }).filter(Boolean);
+  return zone._mineAreas;
+}
+function inMine(zone, x, z, m = 0) { return mineAreas(zone).some(a => dist2(x, z, a.x, a.z) < (a.r + m) ** 2); }
 
 export function closestOnSeg(px, pz, ax, az, bx, bz) {
   const abx = bx - ax, abz = bz - az;
@@ -76,6 +84,7 @@ export function generateTrees(zone) {
     if (zone.river && closestOnPolyline(x, z, zone.river.points).dist < zone.river.width / 2 + RIVER_BANK + 3) continue;
     if (zone.river && zone.river.bridge && dist2(x, z, zone.river.bridge.x, zone.river.bridge.z) < 15 * 15) continue;
     if (inFarm(zone, x, z, 3)) continue;
+    if (inMine(zone, x, z, 4)) continue;
     if (zone.pois.some(p => dist2(x, z, p.x, p.z) < clearRadiusS(p) ** 2)) continue;
     if ((zone.rocks || []).some(o => dist2(x, z, o.x, o.z) < (o.r + 2) ** 2)) continue;
     if (trees.some(t => dist2(x, z, t.x, t.z) < minSpace * minSpace)) continue;
@@ -117,6 +126,8 @@ export function generateScatter(zone) {
       // thing the player cannot walk through.
       if (zone.river && closestOnPolyline(x, z, zone.river.points).dist < zone.river.width / 2 + RIVER_BANK + 2.5) continue;
       if (inFarm(zone, x, z, 2)) continue;
+      // a pit's own dressing (crates, barricades at the ravine dig) may sit in it; nothing else may
+      if (inMine(zone, x, z, 3) && !(spec.near && (zone.mines || []).some(m => m.key === spec.near))) continue;
       if ((zone.rocks || []).some(o => dist2(x, z, o.x, o.z) < (o.r + 1.5) ** 2)) continue;
       if ((zone.chests || []).some(c => dist2(x, z, c.x, c.z) < 16)) continue;
       if (dist2(x, z, zone.spawn.x, zone.spawn.z) < 64) continue;

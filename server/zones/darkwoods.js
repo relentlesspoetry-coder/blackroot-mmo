@@ -99,9 +99,9 @@ export const darkwoods = {
     { key: 'stones',     name: 'Ancient Stone Circle', x: 24,  z: 36,  kind: 'boss', optional: true },
     { key: 'wolfden',    name: 'Wolf Den',             x: 62,  z: 28,  kind: 'landmark', hidden: true },
     { key: 'ravine',     name: 'Root-Choked Ravine',   x: -36, z: 44,  kind: 'landmark' },
-    // Mining patches: small, off the trail, worth the walk.
-    { key: 'copperhollow', name: 'Copper Hollow',      x: 60,  z: -50, kind: 'landmark', optional: true },
-    { key: 'tinscrape',    name: 'Tin Scrape',         x: -62, z: -42, kind: 'landmark', optional: true },
+    // Mining pits (see `mines` below): small, off the trail, worth the walk.
+    { key: 'copperhollow', name: 'Copper Hollow',      x: 60,  z: -50, kind: 'mine', art: 'mine', optional: true },
+    { key: 'tinscrape',    name: 'Tin Scrape',         x: -62, z: -42, kind: 'mine', art: 'mine', optional: true },
     { key: 'cave',       name: 'Hidden Cave Entrance', x: -60, z: 58,  kind: 'cave', hidden: true },
     { key: 'bridge',     name: 'Mossy Bridge',         x: -8,  z: 35,  kind: 'landmark' },
     { key: 'southgate',  name: 'South Gate',           x: 6,   z: 98,  kind: 'gate', exit: true },
@@ -196,6 +196,17 @@ export const darkwoods = {
   // thing a new character meets is livestock, not a goblin.
   safeSpawnRadius: 30,
 
+  // Mining pits: an open dirt scrape fenced off with a gap on the road side,
+  // with a mix of ore seams spread out inside. `r` is the pit radius (zone
+  // units, scaled with the zone); `veins` is how many of each seam; `inner`
+  // keeps the middle clear (the ravine's roots sit there). The pit sits at the
+  // POI of the same key.
+  mines: [
+    { key: 'copperhollow', r: 9,  veins: { Copper: 4, Tin: 3, Iron: 1 } },
+    { key: 'tinscrape',    r: 9,  veins: { Tin: 4, Copper: 3, Coal: 1 } },
+    { key: 'ravine',       r: 12, inner: 5.5, veins: { Iron: 4, Tin: 2, Coal: 2, Silver: 1 } },
+  ],
+
   // Surface ore, so mining can be started before the cave is survivable. The
   // richer seams are all underground.
   scatterSeed: 4412,
@@ -206,9 +217,7 @@ export const darkwoods = {
     // Ore is NOT scattered along the trail: it sits in three tight patches you
     // have to travel to — Copper Hollow (east, past the watchtower), Tin Scrape
     // (west, up the creek) and Dorn's iron seam in the ravine.
-    { model: 'Copper_Ore_Vein', count: 5, fixed: true, r: 0.8, scale: [0.9, 1.25], near: 'copperhollow', nearR: 6 },
-    { model: 'Tin_Ore_Vein',    count: 5, fixed: true, r: 0.8, scale: [0.9, 1.25], near: 'tinscrape',    nearR: 6 },
-    { model: 'Iron_Ore_Vein',   count: 5, fixed: true, r: 0.8, scale: [0.9, 1.25], rare: true, near: 'ravine', nearR: 14 },
+    // (the veins themselves come from `mines` below — fenced dirt pits with mixed seams)
 
     // The Abandoned Camp — a little campsite of props (tight spread, light collision).
     { model: 'Small_Canvas_Tent', count: 1, r: 1.4, scale: [1.0, 1.0], near: 'camp', nearR: 10 },
