@@ -42,7 +42,7 @@ export function maybeSpawnCluckifer(ctx, chicken, killer) {
   const boss = ctx.makeMonster({ zoneId: chicken.zoneId, type: 'cluckifer', level: 10, region: { cx: chicken.x, cz: chicken.z, r: 0.1 }, respawn: 999999 });
   boss.boss = 'cluckifer'; boss.elite = true; boss.provoked = true; boss.targetId = killer ? killer.id : null; boss.state = 'combat';
   boss.arena = { x: chicken.x, z: chicken.z, r: 26 };
-  boss.cds = {}; boss.script = null; boss.gcd = 2.0; boss.phase = 1; boss.ultDone = false; boss.stunT = 0; boss.untargetable = false; boss.vulnerable = 0;
+  boss.cds = {}; boss.script = null; boss.gcd = 3.0; boss.phase = 1; boss.ultDone = false; boss.stunT = 0; boss.untargetable = false; boss.vulnerable = 0;
   boss.spawnedFrom = chicken.id;
   ctx.broadcast({ t: 'event', kind: 'boss', id: boss.id, fx: 'arrive', x: boss.x, z: boss.z });
   ctx.systemChat('The chicken’s corpse splits open. Something enormous, black and burning claws its way out: CLUCKIFER has come.');
@@ -133,15 +133,15 @@ function heal(ctx, m, n) { m.hp = Math.min(m.maxHp, m.hp + n); bossFx(ctx, m, 'h
 // Each returns a script: [{ at: seconds, do: fn }] run from when it starts.
 // `busy` is how long the boss stands committed to it.
 const M = {};
-M.hell_peck = (ctx, m, t) => ({ busy: 0.9, cd: 4, steps: [
+M.hell_peck = (ctx, m, t) => ({ busy: 1.1, cd: 7, steps: [
   { at: 0, do: () => { face(m, t); bossFx(ctx, m, 'hell_peck'); } },
   { at: 0.45, do: () => { for (const p of playersInCone(ctx, m, m.yaw, 0.6, 4.2)) hit(ctx, m, p, 18, 'peck'); } },
 ] });
-M.wing = (ctx, m, t) => ({ busy: 1.4, cd: 12, steps: [
+M.wing = (ctx, m, t) => ({ busy: 1.6, cd: 16, steps: [
   { at: 0, do: () => { face(m, t); bossFx(ctx, m, 'wing', { r: 7 }); } },
   { at: 0.8, do: () => { for (const p of playersInCone(ctx, m, m.yaw, 1.05, 7)) { hit(ctx, m, p, 14, 'wing'); knockback(ctx, ctx.zoneOf(m), p, m.x, m.z, 6); } } },
 ] });
-M.scratch = (ctx, m, t) => ({ busy: 1.3, cd: 9, steps: [
+M.scratch = (ctx, m, t) => ({ busy: 1.5, cd: 14, steps: [
   { at: 0, do: () => { face(m, t); bossFx(ctx, m, 'scratch'); } },
   { at: 0.35, do: () => { for (const p of playersInCone(ctx, m, m.yaw, 0.7, 4)) hit(ctx, m, p, 7, 'scratch'); } },
   { at: 0.6, do: () => { for (const p of playersInCone(ctx, m, m.yaw, 0.7, 4)) hit(ctx, m, p, 7, 'scratch'); } },
@@ -230,7 +230,7 @@ M.meteor = (ctx, m, t) => { const zone = ctx.zoneOf(m); const pts = []; for (let
   const steps = [{ at: 0, do: () => bossFx(ctx, m, 'meteor', { pts: pts.map(p => [+p.x.toFixed(2), +p.z.toFixed(2)]), delay: 1.6, r: 2.8 }) }];
   pts.forEach((p, i) => steps.push({ at: 1.6 + i * 0.25, do: () => { for (const q of ctx.players.values()) if (q.alive && q.zoneId === m.zoneId && ctx.dist2(q.x, q.z, p.x, p.z) < 2.8 * 2.8) hit(ctx, m, q, 22, 'burn'); addHazard(ctx, zone, { x: p.x, z: p.z, r: 2.4, t: 7, dps: 5, kind: 'fire' }); bossFx(ctx, m, 'meteor_hit', { tx: +p.x.toFixed(2), tz: +p.z.toFixed(2), r: 2.8 }); } }));
   return { busy: 3.0, cd: 24, steps }; };
-M.blood_peck = (ctx, m, t) => ({ busy: 1.7, cd: 10, steps: [
+M.blood_peck = (ctx, m, t) => ({ busy: 1.9, cd: 15, steps: [
   { at: 0, do: () => { face(m, t); bossFx(ctx, m, 'blood_peck'); } },
   { at: 1.2, do: () => { for (const p of playersInCone(ctx, m, m.yaw, 0.55, 4.4)) { const d = hit(ctx, m, p, 34, 'peck'); if (d) heal(ctx, m, d * 1.0); } } },
 ] });
@@ -266,7 +266,7 @@ export function stepCluckifer(ctx, m, dt) {
   if (m.script) {
     const s = m.script; s.t += dt;
     while (s.i < s.steps.length && s.steps[s.i].at <= s.t) { try { s.steps[s.i].do(); } catch (e) { console.error('boss step', e); } s.i++; }
-    if (s.t >= s.busy) { m.script = null; m.gcd = m.phase === 2 ? 1.0 : 1.6; }
+    if (s.t >= s.busy) { m.script = null; m.gcd = m.phase === 2 ? 2.4 : 3.2; }   // a breath between moves so the fight reads, not a blur
     return;
   }
   if (m.stunT > 0) { m.stunT -= dt; return; }
@@ -303,7 +303,7 @@ export function stepMinion(ctx, m, dt) {
     m.yaw = Math.atan2(t.x - m.x, t.z - m.z);
     const d = Math.hypot(t.x - m.x, t.z - m.z);
     if (d > 1.6) ctx.navStep(zone, m, t.x, t.z, 1.4, m.speed);
-    else { m.atkTimer = Math.max(0, (m.atkTimer || 0) - dt); if (m.atkTimer <= 0) { m.atkTimer = 1.2; hit(ctx, m, t, 4, 'peck'); } }
+    else { m.atkTimer = Math.max(0, (m.atkTimer || 0) - dt); if (m.atkTimer <= 0) { m.atkTimer = 2.4; hit(ctx, m, t, 4, 'peck'); } }
   } else if (m.minion === 'brood') {
     if (!owner || !owner.alive) { ctx.killMonster(m, null); return; }
     const d = Math.hypot(owner.x - m.x, owner.z - m.z);
