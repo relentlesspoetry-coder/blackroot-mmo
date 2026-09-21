@@ -5684,7 +5684,11 @@ const sfx = (() => {
 const music = (() => {
   // The RealmFall tracks only (client/music).
   const tracks = {
-    menu: 'music/menu.mp3', darkwoods: 'music/darkwoods.mp3', killingfields: 'music/killingfields.mp3',
+    menu: 'music/menu.mp3',
+    // Dark Woods: two original pieces composed for the zone (tools/compose_music.py)
+    // — "Under the Blackroot Boughs" by day, "Hollow Lantern" by night.
+    darkwoods_day: 'music/darkwoods_boughs.mp3', darkwoods_night: 'music/darkwoods_lantern.mp3',
+    killingfields: 'music/killingfields.mp3',
     cave: 'music/goblincamp.mp3', combat: 'music/combat.mp3', combat2: 'music/combat2.mp3', death: 'music/death.mp3',
   };
   let volume = 0.6, cur = null, els = {}, fading = [];
@@ -5717,7 +5721,7 @@ function musicDirector() {
   const reg = currentRegion();
   if (reg && reg.underground) return music.play('cave', 3);
   if (reg && reg.id === 'killingfields') return music.play('killingfields', 3);
-  music.play('darkwoods', 3);
+  music.play(_sunDir.y > -0.08 ? 'darkwoods_day' : 'darkwoods_night', 4);
 }
 
 
