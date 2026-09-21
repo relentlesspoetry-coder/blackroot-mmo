@@ -419,9 +419,14 @@ export const PLAYER_REGEN_PER_SEC = REGEN.perSec;
 // Meditation: sit and rest (R) to recover HP. The heal rate starts modest and
 // scales with the Meditation level, so it ramps up slowly at low levels and
 // heals much faster once trained. Meditating to heal is what trains the skill.
+// Meditation heals in ticks, slowly: every `tick` seconds you recover
+// `healPerTick(level)` hitpoints and earn Meditation xp (on the OSRS 1..99
+// curve like every other skill). Level 1 is 1 HP every 2.4 s (80 HP in a bit
+// over three minutes); level 20 is 6 HP a tick.
 export const MEDITATION = {
-  baseHp: 3,        // hp/sec at level 1
-  perLevel: 0.6,    // extra hp/sec per Meditation level
-  xpPerHp: 2,       // Meditation xp earned per point of HP recovered
+  tick: 2.4,                       // seconds between heal ticks (4 game ticks)
+  xpPerTick: 5,                    // base Meditation xp per tick
+  xpPerHp: 2,                      // plus xp per hitpoint recovered
 };
-export function meditationHealRate(level) { return MEDITATION.baseHp + (level - 1) * MEDITATION.perLevel; }
+export function meditationHealPerTick(level) { return 1 + Math.floor(level / 4); }
+export function meditationHealRate(level) { return meditationHealPerTick(level) / MEDITATION.tick; } // hp/sec, for tooling

@@ -47,8 +47,6 @@
   .bar > i { position: absolute; inset: 0; transform-origin: left; transition: transform .15s; }
   #hpfill { background: linear-gradient(90deg,#a41d13,#e0524d); }
   #stamfill { background: linear-gradient(90deg,#b8862a,#f2c94c); }
-  #partyhead { display: flex; justify-content: space-between; align-items: baseline; margin: 8px 2px 0; font-size: 11px; font-weight: 700; letter-spacing: 1px; color: #ffdf9e; text-shadow: 0 1px 2px #000; }
-  #partyhead #partyslots { letter-spacing: 0; font-weight: 400; color: #b9ad90; }
   #momentum { display: flex; gap: 5px; justify-content: center; margin-bottom: 5px; height: 10px; }
   #momentum i { width: 10px; height: 10px; border-radius: 50%; background: #2a2038; border: 1px solid #6a4f9a; }
   #momentum i.on { background: radial-gradient(circle at 40% 35%, #ffd27a, #d8781c); border-color: #ffd27a; box-shadow: 0 0 6px #ffb347aa; }
@@ -367,7 +365,6 @@
       </div>
       <img id="cemblem" src="ui/fighter/emblem.png" alt="">
     </div>
-    <div id="partyhead"><span>PARTY / COMPANIONS</span><span id="partyslots">0/6 party slots</span></div>
   </div>
   <!-- Action bar: class xp above, six ability slots (keys 1-6) below -->
   <div id="actionbar">
@@ -4593,19 +4590,25 @@ function animateEntity(rec, e, kind, dt) {
   if (rig.rag) { rig.rag = null; b.rotation.set(0, 0, 0); b.position.copy(rig.home); }
   if (rig.deathT > 0) rig.deathT = 0;
 
-  // --- meditation: sit cross-legged and breathe slowly while resting (R).
+  // --- meditation: each class has its own way of gathering itself. The
+  // Fighter's is rage: down on one knee, fist driven into the ground, weapon
+  // arm braced across the raised knee, head bowed, the whole body heaving
+  // with slow furious breaths — and the ground smoulders under him.
   if (kind === 'player' && e.resting) {
-    const tt = performance.now() / 1000;
-    b.position.set(rig.home.x, rig.home.y - 0.55 + Math.sin(tt * 1.4) * 0.02, rig.home.z);
-    b.rotation.set(0.06, 0, 0);
-    if (rig.legL) rig.legL.rotation.set(-1.45, 0, 0.5);   // thighs folded forward & out
-    if (rig.legR) rig.legR.rotation.set(-1.45, 0, -0.5);
-    if (rig.shinL) rig.shinL.rotation.set(1.7, 0, 0);      // shins tucked back (cross-legged)
-    if (rig.shinR) rig.shinR.rotation.set(1.7, 0, 0);
-    if (rig.armL) rig.armL.rotation.set(-0.5, 0, 0.35);    // hands resting on the knees
-    if (rig.armR) rig.armR.rotation.set(-0.5, 0, -0.35);
+    const tt = performance.now() / 1000, breath = Math.sin(tt * 1.1), heave = (breath * 0.5 + 0.5);
+    b.position.set(rig.home.x, rig.home.y - 0.44 + heave * 0.02, rig.home.z);
+    b.rotation.set(0.18 + heave * 0.05, 0, Math.sin(tt * 0.55) * 0.02);
+    if (rig.legR) rig.legR.rotation.set(-1.57, 0, -0.1);   // right knee up: thigh level, shin planted
+    if (rig.shinR) rig.shinR.rotation.set(1.5, 0, 0);
+    if (rig.legL) rig.legL.rotation.set(0.05, 0, 0.15);    // left knee on the ground, shin folded back
+    if (rig.shinL) rig.shinL.rotation.set(1.6, 0, 0);
+    if (rig.armR) rig.armR.rotation.set(-1.0 - heave * 0.05, 0, -0.15);  // right arm braced on the raised knee
+    if (rig.armL) rig.armL.rotation.set(0.45 - heave * 0.1, 0, 0.3);     // left fist clenched low and back
+    if (rig.head) rig.head.rotation.x = 0.5 - heave * 0.12;              // head bowed, lifting with each breath
+    updateMeditationFx(rec, dt);
     return;
   }
+  if (rec.medFx) endMeditationFx(rec);
 
   // --- speed, measured from the interpolated mesh rather than trusted input
   const px = rec.mesh.position.x, pz = rec.mesh.position.z;
@@ -5758,6 +5761,52 @@ const ABILITY_SFX = {
 };
 function playAbilitySfx(key, x, z) { for (const [clip, o] of (ABILITY_SFX[key] || [])) sfx.play(clip, { ...o, x, z }); }
 
+// ---- Meditation VFX (per class; the Fighter's is rage) ----
+// A smouldering ring under the kneeling Fighter, embers drifting up off him,
+// a red glow that swells with each breath, and a burst on every heal tick.
+function updateMeditationFx(rec, dt) {
+  const mp = rec.mesh.position, t = performance.now() / 1000;
+  let fx = rec.medFx;
+  if (!fx) {
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.55, 1.05, 40), new THREE.MeshBasicMaterial({ color: 0xff4a1a, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }));
+    ring.rotation.x = -Math.PI / 2; ring.frustumCulled = false; scene.add(ring);
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: fxDot(), color: 0xff3a1a, transparent: true, opacity: 0.35, depthWrite: false, blending: THREE.AdditiveBlending }));
+    glow.frustumCulled = false; scene.add(glow);
+    const N = 26, pos = new Float32Array(N * 3), life = new Float32Array(N).map(() => Math.random()), seed = new Float32Array(N).map(() => Math.random() * 6.28);
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const embers = new THREE.Points(g, new THREE.PointsMaterial({ color: 0xff7a2a, size: 0.12, map: fxDot(), transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending }));
+    embers.frustumCulled = false; scene.add(embers);
+    const light = new THREE.PointLight(0xff5a2a, 1.4, 7); scene.add(light);
+    fx = rec.medFx = { ring, glow, embers, light, life, seed, N, t0: t };
+    if (rec.mesh.userData.id === myId || rec.data.id === myId) { spawnFx('shock', mp.x, mp.y, mp.z, 0, { r: 2.2, color: 0xff5a2a }); sfx.play('merc_command', { x: mp.x, z: mp.z, rate: 0.55, vol: 0.5, lowpass: 900 }); }
+  }
+  const breath = Math.sin(t * 1.1) * 0.5 + 0.5;
+  fx.ring.position.set(mp.x, mp.y + 0.05, mp.z); fx.ring.material.opacity = 0.22 + breath * 0.28; const rs = 0.95 + breath * 0.12; fx.ring.scale.set(rs, rs, 1);
+  fx.ring.rotation.z += dt * 0.3;
+  fx.glow.position.set(mp.x, mp.y + 0.9, mp.z); const gs = 2.2 + breath * 0.9; fx.glow.scale.set(gs, gs, 1); fx.glow.material.opacity = 0.18 + breath * 0.22;
+  fx.light.position.set(mp.x, mp.y + 1.0, mp.z); fx.light.intensity = 0.9 + breath * 0.9;
+  const pos = fx.embers.geometry.attributes.position;
+  for (let i = 0; i < fx.N; i++) {
+    fx.life[i] += dt * (0.35 + (i % 5) * 0.08);
+    if (fx.life[i] > 1) { fx.life[i] = 0; fx.seed[i] = Math.random() * 6.28; }
+    const l = fx.life[i], a = fx.seed[i] + l * 2.5, r = 0.35 + l * 0.5;
+    pos.setXYZ(i, mp.x + Math.cos(a) * r, mp.y + 0.15 + l * 2.1, mp.z + Math.sin(a) * r);
+  }
+  pos.needsUpdate = true; fx.embers.material.opacity = 0.6 + breath * 0.3;
+}
+function endMeditationFx(rec) {
+  const fx = rec.medFx; if (!fx) return;
+  for (const o of [fx.ring, fx.glow, fx.embers, fx.light]) scene.remove(o);
+  rec.medFx = null;
+}
+// A heal tick while meditating: a red pulse from the ground.
+function meditationTickFx() {
+  const me = entityMeshes.get(myId); if (!me) return;
+  const mp = me.mesh.position;
+  spawnFx('ring', mp.x, mp.y, mp.z, 0, { r: 1.6, color: 0xff6a3a }); spawnFx('glow', mp.x, mp.y, mp.z, 0, { color: 0xff4a2a });
+  sfx.play('hit_thud', { x: mp.x, z: mp.z, rate: 0.5, vol: 0.35, lowpass: 600 });
+}
+
 // ---- Weapon trail: a fading ribbon swept by the weapon during an ability ----
 const TRAIL_N = 14;
 function updateWeaponTrail(rec, active, dt) {
@@ -6074,6 +6123,8 @@ function onEvent(m) {
     case 'learned':
       { const lrec = entityMeshes.get(myId); if (lrec && m.id === 'momentum') startAbilityAnim(lrec, 'momentum'); sfx.play('quest_complete', { rate: 1.1, vol: 0.7 }); }
       flyText(`Learned ${m.name}!`, 'heal'); addChat('Trainer', `You learn ${m.name} for ${m.price} gp. It's in your spellbook (B).`, true); break;
+    case 'medtick':
+      flyText(`+${m.heal}`, 'heal'); addCombat(`You meditate: +${m.heal} HP, +${Math.round(m.xp)} Meditation xp.`, 'kill'); meditationTickFx(); break;
     case 'medlevel':
       flyText(`Meditation level ${m.level}!`, 'heal');
       addChat('Skills', `Your Meditation level is now ${m.level}.`, true); break;

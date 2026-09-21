@@ -15,7 +15,7 @@ import {
   PLAYER, ELITE, MONSTER_TEMPLATES,
   xpForLevel, xpTotalForLevel, levelForXp, attackRoll, defenceRoll, hitChance, scaledMonster, rollLoot, REGEN,
   TICK, DEFAULT_ATTACK_SPEED, CLASSES, DEFAULT_CLASS, classDef, classStats, abilityCost,
-  maxHit, rollSwing, rollMonsterSwing, MEDITATION, meditationHealRate,
+  maxHit, rollSwing, rollMonsterSwing, MEDITATION, meditationHealPerTick,
 } from './balance.js';
 import { ITEMS, SLOTS, SLOT_INFO, DOLL, itemDef, slotOf, valueOf, equipStats, slotsFor, emptySlots } from './items.js';
 import {
@@ -1868,13 +1868,19 @@ function stepPlayer(p) {
   // Food heals on eating (see 'eat'). There is no passive regen at all.
   p.combatTimer = Math.max(0, (p.combatTimer || 0) - DT);
   if (p.resting && p.hp < p.maxHp && p.combatTimer <= 0) {
-    // Meditation: heal at a level-scaled rate, and train the skill on the HP
-    // recovered. HP is a float here; the snapshot rounds it for display.
-    const heal = Math.min(p.maxHp - p.hp, meditationHealRate(p.meditation.level) * DT);
-    p.hp += heal;
-    if (heal > 0) addMeditationXp(p, heal * MEDITATION.xpPerHp);
-    if (p.hp >= p.maxHp) { p.resting = false; sendSkills(p); } // fully rested
-  }
+    // Meditation: a heal tick every MEDITATION.tick seconds, with Meditation xp
+    // for the tick and for the hitpoints recovered.
+    p.medT = (p.medT || 0) + DT;
+    if (p.medT >= MEDITATION.tick) {
+      p.medT -= MEDITATION.tick;
+      const heal = Math.min(p.maxHp - p.hp, meditationHealPerTick(p.meditation.level));
+      p.hp += heal;
+      const xp = MEDITATION.xpPerTick + heal * MEDITATION.xpPerHp;
+      addMeditationXp(p, xp);
+      send(p.ws, { t: 'event', kind: 'medtick', heal, xp });
+      if (p.hp >= p.maxHp) { p.resting = false; p.medT = 0; sendSkills(p); } // fully rested
+    }
+  } else p.medT = 0;
   // No passive regen: HP only comes back from food or meditating.
   p.inSafe = safe;
   p.engagedT = Math.max(0, (p.engagedT || 0) - DT);
@@ -2104,6 +2110,10 @@ wss.on('connection', (ws) => {
         if (!player || !player.alive) break;
         // Toggle meditation. Can't start resting mid-fight.
         player.resting = !player.resting && (player.combatTimer || 0) <= 0 && player.combatId == null;
+        if (player.resting) { // sitting down is stopping: drop whatever we were walking to
+          player.moveTo = null; player._nav = null; player.pendingChest = null; player.pendingPickup = null; player.pendingMine = null; player.pendingFish = null; player.pendingCook = null; player.pendingGate = false;
+          player.medT = 0;
+        }
         sendSkills(player);
         break;
       }
