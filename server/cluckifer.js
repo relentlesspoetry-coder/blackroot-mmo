@@ -66,11 +66,22 @@ export function stepHazards(ctx, zone, dt) {
     for (const p of ctx.players.values()) {
       if (!p.alive || p.zoneId !== zone.id) continue;
       if (ctx.dist2(p.x, p.z, h.x, h.z) > h.r * h.r) continue;
-      p._hazAcc = (p._hazAcc || 0) + h.dps * dt;
-      if (p._hazAcc >= 1) { const d = Math.floor(p._hazAcc); p._hazAcc -= d; ctx.hurtPlayer(p, d, null, h.kind === 'poison' ? 'poison' : 'burn'); }
+      // one tick a second per player (the hottest patch they stand in), not a
+      // stream of 1-damage hits
+      const want = h.kind === 'poison' ? 'poison' : 'burn';
+      if (!p._hazTick || p._hazTick.dps < h.dps) p._hazTick = { dps: h.dps, kind: want };
     }
   }
+  for (const p of ctx.players.values()) {
+    if (!p.alive || p.zoneId !== zone.id) continue;
+    if (p._hazTick) {
+      p._hazT = (p._hazT || 0) + dt;
+      if (p._hazT >= HAZARD_TICK) { p._hazT -= HAZARD_TICK; ctx.hurtPlayer(p, Math.round(p._hazTick.dps * HAZARD_TICK), null, p._hazTick.kind); }
+      p._hazTick = null;
+    } else p._hazT = Math.min(p._hazT || 0, HAZARD_TICK * 0.6);   // stepping out and back in doesn't reset the clock to zero
+  }
 }
+const HAZARD_TICK = 1.5;   // seconds between burn / poison ticks while standing in a patch
 export function hazardList(zone) { return (zone._bossHazards || []).map(h => ({ id: h.id, x: +h.x.toFixed(1), z: +h.z.toFixed(1), r: h.r, k: h.kind, t: +h.t.toFixed(1) })); }
 
 // ---------------------------------------------------------------- helpers

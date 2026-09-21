@@ -1720,9 +1720,9 @@ function stepClass(p, inCombat) {
   p.gcd = Math.max(0, (p.gcd || 0) - DT);
   p.savageCd = Math.max(0, (p.savageCd || 0) - DT);
   if (p.slow && p.slow.t > 0) p.slow.t -= DT;
-  if (p.dots) for (const [k, d] of Object.entries(p.dots)) {   // bleeds / burns tick once a second
+  if (p.dots) for (const [k, d] of Object.entries(p.dots)) {   // bleeds / burns tick every 1.5 s
     d.t -= DT; d.acc += DT;
-    if (d.acc >= 1) { d.acc -= 1; hurtPlayer(p, d.dps, null, k); }
+    if (d.acc >= 1.5) { d.acc -= 1.5; hurtPlayer(p, Math.round(d.dps * 1.5), null, k); }
     if (d.t <= 0) delete p.dots[k];
   }
   for (const k of Object.keys(p.cooldowns)) if (p.cooldowns[k] > 0) p.cooldowns[k] = Math.max(0, p.cooldowns[k] - DT);
