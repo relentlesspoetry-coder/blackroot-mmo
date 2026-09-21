@@ -37,6 +37,38 @@
   .bar > span { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; text-shadow: 0 1px 2px #000; }
   .bar > i { position: absolute; inset: 0; transform-origin: left; transition: transform .15s; }
   #hpfill { background: linear-gradient(90deg,#e0524d,#ff8a63); }
+  .bar.stam { height: 12px; } #stamfill { background: linear-gradient(90deg,#b8862a,#f2c94c); } .bar.stam > span { font-size: 10px; }
+  #momentum { display: flex; gap: 5px; justify-content: center; margin-bottom: 5px; height: 10px; }
+  #momentum i { width: 10px; height: 10px; border-radius: 50%; background: #2a2038; border: 1px solid #6a4f9a; }
+  #momentum i.on { background: radial-gradient(circle at 40% 35%, #ffd27a, #d8781c); border-color: #ffd27a; box-shadow: 0 0 6px #ffb347aa; }
+  #buffrow { display: flex; gap: 4px; justify-content: center; margin-bottom: 5px; min-height: 18px; }
+  #buffrow .bf { pointer-events: auto; font-size: 10px; color: #f1e6ff; background: #2a1f3ecc; border: 1px solid #7a5cb0; border-radius: 4px; padding: 1px 6px; white-space: nowrap; }
+  #buffrow .bf.bad { border-color: #b04a4a; background: #3e1f1fcc; }
+  #castbar { display: none; position: absolute; left: 4px; right: 4px; top: -22px; height: 12px; border-radius: 6px; background: #120a1fb0; border: 1px solid #8a6ac0; overflow: hidden; }
+  #castbar > i { position: absolute; inset: 0; transform-origin: left; background: linear-gradient(90deg,#c48bff,#ffd27a); }
+  #castbar > span { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; color: #fff; text-shadow: 0 1px 2px #000; }
+  .abslot img { width: 48px; height: 48px; border-radius: 5px; pointer-events: none; }
+  .abslot.gcd img, .abslot.nostam img { filter: brightness(.6); }
+  .abslot.nostam .cost { color: #ff7a6a; }
+  .abslot .cost { position: absolute; bottom: 2px; left: 4px; font-size: 9px; color: #f2c94c; text-shadow: 0 1px 2px #000; }
+  .abslot.assign { border-color: #ffd27a; box-shadow: 0 0 10px #ffd27a88; }
+  .abslot.drop { border-color: #c48bff; }
+  #spellbook { display: none; position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); width: 560px; max-height: 82vh; pointer-events: auto;
+    background: #0d0a12 url('ui/fighter/background.jpg') center/cover; border: 2px solid #6a4f9a; border-radius: 12px; box-shadow: 0 8px 40px #000c; color: #efe6ff; overflow: hidden; }
+  #spellbook::before { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, #0d0a12cc, #0d0a12e6); }
+  #spellbook > * { position: relative; }
+  #spellbook .sbhead { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid #4a3a6a; }
+  #spellbook .sbhead img { width: 56px; height: 56px; } #spellbook h3 { margin: 0; font-size: 20px; color: #ffd47a; letter-spacing: 1px; }
+  #spellbook #sbSub { font-size: 11px; color: #b3a6cc; } #spellbook #sbClose { margin-left: auto; background: none; border: 1px solid #6a4f9a; color: #cbb7f0; border-radius: 6px; padding: 3px 8px; cursor: pointer; }
+  #sbList { max-height: calc(82vh - 130px); overflow-y: auto; padding: 8px 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .sbab { display: flex; gap: 8px; padding: 6px; border: 1px solid #3f3158; border-radius: 8px; background: #16101fcc; cursor: pointer; align-items: flex-start; }
+  .sbab:hover { border-color: #b08cff; } .sbab.locked { opacity: .5; cursor: default; } .sbab.passive { border-style: dashed; cursor: default; }
+  .sbab.sel { border-color: #ffd27a; box-shadow: 0 0 8px #ffd27a66; }
+  .sbab img { width: 44px; height: 44px; border-radius: 5px; flex: none; }
+  .sbab .nm { font-weight: 700; color: #ffe9b0; font-size: 12px; } .sbab .meta { font-size: 10px; color: #cbb7f0; } .sbab .ds { font-size: 10.5px; color: #d9cfec; line-height: 1.3; margin-top: 2px; }
+  .sbab .slotno { margin-left: auto; font-size: 10px; color: #ffd27a; border: 1px solid #ffd27a; border-radius: 4px; padding: 0 4px; height: 14px; }
+  #spellbook .sbhint { padding: 6px 12px 10px; font-size: 10.5px; color: #9f92bb; text-align: center; }
+  .splat.crit { width: 32px; height: 32px; line-height: 32px; font-size: 14px; background: radial-gradient(circle at 40% 35%, #ffd27a, #d8781c); color: #2a1200; }
   #actionbar { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); width: 372px; pointer-events: none; }
   #xpbar { height: 14px; border-radius: 7px; background: #120a1fb0; border: 1px solid #5a3f8a; overflow: hidden; position: relative; margin: 0 4px 6px; }
   #xpbar > i { position: absolute; inset: 0; transform-origin: left; transition: transform .2s;
@@ -302,11 +334,20 @@
   <div id="topleft">
     <div id="charline"><span id="cname">—</span><span>Lv <b id="clevel">1</b></span><span>💰 <b id="cgold">0</b></span></div>
     <div class="bar"><i id="hpfill"></i><span id="hptext">100 / 100</span></div>
+    <div class="bar stam"><i id="stamfill"></i><span id="stamtext">Stamina 100 / 100</span></div>
   </div>
   <!-- Action bar: class xp above, six ability slots (keys 1-6) below -->
   <div id="actionbar">
+    <div id="buffrow"></div>
+    <div id="momentum"></div>
     <div id="xpbar"><i id="xpfill"></i><span id="xptext">XP 0 / 83</span></div>
     <div id="slots"></div>
+    <div id="castbar"><i></i><span></span></div>
+  </div>
+  <div id="spellbook">
+    <div class="sbhead"><img id="sbEmblem" alt=""><div><h3 id="sbTitle">Fighter</h3><div id="sbSub"></div></div><button id="sbClose">✕</button></div>
+    <div id="sbList"></div>
+    <div class="sbhint">Click an ability, then a bar slot (or drag it there). Keys 1–6 · B closes</div>
   </div>
   <div id="settings">
     <div class="panel">
@@ -346,6 +387,7 @@
   <button id="questBtn" title="Quest log (Q)">📜<span class="cnt" id="questCnt"></span></button>
   <button id="equipBtn" title="Equipment (E)">🧍<span class="cnt" id="equipCnt"></span></button>
   <button id="skillsBtn" title="Skills (K)">📊<span class="cnt" id="skillsCnt"></span></button>
+  <button id="spellBtn" title="Spellbook (B)" style="position:absolute; right:322px; bottom:12px; width:52px; height:52px; pointer-events:auto; background:#2a1f3e; border:2px solid #6a4f9a; border-radius:8px; color:#ffdf9e; font-size:22px; cursor:pointer;">📖</button>
   <button id="mapBtn" title="Map (M)" style="position:absolute; right:198px; bottom:12px; width:52px; height:52px; pointer-events:auto; background:#3f342a; border:2px solid #1c150e; border-radius:8px; color:#ffdf9e; font-size:22px; cursor:pointer;">🗺️</button>
   <div id="bag">
     <h3><span>Bag</span><span class="g" id="bagGold">0 gp</span></h3>
@@ -970,7 +1012,12 @@ function handle(m) {
       renderSkills();
       break;
     case 'abilities':
-      abilities = m.list || []; renderActionBar();
+      abilities = m.list || []; abilityClass = m; abilityResource = m.resource || 'Stamina';
+      if (m.gcdLeft) gcdUntil = performance.now() + m.gcdLeft * 1000;
+      fillBarDefaults(); renderActionBar(); renderSpellbook();
+      break;
+    case 'status':
+      selfMomentum = m.momentum || 0; buffList = m.buffs || []; renderMomentum(); renderBuffs();
       break;
     case 'quests':
       questData = { active: m.active || [], available: m.available || [], completed: m.completed || [], markers: m.markers || {} };
@@ -5106,6 +5153,7 @@ function addEventListeners() {
     if (e.key.toLowerCase() === 'q') { toggleQuests(); return; }
     if (e.key.toLowerCase() === 'e') { toggleEquip(); return; }
     if (e.key.toLowerCase() === 'k') { toggleSkills(); return; }
+    if (e.key.toLowerCase() === 'b') { toggleSpellbook(); return; }
     if (e.key.toLowerCase() === 'm') { toggleMap(); return; }
     if (e.key.toLowerCase() === 'r') { ws?.send(JSON.stringify({ t: 'rest' })); return; } // sit / meditate
     if (EDIT.on && e.key === 'Escape' && (EDIT.placing || EDIT.placingMob)) { EDIT.placing = null; EDIT.placingMob = null; editSetMode(); editBuildPalette(); return; }
@@ -5116,13 +5164,13 @@ function addEventListeners() {
     if (e.key === 'Escape') {
       // Esc closes whatever is open; if nothing is, it opens the menu.
       if (settingsEl.classList.contains('show')) { closeSettings(); return; }
-      let any = dialogueEl.style.display === 'block' || mapOpen || ctxEl.style.display === 'block';
-      closeDialogue(); hideContextMenu(); closeMap();
+      let any = dialogueEl.style.display === 'block' || mapOpen || ctxEl.style.display === 'block' || spellbookOpen;
+      closeDialogue(); hideContextMenu(); closeMap(); if (spellbookOpen) toggleSpellbook(false);
       if (EDIT.on && (EDIT.selId || EDIT.selSpawn)) { editSelect(null); editSelectSpawn(null); any = true; }
       if (!any) openSettings();
       return;
     }
-    if (/^[1-6]$/.test(e.key) && !e.ctrlKey && !e.altKey) { const a = abilities[+e.key - 1]; if (a && !a.locked) useAbility(a.id); return; }
+    if (/^[1-6]$/.test(e.key) && !e.ctrlKey && !e.altKey) { const id = barSlots[+e.key - 1]; if (id) useAbility(id); return; }
     if (e.key === ' ' || e.code === 'Space') { e.preventDefault(); if (!jump.active) { jump.active = true; jump.t = 0; } return; }
     const k = e.key.toLowerCase();
     if (k.startsWith('arrow')) e.preventDefault();
@@ -5483,6 +5531,15 @@ function updateHudFromSnapshot(snap) {
   document.getElementById('clevel').textContent = me.level;
   document.getElementById('hpfill').style.transform = `scaleX(${Math.max(0, me.hp / me.maxHp)})`;
   document.getElementById('hptext').textContent = `${me.hp} / ${me.maxHp}`;
+  if (me.stamMax) {
+    document.getElementById('stamfill').style.transform = `scaleX(${Math.max(0, Math.min(1, me.stam / me.stamMax))})`;
+    document.getElementById('stamtext').textContent = `${abilityResource} ${me.stam} / ${me.stamMax}`;
+    selfStam = me.stam;
+  }
+  if (me.momentum !== selfMomentum) { selfMomentum = me.momentum || 0; renderMomentum(); }
+  const cb = document.getElementById('castbar');
+  if (me.windup || me.channel) { const a = abilities.find(x => x.id === (me.windup || me.channel)); cb.style.display = 'block'; cb.querySelector('span').textContent = a ? a.name : ''; cb.querySelector('i').style.transform = `scaleX(${((performance.now() / 1000) % 1)})`; }
+  else cb.style.display = 'none';
   if (me.gold != null) document.getElementById('cgold').textContent = me.gold;
   if (me.xpNext) {
     const pct = Math.max(0, Math.min(1, me.xp / me.xpNext));
@@ -5504,7 +5561,7 @@ function onEvent(m) {
       flyText(`${m.cls || 'Level'} ${m.level}!`, 'heal');
       addChat('Class', `You are now a level ${m.level} ${m.cls || ''}.`, true); break;
     case 'ability':
-      if (m.by === myId) flyText(m.name, 'xp'); break;
+      if (m.by === myId) { flyText(m.name, 'xp'); gcdUntil = performance.now() + ((abilityClass && abilityClass.gcd) || 1.5) * 1000; } break;
     case 'medlevel':
       flyText(`Meditation level ${m.level}!`, 'heal');
       addChat('Skills', `Your Meditation level is now ${m.level}.`, true); break;
@@ -5609,7 +5666,7 @@ function showHit(m) {
   if (showSplats && tmpV.z <= 1) {
     const x = (tmpV.x * 0.5 + 0.5) * innerWidth, y = (-tmpV.y * 0.5 + 0.5) * innerHeight;
     const el = document.createElement('div');
-    el.className = 'splat ' + (m.dmg > 0 ? 'hitdmg' : 'hitmiss');
+    el.className = 'splat ' + (m.dmg > 0 ? (m.crit ? 'hitdmg crit' : 'hitdmg') : 'hitmiss');
     el.textContent = m.dmg;
     el.style.left = x + 'px'; el.style.top = y + 'px';
     document.getElementById('nameplates').appendChild(el);
@@ -5761,36 +5818,109 @@ function renderSkillWindow() {
   document.getElementById('skillTotal').innerHTML = `Total level <b>${total}</b>`;
 }
 
-// ---- Action bar: the class's abilities on six slots, keys 1-6 ----
-let abilities = [];
+// ---- Action bar: six assignable slots (keys 1-6) fed from the class spellbook ----
+let abilities = [], abilityClass = null, abilityResource = 'Stamina', gcdUntil = 0;
+let selfStam = 0, selfMomentum = 0, buffList = [];
+let barSlots = [null, null, null, null, null, null];   // ability ids per slot
+let assignId = null;                                   // spellbook pick waiting for a slot
+const iconFor_ab = (id) => `ui/${(abilityClass && abilityClass.clsId) || 'fighter'}/icons/${id}.png`;
+function barKey() { return 'bk.bar.' + ((abilityClass && abilityClass.clsId) || 'fighter'); }
+function loadBar() { try { const v = JSON.parse(localStorage.getItem(barKey()) || 'null'); if (Array.isArray(v) && v.length === 6) barSlots = v; } catch (e) {} }
+function saveBar() { try { localStorage.setItem(barKey(), JSON.stringify(barSlots)); } catch (e) {} }
+// New unlocks fill empty slots in level order; nothing already placed moves.
+function fillBarDefaults() {
+  if (!fillBarDefaults._loaded) { loadBar(); fillBarDefaults._loaded = true; }
+  const ids = new Set(abilities.map(a => a.id));
+  barSlots = barSlots.map(id => (id && ids.has(id)) ? id : null);
+  for (const a of abilities) {
+    if (a.locked || a.passive || barSlots.includes(a.id)) continue;
+    const i = barSlots.indexOf(null); if (i < 0) break; barSlots[i] = a.id;
+  }
+  saveBar();
+}
+function abilityById(id) { return abilities.find(a => a.id === id); }
 function renderActionBar() {
   const el = document.getElementById('slots'); if (!el) return;
   let html = '';
   for (let i = 0; i < 6; i++) {
-    const a = abilities[i];
-    if (!a) { html += `<div class="abslot empty"><span class="key">${i + 1}</span></div>`; continue; }
-    const cls = 'abslot' + (a.locked ? ' locked' : '');
-    html += `<div class="${cls}" data-id="${a.id}" data-i="${i}"><span class="key">${i + 1}</span>${a.icon}` +
-      (a.locked ? `<span class="lvl">Lv ${a.level}</span>` : '') +
+    const a = barSlots[i] ? abilityById(barSlots[i]) : null;
+    if (!a) { html += `<div class="abslot empty" data-i="${i}"><span class="key">${i + 1}</span></div>`; continue; }
+    html += `<div class="abslot${a.locked ? ' locked' : ''}" data-id="${a.id}" data-i="${i}"><span class="key">${i + 1}</span><img src="${iconFor_ab(a.id)}" alt="">` +
+      (a.locked ? `<span class="lvl">Lv ${a.level}</span>` : (a.cost ? `<span class="cost">${a.cost}</span>` : '')) +
       `<div class="cd" style="--p:0%"></div><div class="cdt"></div>` +
-      `<span class="tip"><b>${escapeHtml(a.name)}</b>${a.locked ? ` <span class="dim">(unlocks at level ${a.level})</span>` : ''}<br>${escapeHtml(a.desc)}<br><span class="dim">Cooldown ${a.cd}s · key ${i + 1}</span></span></div>`;
+      `<span class="tip"><b>${escapeHtml(a.name)}</b>${a.locked ? ` <span class="dim">(unlocks at level ${a.level})</span>` : ''}<br>${escapeHtml(a.desc)}<br><span class="dim">${a.cost ? a.cost + ' ' + abilityResource.toLowerCase() + ' · ' : ''}${a.cd ? 'cooldown ' + a.cd + 's · ' : ''}key ${i + 1}</span></span></div>`;
   }
   el.innerHTML = html;
-  el.querySelectorAll('.abslot[data-id]').forEach(d => { d.onclick = () => useAbility(d.dataset.id); });
-  for (const a of abilities) a._t0 = performance.now(), a._left0 = a.left || 0;
+  el.querySelectorAll('.abslot').forEach(d => {
+    const i = +d.dataset.i;
+    d.onclick = () => { if (assignId) { placeInSlot(i, assignId); return; } if (d.dataset.id) useAbility(d.dataset.id); };
+    d.oncontextmenu = (e) => { e.preventDefault(); e.stopPropagation(); if (barSlots[i]) { barSlots[i] = null; saveBar(); renderActionBar(); renderSpellbook(); } };
+    d.ondragover = (e) => { e.preventDefault(); d.classList.add('drop'); };
+    d.ondragleave = () => d.classList.remove('drop');
+    d.ondrop = (e) => { e.preventDefault(); d.classList.remove('drop'); const id = e.dataTransfer.getData('text/ability'); if (id) placeInSlot(i, id); };
+  });
+  for (const a of abilities) { a._t0 = performance.now(); a._left0 = a.left || 0; }
 }
-function useAbility(id) { ws?.send(JSON.stringify({ t: 'ability', id })); }
+function placeInSlot(i, id) {
+  const j = barSlots.indexOf(id); if (j >= 0) barSlots[j] = barSlots[i]; // swap if it was elsewhere
+  barSlots[i] = id; assignId = null; saveBar(); renderActionBar(); renderSpellbook();
+}
+function useAbility(id) { const a = abilityById(id); if (!a || a.locked || a.passive) return; ws?.send(JSON.stringify({ t: 'ability', id })); }
 function updateActionBar() {
   const el = document.getElementById('slots'); if (!el || !abilities.length) return;
-  const now = performance.now();
+  const now = performance.now(), onGcd = now < gcdUntil;
   el.querySelectorAll('.abslot[data-id]').forEach(d => {
-    const a = abilities[+d.dataset.i]; if (!a) return;
+    const a = abilityById(d.dataset.id); if (!a) return;
     const left = Math.max(0, (a._left0 || 0) - (now - (a._t0 || now)) / 1000);
     const cd = d.querySelector('.cd'), t = d.querySelector('.cdt');
-    if (left > 0.05) { cd.style.setProperty('--p', (left / a.cd * 100) + '%'); t.textContent = left >= 10 ? Math.ceil(left) : left.toFixed(1); }
+    if (left > 0.05) { cd.style.setProperty('--p', (left / (a.cd || 1) * 100) + '%'); t.textContent = left >= 10 ? Math.ceil(left) : left.toFixed(1); }
     else { cd.style.setProperty('--p', '0%'); t.textContent = ''; }
+    d.classList.toggle('gcd', onGcd && left <= 0.05);
+    d.classList.toggle('nostam', (a.cost || 0) > selfStam);
+    d.classList.toggle('assign', !!assignId);
   });
 }
+function renderMomentum() {
+  const el = document.getElementById('momentum'); if (!el) return;
+  el.innerHTML = [0, 1, 2, 3, 4].map(i => `<i class="${i < selfMomentum ? 'on' : ''}" title="Momentum ${selfMomentum}/5"></i>`).join('');
+}
+const BUFF_LABEL = { rushing_force: 'Rushing Force', weapon_flow: 'Weapon Flow', savage_watcher: 'Savage Watch', savage: 'Savage Momentum', bloodrush: 'Bloodrush',
+  footwork: 'Footwork', berserkers_roar: "Berserker's Roar", reckless_exposure: 'Exposed', riposte_ready: 'Riposte Ready' };
+const BAD_BUFF = new Set(['reckless_exposure']);
+function renderBuffs() {
+  const el = document.getElementById('buffrow'); if (!el) return;
+  el.innerHTML = buffList.map(b => `<span class="bf${BAD_BUFF.has(b.id) ? ' bad' : ''}" title="${b.t}s left">${BUFF_LABEL[b.id] || b.id}${b.charges ? ' ×' + b.charges : ''}</span>`).join('');
+}
+// ---- Spellbook (B): every class ability; click or drag onto the bar ----
+let spellbookOpen = false;
+function toggleSpellbook(force) {
+  spellbookOpen = force != null ? force : !spellbookOpen;
+  document.getElementById('spellbook').style.display = spellbookOpen ? 'block' : 'none';
+  if (!spellbookOpen) assignId = null;
+  renderSpellbook();
+}
+function renderSpellbook() {
+  if (!spellbookOpen || !abilityClass) return;
+  const em = document.getElementById('sbEmblem'); em.src = abilityClass.icon || ''; em.style.display = abilityClass.icon ? 'block' : 'none';
+  if (abilityClass.background) document.getElementById('spellbook').style.backgroundImage = `url('${abilityClass.background}')`;
+  document.getElementById('sbTitle').textContent = abilityClass.cls || 'Class';
+  const me = selfEnt();
+  document.getElementById('sbSub').textContent = `Level ${me ? me.level : 1} · ${abilities.filter(a => !a.locked).length}/${abilities.length} abilities known · uses ${abilityResource}`;
+  const list = document.getElementById('sbList');
+  list.innerHTML = abilities.map(a => {
+    const slot = barSlots.indexOf(a.id);
+    const meta = a.passive ? 'Passive' : [`Lv ${a.level}`, a.cost ? `${a.cost} ${abilityResource.toLowerCase()}` : null, a.cd ? `${a.cd}s cd` : null, a.kind === 'channel' ? 'channel' : null].filter(Boolean).join(' · ');
+    return `<div class="sbab${a.locked ? ' locked' : ''}${a.passive ? ' passive' : ''}${assignId === a.id ? ' sel' : ''}" data-id="${a.id}" draggable="${!a.locked && !a.passive}">` +
+      `<img src="${iconFor_ab(a.id)}" alt=""><div><div class="nm">${escapeHtml(a.name)}${a.locked ? ` <span class="meta">(level ${a.level})</span>` : ''}</div><div class="meta">${meta}</div><div class="ds">${escapeHtml(a.desc)}</div></div>` +
+      (slot >= 0 ? `<span class="slotno">${slot + 1}</span>` : '') + `</div>`;
+  }).join('');
+  list.querySelectorAll('.sbab').forEach(d => {
+    const a = abilityById(d.dataset.id); if (!a || a.locked || a.passive) return;
+    d.onclick = () => { assignId = assignId === a.id ? null : a.id; renderSpellbook(); };
+    d.ondragstart = (e) => { e.dataTransfer.setData('text/ability', a.id); assignId = null; };
+  });
+}
+document.getElementById('sbClose').onclick = () => toggleSpellbook(false);
 
 // The slot layout is authored on the server (items.js SLOT_INFO) and arrives
 // with the bag, so adding a slot does not need a client change.
@@ -6383,6 +6513,7 @@ function startGame() {
   document.getElementById('questBtn').onclick = () => toggleQuests();
   document.getElementById('equipBtn').onclick = () => toggleEquip();
   document.getElementById('skillsBtn').onclick = () => toggleSkills();
+  document.getElementById('spellBtn').onclick = () => toggleSpellbook();
   initThree();
 }
 

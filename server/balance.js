@@ -45,26 +45,66 @@ export const DEFAULT_ATTACK_SPEED = 4; // ticks between swings for a typical wea
 // ---------------------------------------------------------------------------
 export const CLASSES = {
   fighter: {
-    name: 'Fighter', icon: '⚔️',
-    desc: 'Steel and stubbornness. Hits hard, takes hits, and gets back up.',
-    atk: (L) => 6 + L,             // effective levels fed to the accuracy / max-hit rolls
+    name: 'Fighter', icon: 'ui/fighter/emblem.png', background: 'ui/fighter/background.jpg',
+    desc: 'A two-handed melee bruiser: heavy swings, cleaves, staggers and execute pressure, paid for with stamina and exposure. Not a tank.',
+    resource: 'Stamina',
+    atk: (L) => 6 + L,             // effective levels fed to the OSRS accuracy / max-hit rolls
     str: (L) => 6 + L,
-    def: (L) => 6 + L,
+    def: (L) => 4 + L,             // light armour: a little behind the hitting stats
     hp:  (L) => 80 + (L - 1) * 10, // max hitpoints
+    stam: (L) => 100 + (L - 1) * 12, // stamina pool: 100 at 1, 328 at 20
+    stamRegen: { combat: 8, idle: 18 },
+    gcd: 1.5,                      // global cooldown between abilities
     xpPerDamage: 5,                // class xp per point of damage dealt
+    critBase: 0.05, critMult: 1.5,
+    // Momentum: heavy attacks stack it (max 5, 5 min), +2% attack speed a stack;
+    // some abilities spend it.
+    momentum: { max: 5, dur: 300, atkSpeedPerStack: 0.02 },
+    // Ability damage = flat × levelScale + wd × (weapon roll). The weapon roll is
+    // 60–100% of the class max hit; levelScale runs 0.25 at level 1 to 1.0 at 20
+    // so the flat part grows into the spec's level-20 numbers. Every hit still
+    // passes an OSRS accuracy roll first. `heavy` abilities spend Weapon Flow.
     abilities: [
-      { id: 'power_strike', name: 'Power Strike', icon: '💥', level: 1, cd: 8,
-        desc: 'An immediate extra swing at your target for up to 1.6× your max hit.' },
-      { id: 'guard', name: 'Guard', icon: '🛡️', level: 3, cd: 24, dur: 8,
-        desc: 'Brace for 8s: your defence roll is doubled.' },
-      { id: 'second_wind', name: 'Second Wind', icon: '💚', level: 5, cd: 45,
-        desc: 'Catch your breath: heal 25% of your max hitpoints.' },
-      { id: 'cleave', name: 'Cleave', icon: '🌀', level: 10, cd: 15,
-        desc: 'A sweeping blow: hits your target and every enemy beside it (multi-combat zones).' },
-      { id: 'war_cry', name: 'War Cry', icon: '📣', level: 15, cd: 60, dur: 12,
-        desc: 'Roar: +25% max hit for 12s.' },
-      { id: 'last_stand', name: 'Last Stand', icon: '🔥', level: 20, cd: 120, dur: 10,
-        desc: 'Refuse to fall: for 10s damage taken is halved.' },
+      { id: 'heavy_swing', name: 'Heavy Swing', level: 1, cost: 12, cd: 3, kind: 'melee', flat: 16, wd: 1.5, momentum: 1, heavy: true,
+        desc: 'A slow, heavy two-handed strike. Generates Momentum (2 on a crit).' },
+      { id: 'cleave', name: 'Cleave', level: 2, cost: 18, cd: 6, kind: 'cone', cone: 100, cap: 3, flat: 10, wd: 1.05, momentumIf2: 1,
+        desc: 'Swing in a wide arc, hitting up to 3 enemies in front of you. Generates Momentum if it hits 2+.' },
+      { id: 'battle_rush', name: 'Battle Rush', level: 3, cost: 20, cd: 20, kind: 'rush', range: 20, buff: { id: 'rushing_force', dur: 300, charges: 1, dmg: 0.25 },
+        desc: 'Charge to a target within 20m. Your next melee ability deals +25% damage.' },
+      { id: 'crushing_blow', name: 'Crushing Blow', level: 4, cost: 26, cd: 10, kind: 'melee', flat: 24, wd: 1.35, momentum: 1, heavy: true, debuff: { id: 'crushed_armor', dur: 12 },
+        desc: 'Smash the enemy, reducing its armour by 8% for 12s. Generates Momentum.' },
+      { id: 'momentum', name: 'Momentum', level: 5, passive: true,
+        desc: 'Passive. Heavy attacks build Momentum (max 5, 5 min): +2% attack speed per stack. Some abilities spend it.' },
+      { id: 'groundbreaker', name: 'Groundbreaker', level: 6, cost: 38, cd: 18, kind: 'aoe', radius: 6, cap: 5, flat: 34, wd: 1.2, stagger: 0.75, momentumIf2: 1, heavy: true,
+        desc: 'Slam the ground: damages and staggers (0.75s) up to 5 enemies within 6m. More vs Crushed Armour.' },
+      { id: 'reckless_strike', name: 'Reckless Strike', level: 7, cost: 34, cd: 12, kind: 'melee', flat: 40, wd: 2.2, momentum: 1, heavy: true, selfDebuff: { id: 'reckless_exposure', dur: 8, taken: 0.08 },
+        desc: 'A brutal strike. You take +8% damage for 8s afterwards.' },
+      { id: 'heavy_riposte', name: 'Heavy Riposte', level: 8, cost: 18, cd: 8, kind: 'melee', flat: 30, wd: 1.8, momentum: 1, requires: 'riposte_ready',
+        desc: 'After an enemy misses you, answer with a heavy counter. +15% crit chance if used within 3s.' },
+      { id: 'weapon_flow', name: 'Weapon Flow', level: 9, cost: 45, cd: 45, kind: 'self', buff: { id: 'weapon_flow', dur: 300, charges: 2, dmg: 0.18, heavyOnly: true },
+        desc: 'Your next 2 heavy-weapon abilities deal +18% damage.' },
+      { id: 'armor_splitter', name: 'Armor Splitter', level: 10, cost: 52, cd: 18, kind: 'melee', flat: 46, wd: 1.6, momentum: 1, debuff: { id: 'split_guard', dur: 10 },
+        desc: 'Drive through the guard: the target takes +8% physical damage for 10s.' },
+      { id: 'savage_momentum', name: 'Savage Momentum', level: 11, cost: 60, cd: 60, kind: 'self', buff: { id: 'savage_watcher', dur: 1800 },
+        desc: 'For 30 min, killing or critically hitting an enemy grants +12% move speed and +8% melee damage for 6 melee abilities (once per 20s).' },
+      { id: 'bonebreaker', name: 'Bonebreaker', level: 12, cost: 64, cd: 25, kind: 'melee', flat: 42, wd: 1.45, momentum: 1, debuff: { id: 'bonebreak', dur: 10 },
+        desc: 'Crush the limbs: the target moves 40% slower for 10s and attacks 15% slower for 8s.' },
+      { id: 'whirlwind_cleave', name: 'Whirlwind Cleave', level: 13, cost: 82, cd: 30, kind: 'channel', radius: 6, cap: 6, ticks: 3, flat: 55, wd: 0.7,
+        desc: 'Spin for 3s, hitting up to 6 enemies within 6m each second. You move at 60% while spinning.' },
+      { id: 'final_swing', name: 'Final Swing', level: 14, cost: 76, cd: 12, kind: 'execute', flat: 62, wd: 1.9, momentum: 1,
+        desc: 'Only on targets at or below 30% HP: up to +75% damage the closer they are to death. Refunds 30 stamina on a kill.' },
+      { id: 'bloodrush', name: 'Bloodrush', level: 15, cost: 90, cd: 180, kind: 'self', buff: { id: 'bloodrush', dur: 300, charges: 10, dmg: 0.18, crit: 0.12, taken: 0.08 },
+        desc: '+18% melee damage and +12% crit chance for 10 melee abilities. You take +8% damage while it lasts.' },
+      { id: 'shatter_guard', name: 'Shatter Guard', level: 16, cost: 92, cd: 30, kind: 'melee', flat: 70, wd: 1.75, momentum: 1,
+        desc: 'A heavy impact that breaks a defensive shield or guard if the enemy has one (+30% damage when it does).' },
+      { id: 'titan_chop', name: 'Titan Chop', level: 17, cost: 110, cd: 45, kind: 'melee', windup: 1, flat: 100, wd: 3.0, momentum: 1, heavy: true,
+        desc: 'A 1s wind-up overhead strike for massive damage. Crits deal +20% at 3+ Momentum.' },
+      { id: 'unstoppable_footwork', name: 'Unstoppable Footwork', level: 18, cost: 70, cd: 90, kind: 'self', buff: { id: 'footwork', dur: 300, move: 0.10 },
+        desc: 'Break free of snares and move 10% faster for 5 min.' },
+      { id: 'berserkers_roar', name: "Berserker's Roar", level: 19, cost: 120, cd: 300, kind: 'self', buff: { id: 'berserkers_roar', dur: 300, charges: 8, dmg: 0.15, taken: 0.10, radius: 2 },
+        desc: '+15% melee damage and +2m to cleave radius for 8 melee abilities. You take +10% damage.' },
+      { id: 'perfect_masterstroke', name: 'Perfect Masterstroke', level: 20, cost: 160, cd: 120, kind: 'melee', flat: 150, wd: 2.8, spendMomentum: { flat: 30, wd: 0.35 }, heavy: true,
+        desc: 'The capstone: spends all Momentum for +30 damage and +35% weapon damage per stack. +15% vs Split Guard. Refunds 50 stamina on a kill.' },
     ],
   },
 };
@@ -72,7 +112,7 @@ export const DEFAULT_CLASS = 'fighter';
 export function classDef(id) { return CLASSES[id] || CLASSES[DEFAULT_CLASS]; }
 export function classStats(id, level) {
   const c = classDef(id);
-  return { atk: c.atk(level), str: c.str(level), def: c.def(level), hp: c.hp(level) };
+  return { atk: c.atk(level), str: c.str(level), def: c.def(level), hp: c.hp(level), stam: c.stam ? c.stam(level) : 0 };
 }
 // Max hit from strength. The divisor is tuned (vs OSRS's 640) so this game's
 // HP pools die at a similar pace to the old damage model.

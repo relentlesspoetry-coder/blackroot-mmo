@@ -13,7 +13,7 @@ import { hiddencave } from './zones/hiddencave.js';
 import { killingfields } from './zones/killingfields.js';
 import {
   PLAYER, ELITE, MONSTER, MONSTER_TEMPLATES,
-  maxHpForLevel, xpForLevel, xpTotalForLevel, levelForXp, rollPlayerDamage, scaledMonster, rollLoot, mitigate, REGEN,
+  maxHpForLevel, xpForLevel, xpTotalForLevel, levelForXp, rollPlayerDamage, attackRoll, defenceRoll, hitChance, scaledMonster, rollLoot, mitigate, REGEN,
   TICK, DEFAULT_ATTACK_SPEED, CLASSES, DEFAULT_CLASS, classDef, classStats,
   maxHit, rollSwing, rollMonsterSwing, MEDITATION, meditationHealRate,
 } from './balance.js';
@@ -850,7 +850,8 @@ function grantXp(p, amount) {
 }
 
 function killMonster(m, killer) {
-  m.alive = false; m.state = 'dead'; m.provoked = false;
+  m.alive = false; m.state = 'dead'; m.provoked = false; m.debuffs = null; m.stagger = 0;
+  if (killer && killer.kind === 'player') savageTrigger(killer);
   for (const p of players.values()) if (p.engagedWith === m.id) p.engagedWith = null;
   m.respawnTimer = m.elite ? Math.max(90, m.respawn * 2) : m.respawn;
   m.hp = 0;
@@ -1238,7 +1239,8 @@ const WEAPON_SPEED = {
 };
 function playerAttackSpeed(p) {
   const w = p.equipment && p.equipment.weapon;
-  return (WEAPON_SPEED[w] || DEFAULT_ATTACK_SPEED) * TICK;
+  const mo = classDef(p.cls).momentum, k = mo ? 1 - mo.atkSpeedPerStack * (p.momentum || 0) : 1;
+  return (WEAPON_SPEED[w] || DEFAULT_ATTACK_SPEED) * TICK * k;
 }
 // Combat XP goes to the class: xpPerDamage per point of damage dealt.
 function awardCombatXp(p, dmg) {
@@ -1279,62 +1281,213 @@ function doPlayerAttack(p, m) {
   // miss-fest against low-level foes while still scaling with skills and gear.
   playerSwing(p, m, 1);
 }
-// One swing of the player at a monster with the class's rolls (and any
-// damage multiplier from an ability / buff). Returns the damage.
+// One swing of the player at a monster with the class's rolls. Returns the damage.
 function playerSwing(p, m, dmgMult) {
   const eq = equipStats(p.equipment), bonus = eq.atk || 0, cs = classStats(p.cls, p.level);
-  const mult = dmgMult * (p.buffs.war_cry > 0 ? 1.25 : 1);
-  const dmg = rollSwing(cs.atk, cs.str, bonus, bonus, m.defLevel || 1, m.defBonus || 0, mult);
-  if (dmg > 0) { m.hp -= dmg; awardCombatXp(p, dmg); }
-  broadcast({ t: 'event', kind: 'hit', by: p.id, target: m.id, dmg, targetKind: 'monster' });
-  if (m.hp <= 0) killMonster(m, p);
+  const dmg = rollSwing(cs.atk, cs.str, bonus, bonus, monsterDef(m), m.defBonus || 0, dmgMult * (1 + dmgBuff(p, false)) * takenMult(m));
+  applyHit(p, m, dmg, false);
   return dmg;
 }
+// Monster effective defence, with Crushed Armour.
+function monsterDef(m) { return (m.defLevel || 1) * ((m.debuffs && m.debuffs.crushed_armor > 0) ? 0.92 : 1); }
+function takenMult(m) { return (m.debuffs && m.debuffs.split_guard > 0) ? 1.08 : 1; }
+// Damage bonus from the player's active buffs (heavy: the ability spends Weapon Flow).
+function dmgBuff(p, heavy) {
+  let b = 0;
+  for (const [id, bf] of Object.entries(p.buffs)) {
+    if (!(bf.t > 0) || !bf.dmg) continue;
+    if (bf.heavyOnly && !heavy) continue;
+    b += bf.dmg;
+  }
+  return b;
+}
+function critChance(p) { let c = classDef(p.cls).critBase || 0.05; for (const bf of Object.values(p.buffs)) if (bf.t > 0 && bf.crit) c += bf.crit; return c; }
+function incomingMult(p) { let m = 1; for (const bf of Object.values(p.buffs)) if (bf.t > 0 && bf.taken) m += bf.taken; return m; }
+function moveMult(p) { let m = 1; for (const bf of Object.values(p.buffs)) if (bf.t > 0 && bf.move) m += bf.move; if (p.channel) m *= 0.6; return m; }
+function addBuff(p, spec) { p.buffs[spec.id] = { ...spec, t: spec.dur, charges: spec.charges || 0, since: 0 }; }
+// A landed hit: damage, xp, splat, kill; momentum / savage triggers.
+function applyHit(p, m, dmg, crit) {
+  if (dmg > 0) { m.hp -= dmg; awardCombatXp(p, dmg); m.provoked = true; m.targetId = p.id; m.state = 'combat'; }
+  broadcast({ t: 'event', kind: 'hit', by: p.id, target: m.id, dmg, crit: !!crit, targetKind: 'monster' });
+  p._lastCrit = !!crit;
+  if (crit) savageTrigger(p);
+  if (m.hp <= 0) killMonster(m, p);
+}
+function addMomentum(p, n) {
+  const mo = classDef(p.cls).momentum; if (!mo) return;
+  p.momentum = Math.min(mo.max, (p.momentum || 0) + n); p.momentumT = mo.dur;
+}
+function savageTrigger(p) {
+  const w = p.buffs.savage_watcher; if (!w || !(w.t > 0) || (p.savageCd || 0) > 0) return;
+  p.savageCd = 20; addBuff(p, { id: 'savage', dur: 300, charges: 6, dmg: 0.08, move: 0.12 });
+}
+// Spend one charge from every charge-limited buff that a melee ability consumes.
+function spendCharges(p, ab) {
+  for (const [id, bf] of Object.entries(p.buffs)) {
+    if (!(bf.t > 0) || !bf.charges) continue;
+    if (bf.heavyOnly && !ab.heavy) continue;
+    bf.charges--; if (bf.charges <= 0) delete p.buffs[id];
+  }
+}
+// One ability hit on one monster: OSRS accuracy first, then flat×levelScale + weapon roll.
+function abilityHit(p, m, ab, extra = {}) {
+  const eq = equipStats(p.equipment), bonus = eq.atk || 0, cs = classStats(p.cls, p.level);
+  const ar = attackRoll(cs.atk, bonus), dr = defenceRoll(monsterDef(m), m.defBonus || 0);
+  if (Math.random() >= hitChance(ar, dr)) { applyHit(p, m, 0, false); return 0; }
+  const L = p.level, scale = 0.25 + 0.75 * Math.min(19, L - 1) / 19;
+  const wroll = maxHit(cs.str, bonus) * (0.6 + 0.4 * Math.random());
+  let base = (ab.flat || 0) * scale + (ab.wd || 0) * wroll;
+  if (extra.flat) base += extra.flat * scale; if (extra.wd) base += extra.wd * wroll;
+  let mult = (1 + dmgBuff(p, !!ab.heavy)) * takenMult(m) * (extra.mult || 1);
+  const crit = Math.random() < critChance(p) + (extra.crit || 0);
+  if (crit) mult *= (classDef(p.cls).critMult || 1.5) + (extra.critDmg || 0);
+  const dmg = Math.max(1, Math.round(base * mult));
+  applyHit(p, m, dmg, crit);
+  return dmg;
+}
+function monstersNear(p, x, z, r, cap, coneDeg) {
+  const out = [];
+  for (const m of monsters.values()) {
+    if (!m.alive || m.zoneId !== p.zoneId || m.passive) continue;
+    if (dist2(m.x, m.z, x, z) > r * r) continue;
+    if (coneDeg) { // in front of the player only
+      const a = Math.atan2(m.x - p.x, m.z - p.z); let d = a - p.yaw; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI;
+      if (Math.abs(d) > (coneDeg / 2) * Math.PI / 180) continue;
+    }
+    out.push(m);
+  }
+  out.sort((a, b) => dist2(a.x, a.z, x, z) - dist2(b.x, b.z, x, z));
+  return out.slice(0, cap || out.length);
+}
+function aoeRadius(p, ab) { let r = ab.radius || 0; const br = p.buffs.berserkers_roar; if (br && br.t > 0 && br.radius) r += br.radius; return r; }
 
 // ---- Abilities (the action bar) ----
 function abilityList(p) {
-  return classDef(p.cls).abilities.map(a => ({ id: a.id, name: a.name, icon: a.icon, level: a.level, cd: a.cd, desc: a.desc,
-    locked: p.level < a.level, left: Math.max(0, p.cooldowns[a.id] || 0) }));
+  return classDef(p.cls).abilities.map(a => ({ id: a.id, name: a.name, level: a.level, cd: a.cd || 0, cost: a.cost || 0, desc: a.desc,
+    passive: !!a.passive, kind: a.kind || null, locked: p.level < a.level, left: Math.max(0, p.cooldowns[a.id] || 0) }));
 }
-function sendAbilities(p) { send(p.ws, { t: 'abilities', cls: classDef(p.cls).name, list: abilityList(p) }); }
+function sendAbilities(p) {
+  const c = classDef(p.cls);
+  send(p.ws, { t: 'abilities', cls: c.name, clsId: p.cls, icon: c.icon, background: c.background, resource: c.resource || 'Stamina', gcd: c.gcd || 0, list: abilityList(p), gcdLeft: p.gcd || 0 });
+}
+function sendStatus(p) { // buffs / momentum / stamina, for the HUD
+  const buffs = Object.entries(p.buffs).filter(([, b]) => b.t > 0).map(([id, b]) => ({ id, t: Math.round(b.t), charges: b.charges || 0 }));
+  send(p.ws, { t: 'status', momentum: p.momentum || 0, buffs, riposte: !!(p.buffs.riposte_ready && p.buffs.riposte_ready.t > 0) });
+}
 function useAbility(p, id) {
-  const a = classDef(p.cls).abilities.find(x => x.id === id);
+  const c = classDef(p.cls), a = c.abilities.find(x => x.id === id);
   const notice = (text) => send(p.ws, { t: 'event', kind: 'notice', text });
-  if (!a || !p.alive) return;
+  if (!a || !p.alive || a.passive) return;
   if (p.level < a.level) return notice(`${a.name} unlocks at level ${a.level}.`);
   if ((p.cooldowns[id] || 0) > 0) return notice(`${a.name} is not ready.`);
+  if ((p.gcd || 0) > 0 || p.channel || p.windup) return;
+  if (a.requires && !(p.buffs[a.requires] && p.buffs[a.requires].t > 0)) return notice(`${a.name} needs an enemy to have just missed you.`);
+  if ((p.stam || 0) < (a.cost || 0)) return notice(`Not enough ${c.resource || 'stamina'}.`);
   const target = p.combatId != null ? monsters.get(p.combatId) : null;
   const inReach = target && target.alive && dist2(p.x, p.z, target.x, target.z) <= ATTACK_RANGE * ATTACK_RANGE;
-  switch (id) {
-    case 'power_strike': {
-      if (!inReach) return notice('You need a target in reach.');
-      playerSwing(p, target, 1.6);
-      break;
-    }
-    case 'cleave': {
-      if (!inReach) return notice('You need a target in reach.');
-      const zone = zoneOf(p);
-      playerSwing(p, target, 1.2);
-      if (zone.multiCombat) for (const m of monsters.values()) {
-        if (m === target || !m.alive || m.zoneId !== p.zoneId || m.passive) continue;
-        if (dist2(m.x, m.z, target.x, target.z) <= 3 * 3) playerSwing(p, m, 1.2);
+  const needTarget = ['melee', 'execute', 'cone', 'rush'].includes(a.kind);
+  if (needTarget && !(target && target.alive)) return notice('You need a target.');
+  if (['melee', 'execute', 'cone'].includes(a.kind) && !inReach) return notice('You need to be in reach.');
+  if (a.kind === 'execute' && target.hp > target.maxHp * 0.3) return notice(`${a.name} needs the target at 30% health or less.`);
+  if (a.kind === 'rush' && dist2(p.x, p.z, target.x, target.z) > a.range * a.range) return notice('Too far to rush.');
+
+  const fire = () => {
+    const t = p.combatId != null ? monsters.get(p.combatId) : null;
+    if (['melee', 'execute'].includes(a.kind) && !(t && t.alive && dist2(p.x, p.z, t.x, t.z) <= ATTACK_RANGE * ATTACK_RANGE)) return;
+    switch (a.kind) {
+      case 'melee': {
+        const extra = {};
+        if (id === 'heavy_riposte') { const r = p.buffs.riposte_ready; if (r && r.since <= 3) extra.crit = 0.15; delete p.buffs.riposte_ready; }
+        if (id === 'titan_chop' && (p.momentum || 0) >= 3) extra.critDmg = 0.2;
+        if (id === 'perfect_masterstroke') {
+          const n = p.momentum || 0; extra.flat = a.spendMomentum.flat * n; extra.wd = a.spendMomentum.wd * n; p.momentum = 0;
+          if (t.debuffs && t.debuffs.split_guard > 0) extra.mult = 1.15;
+        }
+        const before = t.hp, dmg = abilityHit(p, t, a, extra);
+        if (a.debuff && dmg > 0) { t.debuffs = t.debuffs || {}; t.debuffs[a.debuff.id] = a.debuff.dur; if (a.debuff.id === 'bonebreak') t.debuffs.bonebreak_atk = 8; }
+        if (a.selfDebuff) addBuff(p, a.selfDebuff);
+        if (a.momentum && dmg > 0) addMomentum(p, a.momentum + (id === 'heavy_swing' && p._lastCrit ? 1 : 0));
+        if (id === 'perfect_masterstroke' && before > 0 && !t.alive && !t.passive) p.stam = Math.min(p.stamMax, p.stam + 50);
+        break;
       }
-      break;
+      case 'execute': {
+        const missing = 1 - t.hp / t.maxHp;                      // 0.7 .. 1
+        const bonus = Math.min(0.75, Math.max(0, (missing - 0.7) / 0.3) * 0.75);
+        const dmg = abilityHit(p, t, a, { mult: 1 + bonus });
+        if (dmg > 0) addMomentum(p, t.alive ? 1 : 2);
+        if (!t.alive) p.stam = Math.min(p.stamMax, p.stam + 30);
+        break;
+      }
+      case 'cone': {
+        const hits = monstersNear(p, p.x, p.z, ATTACK_RANGE + aoeRadius(p, a), a.cap, a.cone);
+        let landed = 0; for (const m of hits) if (abilityHit(p, m, a) > 0) landed++;
+        if (a.momentumIf2 && landed >= 2) addMomentum(p, a.momentumIf2);
+        break;
+      }
+      case 'aoe': {
+        const hits = monstersNear(p, p.x, p.z, aoeRadius(p, a), a.cap);
+        let landed = 0;
+        for (const m of hits) {
+          const extra = (m.debuffs && m.debuffs.crushed_armor > 0) ? { mult: 1.1 } : {};
+          if (abilityHit(p, m, a, extra) > 0) { landed++; if (a.stagger && !m.elite) m.stagger = Math.max(m.stagger || 0, a.stagger); else if (a.stagger) m.stagger = Math.max(m.stagger || 0, 0.3); }
+        }
+        if (a.momentumIf2 && landed >= 2) addMomentum(p, a.momentumIf2);
+        break;
+      }
+      case 'channel': {
+        p.channel = { id, ticks: a.ticks, t: 1, landed2: false }; p.moveTo = null;
+        break;
+      }
+      case 'rush': {
+        // Charge: land just short of the target, facing it, and take it as the fight.
+        const d = Math.hypot(t.x - p.x, t.z - p.z); if (d > 1.6) { const k = (d - 1.4) / d; p.x += (t.x - p.x) * k; p.z += (t.z - p.z) * k; }
+        p.yaw = Math.atan2(t.x - p.x, t.z - p.z); p.combatId = t.id; p.moveTo = null;
+        addBuff(p, a.buff);
+        break;
+      }
+      case 'self': {
+        if (a.buff) addBuff(p, a.buff);
+        break;
+      }
     }
-    case 'guard': p.buffs.guard = a.dur; break;
-    case 'war_cry': p.buffs.war_cry = a.dur; break;
-    case 'last_stand': p.buffs.last_stand = a.dur; break;
-    case 'second_wind': {
-      if (p.hp >= p.maxHp) return notice('You are already at full health.');
-      const heal = Math.round(p.maxHp * 0.25);
-      p.hp = Math.min(p.maxHp, p.hp + heal);
-      send(p.ws, { t: 'event', kind: 'ate', item: 'Second Wind', heal });
-      break;
+    if (['melee', 'execute', 'cone', 'aoe'].includes(a.kind)) spendCharges(p, a);
+  };
+  p.stam -= a.cost || 0;
+  p.cooldowns[id] = a.cd || 0; p.gcd = c.gcd || 0;
+  if (a.windup) { p.windup = { id, t: a.windup, fire }; broadcast({ t: 'event', kind: 'ability', by: p.id, id, name: a.name, windup: a.windup }); }
+  else { fire(); broadcast({ t: 'event', kind: 'ability', by: p.id, id, name: a.name }); }
+  sendAbilities(p); sendStatus(p);
+}
+// Per-tick class upkeep: stamina, cooldowns, buffs, momentum, wind-ups, channels.
+function stepClass(p, inCombat) {
+  const c = classDef(p.cls);
+  p.stamMax = classStats(p.cls, p.level).stam;
+  if (p.stam == null) p.stam = p.stamMax;
+  const regen = inCombat ? c.stamRegen.combat : c.stamRegen.idle;
+  p.stam = Math.min(p.stamMax, p.stam + regen * DT);
+  p.gcd = Math.max(0, (p.gcd || 0) - DT);
+  p.savageCd = Math.max(0, (p.savageCd || 0) - DT);
+  for (const k of Object.keys(p.cooldowns)) if (p.cooldowns[k] > 0) p.cooldowns[k] = Math.max(0, p.cooldowns[k] - DT);
+  let statusDirty = false;
+  for (const [k, bf] of Object.entries(p.buffs)) {
+    if (typeof bf !== 'object') { delete p.buffs[k]; continue; }
+    bf.t -= DT; bf.since = (bf.since || 0) + DT;
+    if (bf.t <= 0) { delete p.buffs[k]; statusDirty = true; }
+  }
+  if ((p.momentum || 0) > 0) { p.momentumT -= DT; if (p.momentumT <= 0) { p.momentum = 0; statusDirty = true; } }
+  if (p.windup) { p.windup.t -= DT; if (p.moving) { p.windup = null; send(p.ws, { t: 'event', kind: 'notice', text: 'Interrupted.' }); } else if (p.windup.t <= 0) { const w = p.windup; p.windup = null; w.fire(); } }
+  if (p.channel) {
+    const ch = p.channel, a = c.abilities.find(x => x.id === ch.id);
+    ch.t -= DT;
+    if (ch.t <= 0 && a) {
+      ch.t += 1; ch.ticks--;
+      const hits = monstersNear(p, p.x, p.z, aoeRadius(p, a), a.cap);
+      let landed = 0; for (const m of hits) if (abilityHit(p, m, a) > 0) landed++;
+      if (landed >= 2) ch.landed2 = true;
+      if (ch.ticks <= 0) { if (ch.landed2) addMomentum(p, 1); spendCharges(p, a); p.channel = null; }
     }
   }
-  p.cooldowns[id] = a.cd;
-  broadcast({ t: 'event', kind: 'ability', by: p.id, id, name: a.name });
-  sendAbilities(p);
+  if (statusDirty) sendStatus(p);
 }
 
 // ---------------------------------------------------------------------------
@@ -1352,6 +1505,9 @@ function stepMonster(m) {
     return;
   }
   m.atkTimer = Math.max(0, m.atkTimer - DT);
+  if (m.debuffs) for (const k of Object.keys(m.debuffs)) { m.debuffs[k] -= DT; if (m.debuffs[k] <= 0) delete m.debuffs[k]; }
+  if ((m.stagger || 0) > 0) { m.stagger -= DT; return; }   // staggered: can't move or swing
+  const slowK = (m.debuffs && m.debuffs.bonebreak > 0) ? 0.6 : 1;
 
   let target = m.targetId ? players.get(m.targetId) : null;
   if (target && (!target.alive || target.zoneId !== m.zoneId)) { target = null; m.targetId = null; }
@@ -1384,15 +1540,16 @@ function stepMonster(m) {
     } else {
       m.yaw = Math.atan2(target.x - m.x, target.z - m.z);
       if (d > ATTACK_RANGE - 0.5) {
-        m.x += Math.sin(m.yaw) * m.speed * DT;
-        m.z += Math.cos(m.yaw) * m.speed * DT;
+        m.x += Math.sin(m.yaw) * m.speed * slowK * DT;
+        m.z += Math.cos(m.yaw) * m.speed * slowK * DT;
       } else if (m.atkTimer <= 0) {
-        m.atkTimer = (m.attackSpeed || 4) * TICK;
+        m.atkTimer = (m.attackSpeed || 4) * TICK * ((m.debuffs && m.debuffs.bonebreak_atk > 0) ? 1.15 : 1);
         // OSRS accuracy: monster attack roll vs the player's defence roll (level
         // + armour), damage 0..monster maxHit.
         const eq = equipStats(target.equipment), tcs = classStats(target.cls, target.level);
-        let dmg = rollMonsterSwing(m.atkLevel || 1, m.atkBonus || 0, m.maxHit || 1, tcs.def * (target.buffs.guard > 0 ? 2 : 1), eq.def || 0);
-        if (target.buffs.last_stand > 0) dmg = Math.floor(dmg / 2);
+        let dmg = rollMonsterSwing(m.atkLevel || 1, m.atkBonus || 0, m.maxHit || 1, tcs.def, eq.def || 0);
+        if (dmg > 0) dmg = Math.max(1, Math.round(dmg * incomingMult(target)));
+        else addBuff(target, { id: 'riposte_ready', dur: 300 }); // a miss is a dodge: Heavy Riposte opens up
         if (dmg > 0) { target.hp -= dmg; target.combatTimer = REGEN.combatLockout; }
         engage(target, m);
         // Auto-retaliate: if the player isn't already fighting, strike back.
@@ -1449,7 +1606,7 @@ function stepPlayer(p) {
     const dx = tx - p.x, dz = tz - p.z, d = Math.hypot(dx, dz);
     if (d <= stopDist) return false;
     const yaw = Math.atan2(dx, dz);
-    p.x += Math.sin(yaw) * PLAYER_SPEED * DT; p.z += Math.cos(yaw) * PLAYER_SPEED * DT;
+    p.x += Math.sin(yaw) * PLAYER_SPEED * moveMult(p) * DT; p.z += Math.cos(yaw) * PLAYER_SPEED * moveMult(p) * DT;
     p.yaw = yaw; return true;
   };
 
@@ -1463,7 +1620,7 @@ function stepPlayer(p) {
     const len = Math.hypot(mx, mz);
     if (len > 1e-4) {
       mx /= len; mz /= len;
-      p.x += mx * PLAYER_SPEED * DT; p.z += mz * PLAYER_SPEED * DT;
+      p.x += mx * PLAYER_SPEED * moveMult(p) * DT; p.z += mz * PLAYER_SPEED * moveMult(p) * DT;
       p.yaw = Math.atan2(mx, mz); moved = true;
     }
   } else if (p.combatId != null) {
@@ -1565,13 +1722,12 @@ function stepPlayer(p) {
   p.inSafe = safe;
   p.engagedT = Math.max(0, (p.engagedT || 0) - DT);
   if (p.engagedT <= 0) p.engagedWith = null;
-  for (const k of Object.keys(p.cooldowns)) if (p.cooldowns[k] > 0) p.cooldowns[k] = Math.max(0, p.cooldowns[k] - DT);
-  for (const k of Object.keys(p.buffs)) if (p.buffs[k] > 0) p.buffs[k] = Math.max(0, p.buffs[k] - DT);
+  stepClass(p, (p.combatTimer || 0) > 0 || p.combatId != null || (p.engagedT || 0) > 0);
 }
 
 function respawnPlayer(p) {
   const zone = zoneOf(p);
-  p.x = zone.spawn.x; p.z = zone.spawn.z; p.hp = p.maxHp; p.alive = true; p.moving = false; p.resting = false;
+  p.x = zone.spawn.x; p.z = zone.spawn.z; p.hp = p.maxHp; p.stam = p.stamMax; p.buffs = {}; p.channel = null; p.windup = null; p.alive = true; p.moving = false; p.resting = false;
   p.moveTo = null; p.combatId = null; p.pendingChest = null; p.pendingPickup = null;
   send(p.ws, { t: 'event', kind: 'respawned' });
 }
@@ -1645,6 +1801,8 @@ setInterval(() => {
           yaw: +p.yaw.toFixed(2), hp: Math.round(p.hp), maxHp: p.maxHp, level: p.level,
           cls: p.cls,
           xp: p.xp - xpTotalForLevel(p.level), xpNext: xpForLevel(p.level), gold: p.gold, alive: p.alive,
+          stam: Math.round(p.stam || 0), stamMax: p.stamMax || 0, momentum: p.momentum || 0,
+          channel: p.channel ? p.channel.id : null, windup: p.windup ? p.windup.id : null,
           moving: p.moving, inSafe: !!p.inSafe, resting: !!p.resting,
           weapon: p.equipment.weapon || null,     // held item for the paperdoll
           look: p.look });                          // hair / outfit / colours
@@ -1738,7 +1896,7 @@ wss.on('connection', (ws) => {
           x: start.spawn.x, z: start.spawn.z, y: 0, yaw: start.spawn.yaw, moving: false,
           // One class, one class level: `level`/`xp` ARE the class (see CLASSES).
           cls: DEFAULT_CLASS, level: 1, xp: 0, gold: 0, openedChests: new Set(),
-          cooldowns: {}, buffs: {},   // ability id -> seconds left; buff id -> seconds left
+          cooldowns: {}, buffs: {}, gcd: 0, momentum: 0, momentumT: 0, stam: classStats(DEFAULT_CLASS, 1).stam, stamMax: classStats(DEFAULT_CLASS, 1).stam,
           meditation: { level: 1, xp: 0 }, resting: false,
           // Everyone starts able to mine and fish; better tools are earned. The
           // pickaxe starts equipped so it shows in-hand (and swings when mining).
@@ -1757,7 +1915,7 @@ wss.on('connection', (ws) => {
         send(ws, { t: 'welcome', id, tickRate: SNAPSHOT_HZ, zone: zoneForClient(start), items: ITEM_CATALOG });
         sendBag(player); // sends the quest payload too
         sendSkills(player);
-        sendAbilities(player);
+        sendAbilities(player); sendStatus(player);
         systemChat(`${name} has entered ${start.name}.`);
         break;
       }
