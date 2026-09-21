@@ -1147,11 +1147,11 @@ function smoothPoly(points, seg) {
 // for the dirt path and the river so both read as one connected feature.
 // A soft round patch of dirt: opaque out to `r`, fading to nothing by r+feather.
 function buildRoundPatch(x, z, r, feather, material) {
-  const N = 28, pos = [0, 0, 0], uv = [0.5, 0.5], col = [1, 1, 1, 1], idx = [];
+  const N = 28, pos = [0, 0, 0], uv = [x / 3, z / 3], col = [1, 1, 1, 1], idx = [];
   for (const [rad, a] of [[r, 1], [r + feather, 0]]) {
     for (let i = 0; i < N; i++) {
       const t = (i / N) * Math.PI * 2;
-      pos.push(Math.cos(t) * rad, 0, Math.sin(t) * rad); uv.push(0.5 + Math.cos(t) * 0.5, 0.5 + Math.sin(t) * 0.5); col.push(1, 1, 1, a);
+      pos.push(Math.cos(t) * rad, 0, Math.sin(t) * rad); uv.push((x + Math.cos(t) * rad) / 3, (z + Math.sin(t) * rad) / 3); col.push(1, 1, 1, a);
     }
   }
   for (let i = 0; i < N; i++) { const n = (i + 1) % N; idx.push(0, 1 + n, 1 + i); idx.push(1 + i, 1 + n, 1 + N + n, 1 + i, 1 + N + n, 1 + N + i); }
@@ -1162,9 +1162,15 @@ function buildRoundPatch(x, z, r, feather, material) {
   g.setIndex(idx); g.computeVertexNormals();
   const m = new THREE.Mesh(g, material); m.position.set(x, 0.055, z); m.receiveShadow = true; scene.add(m); return m;
 }
-function buildStripRibbon(points, width, y, material, tile, feather, cutRiver, endFade) {
+// `endFade` may be a number (both ends) or {start,end}. With `worldUV` the dirt
+// texture is mapped in world space, so overlapping ribbons (a trail joining the
+// road) sample the very same texels and the join is invisible.
+function buildStripRibbon(points, width, y, material, tile, feather, cutRiver, endFade, worldUV) {
   const pts = smoothPoly(points, 8);
-  const hw = width / 2, T = tile || 5, fr = feather || 0, ef = endFade || 0;
+  const hw = width / 2, T = tile || 5, fr = feather || 0;
+  const efS = typeof endFade === 'object' ? (endFade.start || 0) : (endFade || 0);
+  const efE = typeof endFade === 'object' ? (endFade.end || 0) : (endFade || 0);
+  const ef = Math.max(efS, efE);
   // Cross-section vertex offsets (fraction of half-width) and their opacity.
   // With a feather, add a transparent fringe on each side so the strip fades
   // into whatever is under it (the path dissolving into grass at its edges).
@@ -1194,10 +1200,12 @@ function buildStripRibbon(points, width, y, material, tile, feather, cutRiver, e
     }
     // Taper the two ENDS to transparent so the path melts into the grass rather
     // than stopping on a hard straight edge.
-    if (ef > 0) rowA *= Math.max(0, Math.min(1, Math.min(dist, total - dist) / ef));
+    if (efS > 0) rowA *= Math.max(0, Math.min(1, dist / efS));
+    if (efE > 0) rowA *= Math.max(0, Math.min(1, (total - dist) / efE));
     for (const c of cols) {
-      pos.push(pts[i].x + nx * c.o, y, pts[i].z + nz * c.o);
-      uv.push((c.o + hw + fr) / T, v);
+      const px = pts[i].x + nx * c.o, pz = pts[i].z + nz * c.o;
+      pos.push(px, y, pz);
+      if (worldUV) uv.push(px / T, pz / T); else uv.push((c.o + hw + fr) / T, v);
       col.push(1, 1, 1, c.a * rowA);
     }
   }
@@ -1310,14 +1318,25 @@ function buildZone() {
   // Paths — one or more continuous, smoothly-curving dirt trails (the fused
   // world can hold several). The core dirt is opaque; a feathered fringe melts
   // the edges into the grass instead of a hard cut.
+  // ONE dirt material shared by road, footpaths and doorstep patches, mapped in
+  // world space — every piece samples the same texels, so where they overlap
+  // (a trail meeting the road) there is no visible join.
   const dirtMat = () => new THREE.MeshStandardMaterial({ map: loadTexture('dirt', 1, 1), color: 0x8a6a45, roughness: 1,
     side: THREE.DoubleSide, transparent: true, vertexColors: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
-  // A narrow cart track, not a highway.
-  for (const pathPts of worldPaths()) buildStripRibbon(pathPts, 1.6, 0.05, dirtMat(), 3, 1.1, true, 6);
-  // Footpaths from the road to every doorstep — thinner still, with a wide soft
-  // fringe, ends faded into the grass, and a round worn patch at the doorstep.
+  const DT = 3; // world units per texture tile, for everything
+  // A narrow cart track: starts flush at the farmhouse doorstep (no fade), fades
+  // out only at its far end.
+  for (const pathPts of worldPaths()) buildStripRibbon(pathPts, 1.6, 0.05, dirtMat(), DT, 1.1, true, { start: 0, end: 6 }, true);
+  // Footpaths: no fades — the doorstep end gets a round worn patch, and the
+  // other end is extended a little so its flat cap is buried inside whatever
+  // it joins (the road or the lane).
+  const extendEnd = (tr) => {
+    const p = tr.map(q => ({ x: q.x, z: q.z })), a = p[p.length - 2], b = p[p.length - 1];
+    const dx = b.x - a.x, dz = b.z - a.z, l = Math.hypot(dx, dz) || 1;
+    p[p.length - 1] = { x: b.x + dx / l * 0.9, z: b.z + dz / l * 0.9 }; return p;
+  };
   for (const tr of (zone.trails || [])) {
-    buildStripRibbon(tr, 0.9, 0.05, dirtMat(), 2, 0.8, false, 1.6);
+    buildStripRibbon(extendEnd(tr), 0.9, 0.05, dirtMat(), DT, 0.8, false, 0, true);
     buildRoundPatch(tr[0].x, tr[0].z, 0.75, 0.8, dirtMat());
   }
   for (const h of (zone.houses || [])) {
