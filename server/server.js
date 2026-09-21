@@ -662,43 +662,51 @@ function tileFence(zone, seg) {
   }
   zone._fenceSegs.push({ x1: seg.x1, z1: seg.z1, x2: seg.x2, z2: seg.z2 });
 }
-// Mining pits (zone.mines): a fenced ring of Farm_Fence with a gap facing the
-// road, a dirt scrape the client draws under it (a few overlapping discs so
-// the edge isn't a perfect circle), and the ore seams spread out inside with
-// the types shuffled together so no pit is one colour of rock.
+// Mining pits (zone.mines): an irregular dirt scrape with a spoil bank heaped
+// around its edge (the client raises a berm along the outline), an opening on
+// the side nearest the road, a couple of short fence runs flanking that
+// opening, and the ore seams spread out inside with their types shuffled
+// together so no pit is one colour of rock. The outline is a wobbly closed
+// polygon, not a circle — a few lobes plus per-point jitter.
 function buildMines(zone) {
   zone._fenceSegs = zone._fenceSegs || [];
-  zone._minePatches = [];
+  zone._minePits = [];
   const scat = zone._scatter;
+  const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
   for (const mine of (zone.mines || [])) {
     const poi = (zone.pois || []).find(q => q.key === mine.key); if (!poi) continue;
     const cx = poi.x, cz = poi.z, R = mine.r;
     const rng = mulberry32(((zone.scatterSeed || 7) * 31 + mine.key.length * 7) | 0);
-    // dirt: the pit plus three lobes, feathering into the grass
-    // (the lobes stay inside the fence; only the fringe feathers out under it)
-    zone._minePatches.push({ x: cx, z: cz, r: +(R * 0.92).toFixed(1), fr: 2.2 });
-    for (let i = 0; i < 3; i++) { const a = rng() * Math.PI * 2, d = R * 0.4; zone._minePatches.push({ x: +(cx + Math.cos(a) * d).toFixed(1), z: +(cz + Math.sin(a) * d).toFixed(1), r: +(R * 0.6).toFixed(1), fr: 2.5 }); }
-    // fence ring just outside the pit, with the gap on the side nearest the road
-    const near = zone.path && zone.path.length > 1 ? closestOnPolyline(cx, cz, zone.path) : null;
-    const gapDir = near ? Math.atan2(near.z - cz, near.x - cx) : 0;
-    const FR = R + 1.2, n = Math.max(10, Math.round((2 * Math.PI * FR) / 4.4)), gapHalf = 2.6 / FR;
-    for (let i = 0; i < n; i++) {
-      const a0 = (i / n) * Math.PI * 2, a1 = ((i + 1) / n) * Math.PI * 2, am = (a0 + a1) / 2;
-      let d = am - gapDir; d = Math.atan2(Math.sin(d), Math.cos(d));
-      if (Math.abs(d) < gapHalf + Math.PI / n) continue;   // the opening
-      tileFence(zone, { x1: +(cx + Math.cos(a0) * FR).toFixed(2), z1: +(cz + Math.sin(a0) * FR).toFixed(2), x2: +(cx + Math.cos(a1) * FR).toFixed(2), z2: +(cz + Math.sin(a1) * FR).toFixed(2) });
+    const ph = [rng() * 6.28, rng() * 6.28, rng() * 6.28];
+    const N = 30, outline = [], radii = [];
+    for (let i = 0; i < N; i++) {
+      const th = (i / N) * Math.PI * 2;
+      const r = R * (0.8 + 0.16 * Math.sin(2 * th + ph[0]) + 0.1 * Math.sin(3 * th + ph[1]) + 0.06 * Math.sin(5 * th + ph[2]) + (rng() - 0.5) * 0.08);
+      radii.push(r); outline.push({ x: +(cx + Math.cos(th) * r).toFixed(2), z: +(cz + Math.sin(th) * r).toFixed(2) });
     }
-    // seams: shuffled types, spaced out, kept off the middle if asked
+    // the opening faces the road; the bank and the fences leave it clear
+    const near = zone.path && zone.path.length > 1 ? closestOnPolyline(cx, cz, zone.path) : null;
+    const gapDir = near ? Math.atan2(near.z - cz, near.x - cx) : 0, gapHalf = 0.4;
+    const edgeAngle = (i) => wrap(((i + 0.5) / N) * Math.PI * 2 - gapDir);
+    for (let i = 0; i < N; i++) {
+      const d = edgeAngle(i), a = outline[i], b = outline[(i + 1) % N];
+      if (Math.abs(d) < gapHalf) continue;                                   // the way in
+      if (Math.abs(d) < gapHalf + 0.95) tileFence(zone, { x1: a.x, z1: a.z, x2: b.x, z2: b.z });   // short fence runs either side of the opening
+      else zone._fenceSegs.push({ x1: a.x, z1: a.z, x2: b.x, z2: b.z });   // elsewhere the spoil bank itself is the wall
+    }
+    zone._minePits.push({ x: cx, z: cz, r: R, outline, gapDir: +gapDir.toFixed(3), gapHalf });
+    // seams: shuffled types, spaced out, inside the outline, off the entrance lane and the middle if asked
     const list = []; for (const [ore, count] of Object.entries(mine.veins || {})) for (let i = 0; i < count; i++) list.push(ore);
     for (let i = list.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [list[i], list[j]] = [list[j], list[i]]; }
     const placed = [], inner = mine.inner || 0, SPACING = 3.6;
     for (const ore of list) {
       let x = cx, z = cz, ok = false;
-      for (let tries = 0; tries < 60 && !ok; tries++) {
-        const a = rng() * Math.PI * 2, rr = inner + Math.sqrt(rng()) * (R - 1.8 - inner);
+      for (let tries = 0; tries < 80 && !ok; tries++) {
+        const a = rng() * Math.PI * 2, rr = inner + Math.sqrt(rng()) * (R - 2.2 - inner);
         x = +(cx + Math.cos(a) * rr).toFixed(1); z = +(cz + Math.sin(a) * rr).toFixed(1);
+        if (!pointInPoly(x, z, outline) || closestOnPolyline(x, z, outline.concat([outline[0]])).dist < 2.2) continue;
         const spaced = placed.every(q => dist2(x, z, q.x, q.z) >= SPACING * SPACING) && !scat.some(o => o.c > 0 && dist2(x, z, o.x, o.z) < 2.4 * 2.4);
-        const inGapLane = Math.abs(Math.atan2(Math.sin(a - gapDir), Math.cos(a - gapDir))) < 0.35 && rr > R - 4;   // keep the way in clear
+        const inGapLane = Math.abs(wrap(a - gapDir)) < 0.35 && rr > R - 5;
         ok = spaced && !inGapLane;
       }
       placed.push({ x, z });
@@ -2097,7 +2105,7 @@ function zoneForClient(zone) {
     houses: (zone.farm && zone.farm.houses) || [],
     trails: zone._trails || [],
     field: (zone.farm && zone.farm.field) || null,
-    mines: zone._minePatches || [],
+    mines: zone._minePits || [],
     gate: zone.farm && zone.farm.gate ? (g => ({ x: g.x, z: g.z, yaw: g.yaw || 0, s: g.s || 1, double: !!g.double,
       gap: g.seg ? Math.hypot(g.seg.x2 - g.seg.x1, g.seg.z2 - g.seg.z1) : 2.4 }))(zone.farm.gate) : null,
     editObjects: zone._editObjects || [],
