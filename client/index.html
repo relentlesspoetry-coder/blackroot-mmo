@@ -1320,6 +1320,7 @@ function buildZone() {
     buildStripRibbon(tr, 0.9, 0.05, dirtMat(), 2, 0.8, false, 1.6);
     buildRoundPatch(tr[0].x, tr[0].z, 0.75, 0.8, dirtMat());
   }
+  for (const h of (zone.houses || [])) if (h.key === 'farmhouse') buildRoundPatch(h.x, h.z + h.d / 2 + 1.2, 1.1, 1.0, dirtMat());
 
   // Rivers — deep flowing water sitting in the carved channel, one per river.
   for (const river of worldRivers()) {
@@ -2694,6 +2695,8 @@ function buildFarmGate() {
     wrap.position.set(g.x + Math.cos(yaw) * offset, 0, g.z - Math.sin(yaw) * offset);
     wrap.rotation.y = yaw;
     wrap.traverse(o => { if (o.isMesh) { o.castShadow = o.receiveShadow = true; o.userData.pickKind = 'gate'; } });
+    // On a double gate the two latch-side posts would meet in the middle: hide them.
+    if (g.double) for (const post of findByName(wrap, /^Gate_Post\.001$/)) post.visible = false;
     scene.add(wrap);
     return { mesh: wrap, hinge: findByName(wrap, /CTRL_Gate_Hinge/)[0] || null, width: box.max.x - box.min.x };
   };

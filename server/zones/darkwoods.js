@@ -107,7 +107,7 @@ export const darkwoods = {
   // NPCs. `id` matches a quest's `giver`; the client builds a figure here and
   // floats a ! / ? marker over it when that giver has something for you.
   npcs: [
-    { id: 'alric',    name: 'Warden Alric',        x: -12,  z: -66, poi: 'entrance', model: 'Male', yaw: 3.1,
+    { id: 'alric',    name: 'Warden Alric',        x: -20,  z: -66, poi: 'entrance', model: 'Male', yaw: 3.1,
       idle: 'Keep to the path, and keep your blade where you can reach it.' },
     // Farmstead folk at the Entrance Clearing.
     { id: 'maggie',   name: 'Old Maggie',          x: 18,   z: -79, poi: 'entrance', model: 'Female', yaw: 3.0,
@@ -129,7 +129,7 @@ export const darkwoods = {
   // Primary progression path (winding). Rendered as a dirt trail; also used to
   // keep the forest clear along the route.
   path: [
-    { x: 3, z: -84 }, { x: 3, z: -66 }, { x: -8, z: -63 }, { x: -18, z: -54 }, { x: -30, z: -42 },
+    { x: -26, z: -79.5 }, { x: -25, z: -70 }, { x: -24, z: -63 }, { x: -25, z: -55 }, { x: -30, z: -42 },
     { x: -34, z: -24 }, { x: -20, z: -8 }, { x: 6, z: 2 }, { x: 6, z: 22 },
     // A straight run through the Mossy Bridge crossing so the deck lines up.
     { x: -2, z: 30 }, { x: -8, z: 35 }, { x: -14, z: 40 },
@@ -345,8 +345,8 @@ export const darkwoods = {
       { x1: 30,  z1: -92, x2: 30,  z2: -62 },   // east
       { x1: -42, z1: -86, x2: -34, z2: -92 },   // north-west corner
       { x1: -42, z1: -86, x2: -42, z2: -62 },   // west
-      { x1: -42, z1: -62, x2: -9.8, z2: -62 },  // south-west (up to the double gate)
-      { x1: -6.2, z1: -62, x2: 30,  z2: -62 },  // south-east (from the double gate)
+      { x1: -42, z1: -62, x2: -25.8, z2: -62 }, // south-west (up to the double gate)
+      { x1: -22.2, z1: -62, x2: 30, z2: -62 },  // south-east (from the double gate)
       // Cow pen (west of the yard) — opening on its north side.
       { x1: -16, z1: -80, x2: -10, z2: -80 }, { x1: -6, z1: -80, x2: 0, z2: -80 },
       { x1: -16, z1: -80, x2: -16, z2: -66 }, { x1: 0, z1: -80, x2: 0, z2: -66 },
@@ -357,15 +357,14 @@ export const darkwoods = {
       { x1: 6,  z1: -80, x2: 6,  z2: -76 }, { x1: 6, z1: -72, x2: 6, z2: -68 },
     ],
     // A double gate (two leaves meeting in the middle) wide enough for a cart.
-    gate: { x: -8, z: -62, yaw: 0, double: true, seg: { x1: -9.8, z1: -62, x2: -6.2, z2: -62 } },
+    gate: { x: -24, z: -62, yaw: 0, double: true, seg: { x1: -25.8, z1: -62, x2: -22.2, z2: -62 } },
     // Footpaths from each doorstep to the road. Authored so they walk AROUND
     // the pens (never through a fence): the yard lane runs along z=-83 north of
     // both pens; the Warden's hut path skirts south of the chicken pen.
     trails: [
-      [ { x: -26, z: -80.2 }, { x: -20, z: -82.4 }, { x: -10, z: -83.4 }, { x: 3, z: -84 } ],   // farmhouse
-      [ { x: -2,  z: -83.2 }, { x: 1,   z: -83.8 }, { x: 3, z: -84 } ],                           // Bram's
-      [ { x: 18,  z: -82.8 }, { x: 11,  z: -83.6 }, { x: 3, z: -84 } ],                           // Maggie's
-      [ { x: 21.2, z: -68 }, { x: 22.5, z: -64.6 }, { x: 12, z: -64.8 }, { x: 3, z: -66 } ],      // Warden's hut
+      [ { x: 18, z: -82.8 }, { x: 8, z: -83.6 }, { x: -2, z: -83.2 }, { x: -14, z: -82 }, { x: -24, z: -78 } ], // yard lane: Maggie's -> road
+      [ { x: -2, z: -83.2 }, { x: -2, z: -81.6 } ],                                                           // Bram's doorstep
+      [ { x: 21.2, z: -68 }, { x: 23.2, z: -72 }, { x: 23, z: -80 }, { x: 19, z: -83 } ],                     // Warden's hut, east of the chicken pen
     ],
     // Enterable houses: axis-aligned, `door` is the side the doorway is on.
     // Furniture offsets (dx,dz) are metres from the house centre.
@@ -387,7 +386,7 @@ export const darkwoods = {
         furn: [ { k: 'bed', dx: 2.4, dz: -2.0, yaw: 0 }, { k: 'table', dx: -1.6, dz: 1.4, yaw: 0 }, { k: 'chest', dx: 2.6, dz: 2.2, yaw: 0 } ] },
     ],
     // A tilled field of crops west of the cow pen.
-    field: { x: -29, z: -71, w: 30, d: 20, crops: ['Strawberry_Patch', 'Meadow_Sedge', 'Goldenrod_Patch'] },
+    field: { x: -34, z: -71, w: 22, d: 20, crops: ['Strawberry_Patch', 'Meadow_Sedge', 'Goldenrod_Patch'] },
     props: [
       // Chicken pen: coop, house, nests, feeders.
       { m: 'Walk_In_Chicken_House', x: 16,  z: -77, yaw: 3.14, s: 1.0, c: 2.2 },
@@ -403,7 +402,7 @@ export const darkwoods = {
       { m: 'Tall_Haystack',         x: 8,   z: -88, yaw: 0,    s: 1.0, c: 1.1 },
       { m: 'Stacked_Hay_Bales',     x: 11,  z: -85, yaw: 1.2,  s: 1.0, c: 0.9 },
       { m: 'Hay_Pile',              x: 26,  z: -78, yaw: 0,    s: 1.0, c: 0.7 },
-      { m: 'Scarecrow',             x: -29, z: -71, yaw: 3.14, s: 1.0, c: 0.4 },
+      { m: 'Scarecrow',             x: -34, z: -71, yaw: 3.14, s: 1.0, c: 0.4 },
       { m: 'Grain_Barrel',          x: -17, z: -86, yaw: 0,    s: 1.0, c: 0.5 },
       { m: 'Grain_Sack',            x: -15, z: -87, yaw: 0.8,  s: 1.0, c: 0.0 },
       { m: 'Vegetable_Crate',       x: -19, z: -87, yaw: 0.3,  s: 1.0, c: 0.5 },
