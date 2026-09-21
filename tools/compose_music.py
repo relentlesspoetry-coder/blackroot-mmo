@@ -63,7 +63,7 @@ def pad(freq, dur, vel=1.0, bright=1.0):
         f = freq * 2 ** (det / 1200 * 6)
         for h in range(1, 9):
             out += np.sin(2 * math.pi * f * h * t + h) / (h ** 1.4)
-    out *= env(n, 1.2, 0.5, 0.85, 1.8)
+    out *= env(n, 1.2, 0.5, 0.85, 1.0)
     out = lowpass(out, 600 + 900 * bright)
     return out * vel * 0.04
 
@@ -124,6 +124,23 @@ def reverb(x, seconds=2.8, mix=0.32, seed=3):
     ir /= np.max(np.abs(ir)) * 18
     wet = np.fft.irfft(np.fft.rfft(x, len(x) + n) * np.fft.rfft(ir, len(x) + n))[:len(x)]
     return x * (1 - mix) + wet * mix
+
+def tame_partials(x, N=8192, ratio=3.0):
+    """Spectral limiter: no single partial may tower over its neighbours. STFT
+    with a Hann window at 50% overlap; each bin is capped at `ratio` times the
+    local spectral envelope (a wide running mean), keeping the phase."""
+    hop = N // 2; win = np.hanning(N)
+    out = np.zeros(len(x) + N); norm = np.zeros(len(x) + N)
+    k = 24; kern = np.ones(2 * k + 1) / (2 * k + 1)
+    for i in range(0, len(x) - N, hop):
+        fr = np.fft.rfft(x[i:i + N] * win)
+        mag = np.abs(fr); envl = np.convolve(np.pad(mag, (k, k), mode='edge'), kern, mode='valid') + 1e-9
+        cap = envl * ratio
+        scale = np.minimum(1.0, cap / (mag + 1e-12))
+        y = np.fft.irfft(fr * scale, N) * win
+        out[i:i + N] += y; norm[i:i + N] += win ** 2
+    norm[norm < 1e-6] = 1
+    return (out / norm)[:len(x)]
 
 def level(x, target=0.055, win=1.0, ceiling=0.45):
     """Keep the loudness flat: ride the gain so every second sits near the
@@ -189,7 +206,7 @@ def track_boughs():
             bar = cyc * 16 + i * 2
             bright = 0.45
             for it in ints:
-                S.add(pad(note(D + ro + it + 12), 2 * 4 * S.spb + 1.5, 0.8, bright), S.at(bar, 0))
+                S.add(pad(note(D + ro + it + 12), 2 * 4 * S.spb + 0.6, 0.8, bright), S.at(bar, 0))
     # lute motif (dorian): phrases over 4 bars, entering at bar 8
     motif = [(0, 0, 1.0), (2, 0.75, 0.9), (3, 1.5, 0.8), (5, 2.0, 1.0), (7, 3.0, 0.9), (5, 3.5, 0.7),
              (3, 4.0, 0.9), (2, 5.0, 0.8), (0, 5.5, 1.0), (-2, 6.5, 0.8), (0, 7.5, 0.9)]
@@ -220,7 +237,7 @@ def track_boughs():
             if i == 6: S.add(tom(1.0, 0.35, 90), S.at(bar, 2.5))
     for k in range(0, 64, 8):
         S.add(breath(6, 0.7, seed=k + 1), S.at(k, 2))
-    return loopable(level(reverb(S.buf, 5.0, 0.55)))
+    return loopable(level(tame_partials(reverb(S.buf, 5.0, 0.55))))
 
 # ---------------------------------------------------------------------------
 # Track 2 — "Hollow Lantern" (Dark Woods, night). E aeolian/phrygian, 62 bpm.
@@ -239,7 +256,7 @@ def track_lantern():
             bar = cyc * 14 + i * 2
             if bar >= 56: break
             for it in ints:
-                S.add(pad(note(E + ro + it + 12), 2 * 4 * S.spb + 2.0, 0.7, 0.3), S.at(bar, 0))
+                S.add(pad(note(E + ro + it + 12), 2 * 4 * S.spb + 0.6, 0.7, 0.3), S.at(bar, 0))
     fig = [(12, 0, 1.0), (11, 1.5, 0.7), (7, 2.5, 0.8), (8, 3.5, 0.6)]   # E B... with the phrygian F (8 = C? keep b2 colour via 13)
     fig2 = [(12, 0, 0.9), (13, 1.0, 0.6), (12, 2.0, 0.8), (7, 3.0, 0.7)]
     for bar in range(4, 52, 2):
@@ -256,7 +273,7 @@ def track_lantern():
             if bar < 56: S.add(tom(1.6, 0.4, 95), S.at(bar, 0))
     for k in range(2, 56, 9):
         S.add(breath(7, 0.8, seed=k + 40), S.at(k, 0))
-    return loopable(level(reverb(S.buf, 6.0, 0.6)))
+    return loopable(level(tame_partials(reverb(S.buf, 6.0, 0.6))))
 
 if __name__ == '__main__':
     out = sys.argv[1] if len(sys.argv) > 1 else '.'
