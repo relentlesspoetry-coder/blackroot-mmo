@@ -5363,7 +5363,7 @@ function openContextMenu(e) {
 function showOptions(title, opts, cx, cy) {
   if (!opts.length) { hideContextMenu(); return; }
   ctxEl.innerHTML = `<div class="ctx-title">${escapeHtml(title)}</div>` +
-    opts.map((o, i) => `<div class="ctx-item" data-i="${i}">${escapeHtml(o.label)}</div>`).join('');
+    opts.map((o, i) => `<div class="ctx-item" data-i="${i}">${o.label}</div>`).join(''); // labels are trusted HTML (names pre-escaped)
   ctxEl.style.display = 'block';
   const mx = Math.min(cx, innerWidth - 200), my = Math.min(cy, innerHeight - 40 - opts.length * 24);
   ctxEl.style.left = mx + 'px'; ctxEl.style.top = my + 'px';
@@ -5912,11 +5912,11 @@ function showItemTip(slotEl, e) {
 function hideItemTip() { itemTipEl.style.display = 'none'; }
 // Right-click options for an item in the bag: Eat / Equip / Drop / Examine.
 function itemOptions(name) {
-  const opts = [], m = metaFor(name), info = itemInfo(name);
-  if (isEdible(name)) opts.push({ label: `Eat ${name}`, act: () => eatItem(name) });
-  if (m) opts.push({ label: `Equip ${name}`, act: () => ws?.send(JSON.stringify({ t: 'equip', item: name })) });
-  opts.push({ label: `Drop ${name}`, act: () => ws?.send(JSON.stringify({ t: 'drop', item: name })) });
-  opts.push({ label: `Examine ${name}`, act: () => addChat('Examine', (info && info.desc) || describeItem(name), true) });
+  const opts = [], m = metaFor(name), info = itemInfo(name), nm = `<b>${escapeHtml(name)}</b>`;
+  if (isEdible(name)) opts.push({ label: `Eat ${nm}`, act: () => eatItem(name) });
+  if (m) opts.push({ label: `Equip ${nm}`, act: () => ws?.send(JSON.stringify({ t: 'equip', item: name })) });
+  opts.push({ label: `Drop ${nm}`, act: () => ws?.send(JSON.stringify({ t: 'drop', item: name })) });
+  opts.push({ label: `Examine ${nm}`, act: () => addChat('Examine', (info && info.desc) || describeItem(name), true) });
   return opts;
 }
 function describeItem(name) {
