@@ -104,8 +104,6 @@ export const ITEMS = {
   'Cowhide':      { value: 6 },
   'Raw Beef':     { value: 5 },
   'Raw Chicken':  { value: 4 },
-  'Raw Rabbit':   { value: 4 },
-  'Rabbit Pelt':  { value: 5 },
   'Feather':      { value: 1 },
   'Egg':          { value: 3 },
   'Bones':        { value: 2 },
@@ -116,7 +114,6 @@ export const ITEMS = {
   'Raw Pike':     { value: 28 },
   // --- cooked food (from cooking; `heal` restores HP when eaten) ---
   'Shrimp':         { value: 5,  heal: 12 },
-  'Cooked Rabbit':  { value: 6,  heal: 16 },
   'Cooked Chicken': { value: 6,  heal: 18 },
   'Cooked Beef':    { value: 8,  heal: 20 },
   'Trout':          { value: 14, heal: 28 },

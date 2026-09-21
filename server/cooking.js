@@ -14,7 +14,6 @@ export const COOKING = {
 // this food stops burning entirely; below it, burn chance scales down to there.
 export const COOKABLES = {
   'Raw Shrimp':   { cooked: 'Shrimp',         level: 1,  xp: 15, noBurn: 12, heal: 12 },
-  'Raw Rabbit':   { cooked: 'Cooked Rabbit',  level: 1,  xp: 18, noBurn: 14, heal: 16 },
   'Raw Chicken':  { cooked: 'Cooked Chicken', level: 1,  xp: 20, noBurn: 15, heal: 18 },
   'Raw Beef':     { cooked: 'Cooked Beef',    level: 2,  xp: 22, noBurn: 16, heal: 20 },
   'Raw Trout':    { cooked: 'Trout',          level: 10, xp: 40, noBurn: 28, heal: 28 },

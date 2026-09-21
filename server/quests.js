@@ -74,14 +74,13 @@ export const QUESTS = {
   // --- Trapper Tam, Old Hunter's Trail -------------------------------------
   trapping: {
     id: 'trapping', name: 'The Trapper\'s Table', giver: 'tam', minLevel: 1,
-    summary: 'Hunt the woodland rabbits for Tam.',
-    intro: 'My snares come up empty, but a quick blade does better than string. Bring me a few rabbits — the meat for the pot and the pelts for trade — and I’ll cook you something hot.',
-    active: 'Six rabbits for the pot: four cuts of meat and three good pelts.',
+    summary: 'Clear the goblins robbing Tam’s snare line.',
+    intro: 'My snares come up empty every morning — goblins off the trail are lifting the catch before I get there. Thin them out along the Old Hunter’s Trail and bring me a few of their teeth so I know it’s done, and I’ll cook you something hot.',
+    active: 'Five goblins off the snare line, and three goblin teeth for Tam.',
     done: 'Fine hunting. Here — a kebab off the fire, and my thanks.',
     objectives: [
-      { type: 'kill', target: 'rabbit', count: 6, label: 'Rabbits hunted' },
-      { type: 'collect', item: 'Raw Rabbit', count: 4, label: 'Rabbit meat' },
-      { type: 'collect', item: 'Rabbit Pelt', count: 3, label: 'Rabbit pelts' },
+      { type: 'kill', target: 'goblin', count: 5, label: 'Goblins driven off' },
+      { type: 'collect', item: 'Goblin Tooth', count: 3, label: 'Goblin teeth' },
     ],
     reward: { xp: 130, gold: 45, items: ['Kebab'] },
   },

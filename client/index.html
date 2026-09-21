@@ -476,7 +476,6 @@ const CORE_MODELS = ['Male', 'items/Coins'];
 const MOB_MODEL = {
   goblin: { model: 'Goblin', h: 2.0 }, bandit: { model: 'Bandit', h: 2.3 }, guard: { model: 'Hill_Ogre', h: 3.0 },
   spider: { model: 'Cave_Spider', h: 1.6 }, cow: { model: 'Cow', h: 2.0 }, chicken: { model: 'Chicken', h: 1.1 },
-  rabbit: { model: 'Rabbit', h: 0.7 },
   venom_spider: { model: 'Venom_Spider', h: 1.7 }, crystal_spider: { model: 'Crystal_Spider', h: 1.8 },
   bat: { model: 'Bat', h: 1.0 },
   cave_giant: { model: 'Moss_Cave_Giant', h: 3.4 }, crystal_giant: { model: 'Crystal_Cave_Giant', h: 3.6 },
@@ -3897,23 +3896,9 @@ function makeMonsterMesh(type, elite) {
   const g = cloneModel(map.model, map.h * (elite ? 1.4 : 1));
   if (g) {
     if (type === 'chicken') splitChickenParts(g);
-    // The cow and rabbit are quadruped merged meshes — carve legs + head so
-    // they stride instead of sliding along stiff.
-    else if (type === 'cow' || type === 'rabbit') {
-      // splitQuadParts carves in geometry space and assumes Y up with the nose
-      // at +Z. The Rabbit GLB is authored Z-up with the nose along +Y (ears run
-      // along Z, eyes sit at y≈+0.3, tail at y≈-0.35), so unrotated it stands
-      // on its tail with its nose in the air. Stand it up (Z→Y) and turn it to
-      // face +Z. clone(true) SHARES geometry across clones, so rotate a COPY.
-      if (type === 'rabbit') {
-        g.traverse(o => { if (o.isMesh && o.geometry) { o.geometry = o.geometry.clone(); o.geometry.rotateX(-Math.PI / 2); o.geometry.rotateY(Math.PI); } });
-        // cloneModel grounded/centred the unrotated model; redo it for the upright one.
-        const obj = g.children[0]; obj.position.set(0, 0, 0); obj.updateMatrixWorld(true);
-        const bx = new THREE.Box3().setFromObject(obj);
-        obj.position.set(-(bx.min.x + bx.max.x) / 2, -bx.min.y, -(bx.min.z + bx.max.z) / 2);
-      }
-      splitQuadParts(g);
-    }
+    // The cow is a quadruped merged mesh — carve legs + head so it strides
+    // instead of sliding along stiff.
+    else if (type === 'cow') splitQuadParts(g);
     // Humanoid mobs are single merged meshes, so carve them into arms/legs (auto
     // bones from the model's own bbox) — otherwise the biped rig has nothing to
     // move and they just slide along the ground.
@@ -3922,7 +3907,7 @@ function makeMonsterMesh(type, elite) {
     // Most GLB characters face -Z (flip with MODEL_YAW); the Chicken, the cow and
     // the humanoid mobs (goblins, bandits) face +Z, so they need no flip or they
     // walk backwards.
-    g.userData.faceOffset = (type === 'chicken' || type === 'cow' || type === 'rabbit' || HUMANOID_SPLIT.has(type)) ? 0 : MODEL_YAW;
+    g.userData.faceOffset = (type === 'chicken' || type === 'cow' || HUMANOID_SPLIT.has(type)) ? 0 : MODEL_YAW;
     g.userData.rig = buildRig(g, RIG_STYLE[type] || 'biped');
     // Split humanoid mobs face +Z and punch with alternating hands (see the
     // generic biped branch in animateEntity).
@@ -4038,7 +4023,7 @@ function updateHeldWeapon(rec, name) {
 const RIG_STYLE = {
   goblin: 'biped', bandit: 'biped', guard: 'ogre',
   spider: 'spider', venom_spider: 'spider', crystal_spider: 'spider',
-  cow: 'quad', rabbit: 'quad', chicken: 'bird', bat: 'flier',
+  cow: 'quad', chicken: 'bird', bat: 'flier',
   cave_giant: 'biped', crystal_giant: 'biped', cave_guardian: 'biped', broodmother: 'spider',
   goblin_scavenger: 'biped', goblin_warrior: 'biped', goblin_archer: 'biped',
   goblin_shaman: 'biped', goblin_miner: 'biped', goblin_chief: 'biped',
@@ -4959,7 +4944,7 @@ function mineVein(id) {
 // Mirrors server/fishing.js FISH; used only for menu labels.
 const FISH_LEVEL = { Shrimp: 1, Trout: 10, Salmon: 22, Pike: 34 };
 // Edible items (mirror the `heal` foods in server/items.js) — clicking eats them.
-const EDIBLE = new Set(['Shrimp', 'Cooked Rabbit', 'Cooked Chicken', 'Cooked Beef',
+const EDIBLE = new Set(['Shrimp', 'Cooked Chicken', 'Cooked Beef',
   'Trout', 'Salmon', 'Pike', 'Kebab']);
 function fishSpot(id) {
   ws?.send(JSON.stringify({ t: 'fish', id }));
@@ -5382,8 +5367,8 @@ const ITEM_ICON = {
   'Fishing Rod': '🎣', 'Feathered Rod': '🎣',
   'Raw Shrimp': '🦐', 'Shrimp': '🍤', 'Raw Trout': '🐟', 'Trout': '🐟',
   'Raw Salmon': '🐠', 'Salmon': '🍣', 'Raw Pike': '🐡', 'Pike': '🐡',
-  'Raw Rabbit': '🥩', 'Cooked Rabbit': '🍖', 'Raw Chicken': '🍗', 'Cooked Chicken': '🍗',
-  'Raw Beef': '🥩', 'Cooked Beef': '🍖', 'Rabbit Pelt': '🟫', 'Burnt Food': '🔥', 'Kebab': '🌯',
+  'Raw Chicken': '🍗', 'Cooked Chicken': '🍗',
+  'Raw Beef': '🥩', 'Cooked Beef': '🍖', 'Burnt Food': '🔥', 'Kebab': '🌯',
 };
 function iconFor(name) { return ITEM_ICON[name] || (/Trophy/.test(name) ? '🏆' : '📦'); }
 function toggleBag(force) { bagOpen = force != null ? force : !bagOpen; document.getElementById('bag').style.display = bagOpen ? 'block' : 'none'; if (bagOpen) renderBag(); }
