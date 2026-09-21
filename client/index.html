@@ -481,8 +481,6 @@
         <div style="margin:6px 0 3px; color:#9fb0c4;">Part</div>
         <div id="edPartRow" style="display:flex; flex-wrap:wrap; gap:3px; margin-bottom:4px;"></div>
       </div>
-      <div style="margin:6px 0 3px; color:#9fb0c4;">Texture <span style="color:#7f8ba0; font-size:10px;">(applies to selected part)</span></div>
-      <div id="edTexRow" style="display:flex; flex-wrap:wrap; gap:3px; margin-bottom:4px; max-height:20vh; overflow-y:auto;"></div>
       <div style="display:flex; gap:6px; margin-top:6px;">
         <button id="edDuplicate" style="flex:1; background:#234a5a; border:1px solid #356075; color:#cdeeff; border-radius:6px; padding:6px; cursor:pointer;">Duplicate</button>
         <button id="edDelete" style="flex:1; background:#5a2330; border:1px solid #7a3040; color:#ffd0d0; border-radius:6px; padding:6px; cursor:pointer;">Delete</button>
@@ -553,18 +551,10 @@ import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 // 3D model assets (GLB). Loaded once up front.
 // ---------------------------------------------------------------------------
 const gltfLoader = new GLTFLoader();
-const texLoader = new THREE.TextureLoader();
-const _texCache = {};
-// Tiling material texture (grass/dirt/stone/…). repeat = world units per tile.
-function loadTexture(name, repeatX, repeatZ) {
-  const key = name;
-  let t = _texCache[key];
-  if (!t) { t = texLoader.load('textures/' + name + '.png'); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; _texCache[key] = t; }
-  // clone so different surfaces can set their own repeat
-  const c = t.clone(); c.needsUpdate = true; c.wrapS = c.wrapT = THREE.RepeatWrapping;
-  if (repeatX) c.repeat.set(repeatX, repeatZ || repeatX);
-  return c;
-}
+// The game uses no image textures: every surface is flat/vertex-coloured.
+// (The old client/textures pack was removed.) Kept as a stub so callers that
+// pass a `map` get null and render with their colour alone.
+function loadTexture() { return null; }
 const LOADED = {};
 const LOADED_ANIM = {}; // model key -> GLTF animation clips (kept for animated critters)
 // Only the player model is always needed; everything else is declared by the
@@ -2083,18 +2073,7 @@ function buildSpoilBank(mine) {
   buildFireflies();
   buildCritters();
 
-  // Texture preview toggle: strip every texture map in Dark Woods so the world
-  // renders in flat vertex/base colours. Flip STRIP_DARKWOODS_TEXTURES to false
-  // to bring the textures back.
-  if (STRIP_DARKWOODS_TEXTURES && zone.id === 'darkwoods') {
-    scene.traverse(o => {
-      if (!o.isMesh && !o.isInstancedMesh) return;
-      const mats = Array.isArray(o.material) ? o.material : [o.material];
-      for (const m of mats) { if (m && m.map) { m.map = null; m.needsUpdate = true; } }
-    });
-  }
 }
-const STRIP_DARKWOODS_TEXTURES = true;
 
 function nearestSeg(pts, x, z) {
   let best = null, bestD = Infinity;
@@ -3504,11 +3483,6 @@ function makePrimMesh(o) {
   const sloped = kind === 'ramp' || kind === 'stairs'; // geometry rises from y=0
   const col = kind === 'floor' ? 0x8a8f98 : kind === 'wall' ? 0x9a9aa2 : sloped ? 0x8f9298 : 0x8f8a7e;
   const mat = new THREE.MeshStandardMaterial({ color: col, roughness: 0.92, side: sloped ? THREE.DoubleSide : THREE.FrontSide });
-  if (o.tex && o.tex[0]) {
-    const tx = editTexture(o.tex[0]);
-    tx.repeat.set(Math.max(1, Math.round(w / 3)), Math.max(1, Math.round((kind === 'wall' ? h : d) / 3)));
-    mat.map = tx; mat.needsUpdate = true;
-  }
   const geo = kind === 'ramp' ? makeRampGeom(w, h, d) : kind === 'stairs' ? makeStairsGeom(w, h, d, o.steps) : new THREE.BoxGeometry(w, h, d);
   const mesh = new THREE.Mesh(geo, mat);
   mesh.castShadow = mesh.receiveShadow = true; mesh.position.y = sloped ? 0 : h / 2;
@@ -3544,17 +3518,6 @@ function makeEditMesh(o) {
     }
   });
   wrap.userData.parts = parts;
-  const texMap = (o.tex && typeof o.tex === 'object') ? o.tex : {};
-  wrap.traverse(x => {
-    if (!x.isMesh || !x.material) return;
-    const one = !Array.isArray(x.material), mats = one ? [x.material] : x.material;
-    const out = mats.map(m => {
-      const name = texMap[partIdx.get(m)];
-      if (!name) return m; // untextured parts keep the shared source material
-      const c = m.clone(); c.map = editTexture(name); c.needsUpdate = true; return c;
-    });
-    x.material = one ? out[0] : out;
-  });
   wrap.traverse(x => { if (x.isMesh) { x.castShadow = x.receiveShadow = true; x.userData.pickKind = 'editobj'; x.userData.editId = o.id; } });
   scene.add(wrap);
   editMeshes.set(o.id, wrap);
@@ -3629,19 +3592,7 @@ function buildEditSpawns() {
   for (const sp of (zone.editSpawns || [])) makeSpawnMesh(sp);
 }
 
-// Every texture available to the editor (client/textures/*.png).
-const EDIT_TEX = [
-  'barrel', 'beige_woven_fabric', 'black_hair', 'bone', 'bronze_scale_armor', 'brown_fur',
-  'brown_hair', 'brown_leather', 'cloth', 'dark_stone', 'dirt', 'glowing_purple_runic_sword',
-  'goblin_skin', 'grass', 'grass_blade', 'gray_tombstone', 'green_cactus', 'human_skin', 'leaf',
-  'metal', 'moss', 'ornate_golden_armor', 'red_clay', 'rock', 'rope', 'sand', 'scars_on_skin',
-  'steel', 'steel_chainmail', 'stone', 'tan_clay', 'tree_bark', 'wood', 'wooden_crate',
-];
-function editTexture(name) {
-  const t = loadTexture(name, 2, 2); // clones + sets repeat/wrap
-  if (t) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.needsUpdate = true; }
-  return t;
-}
+function editTexture() { return null; }   // textures were removed from the game; edit objects render in their base colours
 function editPartLabel(m, i) {
   if (m.name && !/^material/i.test(m.name)) return m.name;
   const c = m.color;
@@ -3649,14 +3600,6 @@ function editPartLabel(m, i) {
   return 'Part ' + (i + 1);
 }
 // Apply the texture to the currently-selected PART of the selected object.
-function editSetTexture(name) {
-  const o = (zone.editObjects || []).find(e => e.id === EDIT.selId); if (!o) return;
-  const part = EDIT.selPart || 0;
-  if (!o.tex || typeof o.tex !== 'object') o.tex = {};
-  if (name) o.tex[part] = name; else delete o.tex[part];
-  removeEditMesh(o.id); makeEditMesh(o); editSelect(o.id, part);
-  sendEdit({ t: 'edit:update', id: o.id, part, tex: name });
-}
 
 let editDrag = null, editHL = null, _edUpdT = 0;
 let _editInited = false;
@@ -3704,14 +3647,6 @@ function editInit() {
   $('edSpR').addEventListener('change', e => editSpawnUpdate({ r: +e.target.value }));
   $('edSpRespawn').addEventListener('change', e => editSpawnUpdate({ respawn: +e.target.value }));
   $('edSpDelete').addEventListener('click', () => { if (EDIT.selSpawn) sendEdit({ t: 'edit:spawn:delete', id: EDIT.selSpawn }); });
-  // Texture palette: a "none" swatch plus every available texture.
-  const row = $('edTexRow');
-  for (const name of ['none', ...EDIT_TEX]) {
-    const b = document.createElement('button'); b.textContent = name; b.dataset.tex = (name === 'none' ? '' : name);
-    b.style.cssText = 'background:#0c111b; border:1px solid #2b3852; color:#cdd6e5; border-radius:5px; padding:3px 6px; cursor:pointer; font-size:10px;';
-    b.onclick = () => editSetTexture(name === 'none' ? '' : name);
-    row.appendChild(b);
-  }
 }
 function editSetTab(tab) {
   EDIT.tab = tab; EDIT.placing = null; EDIT.placingMob = null;

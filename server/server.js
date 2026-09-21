@@ -2302,9 +2302,7 @@ wss.on('connection', (ws) => {
         if (!player || msg.key !== EDIT_KEY || !msg.m) break;
         const z = zoneOf(player);
         const o = { id: 'e' + (editSeq++), m: String(msg.m), x: +(+msg.x).toFixed(2), z: +(+msg.z).toFixed(2),
-          yaw: +(+(msg.yaw || 0)).toFixed(3), s: +(+(msg.s || 1)).toFixed(3), c: +(+(msg.c || 0)).toFixed(2),
-          // per-part texture map { partIndex: textureName }; carried over by Duplicate
-          tex: (msg.tex && typeof msg.tex === 'object' && !Array.isArray(msg.tex)) ? msg.tex : {} };
+          yaw: +(+(msg.yaw || 0)).toFixed(3), s: +(+(msg.s || 1)).toFixed(3), c: +(+(msg.c || 0)).toFixed(2) };
         o.y = clamp(+(msg.y || 0), -20, 100); // height offset above the ground (stacking)
         // Builder primitives (prim:floor / prim:wall / prim:block) carry box dims.
         if (o.m.startsWith('prim:')) { o.w = clamp(+msg.w || 4, 0.2, 200); o.h = clamp(+msg.h || 3, 0.2, 60); o.d = clamp(+msg.d || 4, 0.2, 200); }
@@ -2323,11 +2321,6 @@ wss.on('connection', (ws) => {
         if (msg.w != null) o.w = clamp(+msg.w, 0.2, 200);
         if (msg.h != null) o.h = clamp(+msg.h, 0.2, 60);
         if (msg.d != null) o.d = clamp(+msg.d, 0.2, 200);
-        // Per-part texture: msg.part is the material index, msg.tex the name ('' clears).
-        if (msg.part != null) {
-          if (!o.tex || typeof o.tex !== 'object') o.tex = {};
-          if (msg.tex) o.tex[String(msg.part)] = String(msg.tex); else delete o.tex[String(msg.part)];
-        }
         saveOverrides(z); broadcastZone(player.zoneId, { t: 'edit', op: 'update', obj: o });
         break;
       }
