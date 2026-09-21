@@ -405,6 +405,7 @@
       </div>
       <h3>Options</h3>
       <div class="row"><span>Show damage numbers</span><button class="sbtn on" id="optSplats">On</button></div>
+      <div class="row"><span>Sound effects</span><input type="range" id="optSfx" min="0" max="100" value="80" style="width:120px;pointer-events:auto"></div>
       <button class="resume" id="resumeBtn">Resume</button>
     </div>
   </div>
@@ -5504,107 +5505,170 @@ const ABILITY_ANIMS = {
     P.rArm = overhead(u, -2.8, -0.45, 0.45); P.lArm = overhead(u, -2.3, -0.35, 0.45); P.rArmZ = 0.15; P.lArmZ = -0.15;
     P.bodyX = kf(u, [[0, 0], [0.45, -0.18], [0.65, 0.35], [1, 0.05]]); P.bob = -crouch(u, 0.16, 0.65);
     P.lLeg = kf(u, [[0, 0], [0.6, -0.35], [1, 0]]); P.rLeg = kf(u, [[0, 0], [0.6, 0.3], [1, 0]]); P.rShin = kf(u, [[0, 0], [0.6, 0.45], [1, 0]]);
-  }, fx: [{ at: 0.62, kind: 'dust', r: 1.2, shake: 0.06 }, { at: 0.62, kind: 'streak', fwd: 1.2, y: 0.9, len: 1.8 }] },
+  }, fx: [{ at: 0.5, kind: 'sfx', key: 'heavy_swing' }, { at: 0.62, kind: 'dust', r: 1.2, shake: 0.06 }, { at: 0.62, kind: 'streak', fwd: 1.2, y: 0.9, len: 1.8 }] },
   cleave: { dur: 0.7, pose(u, P) {                  // wide horizontal arc, torso winds right then sweeps left
     P.bodyY = kf(u, [[0, 0], [0.3, -0.9], [0.7, 1.1], [1, 0]]);
     P.rArm = kf(u, [[0, 0], [0.3, -1.4], [0.7, -1.5], [1, 0]]); P.rArmZ = kf(u, [[0, 0], [0.3, -1.2], [0.7, 0.9], [1, 0]]);
     P.lArm = kf(u, [[0, 0], [0.5, -0.8], [1, 0]]); P.lArmZ = 0.35; P.bob = -crouch(u, 0.08, 0.6);
-  }, fx: [{ at: 0.45, kind: 'arc', r: 2.2, spread: 2.0 }, { at: 0.5, kind: 'streak', fwd: 1.6, y: 1.0, len: 3.2 }] },
+  }, fx: [{ at: 0.38, kind: 'sfx', key: 'cleave' }, { at: 0.45, kind: 'arc', r: 2.2, spread: 2.0 }, { at: 0.5, kind: 'streak', fwd: 1.6, y: 1.0, len: 3.2 }] },
   battle_rush: { dur: 0.6, pose(u, P) {             // charge: hard forward lean, arms pumping back, long stride
     P.bodyX = kf(u, [[0, 0.1], [0.3, 0.55], [1, 0.1]]); P.rArm = kf(u, [[0, 0], [0.3, 1.1], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.3, 1.1], [1, 0]]);
     P.lLeg = kf(u, [[0, 0], [0.35, -1.0], [0.7, 0.6], [1, 0]]); P.rLeg = kf(u, [[0, 0], [0.35, 0.8], [0.7, -0.9], [1, 0]]); P.lShin = kf(u, [[0, 0], [0.5, 0.9], [1, 0]]);
-  }, fx: [{ at: 0.05, kind: 'dust', r: 1.0 }, { at: 0.05, kind: 'streak', fwd: -1.5, y: 0.9, len: 4.0, color: 0xdfe8ff }, { at: 0.5, kind: 'dust', r: 0.8 }, { at: 0.55, kind: 'glow', color: 0xfff4d8 }] },
+  }, fx: [{ at: 0.05, kind: 'sfx', key: 'battle_rush' }, { at: 0.05, kind: 'dust', r: 1.0 }, { at: 0.05, kind: 'streak', fwd: -1.5, y: 0.9, len: 4.0, color: 0xdfe8ff }, { at: 0.5, kind: 'dust', r: 0.8 }, { at: 0.55, kind: 'glow', color: 0xfff4d8 }] },
   crushing_blow: { dur: 0.85, pose(u, P) {          // two-handed smash: high hold, then straight down into a crouch
     P.rArm = kf(u, [[0, 0], [0.4, -3.0], [0.55, -3.0], [0.72, -0.5], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.4, -2.9], [0.55, -2.9], [0.72, -0.4], [1, 0]]);
     P.bodyX = kf(u, [[0, 0], [0.5, -0.25], [0.72, 0.5], [1, 0.05]]); P.bob = kf(u, [[0, 0], [0.5, 0.08], [0.72, -0.28], [1, 0]]);
     P.lLeg = kf(u, [[0, 0], [0.72, -0.5], [1, 0]]); P.rLeg = kf(u, [[0, 0], [0.72, 0.4], [1, 0]]); P.lShin = kf(u, [[0, 0], [0.72, 0.7], [1, 0]]); P.rShin = kf(u, [[0, 0], [0.72, 0.5], [1, 0]]);
-  }, fx: [{ at: 0.7, kind: 'dust', r: 1.6, shake: 0.12 }, { at: 0.7, kind: 'sparks', n: 14, color: 0xcfd8e0 }, { at: 0.7, kind: 'cracks', r: 1.1, fwd: 0.9 }, { at: 0.7, kind: 'flash', r: 0.9, color: 0xffffff, fwd: 1.0 }] },
+  }, fx: [{ at: 0.68, kind: 'sfx', key: 'crushing_blow' }, { at: 0.7, kind: 'dust', r: 1.6, shake: 0.12 }, { at: 0.7, kind: 'sparks', n: 14, color: 0xcfd8e0 }, { at: 0.7, kind: 'cracks', r: 1.1, fwd: 0.9 }, { at: 0.7, kind: 'flash', r: 0.9, color: 0xffffff, fwd: 1.0 }] },
   momentum: { dur: 0.6, pose(u, P) {                // learned / flex: chest up, arms flare out
     P.rArm = kf(u, [[0, 0], [0.4, -0.9], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.4, -0.9], [1, 0]]); P.rArmZ = kf(u, [[0, 0], [0.4, -0.8], [1, 0]]); P.lArmZ = kf(u, [[0, 0], [0.4, 0.8], [1, 0]]);
     P.bodyX = kf(u, [[0, 0], [0.4, -0.15], [1, 0]]);
-  }, fx: [{ at: 0.35, kind: 'ring', r: 1.4, color: 0xffd27a }, { at: 0.35, kind: 'glow', color: 0xffd27a }] },
+  }, fx: [{ at: 0.35, kind: 'sfx', key: 'momentum' }, { at: 0.35, kind: 'ring', r: 1.4, color: 0xffd27a }, { at: 0.35, kind: 'glow', color: 0xffd27a }] },
   groundbreaker: { dur: 0.95, pose(u, P) {          // hop, slam the weapon into the ground, shockwave
     P.bob = kf(u, [[0, 0], [0.3, 0.35], [0.55, -0.3], [1, 0]]);
     P.rArm = kf(u, [[0, 0], [0.3, -3.0], [0.55, -0.55], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.3, -2.8], [0.55, -0.45], [1, 0]]);
     P.bodyX = kf(u, [[0, 0], [0.3, -0.2], [0.55, 0.6], [1, 0.05]]);
     P.lLeg = kf(u, [[0, 0], [0.3, -0.8], [0.55, -0.6], [1, 0]]); P.rLeg = kf(u, [[0, 0], [0.3, -0.8], [0.55, 0.5], [1, 0]]); P.lShin = kf(u, [[0, 0], [0.3, 1.2], [0.55, 0.8], [1, 0]]); P.rShin = kf(u, [[0, 0], [0.3, 1.2], [0.55, 0.6], [1, 0]]);
-  }, fx: [{ at: 0.55, kind: 'shock', r: 6.0, shake: 0.22 }, { at: 0.55, kind: 'dust', r: 2.2 }, { at: 0.55, kind: 'cracks', r: 2.4, fwd: 0.5 }, { at: 0.55, kind: 'sparks', n: 20, color: 0xc9b48a, fwd: 0.6 }] },
+  }, fx: [{ at: 0.53, kind: 'sfx', key: 'groundbreaker' }, { at: 0.55, kind: 'shock', r: 6.0, shake: 0.22 }, { at: 0.55, kind: 'dust', r: 2.2 }, { at: 0.55, kind: 'cracks', r: 2.4, fwd: 0.5 }, { at: 0.55, kind: 'sparks', n: 20, color: 0xc9b48a, fwd: 0.6 }] },
   reckless_strike: { trailColor: 0xff6a3c, dur: 0.75, pose(u, P) {        // a wild full spin into the strike
     P.spin = kf(u, [[0, 0], [0.75, Math.PI * 2], [1, Math.PI * 2]]);
     P.rArm = kf(u, [[0, 0], [0.2, -1.6], [0.75, -1.4], [1, 0]]); P.rArmZ = kf(u, [[0, 0], [0.2, -1.3], [0.75, 0.6], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.5, -0.6], [1, 0]]); P.lArmZ = 0.6;
     P.bodyX = kf(u, [[0, 0], [0.7, 0.35], [1, 0]]); P.bob = -crouch(u, 0.1, 0.7);
-  }, fx: [{ at: 0.6, kind: 'arc', r: 2.4, spread: 3.2, color: 0xff6a3c }, { at: 0.65, kind: 'sparks', n: 16, color: 0xff7a3c }, { at: 0.65, kind: 'glow', color: 0xff3a1a }, { at: 0.65, kind: 'flash', r: 1.0, color: 0xff8a4a, fwd: 1.2 }] },
+  }, fx: [{ at: 0.5, kind: 'sfx', key: 'reckless_strike' }, { at: 0.6, kind: 'arc', r: 2.4, spread: 3.2, color: 0xff6a3c }, { at: 0.65, kind: 'sparks', n: 16, color: 0xff7a3c }, { at: 0.65, kind: 'glow', color: 0xff3a1a }, { at: 0.65, kind: 'flash', r: 1.0, color: 0xff8a4a, fwd: 1.2 }] },
   heavy_riposte: { dur: 0.6, pose(u, P) {           // step back, then a straight-arm thrust
     P.bodyX = kf(u, [[0, 0], [0.25, -0.25], [0.55, 0.4], [1, 0]]);
     P.rArm = kf(u, [[0, 0], [0.25, 0.9], [0.55, -1.7], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.55, 0.7], [1, 0]]);
     P.rLeg = kf(u, [[0, 0], [0.25, 0.6], [0.55, -0.7], [1, 0]]); P.lLeg = kf(u, [[0, 0], [0.55, 0.4], [1, 0]]);
-  }, fx: [{ at: 0.55, kind: 'flash', r: 0.9, color: 0xdfe8ff, fwd: 1.4 }, { at: 0.55, kind: 'streak', fwd: 1.4, y: 1.0, len: 2.6, color: 0xdfe8ff }, { at: 0.2, kind: 'glow', color: 0xc0d8ff }] },
+  }, fx: [{ at: 0.5, kind: 'sfx', key: 'heavy_riposte' }, { at: 0.55, kind: 'flash', r: 0.9, color: 0xdfe8ff, fwd: 1.4 }, { at: 0.55, kind: 'streak', fwd: 1.4, y: 1.0, len: 2.6, color: 0xdfe8ff }, { at: 0.2, kind: 'glow', color: 0xc0d8ff }] },
   weapon_flow: { dur: 0.9, pose(u, P) {             // weapon twirl: the arm circles twice, body sways with it
     P.rArm = -1.3 + Math.sin(u * Math.PI * 4) * 1.3; P.rArmZ = Math.cos(u * Math.PI * 4) * 0.9;
     P.lArm = kf(u, [[0, 0], [0.5, -0.5], [1, 0]]); P.bodyZ = Math.sin(u * Math.PI * 4) * 0.08; P.bodyY = Math.sin(u * Math.PI * 2) * 0.25;
-  }, fx: [{ at: 0.3, kind: 'ring', r: 1.2, color: 0xffd27a }, { at: 0.5, kind: 'glow', color: 0xffd24a }, { at: 0.7, kind: 'ring', r: 1.2, color: 0xffd27a }] },
+  }, fx: [{ at: 0.25, kind: 'sfx', key: 'weapon_flow' }, { at: 0.3, kind: 'ring', r: 1.2, color: 0xffd27a }, { at: 0.5, kind: 'glow', color: 0xffd24a }, { at: 0.7, kind: 'ring', r: 1.2, color: 0xffd27a }] },
   armor_splitter: { trailColor: 0xdfe8ff, dur: 0.8, pose(u, P) {          // raise high, drive the weapon down and in
     P.rArm = kf(u, [[0, 0], [0.35, -2.9], [0.62, -0.9], [1, 0]]); P.rArmZ = kf(u, [[0, 0], [0.35, 0.4], [0.62, -0.3], [1, 0]]);
     P.lArm = kf(u, [[0, 0], [0.62, 0.8], [1, 0]]); P.bodyX = kf(u, [[0, 0], [0.35, -0.2], [0.62, 0.45], [1, 0]]); P.bob = -crouch(u, 0.14, 0.62);
     P.rLeg = kf(u, [[0, 0], [0.62, -0.6], [1, 0]]); P.rShin = kf(u, [[0, 0], [0.62, 0.7], [1, 0]]);
-  }, fx: [{ at: 0.6, kind: 'sparks', n: 18, color: 0xd8dde8, fwd: 1.3 }, { at: 0.6, kind: 'flash', r: 0.7, color: 0xffffff, fwd: 1.3 }, { at: 0.6, kind: 'impact', fwd: 0, color: 0xffffff, sparkColor: 0xd8dde8, y: 1.0 }] },
+  }, fx: [{ at: 0.58, kind: 'sfx', key: 'armor_splitter' }, { at: 0.6, kind: 'sparks', n: 18, color: 0xd8dde8, fwd: 1.3 }, { at: 0.6, kind: 'flash', r: 0.7, color: 0xffffff, fwd: 1.3 }, { at: 0.6, kind: 'impact', fwd: 0, color: 0xffffff, sparkColor: 0xd8dde8, y: 1.0 }] },
   savage_momentum: { dur: 0.7, pose(u, P) {         // roar: chest thrown back, arms back, head up
     P.bodyX = kf(u, [[0, 0], [0.4, -0.35], [1, 0]]); P.rArm = kf(u, [[0, 0], [0.4, 1.2], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.4, 1.2], [1, 0]]);
     P.rArmZ = kf(u, [[0, 0], [0.4, -0.6], [1, 0]]); P.lArmZ = kf(u, [[0, 0], [0.4, 0.6], [1, 0]]); P.head = kf(u, [[0, 0], [0.4, -0.5], [1, 0]]);
-  }, fx: [{ at: 0.35, kind: 'ring', r: 1.8, color: 0xff8a4a }, { at: 0.35, kind: 'glow', color: 0x7dff5a }] },
+  }, fx: [{ at: 0.35, kind: 'sfx', key: 'savage_momentum' }, { at: 0.35, kind: 'ring', r: 1.8, color: 0xff8a4a }, { at: 0.35, kind: 'glow', color: 0x7dff5a }] },
   bonebreaker: { dur: 0.8, pose(u, P) {             // low sweep at the knees from a deep crouch
     P.bob = -crouch(u, 0.4, 0.55); P.bodyX = kf(u, [[0, 0], [0.55, 0.5], [1, 0]]);
     P.rArm = kf(u, [[0, 0], [0.3, -0.6], [0.55, 0.6], [1, 0]]); P.rArmZ = kf(u, [[0, 0], [0.3, -1.3], [0.6, 1.0], [1, 0]]); P.bodyY = kf(u, [[0, 0], [0.3, -0.6], [0.6, 0.7], [1, 0]]);
     P.lLeg = kf(u, [[0, 0], [0.55, -0.9], [1, 0]]); P.rLeg = kf(u, [[0, 0], [0.55, -0.9], [1, 0]]); P.lShin = kf(u, [[0, 0], [0.55, 1.4], [1, 0]]); P.rShin = kf(u, [[0, 0], [0.55, 1.4], [1, 0]]);
-  }, fx: [{ at: 0.55, kind: 'arc', r: 1.8, spread: 1.8, y: 0.5 }, { at: 0.6, kind: 'sparks', n: 8, color: 0xe8e0c8, fwd: 1.2 }, { at: 0.6, kind: 'dust', r: 1.0 }] },
+  }, fx: [{ at: 0.52, kind: 'sfx', key: 'bonebreaker' }, { at: 0.55, kind: 'arc', r: 1.8, spread: 1.8, y: 0.5 }, { at: 0.6, kind: 'sparks', n: 8, color: 0xe8e0c8, fwd: 1.2 }, { at: 0.6, kind: 'dust', r: 1.0 }] },
   whirlwind_cleave: { dur: 3.0, loop: true, pose(u, P) { // the 3s spin: arms out, turning all the way round each second
     P.spin = u * Math.PI * 6; P.rArm = -1.5; P.lArm = -1.5; P.rArmZ = -1.2; P.lArmZ = 1.2; P.bodyX = 0.12; P.bob = -0.08 + Math.sin(u * Math.PI * 6) * 0.04;
     P.lLeg = Math.sin(u * Math.PI * 6) * 0.4; P.rLeg = -Math.sin(u * Math.PI * 6) * 0.4;
-  }, fx: [{ at: 0.1, kind: 'arc', r: 2.6, spread: 6.28 }, { at: 0.1, kind: 'dust', r: 2.0 }, { at: 0.43, kind: 'arc', r: 2.6, spread: 6.28 }, { at: 0.43, kind: 'dust', r: 2.0 }, { at: 0.76, kind: 'arc', r: 2.6, spread: 6.28 }, { at: 0.76, kind: 'dust', r: 2.0 }] },
+  }, fx: [{ at: 0.05, kind: 'sfx', key: 'whirlwind_cleave' }, { at: 0.38, kind: 'sfx', key: 'whirlwind_cleave' }, { at: 0.71, kind: 'sfx', key: 'whirlwind_cleave' }, { at: 0.1, kind: 'arc', r: 2.6, spread: 6.28 }, { at: 0.1, kind: 'dust', r: 2.0 }, { at: 0.43, kind: 'arc', r: 2.6, spread: 6.28 }, { at: 0.43, kind: 'dust', r: 2.0 }, { at: 0.76, kind: 'arc', r: 2.6, spread: 6.28 }, { at: 0.76, kind: 'dust', r: 2.0 }] },
   final_swing: { trailColor: 0xffb060, dur: 0.95, pose(u, P) {            // the execute: long hold at the top, then everything into the chop
     P.rArm = kf(u, [[0, 0], [0.3, -3.0], [0.55, -3.1], [0.7, -0.5], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.3, -2.9], [0.55, -3.0], [0.7, -0.4], [1, 0]]);
     P.bodyX = kf(u, [[0, 0], [0.55, -0.3], [0.7, 0.6], [1, 0.05]]); P.bob = kf(u, [[0, 0], [0.55, 0.1], [0.7, -0.3], [1, 0]]);
     P.lLeg = kf(u, [[0, 0], [0.7, -0.7], [1, 0]]); P.lShin = kf(u, [[0, 0], [0.7, 0.9], [1, 0]]); P.rLeg = kf(u, [[0, 0], [0.7, 0.5], [1, 0]]);
-  }, fx: [{ at: 0.68, kind: 'flash', r: 1.4, color: 0xffe9b0, fwd: 1.3 }, { at: 0.7, kind: 'dust', r: 1.4, shake: 0.14 }, { at: 0.7, kind: 'cracks', r: 1.0, fwd: 1.0 }, { at: 0.5, kind: 'glow', color: 0xff5a3a }] },
+  }, fx: [{ at: 0.66, kind: 'sfx', key: 'final_swing' }, { at: 0.68, kind: 'flash', r: 1.4, color: 0xffe9b0, fwd: 1.3 }, { at: 0.7, kind: 'dust', r: 1.4, shake: 0.14 }, { at: 0.7, kind: 'cracks', r: 1.0, fwd: 1.0 }, { at: 0.5, kind: 'glow', color: 0xff5a3a }] },
   bloodrush: { trailColor: 0xff2a1a, dur: 0.75, pose(u, P) {              // fists to the chest, then flung wide
     P.rArm = kf(u, [[0, 0], [0.3, -1.6], [0.6, -0.9], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.3, -1.6], [0.6, -0.9], [1, 0]]);
     P.rArmZ = kf(u, [[0, 0], [0.3, 0.9], [0.6, -1.1], [1, 0]]); P.lArmZ = kf(u, [[0, 0], [0.3, -0.9], [0.6, 1.1], [1, 0]]);
     P.bodyX = kf(u, [[0, 0], [0.3, 0.2], [0.6, -0.25], [1, 0]]);
-  }, fx: [{ at: 0.55, kind: 'ring', r: 1.6, color: 0xd8302a }, { at: 0.55, kind: 'sparks', n: 12, color: 0xff3a2a }, { at: 0.55, kind: 'glow', color: 0xff2a1a }] },
+  }, fx: [{ at: 0.5, kind: 'sfx', key: 'bloodrush' }, { at: 0.55, kind: 'ring', r: 1.6, color: 0xd8302a }, { at: 0.55, kind: 'sparks', n: 12, color: 0xff3a2a }, { at: 0.55, kind: 'glow', color: 0xff2a1a }] },
   shatter_guard: { trailColor: 0xdfe8ff, dur: 0.8, pose(u, P) {           // shoulder in, then a full-body thrust
     P.bodyX = kf(u, [[0, 0], [0.3, -0.15], [0.6, 0.55], [1, 0]]); P.bodyY = kf(u, [[0, 0], [0.3, 0.5], [0.6, -0.3], [1, 0]]);
     P.rArm = kf(u, [[0, 0], [0.3, 1.0], [0.6, -1.8], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.6, 0.6], [1, 0]]);
     P.rLeg = kf(u, [[0, 0], [0.6, -0.9], [1, 0]]); P.rShin = kf(u, [[0, 0], [0.6, 0.6], [1, 0]]); P.lLeg = kf(u, [[0, 0], [0.6, 0.5], [1, 0]]);
-  }, fx: [{ at: 0.6, kind: 'sparks', n: 22, color: 0xdfe6f0, fwd: 1.4 }, { at: 0.6, kind: 'flash', r: 1.0, color: 0xdfe8ff, fwd: 1.4, shake: 0.08 }, { at: 0.6, kind: 'impact', color: 0xffffff, sparkColor: 0xdfe6f0, y: 1.1 }] },
+  }, fx: [{ at: 0.58, kind: 'sfx', key: 'shatter_guard' }, { at: 0.6, kind: 'sparks', n: 22, color: 0xdfe6f0, fwd: 1.4 }, { at: 0.6, kind: 'flash', r: 1.0, color: 0xdfe8ff, fwd: 1.4, shake: 0.08 }, { at: 0.6, kind: 'impact', color: 0xffffff, sparkColor: 0xdfe6f0, y: 1.1 }] },
   titan_chop: { trailColor: 0xc48bff, dur: 1.5, pose(u, P) {              // 1s wind-up held overhead, then the mountain comes down
     P.rArm = kf(u, [[0, 0], [0.45, -3.1], [0.66, -3.15], [0.8, -0.5], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.45, -3.0], [0.66, -3.05], [0.8, -0.4], [1, 0]]);
     P.bodyX = kf(u, [[0, 0], [0.6, -0.35], [0.8, 0.65], [1, 0.05]]); P.bob = kf(u, [[0, 0], [0.6, 0.12], [0.8, -0.35], [1, 0]]);
     P.bodyZ = Math.sin(u * 40) * 0.02 * kf(u, [[0, 0], [0.5, 1], [0.66, 1], [0.7, 0]]);   // strain tremor while held
     P.lLeg = kf(u, [[0, 0], [0.8, -0.8], [1, 0]]); P.lShin = kf(u, [[0, 0], [0.8, 1.0], [1, 0]]); P.rLeg = kf(u, [[0, 0], [0.8, 0.6], [1, 0]]);
-  }, fx: [{ at: 0.5, kind: 'ring', r: 1.0, color: 0xc48bff }, { at: 0.55, kind: 'glow', color: 0xc48bff }, { at: 0.79, kind: 'dust', r: 2.4, shake: 0.3 }, { at: 0.79, kind: 'flash', r: 1.6, color: 0xffffff, fwd: 1.2 }, { at: 0.8, kind: 'shock', r: 3.5 }, { at: 0.8, kind: 'cracks', r: 1.8, fwd: 1.0 }] },
+  }, fx: [{ at: 0.05, kind: 'sfx', key: 'titan_chop_windup' }, { at: 0.78, kind: 'sfx', key: 'titan_chop' }, { at: 0.5, kind: 'ring', r: 1.0, color: 0xc48bff }, { at: 0.55, kind: 'glow', color: 0xc48bff }, { at: 0.79, kind: 'dust', r: 2.4, shake: 0.3 }, { at: 0.79, kind: 'flash', r: 1.6, color: 0xffffff, fwd: 1.2 }, { at: 0.8, kind: 'shock', r: 3.5 }, { at: 0.8, kind: 'cracks', r: 1.8, fwd: 1.0 }] },
   unstoppable_footwork: { dur: 0.7, pose(u, P) {    // fast footwork: quick alternating steps, arms pumping
     const f = Math.sin(u * Math.PI * 8);
     P.lLeg = f * 0.8; P.rLeg = -f * 0.8; P.lShin = Math.max(0, -f) * 1.2; P.rShin = Math.max(0, f) * 1.2; P.rArm = f * 0.7; P.lArm = -f * 0.7; P.bob = Math.abs(f) * 0.1;
-  }, fx: [{ at: 0.1, kind: 'dust', r: 0.8 }, { at: 0.3, kind: 'glow', color: 0x5ad8ff }, { at: 0.4, kind: 'dust', r: 0.8 }, { at: 0.7, kind: 'dust', r: 0.8 }] },
+  }, fx: [{ at: 0.08, kind: 'sfx', key: 'unstoppable_footwork' }, { at: 0.1, kind: 'dust', r: 0.8 }, { at: 0.3, kind: 'glow', color: 0x5ad8ff }, { at: 0.4, kind: 'dust', r: 0.8 }, { at: 0.7, kind: 'dust', r: 0.8 }] },
   berserkers_roar: { dur: 0.9, pose(u, P) {         // head thrown back, arms wide, the whole body shaking with it
     P.bodyX = kf(u, [[0, 0], [0.35, -0.4], [0.8, -0.35], [1, 0]]); P.head = kf(u, [[0, 0], [0.35, -0.6], [0.8, -0.6], [1, 0]]);
     P.rArm = kf(u, [[0, 0], [0.35, -1.9], [0.8, -1.8], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.35, -1.9], [0.8, -1.8], [1, 0]]);
     P.rArmZ = kf(u, [[0, 0], [0.35, -1.3], [0.8, -1.2], [1, 0]]); P.lArmZ = kf(u, [[0, 0], [0.35, 1.3], [0.8, 1.2], [1, 0]]);
     P.bodyZ = Math.sin(u * 50) * 0.03 * kf(u, [[0.3, 0], [0.4, 1], [0.8, 1], [0.9, 0]]);
-  }, fx: [{ at: 0.4, kind: 'shock', r: 4.0, color: 0xff6a3c, shake: 0.1 }, { at: 0.4, kind: 'glow', color: 0xff7a1a }, { at: 0.7, kind: 'ring', r: 2.2, color: 0xff8a4a }] },
+  }, fx: [{ at: 0.38, kind: 'sfx', key: 'berserkers_roar' }, { at: 0.4, kind: 'shock', r: 4.0, color: 0xff6a3c, shake: 0.1 }, { at: 0.4, kind: 'glow', color: 0xff7a1a }, { at: 0.7, kind: 'ring', r: 2.2, color: 0xff8a4a }] },
   perfect_masterstroke: { dur: 1.15, pose(u, P) {   // planted stance, weapon drawn far back, a beat, one clean cut
     P.bob = -crouch(u, 0.18, 0.5);
     P.rArm = kf(u, [[0, 0], [0.35, 1.4], [0.58, 1.5], [0.7, -1.6], [1, 0]]); P.rArmZ = kf(u, [[0, 0], [0.35, -0.9], [0.58, -1.0], [0.7, 0.8], [1, 0]]);
     P.lArm = kf(u, [[0, 0], [0.35, -0.6], [0.7, 0.5], [1, 0]]); P.bodyY = kf(u, [[0, 0], [0.35, -1.0], [0.58, -1.05], [0.7, 0.9], [1, 0]]);
     P.bodyX = kf(u, [[0, 0], [0.58, -0.1], [0.7, 0.4], [1, 0]]);
     P.lLeg = kf(u, [[0, 0], [0.4, -0.6], [1, 0]]); P.lShin = kf(u, [[0, 0], [0.4, 0.8], [1, 0]]); P.rLeg = kf(u, [[0, 0], [0.4, 0.5], [1, 0]]);
-  }, fx: [{ at: 0.6, kind: 'ring', r: 1.0, color: 0xfff1c8 }, { at: 0.6, kind: 'glow', color: 0xfff1c8 }, { at: 0.7, kind: 'arc', r: 2.8, spread: 2.6, color: 0xfff1c8 }, { at: 0.7, kind: 'flash', r: 1.8, color: 0xffffff, fwd: 1.5, shake: 0.2 }, { at: 0.7, kind: 'streak', fwd: 1.8, y: 1.0, len: 4.5 }] },
+  }, fx: [{ at: 0.3, kind: 'sfx', key: 'perfect_masterstroke_plant' }, { at: 0.68, kind: 'sfx', key: 'perfect_masterstroke' }, { at: 0.6, kind: 'ring', r: 1.0, color: 0xfff1c8 }, { at: 0.6, kind: 'glow', color: 0xfff1c8 }, { at: 0.7, kind: 'arc', r: 2.8, spread: 2.6, color: 0xfff1c8 }, { at: 0.7, kind: 'flash', r: 1.8, color: 0xffffff, fwd: 1.5, shake: 0.2 }, { at: 0.7, kind: 'streak', fwd: 1.8, y: 1.0, len: 4.5 }] },
 };
 function startAbilityAnim(rec, id) {
   const A = ABILITY_ANIMS[id], rig = rec.mesh.userData.rig;
   if (!A || !rig) return;
   rig.anim = { id, t: 0, dur: A.dur, fired: new Set() };
 }
+
+
+// ---------------------------------------------------------------------------
+// Sound: the game's WAV set (client/sfx) through Web Audio, with pitch and
+// volume variation, a little distance falloff from the player, and layered
+// cues per ability keyed to the same beats as the visual effects.
+// ---------------------------------------------------------------------------
+const sfx = (() => {
+  let ctx = null, master = null, buffers = {}, volume = 0.8, unlocked = false;
+  const FILES = ['attack_slash', 'attack_claw', 'hit_thud', 'magic_cast', 'heal_chime', 'cave_rock', 'thunder_roll', 'enemy_die',
+    'level_up', 'item_equip', 'ui_select', 'ui_open', 'ui_close', 'ui_error', 'footstep_dirt', 'footstep_stone', 'merc_command', 'coin_pickup', 'quest_complete', 'loot_item', 'target_select', 'forest_wind'];
+  function init() {
+    if (ctx) return;
+    try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; }
+    master = ctx.createGain(); master.gain.value = volume; master.connect(ctx.destination);
+    for (const n of FILES) fetch('sfx/' + n + '.wav').then(r => r.arrayBuffer()).then(b => ctx.decodeAudioData(b)).then(buf => { buffers[n] = buf; }).catch(() => {});
+  }
+  // Browsers only start audio after a gesture: unlock on the first click/key.
+  const unlock = () => { init(); if (ctx && ctx.state === 'suspended') ctx.resume(); unlocked = true; };
+  addEventListener('pointerdown', unlock, { once: false }); addEventListener('keydown', unlock, { once: false });
+  function play(name, o = {}) {
+    if (!ctx || !buffers[name] || volume <= 0) return;
+    let vol = (o.vol != null ? o.vol : 1);
+    if (o.x != null) { // distance from the local player: full within 6m, gone past 40m
+      const me = entityMeshes.get(myId);
+      if (me) { const d = Math.hypot(me.mesh.position.x - o.x, me.mesh.position.z - o.z); if (d > 40) return; vol *= d < 6 ? 1 : 1 - (d - 6) / 34; }
+    }
+    const src = ctx.createBufferSource(); src.buffer = buffers[name];
+    src.playbackRate.value = (o.rate || 1) * (1 + (Math.random() - 0.5) * (o.vary != null ? o.vary : 0.08));
+    const g = ctx.createGain(); g.gain.value = vol;
+    if (o.lowpass) { const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = o.lowpass; src.connect(f); f.connect(g); } else src.connect(g);
+    g.connect(master); src.start(ctx.currentTime + (o.delay || 0));
+  }
+  function setVolume(v) { volume = Math.max(0, Math.min(1, v)); if (master) master.gain.value = volume; try { localStorage.setItem('bk.sfx', String(volume)); } catch (e) {} }
+  return { play, setVolume, init, get ready() { return !!ctx; } };
+})();
+// Ability sound layers: [clip, options] lists fired at the beat given by `at`
+// in each animation's fx list (kind 'sfx').
+const ABILITY_SFX = {
+  heavy_swing:      [['attack_slash', { rate: 0.7, vol: 0.9 }], ['hit_thud', { rate: 0.8, delay: 0.12, vol: 0.9 }]],
+  cleave:           [['attack_slash', { rate: 0.85, vol: 1 }], ['attack_slash', { rate: 0.75, delay: 0.09, vol: 0.7 }]],
+  battle_rush:      [['footstep_dirt', { rate: 1.3, vol: 0.9 }], ['footstep_dirt', { rate: 1.4, delay: 0.12, vol: 0.9 }], ['attack_claw', { rate: 0.6, delay: 0.05, vol: 0.5, lowpass: 900 }]],
+  crushing_blow:    [['hit_thud', { rate: 0.55, vol: 1 }], ['cave_rock', { rate: 0.9, delay: 0.02, vol: 0.7 }]],
+  momentum:         [['ui_select', { rate: 1.2, vol: 0.6 }], ['heal_chime', { rate: 1.4, delay: 0.05, vol: 0.4 }]],
+  groundbreaker:    [['cave_rock', { rate: 0.7, vol: 1 }], ['thunder_roll', { rate: 1.4, delay: 0.03, vol: 0.7, lowpass: 700 }], ['hit_thud', { rate: 0.5, vol: 0.9 }]],
+  reckless_strike:  [['attack_claw', { rate: 0.8, vol: 0.9 }], ['attack_slash', { rate: 0.6, delay: 0.08, vol: 1 }], ['hit_thud', { rate: 0.7, delay: 0.16, vol: 0.8 }]],
+  heavy_riposte:    [['attack_slash', { rate: 1.3, vol: 0.9 }], ['item_equip', { rate: 1.1, delay: 0.06, vol: 0.5 }]],
+  weapon_flow:      [['attack_slash', { rate: 1.1, vol: 0.5 }], ['attack_slash', { rate: 1.25, delay: 0.2, vol: 0.5 }], ['magic_cast', { rate: 1.3, delay: 0.1, vol: 0.4 }]],
+  armor_splitter:   [['item_equip', { rate: 0.7, vol: 0.9 }], ['hit_thud', { rate: 0.9, delay: 0.05, vol: 0.9 }], ['coin_pickup', { rate: 0.6, delay: 0.08, vol: 0.4 }]],
+  savage_momentum:  [['merc_command', { rate: 0.8, vol: 0.9 }], ['magic_cast', { rate: 0.9, delay: 0.1, vol: 0.5 }]],
+  bonebreaker:      [['hit_thud', { rate: 0.75, vol: 1 }], ['attack_claw', { rate: 0.7, delay: 0.06, vol: 0.6 }], ['cave_rock', { rate: 1.3, delay: 0.1, vol: 0.4 }]],
+  whirlwind_cleave: [['attack_slash', { rate: 0.8, vol: 0.9 }], ['forest_wind', { rate: 1.6, vol: 0.5 }]],
+  final_swing:      [['attack_slash', { rate: 0.55, vol: 1 }], ['hit_thud', { rate: 0.5, delay: 0.1, vol: 1 }], ['enemy_die', { rate: 0.8, delay: 0.14, vol: 0.5, lowpass: 1200 }]],
+  bloodrush:        [['merc_command', { rate: 0.7, vol: 0.8 }], ['thunder_roll', { rate: 2.0, delay: 0.05, vol: 0.4, lowpass: 900 }]],
+  shatter_guard:    [['item_equip', { rate: 0.6, vol: 1 }], ['hit_thud', { rate: 0.6, delay: 0.04, vol: 1 }], ['cave_rock', { rate: 1.2, delay: 0.08, vol: 0.6 }]],
+  titan_chop_windup: [['magic_cast', { rate: 0.6, vol: 0.6, lowpass: 1500 }]],
+  titan_chop:       [['attack_slash', { rate: 0.5, vol: 1 }], ['hit_thud', { rate: 0.45, delay: 0.08, vol: 1 }], ['thunder_roll', { rate: 1.1, delay: 0.1, vol: 0.8, lowpass: 800 }], ['cave_rock', { rate: 0.8, delay: 0.1, vol: 0.7 }]],
+  unstoppable_footwork: [['footstep_dirt', { rate: 1.5, vol: 0.8 }], ['footstep_dirt', { rate: 1.6, delay: 0.1, vol: 0.8 }], ['footstep_dirt', { rate: 1.5, delay: 0.2, vol: 0.8 }], ['ui_select', { rate: 1.4, delay: 0.05, vol: 0.4 }]],
+  berserkers_roar:  [['merc_command', { rate: 0.6, vol: 1 }], ['thunder_roll', { rate: 1.3, delay: 0.1, vol: 0.7, lowpass: 900 }]],
+  perfect_masterstroke_plant: [['item_equip', { rate: 0.9, vol: 0.6 }], ['magic_cast', { rate: 0.8, vol: 0.5 }]],
+  perfect_masterstroke: [['attack_slash', { rate: 0.6, vol: 1 }], ['attack_slash', { rate: 1.1, delay: 0.04, vol: 0.7 }], ['hit_thud', { rate: 0.5, delay: 0.1, vol: 1 }], ['heal_chime', { rate: 0.7, delay: 0.16, vol: 0.5 }]],
+};
+function playAbilitySfx(key, x, z) { for (const [clip, o] of (ABILITY_SFX[key] || [])) sfx.play(clip, { ...o, x, z }); }
 
 // ---- Weapon trail: a fading ribbon swept by the weapon during an ability ----
 const TRAIL_N = 14;
@@ -5702,6 +5766,7 @@ function crackTexture() {
   crackTex = new THREE.CanvasTexture(cv); return crackTex;
 }
 function spawnFx(kind, x, y, z, yaw, o = {}) {
+  if (kind === 'sfx') { playAbilitySfx(o.key, x, z); return; }
   const life = o.life || { dust: 0.55, ring: 0.5, shock: 0.6, flash: 0.22, sparks: 0.6, arc: 0.35, cracks: 4.0, impact: 0.25, streak: 0.3, glow: 0.5 }[kind] || 0.5;
   let obj;
   if (kind === 'dust' || kind === 'ring' || kind === 'shock') {
@@ -5911,6 +5976,7 @@ function onEvent(m) {
   switch (m.kind) {
     case 'xp': flyText(`+${m.amount} XP`, 'xp'); break;
     case 'levelup':
+      sfx.play('level_up', { vol: 0.9 });
       flyText(`${m.cls || 'Level'} ${m.level}!`, 'heal');
       addChat('Class', `You are now a level ${m.level} ${m.cls || ''}.`, true); break;
     case 'ability': {
@@ -5918,7 +5984,7 @@ function onEvent(m) {
       if (m.by === myId) { flyText(m.name, 'xp'); gcdUntil = performance.now() + ((abilityClass && abilityClass.gcd) || 1.5) * 1000; } break;
     }
     case 'learned':
-      { const lrec = entityMeshes.get(myId); if (lrec && m.id === 'momentum') startAbilityAnim(lrec, 'momentum'); }
+      { const lrec = entityMeshes.get(myId); if (lrec && m.id === 'momentum') startAbilityAnim(lrec, 'momentum'); sfx.play('quest_complete', { rate: 1.1, vol: 0.7 }); }
       flyText(`Learned ${m.name}!`, 'heal'); addChat('Trainer', `You learn ${m.name} for ${m.price} gp. It's in your spellbook (B).`, true); break;
     case 'medlevel':
       flyText(`Meditation level ${m.level}!`, 'heal');
@@ -5954,7 +6020,8 @@ function onEvent(m) {
     case 'equip': addChat('', `You equip the ${m.item}.`, true); break;
     case 'unequip': addChat('', `You remove the ${m.item}.`, true); break;
     case 'sold': addChat('Merchant', m.text, true); document.getElementById('cgold').textContent = m.gold; break;
-    case 'notice': addChat('', m.text, true); flyText('Cannot equip', 'dmg'); break;
+    case 'notice':
+      sfx.play('ui_error', { vol: 0.35, rate: 1.1 }); addChat('', m.text, true); flyText('Cannot equip', 'dmg'); break;
     case 'mineswing': {
       // A swing that produced nothing still needs to read as effort.
       const rec = entityMeshes.get(myId);
@@ -6019,7 +6086,9 @@ function showHit(m) {
   const rec = entityMeshes.get(m.target);
   if (!rec) return;
   // Something struck: a burst on the target, bigger and gold on a crit.
-  if (m.dmg > 0) { const mp = rec.mesh.position; spawnFx('impact', mp.x, mp.y, mp.z, 0, { color: m.crit ? 0xffd27a : 0xffe0c0, sparkColor: m.crit ? 0xffb020 : 0xff6a4a, n: m.crit ? 12 : 6, y: 1.1 }); }
+  const mp = rec.mesh.position;
+  if (m.dmg > 0) { spawnFx('impact', mp.x, mp.y, mp.z, 0, { color: m.crit ? 0xffd27a : 0xffe0c0, sparkColor: m.crit ? 0xffb020 : 0xff6a4a, n: m.crit ? 12 : 6, y: 1.1 }); sfx.play('hit_thud', { x: mp.x, z: mp.z, rate: m.crit ? 1.15 : 0.95, vol: m.crit ? 1 : 0.7 }); if (m.crit) sfx.play('attack_slash', { x: mp.x, z: mp.z, rate: 1.3, vol: 0.5 }); }
+  else sfx.play('attack_claw', { x: mp.x, z: mp.z, rate: 1.4, vol: 0.35, lowpass: 2500 }); // a whiff
   tmpV.copy(rec.mesh.position); tmpV.y += 2.0; tmpV.project(camera);
   // Old School RuneScape hitsplat: blue "0" on a miss, red on a hit. (Skipped if
   // damage numbers are turned off in the menu; the hit flash still plays.)
@@ -6477,6 +6546,8 @@ document.getElementById('optSplats').onclick = (e) => {
   showSplats = !showSplats;
   e.target.classList.toggle('on', showSplats); e.target.textContent = showSplats ? 'On' : 'Off';
 };
+document.getElementById('optSfx').oninput = (e) => sfx.setVolume(+e.target.value / 100);
+try { const v = localStorage.getItem('bk.sfx'); if (v != null) { document.getElementById('optSfx').value = Math.round(+v * 100); sfx.setVolume(+v); } } catch (e) {}
 
 const dialogueEl = document.getElementById('dialogue');
 function rewardLine(r) {
