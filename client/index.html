@@ -642,7 +642,7 @@ let critters = [];               // ambient flying bugs (butterflies by day, mot
 let targetRing = null;
 let hemiLight = null, sunLight = null;
 let caveMix = 0; // 0 = surface, 1 = deep underground; smoothly eased by player depth
-const _caveFog = new THREE.Color(0x0a0c10);
+const _caveFog = new THREE.Color(0x161a22); // dark blue-grey, not void-black, so distance reads as dim rock
 let sky = {};
 let bridgeInfos = []; // arched bridges: {x,z,phi,L,archH,deckW} for walking up & over
 // Height of the bridge deck at world (x,z), or 0 if not on any bridge span.
@@ -833,11 +833,12 @@ function updateSky(dt) {
   if (caveMix > 0.001) {
     scene.fog.color.lerp(_caveFog, caveMix);
     scene.background.lerp(_caveFog, caveMix);
-    scene.fog.near = scene.fog.near * (1 - caveMix) + 6 * caveMix;
-    scene.fog.far = scene.fog.far * (1 - caveMix) + 70 * caveMix;
-    // Keep a little sky fill so the cave is dim, not pitch black — the point
-    // lights do the rest.
-    hemiLight.intensity = hemiLight.intensity * (1 - caveMix) + 0.85 * caveMix;
+    // Rooms are ~30m across: keep the fog well past that so a whole room and
+    // the tunnel mouths leading out of it are readable, fading to dark beyond.
+    scene.fog.near = scene.fog.near * (1 - caveMix) + 18 * caveMix;
+    scene.fog.far = scene.fog.far * (1 - caveMix) + 150 * caveMix;
+    // Enough sky fill that rock, floor and passages read; the sun is gone.
+    hemiLight.intensity = hemiLight.intensity * (1 - caveMix) + 1.15 * caveMix;
     sunLight.intensity *= (1 - 0.85 * caveMix);
   }
 
@@ -1436,7 +1437,7 @@ function clearRadius(p) {
   if (p.kind === 'safe') return (p.r || 9) + 3;
   if (p.kind === 'boss') return 15;
   if (p.kind === 'gate') return 11;
-  if (p.kind === 'cave') return 8;
+  if (p.kind === 'cave') return 18;   // keep the forest off the cave mouth so the way in reads
   return 7;
 }
 
@@ -1991,6 +1992,7 @@ function buildPoi(p) {
   // opening is black, from inside the cave it is full of daylight.
   const addCaveMouth = (opts) => {
     const faceOut = opts.faceOut || 0;          // yaw so the opening faces the player
+    const fz = opts.front || 0;                 // push the opening out in front of the rock lumps
     const m = new THREE.Group();
     m.rotation.y = faceOut;
     g.add(m);
@@ -2022,32 +2024,32 @@ function buildPoi(p) {
     // Jamb stones around the opening.
     for (const sgn of [-1, 1]) {
       const jamb = new THREE.Mesh(new THREE.IcosahedronGeometry(1.9, 0), rock());
-      jamb.position.set(sgn * (hw + 1.1), 1.9, 0.5);
+      jamb.position.set(sgn * (hw + 1.1), 1.9, 0.5 + fz);
       jamb.scale.set(0.75, 1.5, 0.8); jamb.rotation.y = sgn * 0.6;
       jamb.castShadow = true; m.add(jamb);
     }
     const lintel = new THREE.Mesh(new THREE.IcosahedronGeometry(2.3, 0), rock());
-    lintel.position.set(0, (opts.mouthH || 4.2) + 0.5, 0.2);
+    lintel.position.set(0, (opts.mouthH || 4.2) + 0.5, 0.2 + fz);
     lintel.scale.set(1.5, 0.6, 0.8); lintel.castShadow = true; m.add(lintel);
 
     // What you see through it.
     const inner = new THREE.Mesh(
       new THREE.ExtrudeGeometry(shape, { depth: 0.3, bevelEnabled: false }),
       new THREE.MeshBasicMaterial({ color: opts.throat, side: THREE.DoubleSide }));
-    inner.position.z = 0.9; m.add(inner);
+    inner.position.z = 0.9 + fz; m.add(inner);
 
     // A short throat behind the opening so it reads as depth, not a decal.
     const throat = new THREE.Mesh(new THREE.CylinderGeometry(hw * 1.05, hw * 1.15, 7, 10, 1, true),
       new THREE.MeshBasicMaterial({ color: opts.throat, side: THREE.BackSide }));
-    throat.rotation.x = Math.PI / 2; throat.position.set(0, sh * 0.9, -2.6); m.add(throat);
+    throat.rotation.x = Math.PI / 2; throat.position.set(0, sh * 0.9, -2.6 + fz); m.add(throat);
 
     if (opts.glow) {
       const light = new THREE.PointLight(opts.glow, opts.glowPower || 1.4, opts.glowRange || 26);
-      light.position.set(0, 2.6, 1.6); m.add(light);
+      light.position.set(0, 2.6, 1.6 + fz); m.add(light);
       const haze = new THREE.Mesh(
         new THREE.ExtrudeGeometry(shape, { depth: 0.1, bevelEnabled: false }),
-        new THREE.MeshBasicMaterial({ color: opts.glow, transparent: true, opacity: 0.22, depthWrite: false }));
-      haze.position.z = 1.35; haze.scale.set(1.15, 1.12, 1); m.add(haze);
+        new THREE.MeshBasicMaterial({ color: opts.glow, transparent: true, opacity: opts.hazeOpacity != null ? opts.hazeOpacity : 0.22, depthWrite: false }));
+      haze.position.z = 1.35 + fz; haze.scale.set(1.15, 1.12, 1); m.add(haze);
     }
 
     // Rubble spilling out of the mouth.
@@ -2158,11 +2160,14 @@ function buildPoi(p) {
     case 'cave': {
       // Face the opening back toward the middle of the zone, so players walking
       // up to it see a mouth rather than the back of a hill.
+      // Lighter rock so the black opening actually contrasts, a wide tall arch
+      // you can see from across the clearing, and a warm torch-glow in it so
+      // the way down reads from a distance.
       addCaveMouth({
         faceOut: Math.atan2(-p.x, -p.z),
-        rock: 0x3a3f36, throat: 0x05070a,
-        width: 9.5, mouthW: 5.2, mouthH: 6.2,
-        glow: 0x2a3550, glowPower: 0.8, glowRange: 14,
+        rock: 0x5d605a, throat: 0x05070a,
+        width: 10, mouthW: 6, mouthH: 6.6, front: 7, hazeOpacity: 0.05,
+        glow: 0xffb060, glowPower: 2.2, glowRange: 30,
       });
       break;
     }
@@ -2338,17 +2343,31 @@ function polyBBox(poly) {
   for (const p of poly) { mnx = Math.min(mnx, p.x); mxx = Math.max(mxx, p.x); mnz = Math.min(mnz, p.z); mxz = Math.max(mxz, p.z); }
   return { mnx, mxx, mnz, mxz, W: mxx - mnx, D: mxz - mnz, cx: (mnx + mxx) / 2, cz: (mnz + mxz) / 2 };
 }
+// Exact cave shape test (mirrors the server): inside any room disc or tunnel corridor.
+function segDist2D(x, z, ax, az, bx, bz) {
+  const dx = bx - ax, dz = bz - az, L2 = dx * dx + dz * dz || 1;
+  const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / L2));
+  return Math.hypot(x - (ax + dx * t), z - (az + dz * t));
+}
+// `grow` dilates the shape (used for the floor, so it runs under the wall rock
+// with no gaps at the edge to see the void through).
+function caveShapeContains(cave, x, z, grow = 0) {
+  for (const r of cave.rooms) if (Math.hypot(x - r.x, z - r.z) < r.r + grow) return true;
+  for (const t of cave.tunnels) if (segDist2D(x, z, t.ax, t.az, t.bx, t.bz) < t.half + grow) return true;
+  return false;
+}
 function buildCaveRegion(cave) {
-  const poly = cave.boundary, fY = cave.floorY, cY = cave.ceilingY;
-  const bb = polyBBox(poly), W = bb.W + 12, D = bb.D + 12, cx = bb.cx, cz = bb.cz;
-  // Dark faceted stone floor, clipped to the cave outline, at the chamber floor.
-  const seg = Math.max(24, Math.round(Math.max(W, D) / 5));
+  const fY = cave.floorY, cY = cave.ceilingY, wallH = cY - fY;
+  const rooms = cave.rooms, tunnels = cave.tunnels;
+  const bb = polyBBox(cave.boundary), W = bb.W + 24, D = bb.D + 24, cx = bb.cx, cz = bb.cz;
+  // --- Floor: one dark faceted stone mesh clipped to the EXACT room/tunnel shape ---
+  const seg = Math.max(30, Math.round(Math.max(W, D) / 4));
   const src = new THREE.PlaneGeometry(W, D, seg, seg).toNonIndexed(); src.rotateX(-Math.PI / 2);
   const sp = src.attributes.position, positions = [], colors = [], uvs = [], c = new THREE.Color();
   for (let i = 0; i < sp.count; i += 3) {
     const mxw = (sp.getX(i) + sp.getX(i + 1) + sp.getX(i + 2)) / 3 + cx;
     const mzw = (sp.getZ(i) + sp.getZ(i + 1) + sp.getZ(i + 2)) / 3 + cz;
-    if (!pointInPoly(mxw, mzw, poly)) continue;
+    if (!caveShapeContains(cave, mxw, mzw, 4.5)) continue;   // dilated: floor extends under the walls
     const j = 0.85 + Math.random() * 0.3; c.setRGB(0.34 * j, 0.35 * j, 0.4 * j);
     for (let k = 0; k < 3; k++) { const lx = sp.getX(i + k), lz = sp.getZ(i + k); positions.push(lx, fY, lz); colors.push(c.r, c.g, c.b); uvs.push((lx + W / 2) / 7, (lz + D / 2) / 7); }
   }
@@ -2358,25 +2377,84 @@ function buildCaveRegion(cave) {
   fg.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2)); fg.computeVertexNormals();
   const floor = new THREE.Mesh(fg, new THREE.MeshStandardMaterial({ map: loadTexture('dark_stone', 1, 1), vertexColors: true, flatShading: true, roughness: 1 }));
   floor.position.set(cx, 0, cz); floor.receiveShadow = true; floor.userData.isGround = true; scene.add(floor);
-  // Rock walls tracing the outline (interior rooms/tunnels stay open), rising
-  // from the floor, and a dark ceiling capping the chamber.
-  buildCaveWalls(poly, cY - fY, fY);
-  const ceilMap = loadTexture('rock', W / 12, D / 12);
-  const ceil = new THREE.Mesh(new THREE.PlaneGeometry(W, D), new THREE.MeshStandardMaterial({ map: ceilMap, color: 0x3a3d44, roughness: 1, side: THREE.DoubleSide }));
-  ceil.rotation.x = Math.PI / 2; ceil.position.set(cx, cY, cz); scene.add(ceil);
-  // Crystals / ore veins / mushrooms on the floor; stalactites from the ceiling.
-  placeInstances(cave.scatter || [], () => fY);
-  placeInstances(cave.hanging || [], () => cY - 0.1);
-  // Cave lighting: a warm glow at the entrance plus a grid of cool crystal glows
-  // across the whole chamber so it reads as a lit cave, not a black void.
-  const el = new THREE.PointLight(0xffd9a0, 2.4, 70); el.position.set(cave.entrance.x, fY + 5, cave.entrance.z); scene.add(el);
-  const gx = 3, gz = 4;
-  for (let ix = 0; ix < gx; ix++) for (let iz = 0; iz < gz; iz++) {
-    const lx = bb.mnx + bb.W * (ix + 0.5) / gx, lz = bb.mnz + bb.D * (iz + 0.5) / gz;
-    if (!pointInPoly(lx, lz, poly)) continue;
-    const warm = (ix + iz) % 2 === 0;
-    const pl = new THREE.PointLight(warm ? 0x9fd0e8 : 0x8fb8d8, 1.5, 80);
-    pl.position.set(lx, fY + 7, lz); scene.add(pl);
+  // --- Walls: boulders around each room's rim, LEAVING A GAP wherever a tunnel
+  // attaches, and along both sides of every tunnel (not intruding into rooms).
+  // That's what makes the passages readable: you can see the openings. ---
+  const walls = [];
+  const inTunnelMouth = (x, z) => tunnels.some(t => segDist2D(x, z, t.ax, t.az, t.bx, t.bz) < t.half + 0.8);
+  const inRoom = (x, z) => rooms.some(r => Math.hypot(x - r.x, z - r.z) < r.r - 0.5);
+  for (const r of rooms) {
+    const n = Math.max(12, Math.round((2 * Math.PI * r.r) / 2.2));
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2, px = r.x + Math.cos(a) * r.r, pz = r.z + Math.sin(a) * r.r;
+      if (inTunnelMouth(px, pz)) continue;                     // the doorway to a tunnel
+      const ox = Math.cos(a), oz = Math.sin(a);
+      for (const off of [0.5, 1.9]) walls.push({ x: px + ox * off, z: pz + oz * off, r: Math.random() * 6.28, s: 0.85 + Math.random() * 0.4, m: ((i + (off > 1 ? 1 : 0)) % 2) ? 'Wall_Boulder_Tall' : 'Wall_Boulder_Wide' });
+    }
+  }
+  for (const t of tunnels) {
+    const dx = t.bx - t.ax, dz = t.bz - t.az, len = Math.hypot(dx, dz) || 1, ux = dx / len, uz = dz / len, nx = -uz, nz = ux;
+    const n = Math.max(2, Math.round(len / 2.2));
+    for (let i = 0; i <= n; i++) {
+      const u = i / n, px = t.ax + dx * u, pz = t.az + dz * u;
+      for (const s of [-1, 1]) {
+        const wx = px + nx * (t.half + 0.5) * s, wz = pz + nz * (t.half + 0.5) * s;
+        if (inRoom(wx, wz)) continue;                            // inside a room: no wall here
+        walls.push({ x: wx, z: wz, r: Math.random() * 6.28, s: 0.8 + Math.random() * 0.35, m: (i % 2) ? 'Wall_Boulder_Tall' : 'Wall_Boulder_Wide' });
+      }
+    }
+  }
+  // Size the boulders to the room height, rooted at the cave floor.
+  const byModel = {};
+  for (const w of walls) (byModel[w.m] || (byModel[w.m] = [])).push(w);
+  const mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
+  for (const model of Object.keys(byModel)) {
+    const list = byModel[model], parts = bakeModel(model, wallH * (model === 'Wall_Boulder_Tall' ? 1.25 : 0.95));
+    if (!parts) continue;
+    for (const part of parts) {
+      const im = new THREE.InstancedMesh(part.geo, part.mat, list.length);
+      im.castShadow = im.receiveShadow = true;
+      list.forEach((o, i) => { q.setFromAxisAngle(UP, o.r); sc.set(o.s, o.s, o.s); mtx.compose(new THREE.Vector3(o.x, fY, o.z), q, sc); im.setMatrixAt(i, mtx); });
+      scene.add(im);
+    }
+  }
+  // --- Ceiling: a dark rock lid over the ENTIRE underground, far past the cave
+  // footprint. From inside, looking up past a small lid's edge saw straight
+  // through the single-sided surface ground to the trees and sky. ---
+  const b = zone.bounds, LW = (b.maxX - b.minX) + 400, LD = (b.maxZ - b.minZ) + 400;
+  const lcx = (b.minX + b.maxX) / 2, lcz = (b.minZ + b.maxZ) / 2, tun = zone.tunnel;
+  // Built as a clipped grid so the descent tunnel gets a hole through the lid.
+  const lg = new THREE.PlaneGeometry(LW, LD, Math.round(LW / 6), Math.round(LD / 6)).toNonIndexed(); lg.rotateX(Math.PI / 2);
+  const lp = lg.attributes.position, lpos = [], luv = [];
+  for (let i = 0; i < lp.count; i += 3) {
+    const mxw = (lp.getX(i) + lp.getX(i + 1) + lp.getX(i + 2)) / 3 + lcx, mzw = (lp.getZ(i) + lp.getZ(i + 1) + lp.getZ(i + 2)) / 3 + lcz;
+    if (tun && segDist2D(mxw, mzw, tun.ax, tun.az, tun.bx, tun.bz) < tun.half + 2.5) continue; // tunnel shaft
+    for (let k = 0; k < 3; k++) { const lx = lp.getX(i + k), lz = lp.getZ(i + k); lpos.push(lx, 0, lz); luv.push((lx + LW / 2) / 12, (lz + LD / 2) / 12); }
+  }
+  const lgeo = new THREE.BufferGeometry();
+  lgeo.setAttribute('position', new THREE.Float32BufferAttribute(lpos, 3));
+  lgeo.setAttribute('uv', new THREE.Float32BufferAttribute(luv, 2)); lgeo.computeVertexNormals();
+  const ceil = new THREE.Mesh(lgeo, new THREE.MeshStandardMaterial({ map: loadTexture('rock', 1, 1), color: 0x3a3d44, roughness: 1, side: THREE.DoubleSide }));
+  ceil.position.set(lcx, cY, lcz); scene.add(ceil);
+  // And a matching dark "bedrock" skirt below the floor so nothing shows through
+  // any seam from underneath either.
+  const bed = new THREE.Mesh(new THREE.PlaneGeometry(LW, LD), new THREE.MeshStandardMaterial({ color: 0x14161b, roughness: 1, side: THREE.DoubleSide }));
+  bed.rotation.x = -Math.PI / 2; bed.position.set((b.minX + b.maxX) / 2, fY - 0.6, (b.minZ + b.maxZ) / 2); scene.add(bed);
+  // --- Dressing, only where there's actually floor/ceiling (inside the shape),
+  // so nothing floats in the solid rock between rooms ---
+  const inside = o => caveShapeContains(cave, o.x, o.z);
+  placeInstances((cave.scatter || []).filter(inside), () => fY);
+  placeInstances((cave.hanging || []).filter(inside), () => cY - 0.05);
+  // --- Lighting: a warm glow at the entrance, a cool crystal glow in every room ---
+  const el = new THREE.PointLight(0xffd9a0, 2.4, 70); el.position.set(cave.entrance.x, fY + 4, cave.entrance.z); scene.add(el);
+  rooms.forEach((r, i) => {
+    const pl = new THREE.PointLight(i % 2 ? 0xa8d8f0 : 0x9cc4e4, 2.6, r.r * 3.2);
+    pl.position.set(r.x, fY + wallH - 0.6, r.z); scene.add(pl);
+  });
+  // Light the tunnels too so the passages between rooms are visible, not black gaps.
+  for (const t of tunnels) {
+    const pl = new THREE.PointLight(0x9cc4e4, 1.6, 40);
+    pl.position.set((t.ax + t.bx) / 2, fY + wallH - 0.8, (t.az + t.bz) / 2); scene.add(pl);
   }
 }
 // A natural descending rock tunnel from the surface mouth down to the cave
@@ -4118,6 +4196,18 @@ function updateControls(dt) {
     }
     // Nothing along the line was inside: look straight down at the player.
     if (!placed) { cx = px; cz = pz; cy = Math.max(cy, py + 8); }
+  }
+  // Underground the third-person camera would rise through the cave roof and
+  // stare at the top of the rock lid (everything went black). Keep it below the
+  // ceiling and pulled in close so it stays inside the chamber.
+  const uc = (zone.caves || [])[0];
+  if (uc && py < uc.floorY + 6) {
+    const lid = uc.ceilingY - 0.7;
+    if (cy > lid) {
+      cy = lid;
+      // pull the camera toward the player so a low, close shot still frames them
+      const k = 0.62; cx = px + (cx - px) * k; cz = pz + (cz - pz) * k;
+    }
   }
   camera.position.set(cx, cy, cz);
   camera.lookAt(px, py + 1.6, pz);

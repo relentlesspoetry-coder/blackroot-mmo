@@ -59,7 +59,7 @@ export function clearRadiusS(p) {
   if (p.kind === 'safe') return (p.r || 9) + 3;
   if (p.kind === 'boss') return 15;
   if (p.kind === 'gate') return 11;
-  if (p.kind === 'cave') return 9;
+  if (p.kind === 'cave') return 18;   // keep the forest off the cave mouth so the way in reads
   return 7;
 }
 

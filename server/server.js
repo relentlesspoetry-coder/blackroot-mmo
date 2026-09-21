@@ -170,7 +170,7 @@ buildSeamlessWorld();
 // surface play is unchanged.
 // ---------------------------------------------------------------------------
 const CAVE_FLOOR_Y = -22;
-const CAVE_HEIGHT = 5.5;   // a low, close cave roof so stalactites read overhead
+const CAVE_HEIGHT = 7;     // a close cave roof (stalactites read overhead) with room for the camera
 const TUNNEL_HALF = 7;
 function buildCaveIntoWorld() {
   const cave = hiddencave, w = darkwoods;
@@ -183,18 +183,41 @@ function buildCaveIntoWorld() {
   // so you descend right where the cave mouth already is. The entrance room is
   // dropped a little south of the mouth so the tunnel is a short walkable ramp.
   const mouthPoi = (w.pois || []).find(p => p.key === 'cave') || { x: -102, z: 98.6 };
+  // The surface cave-mouth rock face opens toward the zone centre; you walk INTO
+  // it heading away from the centre. Run the tunnel that same way, into the rock
+  // face, so the arched opening is the actual way down.
+  const ml = Math.hypot(mouthPoi.x, mouthPoi.z) || 1, dirX = mouthPoi.x / ml, dirZ = mouthPoi.z / ml;
+  const entX = mouthPoi.x + dirX * 26, entZ = mouthPoi.z + dirZ * 26;
   const ent0 = cave.spawn;                                 // native entrance-room position
-  offsetZone(cave, mouthPoi.x - ent0.x, (mouthPoi.z + 22) - ent0.z);
+  const ox = entX - ent0.x, oz = entZ - ent0.z;
+  offsetZone(cave, ox, oz);
   cave._scatter = generateScatter(cave);                 // crystals / ore / mushrooms
   cave._hanging = generateHanging(cave);                 // stalactites
   const ent = { x: cave.spawn.x, z: cave.spawn.z };      // tunnel meets the chamber here
   const mouth = { x: mouthPoi.x, z: mouthPoi.z };        // the surface cave entrance
+  // The EXACT walkable shape: the cavern's circular rooms plus the corridors
+  // joining them (offsetZone doesn't touch `cavern`, so offset them here). This
+  // is what floor, containment and the client's geometry all use — not the
+  // approximate traced outline, whose gaps let players fall out of the cave and
+  // whose blobby edge sealed the tunnels with wall rock.
+  const rooms = cave.cavern.rooms.map(r => ({ key: r.key, x: r.x + ox, z: r.z + oz, r: r.r }));
+  const byKey = Object.fromEntries(rooms.map(r => [r.key, r]));
+  const tw = cave.cavern.tunnelWidth || 13;
+  const tunnels = cave.cavern.tunnels.map(t => {
+    const a = byKey[t.from], b = byKey[t.to];
+    return { from: t.from, to: t.to, ax: a.x, az: a.z, bx: b.x, bz: b.z, half: (t.w || tw) / 2 };
+  });
   w.caves = [{
-    boundary: cave.boundary, floorY: CAVE_FLOOR_Y, ceilingY: CAVE_FLOOR_Y + CAVE_HEIGHT,
+    boundary: cave.boundary, rooms, tunnels, floorY: CAVE_FLOOR_Y, ceilingY: CAVE_FLOOR_Y + CAVE_HEIGHT,
     cen: polyCentroid(cave.boundary), scatter: cave._scatter, hanging: cave._hanging, env: cave.env,
     entrance: ent,
   }];
   w.tunnel = { ax: mouth.x, az: mouth.z, bx: ent.x, bz: ent.z, half: TUNNEL_HALF, y0: 0, y1: CAVE_FLOOR_Y };
+  // The old portal mouth was dressed with boulders; any that sit on the tunnel
+  // (or crowd its approach) would block the way down — clear them.
+  const tseg = [{ x: mouth.x, z: mouth.z }, { x: ent.x, z: ent.z }];
+  w.rocks = (w.rocks || []).filter(r => closestOnPolyline(r.x, r.z, tseg).dist > r.r + TUNNEL_HALF + 2
+    && dist2(r.x, r.z, mouth.x, mouth.z) > (r.r + 14) ** 2);
   // Expand the world bounds so the underground chamber isn't clamped off (the
   // outdoor boundary polygon still fences surface players into the woods).
   const cb = cave.bounds, b = w.bounds;
@@ -207,13 +230,37 @@ function buildCaveIntoWorld() {
 }
 buildCaveIntoWorld();
 
-// Which cave (if any) a world point lies in. `underground` gates surface points
-// that sit ABOVE a cave (grass roof) from the chamber below — pass the entity's
-// current y so only descended entities resolve to the cave.
+// Is (x,z) inside the cave's exact walkable shape (any room disc or tunnel corridor)?
+function caveShapeContains(cave, x, z) {
+  for (const r of cave.rooms) if (dist2(x, z, r.x, r.z) < r.r * r.r) return true;
+  for (const t of cave.tunnels) {
+    if (closestOnPolyline(x, z, [{ x: t.ax, z: t.az }, { x: t.bx, z: t.bz }]).dist < t.half) return true;
+  }
+  return false;
+}
+// Nearest point of the cave shape to (x,z) — used to pull a strayed entity back in.
+function caveClamp(cave, x, z, radius) {
+  let best = null, bestD = Infinity;
+  for (const r of cave.rooms) {
+    const dx = x - r.x, dz = z - r.z, d = Math.hypot(dx, dz) || 1e-6, lim = r.r - radius;
+    const gap = d - lim;                          // how far outside this disc
+    if (gap < bestD) { bestD = gap; best = { x: r.x + (dx / d) * Math.min(d, lim), z: r.z + (dz / d) * Math.min(d, lim) }; }
+  }
+  for (const t of cave.tunnels) {
+    const c = closestOnPolyline(x, z, [{ x: t.ax, z: t.az }, { x: t.bx, z: t.bz }]);
+    const lim = t.half - radius, gap = c.dist - lim;
+    if (gap < bestD) {
+      let dx = x - c.x, dz = z - c.z, d = Math.hypot(dx, dz) || 1e-6;
+      bestD = gap; best = { x: c.x + (dx / d) * Math.min(d, lim), z: c.z + (dz / d) * Math.min(d, lim) };
+    }
+  }
+  return best;
+}
+// Which cave (if any) an UNDERGROUND entity is in. Surface points above a cave
+// (grass roof) never resolve to it — only descended entities do.
 function caveAt(zone, x, z, underground) {
   if (!underground) return null;
-  for (const c of (zone.caves || [])) if (pointInPoly(x, z, c.boundary)) return c;
-  return null;
+  return (zone.caves || [])[0] || null;   // one cave; being underground means being in it
 }
 // Distance along the tunnel corridor [0..1] and lateral offset, or null if outside it.
 function tunnelParam(zone, x, z) {
@@ -429,13 +476,12 @@ function resolveCollision(zone, ent, radius) {
   const underground = (ent.y || 0) < -6;
   const cave = caveAt(zone, ent.x, ent.z, underground) || (underground && ent.cave ? (zone.caves || [])[0] : null);
   const tp = tunnelParam(zone, ent.x, ent.z);
-  if (cave) {
-    // Keep inside the cave polygon.
-    if (!pointInPoly(ent.x, ent.z, cave.boundary)) {
-      const closed = cave.boundary.concat([cave.boundary[0]]);
-      const c = closestOnPolyline(ent.x, ent.z, closed);
-      let dx = cave.cen.x - c.x, dz = cave.cen.z - c.z, d = Math.hypot(dx, dz) || 1;
-      ent.x = c.x + (dx / d) * radius; ent.z = c.z + (dz / d) * radius;
+  if (cave && !(tp && tp.u < 0.98)) {
+    // Keep inside the exact room/tunnel shape (the descent tunnel is its own
+    // corridor and is handled below while you're still on the ramp).
+    if (!caveShapeContains(cave, ent.x, ent.z)) {
+      const c = caveClamp(cave, ent.x, ent.z, radius);
+      if (c) { ent.x = c.x; ent.z = c.z; }
     }
   } else if (tp && underground) {
     // In the tunnel: clamp to the corridor.
@@ -477,7 +523,7 @@ function spawnInRegion(zone, region, opts = {}) {
     const x = region.cx + Math.cos(a) * rr, z = region.cz + Math.sin(a) * rr;
     const b = zone.bounds;
     if (x < b.minX + 3 || x > b.maxX - 3 || z < b.minZ + 3 || z > b.maxZ - 3) continue;
-    if (cave) { if (!pointInPoly(x, z, cave.boundary)) continue; return { x, z }; } // underground: cave polygon only
+    if (cave) { if (!caveShapeContains(cave, x, z)) continue; return { x, z }; } // underground: rooms/tunnels only
     if (zone.boundary && !pointInPoly(x, z, zone.boundary)) continue;
     if (inSafeZone(zone, x, z)) continue;
     if (keepOut && dist2(x, z, zone.spawn.x, zone.spawn.z) < keepOut * keepOut) continue;
@@ -1514,7 +1560,7 @@ function zoneForClient(zone) {
     paths: zone.paths || (zone.path ? [zone.path] : []), rivers: zone.rivers || (zone.river ? [zone.river] : []),
     rocks: zone.rocks, hazards: zone.hazards, pools: zone.pools, chests: zone.chests,
     fishingSpots: zone.fishingSpots || [], campfires: zone.campfires || [],
-    caves: (zone.caves || []).map(c => ({ boundary: c.boundary, floorY: c.floorY, ceilingY: c.ceilingY,
+    caves: (zone.caves || []).map(c => ({ boundary: c.boundary, rooms: c.rooms, tunnels: c.tunnels, floorY: c.floorY, ceilingY: c.ceilingY,
       scatter: c.scatter || [], hanging: c.hanging || [], env: c.env, entrance: c.entrance })),
     tunnel: zone.tunnel || null,
     env: zone.env, enclosed: !!zone.enclosed, ceilingY: zone.ceilingY,
