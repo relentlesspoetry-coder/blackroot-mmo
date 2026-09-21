@@ -1537,6 +1537,7 @@ function moveMult(p) { let m = 1; for (const bf of Object.values(p.buffs)) if (b
 function addBuff(p, spec) { p.buffs[spec.id] = { ...spec, t: spec.dur, charges: spec.charges || 0, since: 0 }; }
 // A landed hit: damage, xp, splat, kill; momentum / savage triggers.
 function applyHit(p, m, dmg, crit) {
+  p.lastCombat = Date.now();
   if (m.vulnerable > 0 && dmg > 0) dmg = Math.round(dmg * 1.5);   // a stunned boss takes it hard
   if (dmg > 0) { m.hp -= dmg; m.provoked = true; if (!m.boss) { m.targetId = p.id; m.state = 'combat'; } } // class xp comes with the kill (killMonster), not per hit
   broadcast({ t: 'event', kind: 'hit', by: p.id, target: m.id, dmg, crit: !!crit, targetKind: 'monster' });
@@ -1760,9 +1761,10 @@ function stepClass(p, inCombat) {
 // ---------------------------------------------------------------------------
 // Hurt a player from any source (a monster, a hazard, a boss mechanic):
 // health, combat lockout, rage, the hit splat, and death.
+const LOGOUT_COMBAT_WAIT = 30;   // seconds out of combat before a player may log out
 function hurtPlayer(p, dmg, m, kind) {
   if (!p.alive || dmg <= 0) return;
-  p.hp -= dmg; p.combatTimer = REGEN.combatLockout;
+  p.hp -= dmg; p.combatTimer = REGEN.combatLockout; p.lastCombat = Date.now();
   if (classDef(p.cls).rage) addRage(p, dmg * classDef(p.cls).rage.damageTaken);
   if (m) engage(p, m);
   broadcast({ t: 'event', kind: 'hit', by: m ? m.id : null, target: p.id, dmg, targetKind: 'player', hitKind: kind || null });
@@ -1843,6 +1845,7 @@ function stepMonster(m) {
         let dmg = rollMonsterSwing(m.atkLevel || 1, m.atkBonus || 0, m.maxHit || 1, tcs.def, eq.def || 0);
         if (dmg > 0) dmg = Math.max(1, Math.round(dmg * incomingMult(target)));
         else addBuff(target, { id: 'riposte_ready', dur: 300 }); // a miss is a dodge: Heavy Riposte opens up
+        target.lastCombat = Date.now();
         if (dmg > 0) { target.hp -= dmg; target.combatTimer = REGEN.combatLockout; addRage(target, dmg * classDef(target.cls).rage.damageTaken); }   // pain feeds rage too
         engage(target, m);
         // Auto-retaliate: if the player isn't already fighting, strike back.
@@ -2086,6 +2089,11 @@ setInterval(() => {
   for (const m of monsters.values()) stepMonster(m);
   for (const zone of Object.values(ZONES)) stepHazards(bossCtx, zone, DT);
   for (const p of players.values()) stepPlayer(p);
+  for (const [id, p] of players) {   // bodies left behind by a mid-fight disconnect
+    if (p.lingerT == null) continue;
+    p.lingerT -= DT;
+    if (p.lingerT <= 0 || !p.alive) { players.delete(id); systemChat(`${p.name} has left the world.`); }
+  }
   for (const [id, it] of groundItems) { it.ttl -= DT; if (it.ttl <= 0) groundItems.delete(id); }
 
   const now = Date.now();
@@ -2105,6 +2113,7 @@ setInterval(() => {
           rage: Math.round(p.rage || 0), rageMax: p.rageMax || 0, momentum: p.momentum || 0,
           channel: p.channel ? p.channel.id : null, windup: p.windup ? p.windup.id : null,
           moving: p.moving, inSafe: !!p.inSafe, resting: !!p.resting,
+          combatWait: p.lastCombat ? Math.max(0, Math.ceil(LOGOUT_COMBAT_WAIT - (Date.now() - p.lastCombat) / 1000)) : 0,
           weapon: p.equipment.weapon || null,     // held item for the paperdoll
           look: lookOf(p) });                        // hair / outfit / colours + worn armour
       }
@@ -2433,6 +2442,13 @@ wss.on('connection', (ws) => {
       case 'questturnin': if (player && player.alive) turnInQuest(player, String(msg.id || '')); break;
       case 'questsync': if (player) sendQuests(player); break;
       case 'respawn': if (player && !player.alive && player.deathTimer <= 0) respawnPlayer(player); break;
+      case 'logout': {
+        if (!player) return;
+        const wait = player.lastCombat ? LOGOUT_COMBAT_WAIT - (Date.now() - player.lastCombat) / 1000 : 0;
+        if (player.alive && wait > 0) { send(ws, { t: 'event', kind: 'notice', text: `You can't log out in combat. Wait ${Math.ceil(wait)}s.` }); break; }
+        send(ws, { t: 'logout' }); players.delete(player.id); systemChat(`${player.name} has left the world.`); player = null;
+        break;
+      }
       case 'chat': {
         if (!player) return;
         const text = String(msg.msg || '').slice(0, 200);
@@ -2442,7 +2458,16 @@ wss.on('connection', (ws) => {
     }
   });
   ws.on('close', () => {
-    if (player) { players.delete(player.id); systemChat(`${player.name} has left the world.`); }
+    if (!player) return;
+    const wait = player.lastCombat ? LOGOUT_COMBAT_WAIT - (Date.now() - player.lastCombat) / 1000 : 0;
+    if (player.alive && wait > 0) {
+      // Closed the game mid-fight: the character stays in the world, defenceless,
+      // for the rest of the combat wait. Monsters may finish the job.
+      player.lingerT = wait; player.moveTo = null; player._nav = null; player.combatId = null;
+      systemChat(`${player.name} tried to flee the fight — their body lingers.`);
+      return;
+    }
+    players.delete(player.id); systemChat(`${player.name} has left the world.`);
   });
 });
 

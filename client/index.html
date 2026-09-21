@@ -413,6 +413,8 @@
       <div class="row"><span>Sound effects</span><input type="range" id="optSfx" min="0" max="100" value="80" style="width:120px;pointer-events:auto"></div>
       <div class="row"><span>Music</span><input type="range" id="optMusic" min="0" max="100" value="18" style="width:120px;pointer-events:auto"></div>
       <button class="resume" id="resumeBtn">Resume</button>
+      <button class="resume" id="logoutBtn" style="margin-top:6px; background:#4a2a2a; border-color:#7a3a3a">Log out</button>
+      <div id="logoutNote" style="display:none; margin-top:6px; font-size:12px; color:#ff9a7a; text-align:center"></div>
     </div>
   </div>
   <button id="bagBtn" title="Bag (I)">🎒<span class="cnt" id="bagCnt"></span></button>
@@ -1133,6 +1135,7 @@ function connect(name, look) {
 }
 
 function handle(m) {
+  if (m.t === 'logout') { location.reload(); return; }
   switch (m.t) {
     case 'welcome':
       myId = m.id; zone = m.zone; if (m.items) itemCatalog = m.items; startGame();
@@ -7464,6 +7467,15 @@ function openSettings() { settingsEl.classList.add('show'); }
 function closeSettings() { settingsEl.classList.remove('show'); }
 let showSplats = true; // toggled in the menu; showHit respects it
 document.getElementById('resumeBtn').onclick = closeSettings;
+// Logging out is refused for 30 s after any blow given or taken; the menu
+// shows the countdown so you know when you may leave.
+document.getElementById('logoutBtn').onclick = () => { ws?.send(JSON.stringify({ t: 'logout' })); };
+setInterval(() => {
+  const note = document.getElementById('logoutNote'), me = entityMeshes.get(myId), w = me && me.data ? (me.data.combatWait || 0) : 0;
+  const btn = document.getElementById('logoutBtn');
+  if (w > 0) { note.style.display = 'block'; note.textContent = `In combat — you can log out in ${w}s.`; btn.style.opacity = '0.5'; }
+  else { note.style.display = 'none'; btn.style.opacity = '1'; }
+}, 500);
 settingsEl.onclick = (e) => { if (e.target === settingsEl) closeSettings(); }; // click backdrop to close
 document.getElementById('optSplats').onclick = (e) => {
   showSplats = !showSplats;
