@@ -2998,7 +2998,7 @@ const NATIVE = 0; // sentinel: keep the model's own dimensions
 const oreMeshes = [];   // { mesh, veins: [placement,...] } for instance picking
 // Instance a list of {m,x,z,r,s} placements at heights from yOf(o). Clickable
 // ore veins register into oreMeshes for mining picks.
-const ORE_SINK = 0.22;   // veins sit a little into the ground rather than perched on it
+const ORE_SINK = 0.38;   // veins sit well into the ground rather than perched on it
 const _tintC = new THREE.Color();
 function placeInstances(list, yOf) {
   const mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
