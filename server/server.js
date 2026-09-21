@@ -76,7 +76,7 @@ function scaleZone(zone, k) {
   // linearly, so a bigger zone is LESS densely packed, not more.
   (zone.spawns || []).forEach(s => { s.cx *= k; s.cz *= k; s.r *= k; s.count = Math.max(1, Math.round(s.count * k)); });
   (zone.elites || []).forEach(e => { e.cx *= k; e.cz *= k; });
-  (zone.scatter || []).forEach(s => { if (s.count) s.count = Math.max(1, Math.round(s.count * A)); });
+  (zone.scatter || []).forEach(s => { if (s.count && !s.fixed) s.count = Math.max(1, Math.round(s.count * A)); }); // `fixed`: an exact count, e.g. a small ore patch
   // Farm layout: scale positions only (prop SIZES stay native meter-scale).
   if (zone.farm) {
     (zone.farm.fences || []).forEach(f => { f.x1 *= k; f.z1 *= k; f.x2 *= k; f.z2 *= k; });

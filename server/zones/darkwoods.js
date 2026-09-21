@@ -99,6 +99,9 @@ export const darkwoods = {
     { key: 'stones',     name: 'Ancient Stone Circle', x: 24,  z: 36,  kind: 'boss', optional: true },
     { key: 'wolfden',    name: 'Wolf Den',             x: 62,  z: 28,  kind: 'landmark', hidden: true },
     { key: 'ravine',     name: 'Root-Choked Ravine',   x: -36, z: 44,  kind: 'landmark' },
+    // Mining patches: small, off the trail, worth the walk.
+    { key: 'copperhollow', name: 'Copper Hollow',      x: 60,  z: -50, kind: 'landmark', optional: true },
+    { key: 'tinscrape',    name: 'Tin Scrape',         x: -62, z: -42, kind: 'landmark', optional: true },
     { key: 'cave',       name: 'Hidden Cave Entrance', x: -60, z: 58,  kind: 'cave', hidden: true },
     { key: 'bridge',     name: 'Mossy Bridge',         x: -8,  z: 35,  kind: 'landmark' },
     { key: 'southgate',  name: 'South Gate',           x: 6,   z: 98,  kind: 'gate', exit: true },
@@ -194,9 +197,12 @@ export const darkwoods = {
   // through / pure decor) and `nearR` is how far it spreads around its anchor.
   scatter: [
     // Surface ore veins (small mineable-node collision).
-    { model: 'Copper_Ore_Vein', count: 6, r: 0.8, scale: [0.9, 1.2], near: 'hunter', nearR: 24 },
-    { model: 'Tin_Ore_Vein',    count: 6, r: 0.8, scale: [0.9, 1.2], near: 'hunter', nearR: 24 },
-    { model: 'Iron_Ore_Vein',   count: 5, r: 0.8, scale: [0.9, 1.2], rare: true, near: 'ravine', nearR: 22 },
+    // Ore is NOT scattered along the trail: it sits in three tight patches you
+    // have to travel to — Copper Hollow (east, past the watchtower), Tin Scrape
+    // (west, up the creek) and Dorn's iron seam in the ravine.
+    { model: 'Copper_Ore_Vein', count: 5, fixed: true, r: 0.8, scale: [0.9, 1.25], near: 'copperhollow', nearR: 6 },
+    { model: 'Tin_Ore_Vein',    count: 5, fixed: true, r: 0.8, scale: [0.9, 1.25], near: 'tinscrape',    nearR: 6 },
+    { model: 'Iron_Ore_Vein',   count: 5, fixed: true, r: 0.8, scale: [0.9, 1.25], rare: true, near: 'ravine', nearR: 14 },
 
     // The Abandoned Camp — a little campsite of props (tight spread, light collision).
     { model: 'Small_Canvas_Tent', count: 1, r: 1.4, scale: [1.0, 1.0], near: 'camp', nearR: 10 },
@@ -395,6 +401,8 @@ export const darkwoods = {
     trees: [
       { x: -38, z: -90, s: 1.15 }, { x: -12, z: -90.5, s: 1.0 }, { x: 8, z: -90.5, s: 1.05 }, { x: 27.5, z: -88, s: 0.95 },
       { x: -39, z: -79, s: 0.9 }, { x: 28.5, z: -75, s: 1.0 }, { x: 3, z: -63.6, s: 0.85 }, { x: -36, z: -63.2, s: 0.8 },
+      { x: -2, z: -91.2, s: 0.8 }, { x: 22, z: -90.8, s: 0.9 }, { x: -30, z: -90.5, s: 0.85 }, { x: 29, z: -68, s: 0.85 },
+      { x: -20, z: -63.6, s: 0.75 }, { x: 14, z: -63.6, s: 0.8 },
     ],
     plants: [
       { m: 'Rose_Bush',        x: -31,  z: -80.3, s: 1.0 }, { m: 'Rose_Bush',        x: -21,  z: -80.3, s: 1.0 },
@@ -405,6 +413,13 @@ export const darkwoods = {
       { m: 'Berry_Bush',       x: 29,   z: -64.5, s: 0.9 }, { m: 'Round_Box_Bush',   x: 26,   z: -63.3, s: 0.8 },
       { m: 'Meadow_Shrub',     x: -40,  z: -86,   s: 1.0 }, { m: 'Poppy_Patch',      x: -33,  z: -63.2, s: 1.0 },
       { m: 'Hosta_Plant',      x: -18,  z: -80.6, s: 1.0 }, { m: 'Green_Fern',       x: 30,   z: -86,   s: 1.0 },
+      { m: 'Strawberry_Patch', x: -33,  z: -80.4, s: 1.0 }, { m: 'Wildflower_Patch', x: -36,  z: -83,   s: 1.1 },
+      { m: 'Normal_Bush',      x: -41,  z: -70,   s: 0.9 }, { m: 'Meadow_Shrub',     x: -41,  z: -64,   s: 0.9 },
+      { m: 'Clover_Patch',     x: 1.5,  z: -89.5, s: 1.2 }, { m: 'Poppy_Patch',      x: 10,   z: -84.5, s: 1.0 },
+      { m: 'Heather_Clump',    x: 28,   z: -82.5, s: 1.0 }, { m: 'Goldenrod_Patch',  x: 26,   z: -71.5, s: 0.9 },
+      { m: 'Sage_Bush',        x: 2.8,  z: -66,   s: 0.9 }, { m: 'Creeping_Bellflowers', x: -6, z: -63.4, s: 1.0 },
+      { m: 'Green_Fern',       x: -11,  z: -89.8, s: 1.0 }, { m: 'Lavender_Clump',   x: 15,   z: -90.4, s: 1.0 },
+      { m: 'Round_Box_Bush',   x: -12,  z: -84.6, s: 0.8 }, { m: 'Berry_Bush',       x: 9,    z: -66.5, s: 0.85 },
     ],
     props: [
       // Chicken pen: coop, house, nests, feeders.
