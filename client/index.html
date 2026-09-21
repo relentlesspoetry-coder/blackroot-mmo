@@ -701,8 +701,16 @@ const OUTFITS = ['None', '01_Fieldhand', '02_Orchard_Worker', '03_Fisherman', '0
   '15_Apprentice', '16_Ranger', '17_Scout', '18_Hunter', '19_Trapper', '20_Courier', '21_Town_Guard', '22_Night_Watch',
   '23_Militia', '24_Knight', '25_Sellsword', '26_Noble', '27_Courtier', '28_Bard', '29_Pilgrim', '30_Desert_Traveller', '31_Fighter'];
 const OUTFIT_SLOT_NAMES = ['top', 'trousers', 'boots', 'belt', 'accessory', 'gloves', 'helmet'];
+// The armour wardrobe (Male_20_Armored_Outfits, client/models/human/armor):
+// worn over the base outfit slot by slot from look.gear, plus two slots the
+// civilian outfits don't have.
+const ARMOR_SLOT_NAMES = ['shoulders', 'overlayer'];
 let outfitManifest = null;   // { outfits: [{ id, items: [{ id, slot, file, hide_body }] }] }
-const outfitManifestReady = fetch('models/human/outfits.json').then(r => r.json()).then(m => { outfitManifest = m; return m; }).catch(e => { console.warn('outfit manifest failed', e); return null; });
+let armorById = {};          // pack item id -> { id, slot, file, hide_body }
+const outfitManifestReady = Promise.all([
+  fetch('models/human/outfits.json').then(r => r.json()).then(m => { outfitManifest = m; return m; }).catch(e => { console.warn('outfit manifest failed', e); return null; }),
+  fetch('models/human/armor.json').then(r => r.json()).then(m => { for (const o of m.outfits) for (const it of o.items) armorById[it.id] = { ...it, file: 'armor/' + it.id + '.glb', hide_hair: !!o.hide_hair }; return m; }).catch(e => { console.warn('armor manifest failed', e); return null; }),
+]).then(r => r[0]);
 const HUMAN_H = 1.87;            // rest-pose height of the base body (feet at y≈0.02)
 const HUMAN_MIN_Y = 0.02;
 // Bones the procedural rig drives, and the rig-node name each gets so buildRig
@@ -821,12 +829,14 @@ const outfitGeoCache = new Map();
 // outfit named in look.slots[slot] (0 = nothing in that slot).
 function lookItems(look) {
   if (!outfitManifest) return [];
-  const slots = look.slots || {}, items = [];
+  const slots = look.slots || {}, gear = look.gear || {}, items = [];
   for (const slot of OUTFIT_SLOT_NAMES) {
+    if (gear[slot] && armorById[gear[slot]]) { items.push({ ...armorById[gear[slot]], slot }); continue; }   // armour replaces the outfit piece
     const num = slots[slot] != null ? slots[slot] : (look.outfit || 0);
     const o = outfitManifest.outfits[num - 1]; if (!o) continue;
     const it = o.items.find(i => i.slot.toLowerCase() === slot); if (it) items.push({ ...it, slot });
   }
+  for (const slot of ARMOR_SLOT_NAMES) if (gear[slot] && armorById[gear[slot]]) items.push({ ...armorById[gear[slot]], slot });
   return items;
 }
 // One clothing item's skinned pieces, loaded once: [{ geo, color, matName }].
@@ -4421,8 +4431,19 @@ function makeMonsterMesh(type, elite) {
   body.position.y = 0.8; fb.add(body);
   return fb;
 }
+function lookKeyOf(ent) { return ent.look ? JSON.stringify(ent.look) : ''; }
 function ensureMesh(ent, kind) {
   let rec = entityMeshes.get(ent.id);
+  // A player who changed clothes (equipped armour) gets a fresh figure; the
+  // old one's place, facing and held weapon carry over.
+  if (rec && kind === 'player' && rec.lookKey !== lookKeyOf(ent)) {
+    const old = rec.mesh;
+    scene.remove(old); if (rec.medFx) endMeditationFx(rec);
+    entityMeshes.delete(ent.id);
+    rec = ensureMesh(ent, kind);
+    rec.mesh.position.copy(old.position); rec.mesh.rotation.copy(old.rotation);
+    return rec;
+  }
   if (!rec) {
     const mesh = kind === 'player' ? makePlayerMesh(ent.id === myId, ent) : makeMonsterMesh(ent.type, ent.elite);
     // Merge, don't replace: makePlayer/MonsterMesh already stored the rig and
@@ -4433,7 +4454,7 @@ function ensureMesh(ent, kind) {
     // clickable pieces carry the id
     mesh.traverse(o => { if (o.isMesh) o.userData.pickId = ent.id; o.userData.pickKind = kind; });
     mesh.userData.pickTag = { pickId: ent.id, pickKind: kind }; // for parts that arrive later (hair)
-    rec = { mesh, kind, bob: Math.random() * 10, heldWeapon: undefined };
+    rec = { mesh, kind, bob: Math.random() * 10, heldWeapon: undefined, lookKey: lookKeyOf(ent) };
     entityMeshes.set(ent.id, rec);
   }
   return rec;
@@ -4463,6 +4484,23 @@ function tierColor(name) {
 }
 function buildHeldWeapon(name) {
   const g = new THREE.Group();
+  const info = itemInfo(name);
+  if (info && info.model) {
+    // The BlackRoot weapon pack: length along +Z with the grip near the origin,
+    // not to scale — fit to the item's authored length and hang it point-down.
+    loadModels(['weapons/' + info.model]).then(() => {
+      const src = LOADED[info.model]; if (!src) return;
+      const model = src.clone(true);
+      model.traverse(o => { if (o.isMesh) { o.material = Array.isArray(o.material) ? o.material.map(m => m.clone()) : o.material.clone(); o.castShadow = true; o.userData.pickKind = 'player'; } });
+      const box = new THREE.Box3().setFromObject(model);
+      const sc = (info.len || 1) / (Math.max(box.max.x - box.min.x, box.max.y - box.min.y, box.max.z - box.min.z) || 1);
+      model.scale.setScalar(sc);
+      model.rotation.x = Math.PI / 2;            // +Z (the blade) -> down from the fist
+      model.position.y = Math.max(0, -box.min.z) * sc * 0.5;
+      g.add(model);
+    });
+    return g;
+  }
   const hit = HELD_WEAPONS.find(([re]) => re.test(name));
   if (!hit) return g;
   const spec = hit[1];
@@ -5058,10 +5096,32 @@ function makeProceduralItem(name) {
   }
   return g;
 }
+// An armour piece lying on the ground: the pack's skinned piece drawn as a
+// plain mesh in its rest pose (the bind pose is the rest pose), fitted small.
+const armorGroundCache = {};
+function armorGroundModel(gearId) {
+  const it = armorById[gearId]; if (!it) return null;
+  if (armorGroundCache[gearId] === undefined) {
+    armorGroundCache[gearId] = null;
+    itemAsset(it).then(parts => {
+      if (!parts.length) return;
+      const grp = new THREE.Group();
+      for (const pt of parts) { const m = new THREE.Mesh(pt.geo, new THREE.MeshStandardMaterial({ color: pt.color, roughness: 0.8 })); m.castShadow = true; grp.add(m); }
+      const box = new THREE.Box3().setFromObject(grp);
+      const sc = 0.5 / (Math.max(box.max.x - box.min.x, box.max.y - box.min.y, box.max.z - box.min.z) || 1);
+      grp.scale.setScalar(sc);
+      grp.position.set(-(box.min.x + box.max.x) / 2 * sc, -box.min.y * sc, -(box.min.z + box.max.z) / 2 * sc);
+      const wrap = new THREE.Group(); wrap.add(grp);
+      armorGroundCache[gearId] = wrap;
+    });
+  }
+  return armorGroundCache[gearId] ? armorGroundCache[gearId].clone(true) : null;
+}
 function makeItemMesh(it) {
   const g = new THREE.Group();
-  const key = itemModelName(it.name);
-  const model = cloneModel(key, 0.5, true); // fit longest side to ~0.5m
+  const info = itemInfo(it.name);
+  const key = info && info.model ? info.model : itemModelName(it.name);
+  let model = info && info.gear ? armorGroundModel(info.gear) : cloneModel(key, 0.5, true); // fit longest side to ~0.5m
   if (model) {
     g.add(model);
     g.userData.hasModel = true;
@@ -5070,8 +5130,9 @@ function makeItemMesh(it) {
     // one exists) so updateGroundItems can swap to it. Items with no GLB keep the
     // themed mesh.
     g.add(makeProceduralItem(it.name));
-    g.userData.hasModel = false; g.userData.itemKey = key;
-    if (LOADED[key] === undefined) loadModels(['items/' + key]).catch(() => {});
+    g.userData.hasModel = false; g.userData.itemKey = key; g.userData.gearKey = info && info.gear ? info.gear : null;
+    if (info && info.gear) { /* armorGroundModel is streaming it in */ }
+    else if (LOADED[key] === undefined) loadModels([(info && info.model ? 'weapons/' : 'items/') + key]).catch(() => {});
   }
   g.traverse(o => { if (o.isMesh) { o.userData.pickKind = 'item'; o.userData.pickId = it.id; } });
   return g;
@@ -5087,7 +5148,7 @@ function updateGroundItems(items) {
     seen.add(it.id);
     let rec = itemMeshes.get(it.id);
     if (!rec) { const mesh = makeItemMesh(it); scene.add(mesh); rec = { mesh, name: it.name, qty: it.qty }; itemMeshes.set(it.id, rec); }
-    else if (rec.mesh.userData.hasModel === false && LOADED[rec.mesh.userData.itemKey]) {
+    else if (rec.mesh.userData.hasModel === false && (LOADED[rec.mesh.userData.itemKey] || (rec.mesh.userData.gearKey && armorGroundCache[rec.mesh.userData.gearKey]))) {
       // The real model finished loading — replace the placeholder marker.
       scene.remove(rec.mesh);
       rec.mesh = makeItemMesh(it); scene.add(rec.mesh);
@@ -6519,7 +6580,18 @@ const ITEM_ICON = {
   'Raw Chicken': '🍗', 'Cooked Chicken': '🍗',
   'Raw Beef': '🥩', 'Cooked Beef': '🍖', 'Burnt Food': '🔥', 'Kebab': '🌯',
 };
-function iconFor(name) { return ITEM_ICON[name] || (/Trophy/.test(name) ? '🏆' : '📦'); }
+const SLOT_ICON = { helmet: '🪖', chest: '🥋', legs: '👖', boots: '🥾', gloves: '🧤', shoulders: '🎽', cape: '🧣', belt: '🪢', offhand: '🛡️', necklace: '📿', ring: '💍' };
+function weaponIcon(name) {
+  return /Dagger|Claws/.test(name) ? '🗡️' : /Axe/.test(name) ? '🪓' : /Mace|Hammer|Flail/.test(name) ? '🔨' : /Spear|Halberd/.test(name) ? '🔱'
+    : /Bow/.test(name) ? '🏹' : /Staff|Wand/.test(name) ? '🪄' : /Sickle/.test(name) ? '🌙' : /Whip/.test(name) ? '〰️' : '⚔️';
+}
+function iconFor(name) {
+  if (ITEM_ICON[name]) return ITEM_ICON[name];
+  const info = itemInfo(name);
+  if (info && info.slot === 'weapon') return weaponIcon(name);
+  if (info && info.slot && SLOT_ICON[info.slot]) return SLOT_ICON[info.slot];
+  return /Trophy/.test(name) ? '🏆' : '📦';
+}
 function toggleBag(force) { bagOpen = force != null ? force : !bagOpen; document.getElementById('bag').style.display = bagOpen ? 'block' : 'none'; if (bagOpen) renderBag(); else hideItemTip(); }
 // Skill payloads only feed the Skills window (K) — the bag is just the bag.
 let skillsOpen = false;

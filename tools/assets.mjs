@@ -12,7 +12,7 @@ import { fileURLToPath } from 'url';
 import { darkwoods } from '../server/zones/darkwoods.js';
 import { hiddencave } from '../server/zones/hiddencave.js';
 import { MONSTER_TEMPLATES } from '../server/balance.js';
-import { ITEMS } from '../server/items.js';
+import { ITEMS, WEAPON_ITEMS } from '../server/items.js';
 import { ORES } from '../server/mining.js';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -82,12 +82,16 @@ console.log('\n=== unreferenced models ===');
 const referenced = new Set();
 for (const m of CORE) referenced.add(m.split('/').pop());
 for (const z of ZONES) for (const m of (z.models || [])) referenced.add(m.split('/').pop());
+const bareOf = (f) => f.replace('.glb', '');
+const weaponModels = new Set(Object.values(WEAPON_ITEMS).map(d => d.model));
 const walk = (dir, prefix = '') => {
   for (const f of fs.readdirSync(path.join(MODELS, dir))) {
     const rel = path.join(dir, f);
     if (fs.statSync(path.join(MODELS, rel)).isDirectory()) { walk(rel, prefix); continue; }
     if (!f.endsWith('.glb')) continue;
     if (rel.startsWith('human/hair/')) continue; // hairstyles load on demand by the look picker
+    if (rel.startsWith('human/armor/')) continue; // the armour wardrobe streams in per worn piece (items.js ARMOR_ITEMS)
+    if (rel.startsWith('weapons/')) { if (!weaponModels.has(bareOf(f))) console.log(`  unused: ${rel}`); continue; } // held/ground weapon models (items.js WEAPON_ITEMS)
     const bare = f.replace('.glb', '');
     if (!referenced.has(bare)) console.log(`  unused: ${rel}`);
   }

@@ -32,6 +32,7 @@ export const SLOT_INFO = {
   cape:     { label: 'Cape',      x: 48,  y: 104 },
   ring_r:   { label: 'R Ring',    x: 48,  y: 162 },
   offhand:  { label: 'Offhand',   x: 48,  y: 220 },
+  belt:     { label: 'Belt',      x: 48,  y: 278 },
 };
 export const SLOTS = Object.keys(SLOT_INFO);
 
@@ -45,7 +46,106 @@ export function emptySlots() {
   return eq;
 }
 
+
+// ---------------------------------------------------------------------------
+// The Dark Woods armour wardrobe (Male_20_Armored_Outfits pack): 20 sets of 8
+// pieces, five tiers each of leather, plate, padded cloth and magic robes. The
+// pieces are generated from this table rather than written out 160 times.
+// `gear` names the pack item the client dresses the character in; `def`/`atk`
+// feed the OSRS-style rolls (+64 base), so a full tier-5 plate set is a real
+// upgrade without making anyone untouchable.
+// ---------------------------------------------------------------------------
+export const ARMOR_SETS = [
+  // [id, name, category, tier]
+  ['01_Frontier_Hide',   'Frontier Hide',   'Leather', 1], ['02_Brigand_Studded', 'Brigand Studded', 'Leather', 2],
+  ['03_Forest_Tracker',  'Forest Tracker',  'Leather', 3], ['04_Nightstalker',    'Nightstalker',    'Leather', 4],
+  ['05_Drakehide_Warden','Drakehide Warden','Leather', 5],
+  ['06_Bronze_Recruit',  'Bronze Recruit',  'Plate', 1],   ['07_Iron_Vanguard',   'Iron Vanguard',   'Plate', 2],
+  ['08_Steel_Chevalier', 'Steel Chevalier', 'Plate', 3],   ['09_Gilded_Paladin',  'Gilded Paladin',  'Plate', 4],
+  ['10_Obsidian_Warlord','Obsidian Warlord','Plate', 5],
+  ['11_Padded_Militia',  'Padded Militia',  'Cloth', 1],   ['12_Crimson_Duelist', 'Crimson Duelist', 'Cloth', 2],
+  ['13_Desert_Sentinel', 'Desert Sentinel', 'Cloth', 3],   ['14_Azure_Battleguard','Azure Battleguard','Cloth', 4],
+  ['15_Royal_Warcoat',   'Royal Warcoat',   'Cloth', 5],
+  ['16_Hedge_Mage',      'Hedge Mage',      'Magic', 1],   ['17_Azure_Arcanist',  'Azure Arcanist',  'Magic', 2],
+  ['18_Ember_Sorcerer',  'Ember Sorcerer',  'Magic', 3],   ['19_Verdant_Oracle',  'Verdant Oracle',  'Magic', 4],
+  ['20_Astral_Archmage', 'Astral Archmage', 'Magic', 5],
+];
+// Pack piece -> equipment slot, defence share of the set, and what the piece
+// is called in each armour family.
+export const ARMOR_PIECES = [
+  // [packSlot, equipSlot, defShare, { Leather, Plate, Cloth, Magic }]
+  ['Top',       'chest',     1.00, { Leather: 'Jerkin',         Plate: 'Cuirass',   Cloth: 'Tunic',      Magic: 'Robe' }],
+  ['Trousers',  'legs',      0.80, { Leather: 'Leggings',       Plate: 'Greaves',   Cloth: 'Breeches',   Magic: 'Trousers' }],
+  ['Helmet',    'helmet',    0.60, { Leather: 'Cap',            Plate: 'Helm',      Cloth: 'Hood',       Magic: 'Hat' }],
+  ['Shoulders', 'shoulders', 0.50, { Leather: 'Shoulder Guards',Plate: 'Pauldrons', Cloth: 'Mantle',     Magic: 'Mantle' }],
+  ['Boots',     'boots',     0.40, { Leather: 'Boots',          Plate: 'Sabatons',  Cloth: 'Boots',      Magic: 'Boots' }],
+  ['Gloves',    'gloves',    0.35, { Leather: 'Gloves',         Plate: 'Gauntlets', Cloth: 'Gloves',     Magic: 'Gloves' }],
+  ['Overlayer', 'cape',      0.40, { Leather: 'Cape',           Plate: 'Tassets',   Cloth: 'Coat Skirt', Magic: 'Robe Skirt' }],
+  ['Belt',      'belt',      0.25, { Leather: 'Belt',           Plate: 'Belt',      Cloth: 'Sash',       Magic: 'Sash' }],
+];
+const ARMOR_TIER_DEF = [4, 7, 10, 14, 18];          // a plate Top at each tier
+const ARMOR_TIER_LEVEL = [1, 3, 5, 7, 9];
+const ARMOR_TIER_VALUE = [40, 120, 320, 800, 2000]; // a Top; other pieces scale by share
+const ARMOR_FAMILY = {                              // defence multiplier, and a little attack for the fighting cloth / casting robes
+  Leather: { def: 0.7,  atk: 0 },
+  Plate:   { def: 1.0,  atk: 0 },
+  Cloth:   { def: 0.55, atk: 1 },
+  Magic:   { def: 0.4,  atk: 2 },
+};
+const ARMOR_DESC = {
+  Leather: ['Cured hide, stitched for the road.', 'Studded leather; stops a knife, usually.', 'Tracker leather, dyed to the woods.', 'Black leather that drinks the light.', 'Drake scale over boiled hide. Turns fire.'],
+  Plate:   ['Bronze plate, dented from the drill yard.', 'Iron plate. Heavy, honest, loud.', 'Steel plate with a knight\'s polish.', 'Gilded steel, fit for a temple guard.', 'Obsidian-black plate. Warlords wore this.'],
+  Cloth:   ['Quilted militia padding.', 'Crimson duelling cloth, cut to move.', 'Sun-bleached sentinel cloth.', 'Azure battleguard cloth, silver-threaded.', 'A royal warcoat. Someone important lost it.'],
+  Magic:   ['A hedge mage\'s homespun weave.', 'Arcanist blue, faintly humming.', 'Ember-red robes, warm to the touch.', 'Verdant oracle weave, alive with runes.', 'Astral robes. The runes move when you look away.'],
+};
+export const ARMOR_ITEMS = {};
+for (const [id, setName, fam, tier] of ARMOR_SETS) {
+  for (const [packSlot, slot, share, names] of ARMOR_PIECES) {
+    const F = ARMOR_FAMILY[fam], name = `${setName} ${names[fam]}`;
+    const def = Math.max(1, Math.round(ARMOR_TIER_DEF[tier - 1] * share * F.def));
+    const atk = F.atk ? Math.max(1, Math.round(F.atk * tier * (share >= 0.8 ? 1 : 0.5))) : 0;
+    const d = { slot, def, level: ARMOR_TIER_LEVEL[tier - 1], value: Math.round(ARMOR_TIER_VALUE[tier - 1] * (0.4 + 0.6 * share)),
+      desc: ARMOR_DESC[fam][tier - 1], gear: `${id}__${packSlot}`, tier, family: fam, set: setName };
+    if (atk) d.atk = atk;
+    ARMOR_ITEMS[name] = d;
+  }
+}
+
+// The 20 low-poly weapons (BlackRoot_20_LowPoly_Weapons pack). `model` is the
+// pack file the client holds in the hand and lays on the ground; `len` is the
+// length it should be scaled to (the pack's models are not to scale).
+export const WEAPON_ITEMS = {
+  // tier 1
+  'Dagger':        { atk: 3,  level: 1, tier: 1, value: 35,   model: '05_Dagger',        len: 0.45, desc: 'A plain steel dagger. Quick in the hand.' },
+  'Short Sword':   { atk: 4,  level: 1, tier: 1, value: 60,   model: '01_Short_Sword',   len: 0.8,  desc: 'The sword every recruit is handed first.' },
+  'Sickle':        { atk: 3,  level: 1, tier: 1, value: 30,   model: '18_Sickle',        len: 0.6,  desc: 'A harvest blade. It cuts more than wheat.' },
+  'Wand':          { atk: 3,  level: 1, tier: 1, value: 70,   model: '15_Wand',          len: 0.45, desc: 'A carved wand with a chip of crystal set in the tip.' },
+  // tier 2
+  'Whip':          { atk: 5,  level: 2, tier: 2, value: 110,  model: '19_Whip',          len: 1.2,  desc: 'Braided leather. Reaches further than it looks.' },
+  'Throwing Axe':  { atk: 5,  level: 2, tier: 2, value: 90,   model: '20_Throwing_Axe',  len: 0.5,  desc: 'Balanced to fly. Works fine up close too.' },
+  'Scimitar':      { atk: 6,  level: 2, tier: 2, value: 160,  model: '02_Scimitar',      len: 0.9,  desc: 'A curved blade that favours the fast.' },
+  'Mace':          { atk: 7,  level: 3, tier: 2, value: 180,  model: '08_Mace',          len: 0.75, desc: 'Flanged iron on a short haft. Armour hates it.' },
+  'Spear':         { atk: 7,  level: 3, tier: 2, value: 170,  model: '10_Spear',         len: 1.9,  desc: 'A long ash spear with a leaf-shaped head.' },
+  // tier 3
+  'Longsword':     { atk: 9,  level: 4, tier: 3, value: 380,  model: '03_Longsword',     len: 1.1,  desc: 'A knight\'s longsword, well balanced.' },
+  'Battle Axe':    { atk: 10, level: 4, tier: 3, value: 400,  model: '06_Battle_Axe',    len: 0.9,  desc: 'A bearded axe that bites deep.' },
+  'Bow':           { atk: 8,  level: 4, tier: 3, value: 340,  model: '12_Bow',           len: 1.4,  desc: 'A yew longbow with a hunter\'s draw.' },
+  'Twin Claws':    { atk: 9,  level: 5, tier: 3, value: 420,  model: '16_Twin_Claws',    len: 0.5,  desc: 'Paired claw blades strapped to the forearm.' },
+  'Flail':         { atk: 11, level: 5, tier: 3, value: 460,  model: '17_Flail',         len: 0.9,  desc: 'A spiked ball on a chain. Mind your own shins.' },
+  // tier 4
+  'Magic Staff':   { atk: 12, level: 6, tier: 4, value: 900,  model: '14_Magic_Staff',   len: 1.7,  desc: 'A staff crowned with a glowing crystal.' },
+  'Crossbow':      { atk: 12, level: 6, tier: 4, value: 850,  model: '13_Crossbow',      len: 0.8,  desc: 'A heavy crossbow. Slow, but it goes through things.' },
+  'Warhammer':     { atk: 14, level: 7, tier: 4, value: 1100, model: '09_Warhammer',     len: 1.0,  desc: 'A hammer that ends arguments with plate.' },
+  'Halberd':       { atk: 15, level: 7, tier: 4, value: 1250, model: '11_Halberd',       len: 2.0,  desc: 'Axe, spike and hook on a long pole.' },
+  // tier 5
+  'Greataxe':      { atk: 18, level: 8, tier: 5, value: 2400, model: '07_Greataxe',      len: 1.3,  desc: 'A double-bitted greataxe. Two hands, no mercy.' },
+  'Greatsword':    { atk: 20, level: 9, tier: 5, value: 3000, model: '04_Greatsword',    len: 1.5,  desc: 'A blade as tall as a man. Whoever carried it, carried the field.' },
+};
+for (const d of Object.values(WEAPON_ITEMS)) d.slot = 'weapon';
+
 export const ITEMS = {
+  ...ARMOR_ITEMS,
+  ...WEAPON_ITEMS,
   // --- weapons ---
   'Bronze Dagger':        { slot: 'weapon',  atk: 2,  level: 1, value: 30,
     desc: 'Short, light, and better than your fists.' },

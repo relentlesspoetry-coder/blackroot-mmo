@@ -5,6 +5,8 @@
 // ---------------------------------------------------------------------------
 // Player
 // ---------------------------------------------------------------------------
+import { ARMOR_ITEMS, WEAPON_ITEMS } from './items.js';
+
 export const PLAYER = {
   speed: 8,
   radius: 0.6,
@@ -362,6 +364,59 @@ export function scaledMonster(type, level) {
     attackSpeed: t.attackSpeed || 4, // ticks
   };
 }
+
+// ---------------------------------------------------------------------------
+// Dark Woods gear drops: the armour wardrobe and the 20 weapons, layered on
+// top of every creature's own loot. Each entry is one independent 1-in-N roll
+// for a random piece of that tier (armour = any of the 32 pieces of the four
+// sets at that tier; weapon = any weapon of that tier). Rarity climbs with the
+// camps: the creek goblins spill tier-1 kit, the ogre hollow and the zone's
+// elite are where tier 4-5 turns up, and every step up is a longer shot.
+// ---------------------------------------------------------------------------
+const GEAR_DROPS = {
+  goblin:           [['armor', 1, 40],  ['weapon', 1, 60],  ['armor', 2, 400], ['weapon', 2, 500]],
+  goblin_scavenger: [['armor', 1, 45],  ['weapon', 1, 70],  ['armor', 2, 300], ['weapon', 2, 400]],
+  bandit:           [['armor', 1, 60],  ['weapon', 1, 90],  ['armor', 2, 120], ['weapon', 2, 160], ['armor', 3, 700], ['weapon', 3, 900]],
+  goblin_miner:     [['armor', 2, 110], ['weapon', 2, 150], ['armor', 3, 600], ['weapon', 3, 800]],
+  goblin_warrior:   [['armor', 2, 100], ['weapon', 2, 140], ['armor', 3, 300], ['weapon', 3, 400], ['armor', 4, 1500], ['weapon', 4, 2000]],
+  goblin_archer:    [['armor', 2, 100], ['weapon', 2, 140], ['armor', 3, 300], ['weapon', 3, 400], ['armor', 4, 1500], ['weapon', 4, 2000]],
+  goblin_chief:     [['armor', 3, 60],  ['weapon', 3, 80],  ['armor', 4, 250], ['weapon', 4, 350], ['armor', 5, 2000], ['weapon', 5, 2500]],
+  guard:            [['armor', 3, 120], ['weapon', 3, 160], ['armor', 4, 500], ['weapon', 4, 700], ['armor', 5, 3000], ['weapon', 5, 4000]],
+  cow:              [['armor', 1, 400], ['weapon', 1, 600]],
+  chicken:          [['armor', 1, 800], ['weapon', 1, 1200]],
+  // dragons at the woods' edge: the top of the table, and not stingy about it
+  ember_dragon:     [['armor', 4, 12], ['weapon', 4, 16], ['armor', 5, 60], ['weapon', 5, 80]],
+  frost_dragon:     [['armor', 4, 12], ['weapon', 4, 16], ['armor', 5, 60], ['weapon', 5, 80]],
+  venom_dragon:     [['armor', 4, 12], ['weapon', 4, 16], ['armor', 5, 60], ['weapon', 5, 80]],
+};
+// A named elite rolls its type's gear table at much better odds and always
+// gets one extra shot at the tier above its best.
+const ELITE_GEAR_LUCK = 8;
+let gearPools = null;   // { armor: { tier: [names] }, weapon: { tier: [names] } }, built lazily from items.js
+function buildGearPools() {
+  gearPools = { armor: {}, weapon: {} };
+  for (const [name, d] of Object.entries(ARMOR_ITEMS)) (gearPools.armor[d.tier] ||= []).push(name);
+  for (const [name, d] of Object.entries(WEAPON_ITEMS)) (gearPools.weapon[d.tier] ||= []).push(name);
+}
+export function rollGear(type, elite = false) {
+  if (!gearPools) buildGearPools();
+  const table = GEAR_DROPS[type]; if (!table) return [];
+  const drops = [];
+  let top = 0;
+  for (const [kind, tier, chance] of table) {
+    top = Math.max(top, tier);
+    if (Math.random() < 1 / (elite ? Math.max(1, chance / ELITE_GEAR_LUCK) : chance)) {
+      const pool = gearPools[kind][tier]; if (pool && pool.length) drops.push({ item: pool[Math.floor(Math.random() * pool.length)], qty: 1 });
+    }
+  }
+  if (elite) {
+    const tier = Math.min(5, top + 1), kind = Math.random() < 0.6 ? 'armor' : 'weapon';
+    if (Math.random() < 1 / 3) { const pool = gearPools[kind][tier]; if (pool && pool.length) drops.push({ item: pool[Math.floor(Math.random() * pool.length)], qty: 1 }); }
+  }
+  return drops;
+}
+// For tooling / the loot editor: the gear table of a type as [kind, tier, 1-in-N].
+export function gearTableOf(type) { return GEAR_DROPS[type] || []; }
 
 export function rollLoot(type) {
   const t = MONSTER_TEMPLATES[type]; const drops = [];

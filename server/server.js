@@ -15,8 +15,7 @@ import {
   PLAYER, ELITE, MONSTER_TEMPLATES,
   xpForLevel, xpTotalForLevel, levelForXp, attackRoll, defenceRoll, hitChance, scaledMonster, rollLoot, REGEN,
   TICK, DEFAULT_ATTACK_SPEED, CLASSES, DEFAULT_CLASS, classDef, classStats, abilityCost,
-  maxHit, rollSwing, rollMonsterSwing, MEDITATION, meditationHealPerTick,
-} from './balance.js';
+  maxHit, rollSwing, rollMonsterSwing, MEDITATION, meditationHealPerTick, rollGear } from './balance.js';
 import { ITEMS, SLOTS, SLOT_INFO, DOLL, itemDef, slotOf, valueOf, equipStats, slotsFor, emptySlots } from './items.js';
 import {
   dist2, closestOnPolyline, pointInPoly, polyCentroid, generateTrees, generateScatter, generateHanging,
@@ -42,6 +41,19 @@ function sanitizeLook(raw) {
   const col = (v, d) => (typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v)) ? v.toLowerCase() : d;
   return { hair: idx(o.hair, 30, 9), hairColor: col(o.hairColor, '#4a2e1a'), skin: col(o.skin, '#cba281'), outfit: idx(o.outfit, 31, 31) };
 }
+
+// What the character visibly wears from their equipment: pack item ids by
+// wardrobe slot (top/trousers/helmet/shoulders/boots/gloves/overlayer/belt),
+// drawn over the base outfit by the client. Only armour pieces carry `gear`.
+function gearOf(equipment) {
+  const g = {};
+  for (const name of Object.values(equipment || {})) {
+    const d = name && ITEMS[name]; if (!d || !d.gear) continue;
+    g[d.gear.split('__')[1].toLowerCase()] = d.gear;
+  }
+  return g;
+}
+function lookOf(p) { return Object.keys(p.gear || {}).length ? { ...p.look, gear: p.gear } : p.look; }
 
 function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
 import {
@@ -867,6 +879,7 @@ function killMonster(m, killer) {
 
   // Roll the loot table and drop items on the ground where it fell.
   const drops = rollMobLoot(m.type);
+  for (const g of rollGear(m.type, !!m.elite)) drops.push(g);   // Dark Woods armour / weapon drops
   if (m.elite) {
     // A named encounter can name its own reward; otherwise it leaves a trophy.
     for (const item of (m.spec.drops || [`${m.name} Trophy`])) drops.push({ item, qty: 1 });
@@ -903,7 +916,7 @@ function pickupItem(p, itemId) {
 // What every item is, for bag tooltips / Examine: sent once on join.
 const ITEM_CATALOG = Object.fromEntries(Object.entries(ITEMS).map(([n, d]) => [n, {
   slot: d.slot || null, atk: d.atk || 0, def: d.def || 0, level: d.level || 1, value: d.value || 0,
-  heal: d.heal || 0, desc: d.desc || null,
+  heal: d.heal || 0, desc: d.desc || null, gear: d.gear || null, model: d.model || null, len: d.len || null, tier: d.tier || 0, set: d.set || null,
 }]));
 function sendBag(p) {
   send(p.ws, { t: 'bag', items: p.inventory, gold: p.gold,
@@ -934,7 +947,7 @@ function equipItem(p, name, wanted) {
   p.inventory.splice(idx, 1);
   const previous = p.equipment[slot];
   if (previous) p.inventory.push(previous);             // swap, never destroy
-  p.equipment[slot] = name;
+  p.equipment[slot] = name; p.gear = gearOf(p.equipment);
   send(p.ws, { t: 'event', kind: 'equip', slot, item: name });
   sendBag(p);
 }
@@ -943,7 +956,7 @@ function unequipItem(p, slot) {
   if (!SLOTS.includes(slot)) return;
   const name = p.equipment[slot];
   if (!name) return;
-  p.equipment[slot] = null;
+  p.equipment[slot] = null; p.gear = gearOf(p.equipment);
   p.inventory.push(name);
   send(p.ws, { t: 'event', kind: 'unequip', slot, item: name });
   sendBag(p);
@@ -1968,7 +1981,7 @@ setInterval(() => {
           channel: p.channel ? p.channel.id : null, windup: p.windup ? p.windup.id : null,
           moving: p.moving, inSafe: !!p.inSafe, resting: !!p.resting,
           weapon: p.equipment.weapon || null,     // held item for the paperdoll
-          look: p.look });                          // hair / outfit / colours
+          look: lookOf(p) });                        // hair / outfit / colours + worn armour
       }
       for (const m of monsters.values()) {
         if (m.zoneId !== zid) continue;
@@ -2065,7 +2078,7 @@ wss.on('connection', (ws) => {
           // Everyone starts able to mine and fish; better tools are earned. The
           // pickaxe starts equipped so it shows in-hand (and swings when mining).
           inventory: ['Fishing Rod'],
-          equipment: Object.assign(emptySlots(), { weapon: 'Bronze Pickaxe' }),
+          equipment: Object.assign(emptySlots(), { weapon: 'Bronze Pickaxe' }), gear: {},
           miningXp: 0, pendingMine: null, mineTimer: 0,
           fishingXp: 0, pendingFish: null, fishTimer: 0,
           cookingXp: 0, pendingCook: null, cookTimer: 0,
@@ -2174,6 +2187,11 @@ wss.on('connection', (ws) => {
         break;
       }
       // --- World editor (gated by EDIT_KEY) ---
+      case 'give': {   // editor tool: hand the player any item, to test gear without grinding for it
+        if (!player || msg.key !== EDIT_KEY || !ITEMS[msg.item]) break;
+        for (let i = 0; i < Math.min(28, Math.max(1, msg.qty | 0)); i++) player.inventory.push(String(msg.item));
+        sendBag(player); break;
+      }
       case 'edit:list': {
         if (msg.key === EDIT_KEY) send(ws, { t: 'models', models: MODEL_MANIFEST, mobs: MOB_TYPES, items: LOOT_ITEMS, loot: allLootTables() });
         break;
