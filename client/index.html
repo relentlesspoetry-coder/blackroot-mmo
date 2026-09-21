@@ -5977,11 +5977,16 @@ function refreshDialogue() { if (dialogueNpc) openDialogue(dialogueNpc); }
 // ---- ! / ? markers floating over quest givers ----
 const npcMarkLayer = document.getElementById('npcmarks');
 const npcMarkEls = new Map();
+// Quest markers only show over NPCs near the player; a far-off "!" through the
+// trees just pulls the eye to somewhere it can't go yet.
+const NPC_MARK_RANGE = 28;
 function updateNpcMarkers() {
+  const selfRec = entityMeshes.get(myId);
+  const sx = selfRec ? selfRec.mesh.position.x : 0, sz = selfRec ? selfRec.mesh.position.z : 0;
   for (const [id, rec] of npcMeshes) {
     const state = questData.markers[id];
     let el = npcMarkEls.get(id);
-    if (!state) { if (el) el.style.display = 'none'; continue; }
+    if (!state || Math.hypot(rec.mesh.position.x - sx, rec.mesh.position.z - sz) > NPC_MARK_RANGE) { if (el) el.style.display = 'none'; continue; }
     if (!el) { el = document.createElement('div'); el.className = 'npcmark'; npcMarkLayer.appendChild(el); npcMarkEls.set(id, el); }
     el.className = 'npcmark ' + state;
     el.textContent = state === 'turnin' ? '?' : '!';
