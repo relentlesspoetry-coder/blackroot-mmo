@@ -17,6 +17,7 @@ import {
   TICK, DEFAULT_ATTACK_SPEED, CLASSES, DEFAULT_CLASS, classDef, classStats, abilityCost,
   maxHit, rollSwing, rollMonsterSwing, MEDITATION, meditationHealPerTick, rollGear } from './balance.js';
 import { ITEMS, SLOTS, SLOT_INFO, DOLL, itemDef, slotOf, valueOf, equipStats, slotsFor, emptySlots } from './items.js';
+import { BOSS_TEMPLATES, BOSS_ITEMS, maybeSpawnCluckifer, stepCluckifer, stepMinion, stepHazards, hazardList, onMinionKilled, onBossKilled } from './cluckifer.js';
 import {
   dist2, closestOnPolyline, mulberry32, pointInPoly, polyCentroid, generateTrees, generateScatter, generateHanging,
   mergeOutlines, roughenOutline, generateEdgeForest,
@@ -832,6 +833,10 @@ function despawnEditorRegion(id) {
   for (const [mid, m] of monsters) if (m.editSpawnId === id) monsters.delete(mid);
 }
 // Mob types offered in the spawn palette.
+// Cluckifer, the secret chicken boss, and his brood (server/cluckifer.js).
+Object.assign(MONSTER_TEMPLATES, BOSS_TEMPLATES);
+for (const t of Object.values(BOSS_TEMPLATES)) if (!t.loot && !t.droptable) t.loot = [];
+Object.assign(ITEMS, BOSS_ITEMS);
 const MOB_TYPES = Object.keys(MONSTER_TEMPLATES);
 
 // ---- Loot overrides: per mob type, an independent-roll drop table edited in
@@ -936,6 +941,8 @@ function grantXp(p, amount) {
 
 function killMonster(m, killer) {
   m.alive = false; m.state = 'dead'; m.provoked = false; m.debuffs = null; m.stagger = 0;
+  if (m.minion) onMinionKilled(bossCtx, m);
+  if (m.boss === 'cluckifer') onBossKilled(bossCtx, m);
   if (killer && killer.kind === 'player') savageTrigger(killer);
   for (const p of players.values()) if (p.engagedWith === m.id) p.engagedWith = null;
   m.respawnTimer = m.elite ? Math.max(90, m.respawn * 2) : m.respawn;
@@ -947,6 +954,8 @@ function killMonster(m, killer) {
 
   // Roll the loot table and drop items on the ground where it fell.
   const drops = rollMobLoot(m.type);
+  // A chicken has a 1-in-300 chance of being... more than a chicken.
+  if (m.type === 'chicken' && killer && killer.kind === 'player') maybeSpawnCluckifer(bossCtx, m, killer);
   for (const g of rollGear(m.type, !!m.elite)) drops.push(g);   // Dark Woods armour / weapon drops
   if (m.elite) {
     // A named encounter can name its own reward; otherwise it leaves a trophy.
@@ -1483,6 +1492,7 @@ function navStep(zone, ent, tx, tz, stopDist, speed) {
 
 function doPlayerAttack(p, m) {
   if (p.atkTimer > 0) return;
+  if (m.untargetable) return;   // out of reach mid-leap
   if (engagedElsewhere(p, m)) {
     const other = monsters.get(p.engagedWith);
     if (other && other.alive) {
@@ -1523,11 +1533,12 @@ function dmgBuff(p, heavy) {
 }
 function critChance(p) { let c = classDef(p.cls).critBase || 0.05; for (const bf of Object.values(p.buffs)) if (bf.t > 0 && bf.crit) c += bf.crit; return c; }
 function incomingMult(p) { let m = 1; for (const bf of Object.values(p.buffs)) if (bf.t > 0 && bf.taken) m += bf.taken; return m; }
-function moveMult(p) { let m = 1; for (const bf of Object.values(p.buffs)) if (bf.t > 0 && bf.move) m += bf.move; if (p.channel) m *= 0.6; return m; }
+function moveMult(p) { let m = 1; for (const bf of Object.values(p.buffs)) if (bf.t > 0 && bf.move) m += bf.move; if (p.channel) m *= 0.6; if (p.slow && p.slow.t > 0) m *= p.slow.k; return m; }
 function addBuff(p, spec) { p.buffs[spec.id] = { ...spec, t: spec.dur, charges: spec.charges || 0, since: 0 }; }
 // A landed hit: damage, xp, splat, kill; momentum / savage triggers.
 function applyHit(p, m, dmg, crit) {
-  if (dmg > 0) { m.hp -= dmg; m.provoked = true; m.targetId = p.id; m.state = 'combat'; } // class xp comes with the kill (killMonster), not per hit
+  if (m.vulnerable > 0 && dmg > 0) dmg = Math.round(dmg * 1.5);   // a stunned boss takes it hard
+  if (dmg > 0) { m.hp -= dmg; m.provoked = true; if (!m.boss) { m.targetId = p.id; m.state = 'combat'; } } // class xp comes with the kill (killMonster), not per hit
   broadcast({ t: 'event', kind: 'hit', by: p.id, target: m.id, dmg, crit: !!crit, targetKind: 'monster' });
   if (crit) savageTrigger(p);
   if (m.hp <= 0) killMonster(m, p);
@@ -1625,6 +1636,7 @@ function useAbility(p, id) {
   const inReach = target && target.alive && dist2(p.x, p.z, target.x, target.z) <= ATTACK_RANGE * ATTACK_RANGE;
   const needTarget = ['melee', 'execute', 'cone', 'rush'].includes(a.kind);
   if (needTarget && !(target && target.alive)) return notice('You need a target.');
+  if (needTarget && target.untargetable) return notice(`${target.name} is out of reach!`);
   if (['melee', 'execute', 'cone'].includes(a.kind) && !inReach) return notice('You need to be in reach.');
   if (a.kind === 'execute' && target.hp > target.maxHp * 0.3) return notice(`${a.name} needs the target at 30% health or less.`);
   if (a.kind === 'rush' && dist2(p.x, p.z, target.x, target.z) > a.range * a.range) return notice('Too far to rush.');
@@ -1707,6 +1719,12 @@ function stepClass(p, inCombat) {
   else { p.rageIdle = (p.rageIdle || 0) + DT; if (p.rageIdle > R.decayDelay) p.rage = Math.max(0, p.rage - R.decay * DT); }
   p.gcd = Math.max(0, (p.gcd || 0) - DT);
   p.savageCd = Math.max(0, (p.savageCd || 0) - DT);
+  if (p.slow && p.slow.t > 0) p.slow.t -= DT;
+  if (p.dots) for (const [k, d] of Object.entries(p.dots)) {   // bleeds / burns tick once a second
+    d.t -= DT; d.acc += DT;
+    if (d.acc >= 1) { d.acc -= 1; hurtPlayer(p, d.dps, null, k); }
+    if (d.t <= 0) delete p.dots[k];
+  }
   for (const k of Object.keys(p.cooldowns)) if (p.cooldowns[k] > 0) p.cooldowns[k] = Math.max(0, p.cooldowns[k] - DT);
   let statusDirty = false;
   for (const [k, bf] of Object.entries(p.buffs)) {
@@ -1740,10 +1758,33 @@ function stepClass(p, inCombat) {
 // ---------------------------------------------------------------------------
 // Simulation
 // ---------------------------------------------------------------------------
+// Hurt a player from any source (a monster, a hazard, a boss mechanic):
+// health, combat lockout, rage, the hit splat, and death.
+function hurtPlayer(p, dmg, m, kind) {
+  if (!p.alive || dmg <= 0) return;
+  p.hp -= dmg; p.combatTimer = REGEN.combatLockout;
+  if (classDef(p.cls).rage) addRage(p, dmg * classDef(p.cls).rage.damageTaken);
+  if (m) engage(p, m);
+  broadcast({ t: 'event', kind: 'hit', by: m ? m.id : null, target: p.id, dmg, targetKind: 'player', hitKind: kind || null });
+  if (p.hp <= 0) {
+    p.hp = 0; p.alive = false; p.deathTimer = RESPAWN_TIME; p.engagedWith = null;
+    if (m) { m.targetId = null; m.provoked = false; m.state = 'idle'; }
+    systemChat(`${p.name} was slain by ${m ? (m.elite ? m.name : 'a ' + m.name) : (kind === 'poison' ? 'poison' : 'fire')}.`);
+    send(p.ws, { t: 'event', kind: 'death' });
+  }
+}
+function addSlow(p, t, k) { p.slow = { t, k }; }
+function addDot(p, kind, t, dps) { p.dots = p.dots || {}; p.dots[kind] = { t, dps, acc: 0 }; }
+const bossCtx = {
+  players, monsters, zoneOf, broadcast, send, systemChat, makeMonster, killMonster, hurtPlayer, addSlow, addDot,
+  resolveCollision, navStep, dist2, incomingMult, nextId: () => nextId++,
+};
+
 function stepMonster(m) {
   const zone = zoneOf(m);
   if (!m.alive) {
     m.respawnTimer -= DT;
+    if (m.respawn >= 999999) { if (m.respawnTimer < 999999 - 8) monsters.delete(m.id); return; }   // a boss or its brood: gone for good after the corpse fades
     if (m.respawnTimer <= 0) {
       const pos = spawnInRegion(zone, m.spec.region, { passive: m.passive });
       m.x = pos.x; m.z = pos.z; m.home = { x: pos.x, z: pos.z }; m._nav = null;
@@ -1755,6 +1796,8 @@ function stepMonster(m) {
     return;
   }
   m.atkTimer = Math.max(0, m.atkTimer - DT);
+  if (m.boss === 'cluckifer') { stepCluckifer(bossCtx, m, DT); resolveCollision(zone, m, 1.2); return; }
+  if (m.minion) { stepMinion(bossCtx, m, DT); if (m.alive && m.speed > 0) resolveCollision(zone, m, 0.5); return; }
   if (m.debuffs) for (const k of Object.keys(m.debuffs)) { m.debuffs[k] -= DT; if (m.debuffs[k] <= 0) delete m.debuffs[k]; }
   if ((m.stagger || 0) > 0) { m.stagger -= DT; return; }   // staggered: can't move or swing
   const slowK = (m.debuffs && m.debuffs.bonebreak > 0) ? 0.6 : 1;
@@ -2041,6 +2084,7 @@ setInterval(() => {
   stepVeins();
   stepGates();
   for (const m of monsters.values()) stepMonster(m);
+  for (const zone of Object.values(ZONES)) stepHazards(bossCtx, zone, DT);
   for (const p of players.values()) stepPlayer(p);
   for (const [id, it] of groundItems) { it.ttl -= DT; if (it.ttl <= 0) groundItems.delete(id); }
 
@@ -2068,7 +2112,8 @@ setInterval(() => {
         if (m.zoneId !== zid) continue;
         ms.push({ id: m.id, type: m.type, name: m.name, level: m.level, elite: m.elite,
           x: +m.x.toFixed(2), z: +m.z.toFixed(2), yaw: +m.yaw.toFixed(2), y: +(m.y || 0).toFixed(2), cave: m.cave || undefined,
-          hp: Math.round(m.hp), maxHp: m.maxHp, alive: m.alive });
+          hp: Math.round(m.hp), maxHp: m.maxHp, alive: m.alive,
+          boss: m.boss || undefined, phase: m.phase || undefined, stun: m.stunT > 0 || undefined, hidden: m.untargetable || undefined, grow: m.grow != null ? +m.grow.toFixed(2) : undefined });
       }
       const items = [];
       for (const it of groundItems.values()) {
@@ -2078,6 +2123,7 @@ setInterval(() => {
       const gate = ZONES[zid]._gate;
       return (byZone[zid] = JSON.stringify({ t: 'snapshot', now, players: ps, monsters: ms, items,
         depleted: depletedIds(ZONES[zid]),
+        hazards: hazardList(ZONES[zid]),
         gate: gate ? +(gate.t * gate.dir).toFixed(3) : undefined, // signed: sign = swing direction
         time: +dayTime.toFixed(4), weather }));
     };
@@ -2269,6 +2315,12 @@ wss.on('connection', (ws) => {
         break;
       }
       // --- World editor (gated by EDIT_KEY) ---
+      case 'spawnboss': {   // editor tool: summon Cluckifer beside the player / set his health, to test the fight
+        if (!player || msg.key !== EDIT_KEY) break;
+        if (msg.god) { player.maxHp = 100000; player.hp = 100000; break; }   // an observer that survives the fight
+        if (msg.hp != null) __test.setBossHp(+msg.hp); else __test.forceCluckifer();
+        break;
+      }
       case 'give': {   // editor tool: hand the player any item, to test gear without grinding for it
         if (!player || msg.key !== EDIT_KEY || !ITEMS[msg.item]) break;
         for (let i = 0; i < Math.min(28, Math.max(1, msg.qty | 0)); i++) player.inventory.push(String(msg.item));
@@ -2399,3 +2451,15 @@ httpServer.listen(PORT, () => {
   console.log(`  Open http://localhost:${PORT} in your browser.`);
   console.log(`  Open it in two windows to see multiplayer.\n`);
 });
+
+// Test hooks (headless smoke tests only): force the secret boss to appear and
+// knock its health down to reach its phases without a real fight.
+export const __test = {
+  forceCluckifer() {
+    const p = [...players.values()][0]; if (!p) return null;
+    const fake = { zoneId: p.zoneId, x: p.x + 4, z: p.z + 4, id: -1 };
+    const orig = Math.random; Math.random = () => 0;
+    try { return maybeSpawnCluckifer(bossCtx, fake, p); } finally { Math.random = orig; }
+  },
+  setBossHp(frac) { for (const m of monsters.values()) if (m.boss === 'cluckifer' && m.alive) m.hp = Math.round(m.maxHp * frac); },
+};

@@ -674,6 +674,9 @@ const CORE_MODELS = ['Male', 'items/Coins', 'human/Human_Male_Modular_Base'];
 const MOB_MODEL = {
   goblin: { model: 'Goblin', h: 2.0 }, bandit: { model: 'Bandit', h: 2.3 }, guard: { model: 'Hill_Ogre', h: 3.0 },
   spider: { model: 'Cave_Spider', h: 1.6 }, cow: { model: 'Cow', h: 2.0 }, chicken: { model: 'Chicken', h: 1.1 },
+  // Cluckifer and his brood (the chicken, giant / tiny, in black and red; the eggs are the Egg item model)
+  cluckifer: { model: 'Chicken', h: 3.8 }, hell_chick: { model: 'Chicken', h: 0.75 }, brood_chick: { model: 'Chicken', h: 0.85 },
+  ruin_egg: { model: 'Egg', h: 1.4 }, rotten_egg: { model: 'Egg', h: 1.7 },
   venom_spider: { model: 'Venom_Spider', h: 1.7 }, crystal_spider: { model: 'Crystal_Spider', h: 1.8 },
   bat: { model: 'Bat', h: 1.0 },
   cave_giant: { model: 'Moss_Cave_Giant', h: 3.4 }, crystal_giant: { model: 'Crystal_Cave_Giant', h: 3.6 },
@@ -1142,6 +1145,7 @@ function handle(m) {
       if (m.weather && !weatherFrozen) worldWeather = m.weather;
       if (m.gate != null) gateTarget = m.gate;
       applyDepleted(m.depleted);
+      syncHazards(m.hazards);
       updateHudFromSnapshot(m);
       break;
     case 'transition':
@@ -4523,11 +4527,41 @@ function splitHumanoid(wrap, bones) {
   }
 }
 
+// Cluckifer's colours: black feathers, blood-red comb, wattles and feather
+// tips, embers in the eyes; the chicks are the same in miniature.
+function paintDevilChicken(g, type) {
+  const brood = type === 'brood_chick';
+  g.traverse(o => {
+    if (!o.isMesh || !o.material) return;
+    o.material = Array.isArray(o.material) ? o.material.map(m => m.clone()) : o.material.clone();
+    for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
+      const n = m.name || '';
+      if (/Comb|wattle/i.test(n) || /pale tips/i.test(n)) { m.color.set(brood ? 0x8a1a1a : 0xd41414); m.emissive = new THREE.Color(0x5a0808); m.emissiveIntensity = 0.9; }
+      else if (/Eyes/i.test(n)) { m.color.set(0xff5a10); m.emissive = new THREE.Color(0xff3a00); m.emissiveIntensity = 2.0; }
+      else if (/Beak|legs/i.test(n)) { m.color.set(brood ? 0x3a2a24 : 0x5a1c10); m.emissive = new THREE.Color(0x200400); m.emissiveIntensity = 0.5; }
+      else { m.color.set(brood ? 0x1c1a1e : 0x0c0a0e); m.emissive = new THREE.Color(0x120306); m.emissiveIntensity = 0.6; }
+      m.needsUpdate = true;
+    }
+  });
+}
+function paintEgg(g, type) {
+  g.traverse(o => {
+    if (!o.isMesh || !o.material) return;
+    o.material = Array.isArray(o.material) ? o.material.map(m => m.clone()) : o.material.clone();
+    for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
+      if (type === 'rotten_egg') { m.color.set(0x4a5a2a); m.emissive = new THREE.Color(0x1d3a08); m.emissiveIntensity = 0.9; }
+      else { m.color.set(0x2a1418); m.emissive = new THREE.Color(0x6a1608); m.emissiveIntensity = 0.9; }
+      m.needsUpdate = true;
+    }
+  });
+}
 function makeMonsterMesh(type, elite) {
   const map = MOB_MODEL[type] || { model: 'Goblin', h: 2 };
-  const g = cloneModel(map.model, map.h * (elite ? 1.4 : 1));
+  const g = cloneModel(map.model, map.h * (elite && type !== 'cluckifer' ? 1.4 : 1));
   if (g) {
-    if (type === 'chicken') splitChickenParts(g);
+    if (type === 'chicken' || type === 'cluckifer' || type === 'hell_chick' || type === 'brood_chick') splitChickenParts(g);
+    if (type === 'cluckifer' || type === 'hell_chick' || type === 'brood_chick') paintDevilChicken(g, type);
+    if (type === 'ruin_egg' || type === 'rotten_egg') paintEgg(g, type);
     // The cow is a quadruped merged mesh — carve legs + head so it strides
     // instead of sliding along stiff.
     else if (type === 'cow') splitQuadParts(g);
@@ -4539,14 +4573,14 @@ function makeMonsterMesh(type, elite) {
     // Most GLB characters face -Z (flip with MODEL_YAW); the Chicken, the cow and
     // the humanoid mobs (goblins, bandits) face +Z, so they need no flip or they
     // walk backwards.
-    g.userData.faceOffset = (type === 'chicken' || type === 'cow' || HUMANOID_SPLIT.has(type)) ? 0 : MODEL_YAW;
+    g.userData.faceOffset = (type === 'chicken' || type === 'cluckifer' || type === 'hell_chick' || type === 'brood_chick' || type === 'cow' || HUMANOID_SPLIT.has(type)) ? 0 : MODEL_YAW;
     g.userData.rig = buildRig(g, RIG_STYLE[type] || 'biped');
     // Split humanoid mobs face +Z and punch with alternating hands (see the
     // generic biped branch in animateEntity).
     if (g.userData.rig && HUMANOID_SPLIT.has(type)) g.userData.rig.punchMob = true;
     // The cow faces +Z too, so lean/lunge forward into its bite (not backward).
     if (g.userData.rig && type === 'cow') g.userData.rig.punchMob = true;
-    if (elite) g.traverse(o => {
+    if (elite && type !== 'cluckifer') g.traverse(o => {
       if (o.isMesh && o.material) {
         o.material = Array.isArray(o.material) ? o.material.map(m => m.clone()) : o.material.clone();
         const mats = Array.isArray(o.material) ? o.material : [o.material];
@@ -4692,7 +4726,7 @@ function updateHeldWeapon(rec, name) {
 const RIG_STYLE = {
   goblin: 'biped', bandit: 'biped', guard: 'ogre',
   spider: 'spider', venom_spider: 'spider', crystal_spider: 'spider',
-  cow: 'quad', chicken: 'bird', bat: 'flier',
+  cow: 'quad', chicken: 'bird', bat: 'flier', cluckifer: 'bird', hell_chick: 'bird', brood_chick: 'bird',
   cave_giant: 'biped', crystal_giant: 'biped', cave_guardian: 'biped', broodmother: 'spider',
   goblin_scavenger: 'biped', goblin_warrior: 'biped', goblin_archer: 'biped',
   goblin_shaman: 'biped', goblin_miner: 'biped', goblin_chief: 'biped',
@@ -4952,6 +4986,8 @@ function animateEntity(rec, e, kind, dt) {
     // Breathing: subtle vertical swell that keeps volume roughly constant.
     const e = breathe * 0.05 * (1 - pw);
     b.scale.set(rig.baseScale.x * (1 - e * 0.5), rig.baseScale.y * (1 + e), rig.baseScale.z * (1 - e * 0.5));
+    if (rig.bossAnim) applyBossPose(rec, rig, b, dt, e);
+    else if (rec.data && rec.data.stun) { b.rotation.z = Math.sin(performance.now() / 180) * 0.12; if (rig.head) rig.head.rotation.x = 0.9; }   // stunned: reeling, beak down
     return;
   }
   if (rig.style === 'hero') {
@@ -6152,6 +6188,203 @@ function meditationTickFx() {
   sfx.play('heal_chime', { x: mp.x, z: mp.z, rate: 0.7, vol: 0.3 }); sfx.play('hit_thud', { x: mp.x, z: mp.z, rate: 0.5, vol: 0.3, lowpass: 600 });
 }
 
+// ---- Cluckifer: boss animation, telegraphs, hazards and mechanic VFX ----
+// Every mechanic arrives as a `boss` event from the server; this turns each
+// one into a pose on the chicken rig (whole body + neck + legs) and the
+// effects around it. Fire/poison patches come with the snapshot and persist.
+const BOSS_ANIMS = {
+  // id: { dur, pose(u, P) } — u runs 0..1 over dur; P collects offsets:
+  // lift (y), pitch/roll/spin (body rotation), head (neck x), squash (scale y), thrust (fore/aft)
+  hell_peck:  { dur: 0.9, pose: (u, P) => { const w = u < 0.5 ? u / 0.5 : 1 - (u - 0.5) / 0.5; P.pitch = -0.35 * w + (u > 0.45 ? 0.9 * Math.sin(Math.min(1, (u - 0.45) / 0.3) * Math.PI) : 0); P.thrust = u > 0.45 ? 1.4 * Math.sin(Math.min(1, (u - 0.45) / 0.35) * Math.PI) : -0.4 * w; P.head = u > 0.45 ? 1.3 : -0.4 * w; } },
+  blood_peck: { dur: 1.7, pose: (u, P) => { const c = Math.min(1, u / 0.7); P.pitch = -0.55 * c + (u > 0.7 ? 1.1 * Math.sin(Math.min(1, (u - 0.7) / 0.3) * Math.PI) : 0); P.thrust = u > 0.7 ? 2.0 * Math.sin(Math.min(1, (u - 0.7) / 0.3) * Math.PI) : -0.6 * c; P.head = u > 0.7 ? 1.4 : -0.6 * c; P.squash = -0.08 * c; } },
+  wing:       { dur: 1.4, pose: (u, P) => { P.roll = Math.sin(u * Math.PI) * 0.7 * (u < 0.57 ? -1 : 1); P.spin = u > 0.5 ? Math.sin((u - 0.5) * 2 * Math.PI) * 1.6 : -0.3 * u; P.lift = Math.sin(u * Math.PI) * 0.6; P.head = -0.3; } },
+  scratch:    { dur: 1.3, pose: (u, P) => { const k = Math.floor(u * 3.9), f = (u * 3.9) % 1; P.roll = (k % 2 ? 1 : -1) * Math.sin(f * Math.PI) * 0.35; P.pitch = 0.25 * Math.sin(f * Math.PI); P.legL = k % 2 ? 0 : -1.2 * Math.sin(f * Math.PI); P.legR = k % 2 ? -1.2 * Math.sin(f * Math.PI) : 0; P.head = 0.3; } },
+  lay:        { dur: 1.0, pose: (u, P) => { P.squash = -0.25 * Math.sin(u * Math.PI); P.pitch = -0.2 * Math.sin(u * Math.PI); P.head = -0.5 * Math.sin(u * Math.PI); } },
+  demon_cluck:{ dur: 1.8, pose: (u, P) => { const c = Math.min(1, u / 0.9); P.head = -1.1 * c + (u > 0.55 ? 0.3 * Math.sin(u * 60) : 0); P.pitch = -0.3 * c; P.squash = 0.12 * c; P.roll = u > 0.55 ? Math.sin(u * 50) * 0.08 : 0; } },
+  summon:     { dur: 1.2, pose: (u, P) => { P.squash = 0.25 * Math.sin(u * Math.PI); P.lift = 0.3 * Math.sin(u * Math.PI); P.head = -0.6 * Math.sin(u * Math.PI); P.spin = Math.sin(u * Math.PI * 2) * 0.2; } },
+  barrage:    { dur: 2.0, pose: (u, P) => { P.spin = u < 0.6 ? u / 0.6 * Math.PI * 2 : Math.PI * 2; P.squash = u > 0.55 ? 0.2 * Math.sin((u - 0.55) / 0.45 * Math.PI) : 0; P.head = -0.4; } },
+  rush:       { dur: 1.9, pose: (u, P) => { P.pitch = 0.5; P.head = 0.5; P.lift = Math.abs(Math.sin(u * 40)) * 0.25; P.legL = Math.sin(u * 40) * 1.2; P.legR = -Math.sin(u * 40) * 1.2; } },
+  run:        { dur: 5.2, pose: (u, P) => { P.pitch = 0.3; P.lift = Math.abs(Math.sin(u * 60)) * 0.35; P.legL = Math.sin(u * 60) * 1.3; P.legR = -Math.sin(u * 60) * 1.3; P.head = Math.sin(u * 60) * 0.3; P.roll = Math.sin(u * 30) * 0.15; } },
+  roost_jump: { dur: 2.0, pose: (u, P) => { const c = Math.min(1, u / 0.25); P.squash = u < 0.25 ? -0.3 * Math.sin(c * Math.PI) : 0; P.lift = u < 0.25 ? 0 : Math.min(1, (u - 0.25) / 0.3) * 16; P.pitch = u > 0.25 ? -0.5 : 0; P.legL = P.legR = u > 0.25 ? 0.9 : 0; } },
+  roost_land: { dur: 1.1, pose: (u, P) => { P.lift = u < 0.2 ? (1 - u / 0.2) * 16 : 0; P.squash = u >= 0.2 && u < 0.6 ? -0.35 * Math.sin((u - 0.2) / 0.4 * Math.PI) : 0; P.pitch = u < 0.2 ? 0.6 : 0; P.head = u >= 0.2 ? 0.8 * Math.sin(Math.min(1, (u - 0.2) / 0.5) * Math.PI) : 0; } },
+  lunge:      { dur: 0.55, pose: (u, P) => { P.thrust = 1.6 * Math.sin(u * Math.PI); P.head = 1.2 * Math.sin(u * Math.PI); P.pitch = 0.5 * Math.sin(u * Math.PI); } },
+  molt:       { dur: 1.4, pose: (u, P) => { P.roll = Math.sin(u * 40) * 0.2; P.spin = Math.sin(u * 20) * 0.15; P.squash = 0.15 * Math.sin(u * Math.PI); P.head = -0.5; } },
+  crow:       { dur: 3.6, pose: (u, P) => { P.head = -1.2; P.pitch = -0.4; P.squash = 0.15 + 0.06 * Math.sin(u * 30); P.lift = 0.2; } },
+  meteor:     { dur: 1.6, pose: (u, P) => { P.head = -1.3 * Math.sin(Math.min(1, u * 2) * Math.PI / 2); P.pitch = -0.5; P.spin = Math.sin(u * 8) * 0.1; } },
+  final_start:{ dur: 7.0, pose: (u, P) => { P.lift = Math.min(1, u / 0.5) * 12 + Math.sin(u * 6) * 0.6; P.spin = u * 14; P.head = -0.8; P.pitch = -0.3; } },
+  final_land: { dur: 1.2, pose: (u, P) => { P.lift = u < 0.2 ? (1 - u / 0.2) * 12 : 0; P.squash = u >= 0.2 && u < 0.7 ? -0.4 * Math.sin((u - 0.2) / 0.5 * Math.PI) : 0; } },
+  stunned:    { dur: 3.0, pose: (u, P) => { P.roll = Math.sin(u * 22) * 0.18; P.head = 0.9; P.pitch = 0.15; P.squash = -0.1; } },
+  phase2:     { dur: 1.5, pose: (u, P) => { P.lift = 0.8 * Math.sin(u * Math.PI); P.squash = 0.3 * Math.sin(u * Math.PI); P.head = -1.0 * Math.sin(u * Math.PI); P.spin = Math.sin(u * Math.PI) * 0.6; } },
+  hatch:      { dur: 0.6, pose: (u, P) => { P.squash = 0.4 * Math.sin(u * Math.PI); } },
+};
+function startBossAnim(rec, id, dur) {
+  const rig = rec && rec.mesh.userData.rig; if (!rig || !BOSS_ANIMS[id]) return;
+  rig.bossAnim = { id, t: 0, dur: dur || BOSS_ANIMS[id].dur };
+}
+function applyBossPose(rec, rig, b, dt) {
+  const an = rig.bossAnim; an.t += dt; const u = Math.min(1, an.t / an.dur);
+  const P = {}; BOSS_ANIMS[an.id].pose(u, P);
+  const bs = rig.baseScale;
+  b.position.y = rig.home.y + (P.lift || 0);
+  b.position.z = rig.home.z + (P.thrust || 0);        // the chicken model faces +Z locally
+  b.rotation.x += (P.pitch || 0); b.rotation.z += (P.roll || 0); b.rotation.y += (P.spin || 0);
+  if (P.squash) b.scale.set(bs.x * (1 - P.squash * 0.5), bs.y * (1 + P.squash), bs.z * (1 - P.squash * 0.5));
+  if (rig.head && P.head != null) rig.head.rotation.x = P.head;
+  if (rig.legL && P.legL != null) rig.legL.rotation.x = P.legL;
+  if (rig.legR && P.legR != null) rig.legR.rotation.x = P.legR;
+  if (an.t >= an.dur) rig.bossAnim = null;
+}
+
+// Telegraphs: flat warning shapes on the ground that pulse and fill up as the
+// blow approaches, then vanish. shape: circle | ring | lane | cone.
+function telegraph(shape, o) {
+  const dur = o.dur || 1.5, col = o.color || 0xff5a1a;
+  const g = new THREE.Group(); g.position.set(o.x, (o.y || 0) + 0.09, o.z);
+  const mat = (op) => new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: op, side: THREE.DoubleSide, depthWrite: false });
+  let outline, fill;
+  if (shape === 'circle') { outline = new THREE.Mesh(new THREE.RingGeometry(o.r * 0.94, o.r, 48), mat(0.9)); fill = new THREE.Mesh(new THREE.CircleGeometry(o.r, 48), mat(0.28)); }
+  else if (shape === 'ring') { const w = o.w || 1.2; const parts = []; const gaps = o.gaps || []; const N = 72; for (let i = 0; i < N; i++) { const a0 = i / N * Math.PI * 2; const a = a0 + Math.PI / N; if (gaps.some(gp => Math.abs(Math.atan2(Math.sin(a - gp), Math.cos(a - gp))) < (o.gapHalf || 0.42))) continue; parts.push(new THREE.RingGeometry(o.r - w, o.r + w, 4, 1, a0 - Math.PI / 2, Math.PI * 2 / N)); } if (!parts.length) return; outline = new THREE.Mesh(mergeGeometries(parts, false), mat(0.55)); fill = null; }
+  else if (shape === 'lane') { outline = new THREE.Mesh(new THREE.PlaneGeometry(o.w * 2, o.len), mat(0.32)); outline.position.set(0, 0, o.len / 2); fill = new THREE.Mesh(new THREE.PlaneGeometry(o.w * 2 * 0.96, o.len * 0.98), mat(0.5)); fill.position.set(0, 0, o.len / 2); g.rotation.y = o.yaw; }
+  else if (shape === 'cone') { outline = new THREE.Mesh(new THREE.RingGeometry(o.r * 0.94, o.r, 40, 1, -Math.PI / 2 - o.half, o.half * 2), mat(0.9)); fill = new THREE.Mesh(new THREE.CircleGeometry(o.r, 40, -Math.PI / 2 - o.half, o.half * 2), mat(0.28)); g.rotation.y = o.yaw; }
+  for (const m of [outline, fill]) if (m) { m.rotation.x = -Math.PI / 2; m.frustumCulled = false; g.add(m); }
+  scene.add(g);
+  fxList.push({ kind: 'tele', obj: g, t: 0, life: dur, fill, outline, r: 1 });
+}
+// A thing that flies: a glowing egg lobbed in an arc, a feather streaking down a lane, a meteor falling.
+function projectile(o) {
+  const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: fxDot(), color: o.color || 0xff6a1a, transparent: true, opacity: 1, depthWrite: false, blending: THREE.AdditiveBlending }));
+  spr.scale.set(o.size || 0.8, o.size || 0.8, 1); spr.frustumCulled = false; scene.add(spr);
+  fxList.push({ kind: 'proj', obj: spr, t: 0, life: o.dur, from: o.from, to: o.to, arc: o.arc || 0, trail: o.trail, r: 1 });
+}
+// Fire / poison patches from the snapshot: a scorched disc, a crowd of
+// flickering flame sprites and a light, kept while the server says so.
+const hazardFx = new Map();
+function syncHazards(list) {
+  const seen = new Set();
+  for (const h of (list || [])) {
+    seen.add(h.id);
+    if (hazardFx.has(h.id)) { hazardFx.get(h.id).t = h.t; continue; }
+    const fire = h.k !== 'poison';
+    const g = new THREE.Group(); g.position.set(h.x, groundY(h.x, h.z), h.z);
+    const disc = new THREE.Mesh(new THREE.CircleGeometry(h.r, 28), new THREE.MeshBasicMaterial({ color: fire ? 0x2a1006 : 0x1d3a10, transparent: true, opacity: 0.6, depthWrite: false }));
+    disc.rotation.x = -Math.PI / 2; disc.position.y = 0.07; g.add(disc);
+    const glow = new THREE.Mesh(new THREE.CircleGeometry(h.r * 0.85, 28), new THREE.MeshBasicMaterial({ color: fire ? 0xff4a10 : 0x6ad830, transparent: true, opacity: 0.22, depthWrite: false, blending: THREE.AdditiveBlending }));
+    glow.rotation.x = -Math.PI / 2; glow.position.y = 0.09; g.add(glow);
+    const n = Math.round(8 + h.r * 6), flames = [];
+    for (let i = 0; i < n; i++) {
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: fxDot(), color: fire ? (i % 3 ? 0xff7a1a : 0xffd070) : (i % 3 ? 0x8ae04a : 0xd8ff90), transparent: true, opacity: 0.85, depthWrite: false, blending: THREE.AdditiveBlending }));
+      const a = Math.random() * 6.28, rr = Math.sqrt(Math.random()) * h.r * 0.85;
+      sp.userData = { x: Math.cos(a) * rr, z: Math.sin(a) * rr, ph: Math.random() * 6.28, sp: 0.8 + Math.random() * 0.8, s: 0.8 + Math.random() * 0.9 };
+      sp.frustumCulled = false; g.add(sp); flames.push(sp);
+    }
+    const light = new THREE.PointLight(fire ? 0xff6a20 : 0x7ae040, fire ? 1.4 : 0.9, h.r * 3.5); light.position.y = 0.8; g.add(light);
+    scene.add(g);
+    hazardFx.set(h.id, { g, flames, light, t: h.t, fire, r: h.r });
+  }
+  for (const [id, hz] of hazardFx) if (!seen.has(id)) { scene.remove(hz.g); hazardFx.delete(id); }
+}
+function updateHazardFx(dt) {
+  const tt = performance.now() / 1000;
+  for (const hz of hazardFx.values()) {
+    const fade = Math.min(1, hz.t / 1.5);
+    for (const f of hz.flames) {
+      const u = (tt * f.sp + f.ph) % 1;
+      f.position.set(f.x = f.userData.x + Math.sin(tt * 3 + f.userData.ph) * 0.15, 0.2 + u * (hz.fire ? 1.6 : 0.9), f.userData.z);
+      const sc = f.userData.s * (1 - u * 0.6) * fade; f.scale.set(sc, sc * (hz.fire ? 1.5 : 1), 1);
+      f.material.opacity = (1 - u) * 0.85 * fade;
+    }
+    hz.light.intensity = (hz.fire ? 1.2 : 0.8) * fade * (0.85 + 0.3 * Math.sin(tt * 9 + hz.r));
+  }
+}
+// The boss events themselves.
+const bossMarks = new Map();   // player id -> mark sprite (The Peckening)
+function bossEvent(m) {
+  const rec = m.id != null ? entityMeshes.get(m.id) : null;
+  const mp = rec ? rec.mesh.position : { x: m.x, y: groundY(m.x || 0, m.z || 0), z: m.z };
+  const gy = (x, z) => groundY(x, z);
+  const S = (clip, o) => sfx.play(clip, { x: mp.x, z: mp.z, ...o });
+  const cluck = (rate, vol) => S('bird_chirp', { rate, vol, lowpass: 900 });
+  switch (m.fx) {
+    case 'arrive':
+      spawnFx('flash', m.x, gy(m.x, m.z) - 0.2, m.z, 0, { r: 6, color: 0xff3a10, life: 0.6 });
+      spawnFx('shock', m.x, gy(m.x, m.z), m.z, 0, { r: 12, color: 0xff4a10, life: 1.0 });
+      for (let i = 0; i < 6; i++) setTimeout(() => spawnFx('impact', m.x + (Math.random() - 0.5) * 4, gy(m.x, m.z), m.z + (Math.random() - 0.5) * 4, 0, { y: 1.5, n: 16, color: 0xff6a20, sparkColor: 0x2a0a0a }), i * 120);
+      S('thunder_roll', { rate: 0.6, vol: 1 }); cluck(0.25, 1.2); camShake = Math.max(camShake, 0.5);
+      addChat('System', 'CLUCKIFER has come!', true); break;
+    case 'hell_peck': startBossAnim(rec, 'hell_peck'); telegraph('cone', { x: mp.x, z: mp.z, r: 4.2, half: 0.6, yaw: m.yaw, dur: 0.45 }); cluck(0.5, 0.8); break;
+    case 'blood_peck': startBossAnim(rec, 'blood_peck'); telegraph('cone', { x: mp.x, z: mp.z, r: 4.4, half: 0.55, yaw: m.yaw, dur: 1.2, color: 0xb00020 }); cluck(0.35, 1); setTimeout(() => spawnFx('streak', mp.x, mp.y, mp.z, m.yaw, { fwd: 2.5, len: 4, color: 0xd01030 }), 1150); break;
+    case 'wing': startBossAnim(rec, 'wing'); telegraph('cone', { x: mp.x, z: mp.z, r: 7, half: 1.05, yaw: m.yaw, dur: 0.8 }); setTimeout(() => { spawnFx('arc', mp.x, mp.y, mp.z, m.yaw, { r: 6, spread: 2.1, color: 0xff7a30 }); spawnFx('dust', mp.x, mp.y, mp.z, 0, { r: 7 }); S('attack_slash', { rate: 0.5, vol: 1 }); camShake = Math.max(camShake, 0.2); }, 780); break;
+    case 'scratch': startBossAnim(rec, 'scratch'); telegraph('cone', { x: mp.x, z: mp.z, r: 4, half: 0.7, yaw: m.yaw, dur: 0.85 }); [350, 600, 850].forEach((t, i) => setTimeout(() => { spawnFx('sparks', mp.x, mp.y, mp.z, m.yaw, { n: 10, color: i === 2 ? 0xd01030 : 0xff8a30 }); S('attack_claw', { rate: 1.1 + i * 0.1, vol: 0.8 }); }, t)); break;
+    case 'lay': startBossAnim(rec, 'lay'); cluck(0.45, 0.6); break;
+    case 'fire_egg': {
+      startBossAnim(rec, 'lay', 0.9);
+      projectile({ from: { x: mp.x, y: mp.y + 2.4, z: mp.z }, to: { x: m.tx, y: gy(m.tx, m.tz) + 0.4, z: m.tz }, dur: 0.9, arc: 6, color: 0xff6a1a, size: 1.3, trail: true });
+      telegraph('circle', { x: m.tx, z: m.tz, r: 3, dur: m.delay || 1.6 }); cluck(0.5, 0.6); break; }
+    case 'egg_burst':
+      spawnFx('flash', m.tx, gy(m.tx, m.tz) - 0.6, m.tz, 0, { r: 4.5, color: 0xffb040, life: 0.35 }); spawnFx('shock', m.tx, gy(m.tx, m.tz), m.tz, 0, { r: 5, color: 0xff5a10 });
+      spawnFx('impact', m.tx, gy(m.tx, m.tz), m.tz, 0, { y: 0.6, n: 22, color: 0xfff0c0, sparkColor: 0xff7a20 }); sfx.play('cave_rock', { x: m.tx, z: m.tz, rate: 0.9, vol: 0.9 }); camShake = Math.max(camShake, 0.15); break;
+    case 'demon_cluck': startBossAnim(rec, 'demon_cluck'); telegraph('circle', { x: mp.x, z: mp.z, r: 9, dur: 1.0, color: 0xff2a2a }); cluck(0.22, 1.4); setTimeout(() => { for (let i = 0; i < 3; i++) setTimeout(() => spawnFx('shock', mp.x, mp.y, mp.z, 0, { r: 10 + i * 2, color: 0xff3a30, life: 0.7 }), i * 120); S('thunder_roll', { rate: 1.4, vol: 0.9, lowpass: 1200 }); camShake = Math.max(camShake, 0.35); }, 1000); break;
+    case 'summon': startBossAnim(rec, 'summon'); S('magic_cast', { rate: 0.6, vol: 0.8, lowpass: 900 }); spawnFx('glow', mp.x, mp.y, mp.z, 0, { color: 0xb01020, life: 0.9 }); break;
+    case 'minion': spawnFx('impact', m.mx, gy(m.mx, m.mz), m.mz, 0, { y: 0.5, n: 10, color: 0x3a0a0a, sparkColor: 0xff5a20 }); spawnFx('dust', m.mx, gy(m.mx, m.mz), m.mz, 0, { r: 1.5 }); break;
+    case 'barrage': startBossAnim(rec, 'barrage'); for (const a of m.lanes) telegraph('lane', { x: mp.x, z: mp.z, yaw: a, len: m.len, w: 1.4, dur: m.delay });
+      setTimeout(() => { for (const a of m.lanes) for (let k = 0; k < 3; k++) setTimeout(() => projectile({ from: { x: mp.x, y: mp.y + 1.6, z: mp.z }, to: { x: mp.x + Math.sin(a) * m.len, y: 0.6, z: mp.z + Math.cos(a) * m.len }, dur: 0.45, color: k ? 0xff7a20 : 0xffc060, size: 0.9, trail: true }), k * 80); S('attack_slash', { rate: 0.8, vol: 0.9 }); }, m.delay * 1000); break;
+    case 'rush': startBossAnim(rec, 'rush'); telegraph('lane', { x: mp.x, z: mp.z, yaw: m.dir, len: 26, w: 2.2, dur: 0.5 }); cluck(0.4, 1); break;
+    case 'stunned': startBossAnim(rec, 'stunned', m.t); spawnFx('impact', mp.x, mp.y, mp.z, 0, { y: 2.5, n: 14, color: 0xffe080, sparkColor: 0xffd040 }); S('cave_rock', { rate: 0.7, vol: 1 }); camShake = Math.max(camShake, 0.3); if (m.vulnerable) addChat('System', 'Cluckifer is stunned and vulnerable!', true); break;
+    case 'roost_jump': startBossAnim(rec, 'roost_jump'); telegraph('circle', { x: m.tx, z: m.tz, r: m.r, dur: m.delay, color: 0xff2a10 }); spawnFx('dust', mp.x, mp.y, mp.z, 0, { r: 4 }); cluck(0.3, 1); break;
+    case 'roost_land': startBossAnim(rec, m.r > 7 ? 'final_land' : 'roost_land'); spawnFx('flash', mp.x, mp.y - 0.4, mp.z, 0, { r: 8, color: 0xffa040, life: 0.5 }); spawnFx('shock', mp.x, mp.y, mp.z, 0, { r: m.r * 1.6, color: 0xff5a10, life: 0.9 }); spawnFx('cracks', mp.x, mp.y, mp.z, 0, { r: m.r * 0.9, fwd: 0 }); spawnFx('impact', mp.x, mp.y, mp.z, 0, { y: 0.8, n: 30, color: 0xfff0c0, sparkColor: 0xff6a20 }); S('cave_rock', { rate: 0.5, vol: 1 }); S('thunder_roll', { rate: 0.9, vol: 0.9 }); camShake = Math.max(camShake, 0.7); break;
+    case 'run_start': startBossAnim(rec, 'run', m.t); cluck(0.6, 1); addChat('System', 'Cluckifer runs wild!', true); break;
+    case 'bounce': spawnFx('dust', mp.x, mp.y, mp.z, 0, { r: 3 }); S('hit_thud', { rate: 0.6, vol: 0.8 }); cluck(0.7, 0.6); break;
+    case 'run_end': if (rec && rec.mesh.userData.rig) rec.mesh.userData.rig.bossAnim = null; break;
+    case 'mark': { const pr = entityMeshes.get(m.pid); if (pr) { const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: fxStar(), color: 0xff2020, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })); spr.scale.set(1.6, 1.6, 1); spr.frustumCulled = false; scene.add(spr); bossMarks.set(m.pid, { spr, t: m.t }); } cluck(0.3, 1); if (m.pid === myId) addChat('System', 'Cluckifer has marked you!', true); break; }
+    case 'lunge': startBossAnim(rec, 'lunge'); spawnFx('streak', (m.fx0 + mp.x) / 2, mp.y, (m.fz0 + mp.z) / 2, Math.atan2(mp.x - m.fx0, mp.z - m.fz0), { len: Math.hypot(mp.x - m.fx0, mp.z - m.fz0), color: 0xff4a20, y: 1.2 }); spawnFx('dust', m.fx0, gy(m.fx0, m.fz0), m.fz0, 0, { r: 2 }); S('attack_slash', { rate: 0.7, vol: 0.7 }); break;
+    case 'miss_blast': spawnFx('flash', mp.x, mp.y - 0.6, mp.z, 0, { r: 3, color: 0xff8030, life: 0.3 }); spawnFx('shock', mp.x, mp.y, mp.z, 0, { r: m.r * 1.4, color: 0xff5a10 }); spawnFx('cracks', mp.x, mp.y, mp.z, 0, { r: 1.6, fwd: 0 }); S('hit_thud', { rate: 0.5, vol: 0.9 }); break;
+    case 'molt': startBossAnim(rec, 'molt'); for (let i = 0; i < 12; i++) setTimeout(() => projectile({ from: { x: mp.x, y: mp.y + 2, z: mp.z }, to: { x: mp.x + (Math.random() - 0.5) * 30, y: 0.3, z: mp.z + (Math.random() - 0.5) * 30 }, dur: 0.9, arc: 5, color: 0xff6a20, size: 0.7, trail: true }), i * 60); S('magic_cast', { rate: 0.5, vol: 0.8 }); break;
+    case 'crow': startBossAnim(rec, 'crow', 3.6); m.radii.forEach((r, i) => telegraph('ring', { x: mp.x, z: mp.z, r, w: 1.3, gaps: m.gaps, dur: 1.2 + i * 0.9, color: 0xff3a30 })); m.radii.forEach((r, i) => setTimeout(() => { spawnFx('shock', mp.x, mp.y, mp.z, 0, { r: r * 1.15, color: 0xff3020, life: 0.6 }); S('thunder_roll', { rate: 1.2 + i * 0.2, vol: 0.7, lowpass: 1500 }); camShake = Math.max(camShake, 0.2); }, 1200 + i * 900)); cluck(0.2, 1.4); break;
+    case 'meteor': startBossAnim(rec, 'meteor'); m.pts.forEach(([x, z], i) => { telegraph('circle', { x, z, r: m.r, dur: m.delay + i * 0.25, color: 0xff3a10 }); setTimeout(() => projectile({ from: { x: x + 6, y: 34, z: z - 4 }, to: { x, y: gy(x, z) + 0.3, z }, dur: 0.5, color: 0xffa030, size: 2.2, trail: true }), (m.delay + i * 0.25 - 0.5) * 1000); }); cluck(0.3, 1); break;
+    case 'meteor_hit': spawnFx('flash', m.tx, gy(m.tx, m.tz) - 0.5, m.tz, 0, { r: 5, color: 0xffb050, life: 0.35 }); spawnFx('shock', m.tx, gy(m.tx, m.tz), m.tz, 0, { r: m.r * 1.6, color: 0xff5a10 }); spawnFx('cracks', m.tx, gy(m.tx, m.tz), m.tz, 0, { r: 2, fwd: 0 }); spawnFx('impact', m.tx, gy(m.tx, m.tz), m.tz, 0, { y: 0.6, n: 20, color: 0xfff0c0, sparkColor: 0xff7a20 }); sfx.play('cave_rock', { x: m.tx, z: m.tz, rate: 0.7, vol: 1 }); camShake = Math.max(camShake, 0.25); break;
+    case 'phase2': startBossAnim(rec, 'phase2'); if (rec) rec.phase2 = true; spawnFx('flash', mp.x, mp.y, mp.z, 0, { r: 9, color: 0xff3a10, life: 0.8 }); spawnFx('shock', mp.x, mp.y, mp.z, 0, { r: 14, color: 0xff2a10, life: 1.2 }); S('thunder_roll', { rate: 0.7, vol: 1 }); cluck(0.18, 1.5); camShake = Math.max(camShake, 0.5); addChat('System', 'The Devil Chicken is unleashed!', true); break;
+    case 'final_start': startBossAnim(rec, 'final_start', m.t); spawnFx('glow', mp.x, mp.y, mp.z, 0, { color: 0xff2a10, life: 1.5 }); S('thunder_roll', { rate: 0.5, vol: 1 }); cluck(0.15, 1.6); addChat('System', 'THE FINAL CLUCK!', true); break;
+    case 'final_lanes': for (const a of m.lanes) { telegraph('lane', { x: mp.x, z: mp.z, yaw: a, len: m.len, w: 1.5, dur: 0.45 }); for (let k = 0; k < 2; k++) projectile({ from: { x: mp.x, y: 1.2, z: mp.z }, to: { x: mp.x + Math.sin(a) * m.len, y: 0.8, z: mp.z + Math.cos(a) * m.len }, dur: 0.45, color: k ? 0xff7a20 : 0xffd080, size: 1.0, trail: true }); } break;
+    case 'heal': if (rec) { spawnFx('glow', mp.x, mp.y, mp.z, 0, { color: 0x30ff60 }); flyTextAt(mp, `+${m.n}`, 'heal'); } break;
+    case 'devour': spawnFx('impact', mp.x, mp.y, mp.z, 0, { y: 1.5, n: 12, color: 0x3a0a0a, sparkColor: 0xff3020 }); cluck(0.5, 0.8); break;
+    case 'hatch': { const r2 = entityMeshes.get(m.mid); if (r2) { const p = r2.mesh.position; spawnFx('impact', p.x, p.y, p.z, 0, { y: 0.6, n: 14, color: 0xffd0a0, sparkColor: 0xff5a20 }); } break; }
+    case 'egg_smash': spawnFx('impact', m.mx, gy(m.mx, m.mz), m.mz, 0, { y: 0.5, n: 12, color: 0xffe8c0, sparkColor: 0x6a3a10 }); sfx.play('cave_rock', { x: m.mx, z: m.mz, rate: 1.4, vol: 0.6 }); break;
+    case 'rotten_burst': spawnFx('flash', m.mx, gy(m.mx, m.mz) - 0.5, m.mz, 0, { r: 8, color: 0x8aff40, life: 0.6 }); spawnFx('shock', m.mx, gy(m.mx, m.mz), m.mz, 0, { r: m.r * 1.5, color: 0x6ae030, life: 1.0 }); spawnFx('impact', m.mx, gy(m.mx, m.mz), m.mz, 0, { y: 0.8, n: 30, color: 0xd8ff90, sparkColor: 0x4a9a20 }); sfx.play('thunder_roll', { x: m.mx, z: m.mz, rate: 1.1, vol: 0.9, lowpass: 1000 }); camShake = Math.max(camShake, 0.3); break;
+    case 'chick_burst': spawnFx('flash', m.mx, gy(m.mx, m.mz) - 0.6, m.mz, 0, { r: 3.5, color: 0xffa040, life: 0.3 }); spawnFx('shock', m.mx, gy(m.mx, m.mz), m.mz, 0, { r: m.r * 1.4, color: 0xff5a10 }); spawnFx('impact', m.mx, gy(m.mx, m.mz), m.mz, 0, { y: 0.4, n: 14, color: 0xfff0c0, sparkColor: 0xff7a20 }); sfx.play('cave_rock', { x: m.mx, z: m.mz, rate: 1.2, vol: 0.7 }); break;
+    case 'knock': camShake = Math.max(camShake, 0.25); break;
+    case 'die': spawnFx('flash', mp.x, mp.y, mp.z, 0, { r: 10, color: 0xff3a10, life: 1.0 }); spawnFx('shock', mp.x, mp.y, mp.z, 0, { r: 16, color: 0xff4a10, life: 1.4 }); for (let i = 0; i < 10; i++) setTimeout(() => spawnFx('impact', mp.x + (Math.random() - 0.5) * 6, mp.y, mp.z + (Math.random() - 0.5) * 6, 0, { y: 1 + Math.random() * 2, n: 16, color: 0xff8a30, sparkColor: 0x2a0a0a }), i * 100); S('enemy_die', { rate: 0.45, vol: 1 }); S('thunder_roll', { rate: 0.6, vol: 1 }); camShake = Math.max(camShake, 0.6); break;
+    case 'hazard': spawnFx('flash', m.x, gy(m.x, m.z) - 0.8, m.z, 0, { r: m.r, color: m.kind2 === 'poison' ? 0x8aff40 : 0xff7a20, life: 0.3 }); break;
+  }
+}
+function flyTextAt(p, text, cls) { const rec = entityMeshes.get(myId); if (rec && Math.hypot(rec.mesh.position.x - p.x, rec.mesh.position.z - p.z) < 30) flyText(text, cls); }
+// Marks over marked players, the boss's phase-2 burning aura, and the chicks'
+// fuse glow — per frame.
+const _bossEmb = new Map();
+function updateBossFx(dt) {
+  const tt = performance.now() / 1000;
+  for (const [pid, mk] of bossMarks) {
+    const r = entityMeshes.get(pid); mk.t -= dt;
+    if (!r || mk.t <= 0) { scene.remove(mk.spr); bossMarks.delete(pid); continue; }
+    mk.spr.position.set(r.mesh.position.x, r.mesh.position.y + 3.0 + Math.sin(tt * 6) * 0.15, r.mesh.position.z); mk.spr.material.rotation = tt * 3;
+  }
+  for (const [id, rec] of entityMeshes) {
+    if (rec.kind !== 'monster' || !rec.data) continue;
+    const d = rec.data;
+    if (d.type === 'cluckifer' && d.alive) {
+      let emb = _bossEmb.get(id);
+      if (!emb) { const N = 60, pos = new Float32Array(N * 3), life = new Float32Array(N).map(() => Math.random()), seed = new Float32Array(N).map(() => Math.random() * 6.28); const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); const pts = new THREE.Points(g, new THREE.PointsMaterial({ color: 0xff7a2a, size: 0.16, map: fxDot(), transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending })); pts.frustumCulled = false; scene.add(pts); const light = new THREE.PointLight(0xff4a20, 1.2, 14); scene.add(light); emb = { pts, life, seed, N, light }; _bossEmb.set(id, emb); }
+      const mp = rec.mesh.position, hot = rec.phase2 || d.phase === 2 ? 1 : 0.35, pos = emb.pts.geometry.attributes.position;
+      for (let i = 0; i < emb.N; i++) { emb.life[i] += dt * (0.5 + (i % 5) * 0.12) * (0.6 + hot); if (emb.life[i] > 1) { emb.life[i] = 0; emb.seed[i] = Math.random() * 6.28; } const l = emb.life[i], a = emb.seed[i] + l * 2, r = 1.2 + l * 1.4 * hot; pos.setXYZ(i, mp.x + Math.cos(a) * r, mp.y + 0.4 + l * (3 + 2 * hot), mp.z + Math.sin(a) * r); }
+      pos.needsUpdate = true; emb.pts.material.opacity = 0.5 + 0.5 * hot; emb.pts.material.size = 0.12 + 0.12 * hot;
+      emb.light.position.set(mp.x, mp.y + 2, mp.z); emb.light.intensity = (0.6 + 1.6 * hot) * (0.85 + 0.25 * Math.sin(tt * 11));
+      emb.pts.visible = emb.light.visible = !d.hidden;
+      rec.mesh.visible = rec.mesh.visible && !(d.hidden && !(rec.mesh.userData.rig && rec.mesh.userData.rig.bossAnim));
+    } else if (_bossEmb.has(id)) { const e = _bossEmb.get(id); scene.remove(e.pts); scene.remove(e.light); _bossEmb.delete(id); }
+    if (d.type === 'rotten_egg' && d.grow != null && rec.mesh.userData.rig) { const k = 1 + d.grow * 1.6; rec.mesh.userData.rig.body.scale.setScalar(k); }
+  }
+  for (const id of _bossEmb.keys()) if (!entityMeshes.has(id)) { const e = _bossEmb.get(id); scene.remove(e.pts); scene.remove(e.light); _bossEmb.delete(id); }
+}
+
 // ---- Weapon trail: a fading ribbon swept by the weapon during an ability ----
 const TRAIL_N = 14;
 function updateWeaponTrail(rec, active, dt) {
@@ -6321,7 +6554,18 @@ function updateFx(dt) {
     }
     else if (f.kind === 'streak') { f.obj.material.opacity = 0.8 * (1 - u); const sx = f.obj.scale.x * (1 + dt * 3); f.obj.scale.x = sx; }
     else if (f.kind === 'glow') { const gs = 0.5 + 3.5 * u; f.obj.scale.set(gs, gs, 1); f.obj.material.opacity = 0.55 * (1 - u); }
-    if (u >= 1) { scene.remove(f.obj); f.obj.geometry && f.obj.geometry.dispose(); fxList.splice(i, 1); }
+    else if (f.kind === 'tele') {   // warning shape: outline pulses, the fill sweeps up as the blow lands
+      const pulse = 0.7 + 0.3 * Math.sin(f.t * 18);
+      if (f.outline) f.outline.material.opacity = (f.outline.material.opacity > 0.6 ? 0.9 : 0.55) * pulse * (u > 0.9 ? (1 - u) * 10 : 1);
+      if (f.fill) { const k = Math.min(1, u); f.fill.scale.set(k, k, 1); f.fill.material.opacity = (0.15 + 0.35 * k) * (u > 0.9 ? (1 - u) * 10 : 1); }
+    }
+    else if (f.kind === 'proj') {   // lobbed / streaking / falling glow with a spark trail
+      const a = f.from, b = f.to, y = a.y + (b.y - a.y) * u + Math.sin(u * Math.PI) * f.arc;
+      f.obj.position.set(a.x + (b.x - a.x) * u, y, a.z + (b.z - a.z) * u);
+      f.obj.material.opacity = u > 0.85 ? (1 - u) / 0.15 : 1;
+      if (f.trail && Math.random() < 0.6) spawnFx('glow', f.obj.position.x, f.obj.position.y - 1.1, f.obj.position.z, 0, { color: 0xff5a10, life: 0.25 });
+    }
+    if (u >= 1) { scene.remove(f.obj); f.obj.geometry && f.obj.geometry.dispose(); if (f.kind === 'tele') f.obj.traverse(o => { if (o.geometry) o.geometry.dispose(); }); fxList.splice(i, 1); }
   }
 }
 
@@ -6563,6 +6807,7 @@ function onEvent(m) {
     case 'respawned': hideDeath(); break;
     case 'miss': if (m.reason === 'out_of_range') flyText('Out of range', 'dmg'); break;
     case 'hazard': flyText(`-${m.dmg}`, 'dmg'); hurtFlash('#3faa4a'); break;
+    case 'boss': bossEvent(m); break;
   }
 }
 
@@ -6580,19 +6825,20 @@ function showHit(m) {
   triggerAttackAnim(m.by);
   {
     const A = entityMeshes.get(m.by), T = entityMeshes.get(m.target);
-    const nameOf = (r, id) => id === myId ? 'You' : (r && r.data && r.data.name) || (id === myId ? 'You' : 'Something');
+    const nameOf = (r, id) => id === myId ? 'You' : (r && r.data && r.data.name) || (id === myId ? 'You' : (m.hitKind === 'poison' ? 'poison' : m.hitKind === 'burn' ? 'fire' : m.hitKind === 'bleed' ? 'bleeding' : 'Something'));
     const an = nameOf(A, m.by), tn = nameOf(T, m.target);
     const mine = m.by === myId, onMe = m.target === myId;
     if (mine || onMe) {
       const verb = mine ? (m.crit ? 'crit' : 'hit') : (m.crit ? 'crits' : 'hits');
       if (m.dmg > 0) {
         const killed = T && T.data && m.targetKind === 'monster' && T.data.hp - m.dmg <= 0;
-        addCombat(mine ? `You ${verb} the ${tn} for ${m.dmg}.` : `The ${an} ${verb} you for ${m.dmg}.`, mine ? 'me' : '');
+        const src = m.by == null ? (m.hitKind === 'poison' ? 'The poison' : m.hitKind === 'bleed' ? 'Your wounds bleed' : 'The fire') : `The ${an}`;
+        addCombat(mine ? `You ${verb} the ${tn} for ${m.dmg}.` : `${src} ${m.by == null && m.hitKind === 'bleed' ? 'for' : verb + ' you for'} ${m.dmg}.`, mine ? 'me' : '');
         if (killed && mine) addCombat(`You kill the ${tn}.`, 'kill');
       } else addCombat(mine ? `You miss the ${tn}.` : `The ${an} misses you.`, 'miss');
     }
   }
-  if (m.target === myId && m.dmg > 0) hurtFlash('#c0392b');
+  if (m.target === myId && m.dmg > 0) hurtFlash(m.hitKind === 'poison' ? '#3faa4a' : m.hitKind === 'burn' ? '#ff6a1a' : '#c0392b');
   const rec = entityMeshes.get(m.target);
   if (!rec) return;
   // Something struck: a burst on the target, bigger and gold on a crit.
@@ -7464,6 +7710,7 @@ function animate() {
   _pf('npcmk', () => updateNpcMarkers());
   _pf('npcidle', () => animateNpcs(dt));
   _pf('veins', () => updateVeinFade(dt));
+  _pf('boss', () => { updateHazardFx(dt); updateBossFx(dt); });
   _pf('region', () => updateRegionTitle());
   _pf('abilities', () => updateActionBar());
   _pf('fx', () => { updateFx(dt); updateAuras(dt); });
