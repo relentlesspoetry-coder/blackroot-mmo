@@ -1145,6 +1145,23 @@ function smoothPoly(points, seg) {
 // A single continuous, smoothly-curving ribbon strip that follows a polyline
 // with a constant width (mitred at joints) — no disconnected rectangles. Used
 // for the dirt path and the river so both read as one connected feature.
+// A soft round patch of dirt: opaque out to `r`, fading to nothing by r+feather.
+function buildRoundPatch(x, z, r, feather, material) {
+  const N = 28, pos = [0, 0, 0], uv = [0.5, 0.5], col = [1, 1, 1, 1], idx = [];
+  for (const [rad, a] of [[r, 1], [r + feather, 0]]) {
+    for (let i = 0; i < N; i++) {
+      const t = (i / N) * Math.PI * 2;
+      pos.push(Math.cos(t) * rad, 0, Math.sin(t) * rad); uv.push(0.5 + Math.cos(t) * 0.5, 0.5 + Math.sin(t) * 0.5); col.push(1, 1, 1, a);
+    }
+  }
+  for (let i = 0; i < N; i++) { const n = (i + 1) % N; idx.push(0, 1 + n, 1 + i); idx.push(1 + i, 1 + n, 1 + N + n, 1 + i, 1 + N + n, 1 + N + i); }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
+  g.setIndex(idx); g.computeVertexNormals();
+  const m = new THREE.Mesh(g, material); m.position.set(x, 0.055, z); m.receiveShadow = true; scene.add(m); return m;
+}
 function buildStripRibbon(points, width, y, material, tile, feather, cutRiver, endFade) {
   const pts = smoothPoly(points, 8);
   const hw = width / 2, T = tile || 5, fr = feather || 0, ef = endFade || 0;
@@ -1296,9 +1313,13 @@ function buildZone() {
   const dirtMat = () => new THREE.MeshStandardMaterial({ map: loadTexture('dirt', 1, 1), color: 0x8a6a45, roughness: 1,
     side: THREE.DoubleSide, transparent: true, vertexColors: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
   // A narrow cart track, not a highway.
-  for (const pathPts of worldPaths()) buildStripRibbon(pathPts, 1.6, 0.05, dirtMat(), 3, 0.5, true, 6);
-  // Footpaths from the road to every doorstep — thinner still.
-  for (const tr of (zone.trails || [])) buildStripRibbon(tr, 0.9, 0.05, dirtMat(), 2, 0.35, false, 0);
+  for (const pathPts of worldPaths()) buildStripRibbon(pathPts, 1.6, 0.05, dirtMat(), 3, 1.1, true, 6);
+  // Footpaths from the road to every doorstep — thinner still, with a wide soft
+  // fringe, ends faded into the grass, and a round worn patch at the doorstep.
+  for (const tr of (zone.trails || [])) {
+    buildStripRibbon(tr, 0.9, 0.05, dirtMat(), 2, 0.8, false, 1.6);
+    buildRoundPatch(tr[0].x, tr[0].z, 0.75, 0.8, dirtMat());
+  }
 
   // Rivers — deep flowing water sitting in the carved channel, one per river.
   for (const river of worldRivers()) {
@@ -2661,22 +2682,38 @@ function buildFarmGate() {
   if (!g || !LOADED['Farm_Gate']) return;
   // Match the instanced scatter look: native geometry, centred on X/Z and set on
   // the ground, then uniformly scaled by the gate's scale.
-  const obj = LOADED['Farm_Gate'].clone(true);
-  obj.updateMatrixWorld(true);
-  const box = new THREE.Box3().setFromObject(obj);
-  obj.position.set(-(box.min.x + box.max.x) / 2, -box.min.y, -(box.min.z + box.max.z) / 2);
-  const wrap = new THREE.Group(); wrap.add(obj);
-  wrap.scale.setScalar(g.s || 1);
-  wrap.position.set(g.x, 0, g.z);
-  wrap.rotation.y = g.yaw || 0;
-  wrap.traverse(o => { if (o.isMesh) { o.castShadow = o.receiveShadow = true; o.userData.pickKind = 'gate'; } });
-  scene.add(wrap);
-  farmGate = { mesh: wrap, hinge: findByName(wrap, /CTRL_Gate_Hinge/)[0] || null };
+  const leaf = (mirror, offset, scale) => {
+    const obj = LOADED['Farm_Gate'].clone(true);
+    obj.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(obj);
+    obj.position.set(-(box.min.x + box.max.x) / 2, -box.min.y, -(box.min.z + box.max.z) / 2);
+    const wrap = new THREE.Group(); wrap.add(obj);
+    wrap.scale.set(scale * (mirror ? -1 : 1), scale, scale);
+    // offset runs along the fence line (the gate's local X)
+    const yaw = g.yaw || 0;
+    wrap.position.set(g.x + Math.cos(yaw) * offset, 0, g.z - Math.sin(yaw) * offset);
+    wrap.rotation.y = yaw;
+    wrap.traverse(o => { if (o.isMesh) { o.castShadow = o.receiveShadow = true; o.userData.pickKind = 'gate'; } });
+    scene.add(wrap);
+    return { mesh: wrap, hinge: findByName(wrap, /CTRL_Gate_Hinge/)[0] || null, width: box.max.x - box.min.x };
+  };
+  if (g.double) {
+    // Two mirrored leaves, each sized to half the gap so they meet in the middle
+    // and hinge on the outer posts.
+    const probe = LOADED['Farm_Gate']; probe.updateMatrixWorld(true);
+    const pb = new THREE.Box3().setFromObject(probe), nativeW = (pb.max.x - pb.min.x) || 1;
+    const scale = (g.gap / 2) / nativeW;
+    farmGate = { leaves: [leaf(false, -g.gap / 4, scale), leaf(true, g.gap / 4, scale)] };
+  } else {
+    farmGate = { leaves: [leaf(false, 0, g.s || 1)] };
+  }
 }
 function updateFarmGate(dt) {
-  if (!farmGate || !farmGate.hinge) return;
+  if (!farmGate) return;
   gateOpen += (gateTarget - gateOpen) * Math.min(1, dt * 6);
-  farmGate.hinge.rotation.y = gateOpen * GATE_MAX_SWING;
+  // A mirrored leaf's rotation is mirrored too, so the same angle swings both
+  // leaves toward the same side.
+  for (const l of farmGate.leaves) if (l.hinge) l.hinge.rotation.y = gateOpen * GATE_MAX_SWING;
 }
 
 // ---------------------------------------------------------------------------

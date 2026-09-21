@@ -345,8 +345,8 @@ export const darkwoods = {
       { x1: 30,  z1: -92, x2: 30,  z2: -62 },   // east
       { x1: -42, z1: -86, x2: -34, z2: -92 },   // north-west corner
       { x1: -42, z1: -86, x2: -42, z2: -62 },   // west
-      { x1: -42, z1: -62, x2: -8.7, z2: -62 },  // south-west (up to the gate)
-      { x1: -7.3, z1: -62, x2: 30,  z2: -62 },  // south-east (from the gate)
+      { x1: -42, z1: -62, x2: -9.8, z2: -62 },  // south-west (up to the double gate)
+      { x1: -6.2, z1: -62, x2: 30,  z2: -62 },  // south-east (from the double gate)
       // Cow pen (west of the yard) — opening on its north side.
       { x1: -16, z1: -80, x2: -10, z2: -80 }, { x1: -6, z1: -80, x2: 0, z2: -80 },
       { x1: -16, z1: -80, x2: -16, z2: -66 }, { x1: 0, z1: -80, x2: 0, z2: -66 },
@@ -356,7 +356,17 @@ export const darkwoods = {
       { x1: 20, z1: -80, x2: 20, z2: -68 },
       { x1: 6,  z1: -80, x2: 6,  z2: -76 }, { x1: 6, z1: -72, x2: 6, z2: -68 },
     ],
-    gate: { x: -8, z: -62, yaw: 0, s: 0.9, seg: { x1: -8.7, z1: -62, x2: -7.3, z2: -62 } },
+    // A double gate (two leaves meeting in the middle) wide enough for a cart.
+    gate: { x: -8, z: -62, yaw: 0, double: true, seg: { x1: -9.8, z1: -62, x2: -6.2, z2: -62 } },
+    // Footpaths from each doorstep to the road. Authored so they walk AROUND
+    // the pens (never through a fence): the yard lane runs along z=-83 north of
+    // both pens; the Warden's hut path skirts south of the chicken pen.
+    trails: [
+      [ { x: -26, z: -80.2 }, { x: -20, z: -82.4 }, { x: -10, z: -83.4 }, { x: 3, z: -84 } ],   // farmhouse
+      [ { x: -2,  z: -83.2 }, { x: 1,   z: -83.8 }, { x: 3, z: -84 } ],                           // Bram's
+      [ { x: 18,  z: -82.8 }, { x: 11,  z: -83.6 }, { x: 3, z: -84 } ],                           // Maggie's
+      [ { x: 21.2, z: -68 }, { x: 22.5, z: -64.6 }, { x: 12, z: -64.8 }, { x: 3, z: -66 } ],      // Warden's hut
+    ],
     // Enterable houses: axis-aligned, `door` is the side the doorway is on.
     // Furniture offsets (dx,dz) are metres from the house centre.
     houses: [

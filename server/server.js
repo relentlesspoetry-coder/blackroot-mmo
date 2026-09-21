@@ -83,6 +83,7 @@ function scaleZone(zone, k) {
     if (zone.farm.gate) { const g = zone.farm.gate; g.x *= k; g.z *= k; if (g.seg) { g.seg.x1 *= k; g.seg.z1 *= k; g.seg.x2 *= k; g.seg.z2 *= k; } }
     (zone.farm.props || []).forEach(sp);
     (zone.farm.houses || []).forEach(h => { h.x *= k; h.z *= k; }); // sizes are metres: unscaled
+    (zone.farm.trails || []).forEach(tr => tr.forEach(sp));
     if (zone.farm.field) { zone.farm.field.x *= k; zone.farm.field.z *= k; }
     // Keep-out box so the forest/scatter don't grow through the farmyard.
     let mnx = 1e9, mxx = -1e9, mnz = 1e9, mxz = -1e9;
@@ -652,9 +653,9 @@ function buildFarm(zone) {
   }
   // Thin dirt trails from each doorstep to the nearest point on the road, with
   // a bend part-way so they don't read as ruler-straight.
-  zone._trails = [];
+  zone._trails = (F.trails || []).map(tr => tr.map(p => ({ x: p.x, z: p.z })));
   const road = zone.path || [];
-  if (road.length > 1) {
+  if (!zone._trails.length && road.length > 1) {
     for (const h of (F.houses || [])) {
       const off = h.door === 'south' ? [0, h.d / 2] : h.door === 'north' ? [0, -h.d / 2] : h.door === 'east' ? [h.w / 2, 0] : [-h.w / 2, 0];
       const step = { x: h.x + off[0] + Math.sign(off[0]) * 1.2, z: h.z + off[1] + Math.sign(off[1]) * 1.2 };
@@ -1613,7 +1614,8 @@ function zoneForClient(zone) {
     houses: (zone.farm && zone.farm.houses) || [],
     trails: zone._trails || [],
     field: (zone.farm && zone.farm.field) || null,
-    gate: zone.farm && zone.farm.gate ? { x: zone.farm.gate.x, z: zone.farm.gate.z, yaw: zone.farm.gate.yaw || 0, s: zone.farm.gate.s || 1 } : null,
+    gate: zone.farm && zone.farm.gate ? (g => ({ x: g.x, z: g.z, yaw: g.yaw || 0, s: g.s || 1, double: !!g.double,
+      gap: g.seg ? Math.hypot(g.seg.x2 - g.seg.x1, g.seg.z2 - g.seg.z1) : 2.4 }))(zone.farm.gate) : null,
     editObjects: zone._editObjects || [],
     editSpawns: zone._editSpawns || [],
   };
