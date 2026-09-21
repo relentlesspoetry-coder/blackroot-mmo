@@ -1605,6 +1605,7 @@ function smoothPoly(points, seg) {
 // all shapes of the soft distance field (1 inside the core, 0 at core+feather),
 // so overlapping shapes merge instead of stacking. Only grid cells that touch
 // any dirt are emitted. Texture is world-mapped (tile = `T`).
+const dirtCol = new THREE.Color();
 function buildDirtField(shapes, discs, material, y, T, polys = []) {
   const CELL = 0.55;
   let mnx = 1e9, mxx = -1e9, mnz = 1e9, mxz = -1e9;
@@ -1655,7 +1656,10 @@ function buildDirtField(shapes, discs, material, y, T, polys = []) {
   const vert = (i, j) => {
     const k = j * (nx + 1) + i; if (vid[k] >= 0) return vid[k];
     const x = mnx + i * CELL, z = mnz + j * CELL;
-    vid[k] = pos.length / 3; pos.push(x, y, z); uv.push(x / T, z / T); col.push(1, 1, 1, A[k]); return vid[k];
+    // shades of brown drifting across the ground, the way the grass does
+    const hueN = fbm2(x + 57, z - 211, 41), ligN = fbm2(x - 389, z + 133, 43), satN = fbm2(x + 907, z + 619, 47);
+    dirtCol.setHSL(0.055 + hueN * 0.05, 0.26 + satN * 0.32, 0.19 + ligN * 0.26);
+    vid[k] = pos.length / 3; pos.push(x, y, z); uv.push(x / T, z / T); col.push(dirtCol.r, dirtCol.g, dirtCol.b, A[k]); return vid[k];
   };
   for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
     const k = j * (nx + 1) + i;
@@ -1848,7 +1852,7 @@ function buildZone() {
   // at each vertex is the UNION (max) of soft distance fields around every path
   // and doorstep. Nothing is composited on top of anything else, so junctions
   // are flush, every end is naturally round, and the texture is continuous.
-  const dirtMat = new THREE.MeshStandardMaterial({ map: loadTexture('dirt', 1, 1), color: 0x8a6a45, roughness: 1,
+  const dirtMat = new THREE.MeshStandardMaterial({ map: loadTexture('dirt', 1, 1), color: 0xffffff, roughness: 1,
     side: THREE.DoubleSide, transparent: true, vertexColors: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
   const shapes = [];
   for (const pathPts of worldPaths()) shapes.push({ pts: smoothPoly(pathPts, 8), hw: 0.8, fr: 1.1, river: true, fadeEnd: 6 });
@@ -1888,7 +1892,8 @@ function buildSpoilBank(mine) {
       const o = off[k] + (k === 1 || k === 2 ? (rng() - 0.5) * 0.5 : 0);
       const x = p.x + nz.x * o, z = p.z + nz.z * o, y = terrainHeight(x, z) + hgt[k] * bump * sink + (k === 1 ? (rng() - 0.5) * 0.14 : 0);
       pos.push(x, y, z); uv.push(x / 3, z / 3);
-      c.setHSL(0.075 + (rng() - 0.5) * 0.02, 0.42, (k === 1 ? 0.30 : k === 2 ? 0.27 : 0.24) + (rng() - 0.5) * 0.05);
+      const hueN = fbm2(x + 57, z - 211, 41), ligN = fbm2(x - 389, z + 133, 43);
+      c.setHSL(0.06 + hueN * 0.045, 0.42, 0.2 + ligN * 0.16 + (k === 1 ? 0.06 : k === 2 ? 0.03 : 0) + (rng() - 0.5) * 0.05);
       col.push(c.r, c.g, c.b);
     }
   }
@@ -1897,7 +1902,7 @@ function buildSpoilBank(mine) {
     const j = (i + 1) % N;
     for (let k = 0; k < K - 1; k++) {
       const a = i * K + k, b = j * K + k, cc = i * K + k + 1, d = j * K + k + 1;
-      idx.push(a, cc, b, b, cc, d);
+      idx.push(a, b, cc, b, d, cc);
     }
   }
   const g = new THREE.BufferGeometry();
@@ -1905,8 +1910,31 @@ function buildSpoilBank(mine) {
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   g.setIndex(idx); g.computeVertexNormals();
-  const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ map: loadTexture('dirt', 1, 1), vertexColors: true, roughness: 1, flatShading: true }));
+  const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ map: loadTexture('dirt', 1, 1), vertexColors: true, roughness: 1, flatShading: true, side: THREE.DoubleSide }));
   m.castShadow = true; m.receiveShadow = true; scene.add(m);
+  // Pebbles and rubble: the cave pack's Rubble_Pile shrunk to fist-size
+  // clusters, strewn over the scrape and heaped a little bigger on the bank.
+  const rub = [];
+  const ring = pts.concat([pts[0]]);
+  let mnx = 1e9, mxx = -1e9, mnz = 1e9, mxz = -1e9;
+  for (const p of pts) { mnx = Math.min(mnx, p.x); mxx = Math.max(mxx, p.x); mnz = Math.min(mnz, p.z); mxz = Math.max(mxz, p.z); }
+  const want = Math.round((mxx - mnx) * (mxz - mnz) / 5);
+  for (let n = 0, guard = 0; n < want && guard < want * 8; guard++) {
+    const x = mnx + rng() * (mxx - mnx), z = mnz + rng() * (mxz - mnz);
+    if (!pointInPoly(x, z, pts) || distToPolyline(x, z, ring) < 0.6) continue;
+    rub.push({ m: 'Rubble_Pile', x, z, y: terrainHeight(x, z) + 0.02, s: 0.1 + rng() * 0.16, r: rng() * 6.28 }); n++;
+  }
+  for (let i = 0; i < N; i++) {
+    if (open(i)) continue;
+    const p = pts[i], nz = norm[i];
+    const k = 1 + Math.floor(rng() * 2);
+    for (let t = 0; t < k; t++) {
+      const o = 0.4 + rng() * 1.6, x = p.x + nz.x * o + (rng() - 0.5) * 0.8, z = p.z + nz.z * o + (rng() - 0.5) * 0.8;
+      const h = o < 1 ? 0.8 * (o / 1) : 0.8 - (o - 1) * 0.35;   // roughly the bank profile
+      rub.push({ m: 'Rubble_Pile', x, z, y: terrainHeight(x, z) + Math.max(0, h * 0.7), s: 0.14 + rng() * 0.22, r: rng() * 6.28 });
+    }
+  }
+  placeInstances(rub, () => 0);
 }
 
 // Rivers — deep flowing water sitting in the carved channel, one per river.
