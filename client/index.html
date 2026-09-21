@@ -1782,7 +1782,12 @@ function buildDirtField(shapes, discs, material, y, T, polys = []) {
       if (best >= 1) break;
       if (pointInPoly(x, z, pg.pts)) { best = 1; break; }
       const d = distToPolyline(x, z, pg.ring);
-      if (d < pg.fr) best = Math.max(best, 1 - d / pg.fr);
+      if (d < pg.fr) {
+        // a ragged edge: noise pushes the fringe in and out so grass creeps in as patches
+        const t = 1 - d / pg.fr, n = fbm2(x * 2.2 + 91, z * 2.2 - 47, 53);
+        const al = Math.max(0, Math.min(1, (t - 0.5) * 1.6 + 0.5 + (n - 0.5) * 0.9));
+        best = Math.max(best, al * al * (3 - 2 * al));
+      }
     }
     return best;
   };
@@ -1998,7 +2003,7 @@ function buildZone() {
     const o = h.door === 'south' ? [0, h.d / 2 + 1.0] : h.door === 'north' ? [0, -h.d / 2 - 1.0] : h.door === 'east' ? [h.w / 2 + 1.0, 0] : [-h.w / 2 - 1.0, 0];
     discs.push({ x: h.x + o[0], z: h.z + o[1], r: 0.9, fr: 0.9 });
   }
-  const polys = (zone.mines || []).map(m => ({ pts: m.outline, fr: 4.6 }));   // the mining pits' bare scrapes (the fringe runs out under the bank's fade)
+  const polys = (zone.mines || []).map(m => ({ pts: m.outline, fr: 6.5 }));   // the mining pits' bare scrapes (the fringe runs out under the bank's fade)
   buildDirtField(shapes, discs, dirtMat, 0.05, 3, polys);
   for (const m of (zone.mines || [])) buildSpoilBank(m);
 
@@ -2020,7 +2025,7 @@ function buildSpoilBank(mine) {
     const tx = b.x - a.x, tz = b.z - a.z, L = Math.hypot(tx, tz) || 1;
     norm.push({ x: tz / L, z: -tx / L });   // outward (outline runs counter-clockwise seen from above)
   }
-  const off = BANK_PROFILE.map(p => p[0]).concat([3.8, 4.6]);   // rings: from the scrape edge out past the foot, the last two fading into the grass
+  const off = BANK_PROFILE.map(p => p[0]).concat([4.0, 5.2, 6.5]);   // rings: from the scrape edge out past the foot, the last three fading into the grass
   const pos = [], col = [], idx = [], uv = [], c = new THREE.Color();
   const open = (i) => Math.abs(wrap(Math.atan2(pts[i].z - mine.z, pts[i].x - mine.x) - mine.gapDir)) < mine.gapHalf + 0.12;
   for (let i = 0; i < N; i++) {
@@ -2032,8 +2037,9 @@ function buildSpoilBank(mine) {
       const hueN = fbm2(x + 57, z - 211, 41), ligN = fbm2(x - 389, z + 133, 43);
       c.setHSL(0.06 + hueN * 0.045, 0.42, 0.17 + ligN * 0.14 + (k === 2 ? 0.05 : k === 1 || k === 3 ? 0.03 : 0) + (rng() - 0.5) * 0.04);
       // the outer foot fades out over the grass instead of ending in a hard line
-      const alpha = k >= off.length - 1 ? 0 : k === off.length - 2 ? 0.35 : k === off.length - 3 ? 0.75 : 1;
-      col.push(c.r, c.g, c.b, alpha);
+      const alpha = k >= off.length - 1 ? 0 : k === off.length - 2 ? 0.2 : k === off.length - 3 ? 0.5 : k === off.length - 4 ? 0.8 : 1;
+      const ragged = alpha >= 1 ? 1 : Math.max(0, Math.min(1, alpha + (fbm2(x * 2.2 + 91, z * 2.2 - 47, 53) - 0.5) * 0.6));
+      col.push(c.r, c.g, c.b, ragged);
     }
   }
   const K = off.length;
