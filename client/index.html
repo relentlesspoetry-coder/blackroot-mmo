@@ -39,7 +39,7 @@
     background: #2e2820; border: 2px solid #1c150e; box-shadow: 0 8px 24px #000a; }
   #charcard .ccl { flex: 1; min-width: 0; }
   #cname { font-size: 18px; font-weight: 700; color: #ffdf9e; text-shadow: 0 1px 2px #000; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  #csub { font-size: 11.5px; color: #b9ad90; margin: 2px 0 8px; } #csub b { color: #ffd24a; } #csub #cgold { color: #ffd24a; }
+  #csub { font-size: 11.5px; color: #b9ad90; margin: 2px 0 8px; } #csub b { color: #ffd24a; }
   #cemblem { width: 64px; height: 64px; flex: none; background: #1d1913; border: 1px solid #4a3d2a; border-radius: 8px; padding: 4px; box-sizing: border-box; }
   .bar { height: 16px; border-radius: 5px; background: #1d1913; border: 1px solid #4a3d2a; overflow: hidden; position: relative; margin-bottom: 5px; }
   .bar > span { position: absolute; inset: 0; display: flex; align-items: center; gap: 8px; padding: 0 7px; font-size: 11px; font-weight: 600; text-shadow: 0 1px 2px #000; color: #fff; }
@@ -353,7 +353,7 @@
     <div id="charcard">
       <div class="ccl">
         <div id="cname">—</div>
-        <div id="csub">Level <b id="clevel">1</b> Male <span id="ccls">Fighter</span> · <span id="cgold">0</span> gp</div>
+        <div id="csub">Level <b id="clevel">1</b> Male <span id="ccls">Fighter</span></div>
         <div class="bar hp"><i id="hpfill"></i><span><em>HP:</em><b id="hptext">100/100</b></span></div>
         <div class="bar stam"><i id="stamfill"></i><span><em id="stamlabel">Stamina:</em><b id="stamtext">100/100</b></span></div>
       </div>
@@ -6038,7 +6038,7 @@ function updateHudFromSnapshot(snap) {
     cb.style.display = 'block'; cb.querySelector('span').textContent = a ? a.name : '';
     cb.querySelector('i').style.transform = `scaleX(${Math.min(1, (performance.now() - castInfo.start) / 1000 / castInfo.dur)})`;
   } else { cb.style.display = 'none'; castInfo = null; }
-  if (me.gold != null) document.getElementById('cgold').textContent = me.gold;
+  if (me.gold != null && bag.gold !== me.gold) { bag.gold = me.gold; setBagGold(); }
   if (me.xpNext) {
     const pct = Math.max(0, Math.min(1, me.xp / me.xpNext));
     document.getElementById('xpfill').style.transform = `scaleX(${pct})`;
@@ -6069,10 +6069,10 @@ function onEvent(m) {
       flyText(`Meditation level ${m.level}!`, 'heal');
       addChat('Skills', `Your Meditation level is now ${m.level}.`, true); break;
     case 'loot':
-      document.getElementById('cgold').textContent = m.gold;
+      bag.gold = m.gold; setBagGold();
       addChat('Loot', m.text, true); break;
     case 'chest': {
-      document.getElementById('cgold').textContent = m.gold;
+      bag.gold = m.gold; setBagGold();
       addChat('Treasure', m.text, true);
       flyText('Treasure!', 'heal');
       const cm = chestMeshes.get(m.id);
@@ -6098,7 +6098,7 @@ function onEvent(m) {
     }
     case 'equip': addChat('', `You equip the ${m.item}.`, true); break;
     case 'unequip': addChat('', `You remove the ${m.item}.`, true); break;
-    case 'sold': addChat('Merchant', m.text, true); document.getElementById('cgold').textContent = m.gold; break;
+    case 'sold': addChat('Merchant', m.text, true); bag.gold = m.gold; setBagGold(); break;
     case 'notice': {
       // The server's own words, over the character (short) and in chat (full).
       sfx.play('ui_error', { vol: 0.35, rate: 1.1 }); addChat('', m.text, true);
@@ -6504,8 +6504,9 @@ function renderEquipment() {
   });
 }
 
+function setBagGold() { document.getElementById('bagGold').textContent = (bag.gold || 0).toLocaleString() + ' gp'; }
 function renderBag() {
-  document.getElementById('bagGold').textContent = bag.gold.toLocaleString() + ' gp';
+  setBagGold();
   document.getElementById('bagCnt').textContent = bag.items.length || '';
   renderSkills();
   renderEquipment();
