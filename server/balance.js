@@ -108,6 +108,9 @@ export const CLASSES = {
     ],
   },
 };
+// Learning: only the level-1 ability is known from the start; everything
+// else is bought from the class trainer once the level is reached.
+export function abilityCost(a) { return a.level <= 1 ? 0 : 15 + a.level * a.level * 4; } // L2 31gp .. L10 415gp .. L20 1,615gp
 export const DEFAULT_CLASS = 'fighter';
 export function classDef(id) { return CLASSES[id] || CLASSES[DEFAULT_CLASS]; }
 export function classStats(id, level) {

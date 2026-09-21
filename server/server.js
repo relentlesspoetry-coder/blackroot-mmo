@@ -14,7 +14,7 @@ import { killingfields } from './zones/killingfields.js';
 import {
   PLAYER, ELITE, MONSTER, MONSTER_TEMPLATES,
   maxHpForLevel, xpForLevel, xpTotalForLevel, levelForXp, rollPlayerDamage, attackRoll, defenceRoll, hitChance, scaledMonster, rollLoot, mitigate, REGEN,
-  TICK, DEFAULT_ATTACK_SPEED, CLASSES, DEFAULT_CLASS, classDef, classStats,
+  TICK, DEFAULT_ATTACK_SPEED, CLASSES, DEFAULT_CLASS, classDef, classStats, abilityCost,
   maxHit, rollSwing, rollMonsterSwing, MEDITATION, meditationHealRate,
 } from './balance.js';
 import { ITEMS, SLOTS, SLOT_INFO, DOLL, itemDef, slotOf, valueOf, equipStats, slotsFor, emptySlots } from './items.js';
@@ -1437,7 +1437,7 @@ function applyHit(p, m, dmg, crit) {
   if (m.hp <= 0) killMonster(m, p);
 }
 function addMomentum(p, n) {
-  const mo = classDef(p.cls).momentum; if (!mo) return;
+  const mo = classDef(p.cls).momentum; if (!mo || !p.known.has('momentum')) return; // the passive has to be learned too
   p.momentum = Math.min(mo.max, (p.momentum || 0) + n); p.momentumT = mo.dur;
 }
 function savageTrigger(p) {
@@ -1487,7 +1487,22 @@ function aoeRadius(p, ab) { let r = ab.radius || 0; const br = p.buffs.berserker
 // ---- Abilities (the action bar) ----
 function abilityList(p) {
   return classDef(p.cls).abilities.map(a => ({ id: a.id, name: a.name, level: a.level, cd: a.cd || 0, cost: a.cost || 0, desc: a.desc,
-    passive: !!a.passive, kind: a.kind || null, locked: p.level < a.level, left: Math.max(0, p.cooldowns[a.id] || 0) }));
+    passive: !!a.passive, kind: a.kind || null, known: p.known.has(a.id), price: abilityCost(a),
+    locked: p.level < a.level || !p.known.has(a.id), left: Math.max(0, p.cooldowns[a.id] || 0) }));
+}
+// Buy an ability from the class trainer standing nearby.
+function learnAbility(p, id) {
+  const notice = (text) => send(p.ws, { t: 'event', kind: 'notice', text });
+  const a = classDef(p.cls).abilities.find(x => x.id === id); if (!a) return;
+  const trainer = (zoneOf(p).npcs || []).find(n => n.trainer === p.cls && dist2(n.x, n.z, p.x, p.z) < 8 * 8);
+  if (!trainer) return notice('Find your class trainer to learn that.');
+  if (p.known.has(id)) return notice(`You already know ${a.name}.`);
+  if (p.level < a.level) return notice(`${a.name} needs level ${a.level}.`);
+  const price = abilityCost(a);
+  if (p.gold < price) return notice(`${a.name} costs ${price} gp — you have ${p.gold}.`);
+  p.gold -= price; p.known.add(id);
+  send(p.ws, { t: 'event', kind: 'learned', id, name: a.name, price });
+  sendBag(p); sendAbilities(p);
 }
 function sendAbilities(p) {
   const c = classDef(p.cls);
@@ -1501,6 +1516,7 @@ function useAbility(p, id) {
   const c = classDef(p.cls), a = c.abilities.find(x => x.id === id);
   const notice = (text) => send(p.ws, { t: 'event', kind: 'notice', text });
   if (!a || !p.alive || a.passive) return;
+  if (!p.known.has(id)) return notice(`You haven't learned ${a.name}.`);
   if (p.level < a.level) return notice(`${a.name} unlocks at level ${a.level}.`);
   if ((p.cooldowns[id] || 0) > 0) return notice(`${a.name} is not ready.`);
   if ((p.gcd || 0) > 0 || p.channel || p.windup) return;
@@ -2023,6 +2039,7 @@ wss.on('connection', (ws) => {
           x: start.spawn.x, z: start.spawn.z, y: 0, yaw: start.spawn.yaw, moving: false,
           // One class, one class level: `level`/`xp` ARE the class (see CLASSES).
           cls: DEFAULT_CLASS, level: 1, xp: 0, gold: 0, openedChests: new Set(),
+          known: new Set(classDef(DEFAULT_CLASS).abilities.filter(a => a.level <= 1).map(a => a.id)), // learned abilities
           cooldowns: {}, buffs: {}, gcd: 0, momentum: 0, momentumT: 0, stam: classStats(DEFAULT_CLASS, 1).stam, stamMax: classStats(DEFAULT_CLASS, 1).stam,
           meditation: { level: 1, xp: 0 }, resting: false,
           // Everyone starts able to mine and fish; better tools are earned. The
@@ -2068,6 +2085,7 @@ wss.on('connection', (ws) => {
         useAbility(player, String(msg.id || ''));
         break;
       }
+      case 'learn': { if (player && player.alive) learnAbility(player, String(msg.id || '')); break; }
       case 'rest': {
         if (!player || !player.alive) break;
         // Toggle meditation. Can't start resting mid-fight.

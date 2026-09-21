@@ -79,6 +79,13 @@
   .sbab .nm { font-weight: 700; color: #ffe9b0; font-size: 12px; } .sbab .meta { font-size: 10px; color: #cbb7f0; } .sbab .ds { font-size: 10.5px; color: #d9cfec; line-height: 1.3; margin-top: 2px; }
   .sbab .slotno { margin-left: auto; font-size: 10px; color: #ffd27a; border: 1px solid #ffd27a; border-radius: 4px; padding: 0 4px; height: 14px; }
   #spellbook .sbhint { padding: 6px 12px 10px; font-size: 10.5px; color: #9f92bb; text-align: center; }
+  .sbnext { grid-column: 1 / -1; font-size: 11px; color: #b3a6cc; padding: 6px 4px; } .sbnext b { color: #ffd47a; }
+  #spellbook { z-index: 12; }
+  .d-learn { display: flex; gap: 8px; align-items: center; padding: 5px 0; border-top: 1px solid #3a3020; }
+  .d-learn img { width: 34px; height: 34px; border-radius: 6px; background: #1d1913; border: 1px solid #4a3d2a; }
+  .d-learn .rn { font-weight: 700; color: #ffe9b0; font-size: 12px; } .d-learn .rb { font-size: 10.5px; color: #9d917a; }
+  .d-learn .price { margin-left: auto; color: #ffd24a; font-size: 11px; white-space: nowrap; } .d-learn button { padding: 3px 9px; font-size: 11px; }
+  .d-learn.far { opacity: .55; }
   .splat.crit { width: 32px; height: 32px; line-height: 32px; font-size: 14px; background: radial-gradient(circle at 40% 35%, #ffd27a, #d8781c); color: #2a1200; }
   #actionbar { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); width: 372px; pointer-events: none; }
   #xpbar { height: 14px; border-radius: 7px; background: #120a1fb0; border: 1px solid #5a3f8a; overflow: hidden; position: relative; margin: 0 4px 6px; }
@@ -1034,7 +1041,7 @@ function handle(m) {
     case 'abilities':
       abilities = m.list || []; abilityClass = m; abilityResource = m.resource || 'Stamina';
       if (m.gcdLeft) gcdUntil = performance.now() + m.gcdLeft * 1000;
-      fillBarDefaults(); renderActionBar(); renderSpellbook();
+      fillBarDefaults(); renderActionBar(); renderSpellbook(); refreshDialogue();
       break;
     case 'status':
       selfMomentum = m.momentum || 0; buffList = m.buffs || []; renderMomentum(); renderBuffs();
@@ -5584,6 +5591,8 @@ function onEvent(m) {
       addChat('Class', `You are now a level ${m.level} ${m.cls || ''}.`, true); break;
     case 'ability':
       if (m.by === myId) { flyText(m.name, 'xp'); gcdUntil = performance.now() + ((abilityClass && abilityClass.gcd) || 1.5) * 1000; } break;
+    case 'learned':
+      flyText(`Learned ${m.name}!`, 'heal'); addChat('Trainer', `You learn ${m.name} for ${m.price} gp. It's in your spellbook (B).`, true); break;
     case 'medlevel':
       flyText(`Meditation level ${m.level}!`, 'heal');
       addChat('Skills', `Your Meditation level is now ${m.level}.`, true); break;
@@ -5853,9 +5862,9 @@ function saveBar() { try { localStorage.setItem(barKey(), JSON.stringify(barSlot
 function fillBarDefaults() {
   if (!fillBarDefaults._loaded) { loadBar(); fillBarDefaults._loaded = true; }
   const ids = new Set(abilities.map(a => a.id));
-  barSlots = barSlots.map(id => (id && ids.has(id)) ? id : null);
+  barSlots = barSlots.map(id => { const a = id && abilityById(id); return (a && a.known) ? id : null; });
   for (const a of abilities) {
-    if (a.locked || a.passive || barSlots.includes(a.id)) continue;
+    if (!a.known || a.locked || a.passive || barSlots.includes(a.id)) continue;
     const i = barSlots.indexOf(null); if (i < 0) break; barSlots[i] = a.id;
   }
   saveBar();
@@ -5927,15 +5936,17 @@ function renderSpellbook() {
   if (abilityClass.background) document.getElementById('spellbook').style.backgroundImage = `url('${abilityClass.background}')`;
   document.getElementById('sbTitle').textContent = abilityClass.cls || 'Class';
   const me = selfEnt();
-  document.getElementById('sbSub').textContent = `Level ${me ? me.level : 1} · ${abilities.filter(a => !a.locked).length}/${abilities.length} abilities known · uses ${abilityResource}`;
+  const knownList = abilities.filter(a => a.known);
+  document.getElementById('sbSub').textContent = `Level ${me ? me.level : 1} · ${knownList.length}/${abilities.length} abilities learned · uses ${abilityResource}`;
   const list = document.getElementById('sbList');
-  list.innerHTML = abilities.map(a => {
+  const next = abilities.filter(a => !a.known).sort((a, b) => a.level - b.level)[0];
+  list.innerHTML = (knownList.length ? '' : '') + knownList.map(a => {
     const slot = barSlots.indexOf(a.id);
     const meta = a.passive ? 'Passive' : [`Lv ${a.level}`, a.cost ? `${a.cost} ${abilityResource.toLowerCase()}` : null, a.cd ? `${a.cd}s cd` : null, a.kind === 'channel' ? 'channel' : null].filter(Boolean).join(' · ');
     return `<div class="sbab${a.locked ? ' locked' : ''}${a.passive ? ' passive' : ''}${assignId === a.id ? ' sel' : ''}" data-id="${a.id}" draggable="${!a.locked && !a.passive}">` +
       `<img src="${iconFor_ab(a.id)}" alt=""><div><div class="nm">${escapeHtml(a.name)}${a.locked ? ` <span class="meta">(level ${a.level})</span>` : ''}</div><div class="meta">${meta}</div><div class="ds">${escapeHtml(a.desc)}</div></div>` +
       (slot >= 0 ? `<span class="slotno">${slot + 1}</span>` : '') + `</div>`;
-  }).join('');
+  }).join('') + (next ? `<div class="sbnext">Next to learn: <b>${escapeHtml(next.name)}</b> (level ${next.level}, ${next.price.toLocaleString()} gp) — see your class trainer.</div>` : '');
   list.querySelectorAll('.sbab').forEach(d => {
     const a = abilityById(d.dataset.id); if (!a || a.locked || a.passive) return;
     d.onclick = () => { assignId = assignId === a.id ? null : a.id; renderSpellbook(); };
@@ -6194,7 +6205,18 @@ function openDialogue(npcId) {
       : '<div class="q-obj"><span>Nothing to sell.</span><span></span></div>';
     html += '</div>';
   }
+  // Class trainers teach abilities for gold.
+  if (rec.def.trainer && abilityClass && rec.def.trainer === abilityClass.clsId) {
+    const me = selfEnt(), lvl = me ? me.level : 1;
+    const teach = abilities.filter(a => !a.known).sort((a, b) => a.level - b.level);
+    html += `<div class="d-quest"><div class="q-name">${escapeHtml(abilityClass.cls)} training · ${bag.gold.toLocaleString()} gp</div>` +
+      (teach.length ? teach.map(a => { const far = a.level > lvl, poor = bag.gold < a.price;
+        return `<div class="d-learn${far ? ' far' : ''}"><img src="${iconFor_ab(a.id)}" alt=""><div><div class="rn">${escapeHtml(a.name)} <span style="color:#b9ad90;font-weight:400">· level ${a.level}${a.passive ? ' · passive' : ''}</span></div><div class="rb">${escapeHtml(a.desc)}</div></div>` +
+          `<span class="price">${a.price.toLocaleString()} gp</span><button data-learn="${a.id}" ${far ? 'disabled title="Level ' + a.level + ' required"' : poor ? 'disabled title="Not enough gold"' : ''}>${far ? 'Lv ' + a.level : 'Learn'}</button></div>`; }).join('')
+      : '<div class="q-obj"><span>You know everything I can teach.</span><span></span></div>') + '</div>';
+  }
   document.getElementById('dQuests').innerHTML = html;
+  dialogueEl.querySelectorAll('[data-learn]').forEach(b => { b.onclick = () => ws?.send(JSON.stringify({ t: 'learn', id: b.dataset.learn })); });
   dialogueEl.querySelectorAll('[data-sell]').forEach(b => {
     b.onclick = () => ws?.send(JSON.stringify({ t: 'sell', item: b.dataset.sell }));
   });
