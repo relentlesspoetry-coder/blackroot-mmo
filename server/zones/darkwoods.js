@@ -185,7 +185,7 @@ export const darkwoods = {
   // Campfire cooking stations. Stand near one to cook raw meat/fish.
   campfires: [
     { id: 'cf_farm',   x: 20,  z: -80 },  // by the Entrance Clearing (early cooking)
-    { id: 'cf_camp',   x: -48, z: 14 },   // Abandoned Camp
+    { id: 'cf_camp',   x: -49, z: 7 },    // Abandoned Camp (on the bank beside the merchant, not in the river)
     { id: 'cf_shrine', x: 10,  z: 3 },    // Shrine Grove
   ],
 
@@ -209,7 +209,7 @@ export const darkwoods = {
 
     // The Abandoned Camp — a little campsite of props (tight spread, light collision).
     { model: 'Small_Canvas_Tent', count: 1, r: 1.4, scale: [1.0, 1.0], near: 'camp', nearR: 10 },
-    { model: 'Campfire',       count: 1, r: 0, scale: [0.9, 1.1], near: 'camp', nearR: 8 },
+    // (the camp's fire is the cooking campfire `cf_camp` above — one fire, not a prop plus a station)
     { model: 'Cooking_Tripod', count: 1, r: 0, scale: [0.9, 1.1], near: 'camp', nearR: 9 },
     { model: 'Bedroll',        count: 2, r: 0, scale: [1.0, 1.0], near: 'camp', nearR: 10 },
     { model: 'Camp_Stool',     count: 2, r: 0, scale: [1.0, 1.0], near: 'camp', nearR: 10 },

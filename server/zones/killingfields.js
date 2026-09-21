@@ -78,6 +78,11 @@ export const killingfields = {
     { key: 'southgate',  name: 'South Marsh Gate',    x: 6,   z: 150,  kind: 'gate', exit: true },
   ],
 
+  // Cooking campfire at the homestead (the animated fire; stand near it to cook).
+  campfires: [
+    { id: 'cf_homestead', x: -66, z: 9 },
+  ],
+
   npcs: [
     { id: 'kf_sentry',  name: 'Road Sentry Bram', x: 6,   z: -144, poi: 'entrance', model: 'Male',
       look: { hair: 2, hairColor: '#1e1712', skin: '#b78b68', outfit: 17, slots: { cape: 30 }, colors: { cape: '#5a2a2a' } },
@@ -128,7 +133,6 @@ export const killingfields = {
     { model: 'Supply_Pavilion', count: 1, r: 1.6, scale: [1.0, 1.0], near: 'furrows', nearR: 10 },
     // Ruined homestead dressing.
     { model: 'Small_Canvas_Tent', count: 1, r: 1.4, scale: [1.0, 1.0], near: 'homestead', nearR: 10 },
-    { model: 'Campfire',    count: 1, r: 0, scale: [0.9, 1.1], near: 'homestead', nearR: 8 },
     { model: 'Water_Barrel', count: 2, r: 0.7, scale: [1.0, 1.0], near: 'homestead', nearR: 10 },
     { model: 'Camp_Lantern', count: 1, r: 0, scale: [1.0, 1.0], near: 'homestead', nearR: 10 },
     { model: 'Cooking_Tripod', count: 1, r: 0, scale: [1.0, 1.0], near: 'homestead', nearR: 10 },
