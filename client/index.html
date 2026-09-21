@@ -5184,6 +5184,25 @@ function drawMap() {
   if (zone.path) { line(zone.path); ctx.strokeStyle = '#c9a86a'; ctx.lineWidth = 3; ctx.setLineDash([7, 5]); ctx.lineJoin = 'round'; ctx.stroke(); ctx.setLineDash([]); }
   // rocks (faint)
   ctx.fillStyle = '#33425a'; for (const o of (zone.rocks || [])) { ctx.beginPath(); ctx.arc(px(o.x), pz(o.z), Math.max(2, o.r * s * 0.5), 0, 7); ctx.fill(); }
+  // fishing spots (cyan ripple), campfires (orange), chests (gold) — the
+  // resource/interaction markers the map used to leave off.
+  for (const sp of (zone.fishingSpots || [])) {
+    const X = px(sp.x), Y = pz(sp.z);
+    ctx.strokeStyle = '#7fc9dd'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(X, Y, 5, 0, 7); ctx.stroke();
+    ctx.beginPath(); ctx.arc(X, Y, 2.2, 0, 7); ctx.fillStyle = '#bfe4ef'; ctx.fill();
+  }
+  for (const cf of (zone.campfires || [])) {
+    const X = px(cf.x), Y = pz(cf.z);
+    ctx.fillStyle = '#ff8a3c'; ctx.beginPath(); ctx.arc(X, Y, 3.4, 0, 7); ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1; ctx.stroke();
+  }
+  for (const ch of (zone.chests || [])) {
+    const X = px(ch.x), Y = pz(ch.z), r = 3.4;
+    ctx.fillStyle = '#ffcf6a'; ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(X, Y - r); ctx.lineTo(X + r, Y); ctx.lineTo(X, Y + r); ctx.lineTo(X - r, Y); ctx.closePath();
+    ctx.fill(); ctx.stroke();
+  }
   // live mobs (red) and other players (blue)
   for (const [id, rec] of entityMeshes) {
     if (id === myId || !rec.mesh) continue;
@@ -5218,6 +5237,21 @@ function drawMap() {
   // compass
   ctx.fillStyle = '#8fa3bd'; ctx.font = '13px Georgia, serif'; ctx.textAlign = 'center';
   ctx.fillText('N', W / 2, 46);
+  // legend (bottom-left)
+  const legend = [
+    ['#e0c060', 'NPC'], ['#ffcf6a', 'Chest'], ['#7fc9dd', 'Fishing'],
+    ['#ff8a3c', 'Campfire'], ['#c0453a', 'Monster'], ['#ffe14a', 'You'],
+  ];
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.font = '12px system-ui';
+  let ly = H - 14 - (legend.length - 1) * 18;
+  for (const [col, label] of legend) {
+    ctx.fillStyle = col; ctx.beginPath(); ctx.arc(20, ly, 4, 0, 7); ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.fillStyle = '#cdd8e6'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+    ctx.strokeText(label, 30, ly + 1); ctx.fillStyle = '#cdd8e6'; ctx.fillText(label, 30, ly + 1);
+    ly += 18;
+  }
+  ctx.textBaseline = 'alphabetic';
 }
 document.getElementById('mapBtn').addEventListener('click', toggleMap);
 mapWin.addEventListener('click', (e) => { if (e.target === mapWin) closeMap(); });
