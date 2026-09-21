@@ -140,9 +140,17 @@
   #zonetitle .zt-rule { width: 240px; height: 1px; background: linear-gradient(90deg,transparent,#b98,transparent); }
 
   #chat { position: absolute; left: 12px; bottom: 12px; width: 380px; max-width: 46vw; pointer-events: auto; }
+  #chattabs { display: flex; gap: 2px; padding: 0 6px; }
+  #chattabs button { background: #0a0f16aa; border: 1px solid #1e2c40; border-bottom: 0; color: #8fa3bf; font-size: 11px; padding: 3px 10px;
+    border-radius: 6px 6px 0 0; cursor: pointer; font-family: inherit; }
+  #chattabs button.on { background: #14203aee; color: #e7eef7; border-color: #2b3a52; }
+  #chattabs button:hover { color: #e7eef7; }
   #chatlog { max-height: 168px; overflow-y: auto; font-size: 12.5px; line-height: 1.5; padding: 8px 10px;
-    background: #0a0f16aa; border: 1px solid #1e2c40; border-radius: 8px 8px 0 0; color: #cfe; }
+    background: #0a0f16aa; border: 1px solid #1e2c40; border-radius: 0 8px 0 0; color: #cfe; }
   #chatlog .sys { color: #ffce73; }
+  #chatlog .combat { color: #d9c2a5; } #chatlog .combat.me { color: #ffd0a0; } #chatlog .combat.kill { color: #9fe28f; } #chatlog .combat.miss { color: #8fa3bf; }
+  #chatlog .n { color: #8fa3bf; font-size: 11px; margin-left: 4px; }
+  #chatlog[data-tab="chat"] div:not(.ch-chat), #chatlog[data-tab="combat"] div:not(.ch-combat), #chatlog[data-tab="system"] div:not(.ch-system) { display: none; }
   #chatlog .name { color: #7fd7ff; font-weight: 600; }
   #chatinput { width: 100%; background: #0c131de6; border: 1px solid #1e2c40; border-top: 0; color: #e7eef7;
     padding: 9px 10px; border-radius: 0 0 8px 8px; font-size: 13px; }
@@ -505,7 +513,8 @@
     </div>
   </div>
   <div id="chat">
-    <div id="chatlog"></div>
+    <div id="chattabs"><button class="on" data-tab="all">All</button><button data-tab="chat">Chat</button><button data-tab="combat">Combat</button><button data-tab="system">System</button></div>
+    <div id="chatlog" data-tab="all"></div>
     <input id="chatinput" placeholder="Press Enter to chat…" maxlength="200" />
   </div>
   <div id="mapwin" style="display:none; position:absolute; inset:0; z-index:40; align-items:center; justify-content:center; background:rgba(5,9,16,0.9); pointer-events:auto;">
@@ -6053,14 +6062,14 @@ function onEvent(m) {
   const rec = entityMeshes.get(myId);
   const at = rec ? rec.mesh.position : null;
   switch (m.kind) {
-    case 'xp': flyText(`+${m.amount} XP`, 'xp'); break;
+    case 'xp': flyText(`+${m.amount} XP`, 'xp'); addCombat(`You gain ${m.amount} xp.`, 'kill'); break;
     case 'levelup':
       sfx.play('level_up', { vol: 0.9 });
       flyText(`${m.cls || 'Level'} ${m.level}!`, 'heal');
-      addChat('Class', `You are now a level ${m.level} ${m.cls || ''}.`, true); break;
+      addChat('Class', `You are now a level ${m.level} ${m.cls || ''}.`, true); addCombat(`You reach level ${m.level}.`, 'kill'); break;
     case 'ability': {
       const arec = entityMeshes.get(m.by); if (arec) startAbilityAnim(arec, m.id);
-      if (m.by === myId) { flyText(m.name, 'xp'); gcdUntil = performance.now() + ((abilityClass && abilityClass.gcd) || 1.5) * 1000; } break;
+      if (m.by === myId) { flyText(m.name, 'xp'); addCombat(`You use ${m.name}.`, 'me'); gcdUntil = performance.now() + ((abilityClass && abilityClass.gcd) || 1.5) * 1000; } break;
     }
     case 'learned':
       { const lrec = entityMeshes.get(myId); if (lrec && m.id === 'momentum') startAbilityAnim(lrec, 'momentum'); sfx.play('quest_complete', { rate: 1.1, vol: 0.7 }); }
@@ -6173,6 +6182,20 @@ function hurtFlash(color) {
 let lastNotice = { text: '', t: 0 };
 function showHit(m) {
   triggerAttackAnim(m.by);
+  {
+    const A = entityMeshes.get(m.by), T = entityMeshes.get(m.target);
+    const nameOf = (r, id) => id === myId ? 'You' : (r && r.data && r.data.name) || (id === myId ? 'You' : 'Something');
+    const an = nameOf(A, m.by), tn = nameOf(T, m.target);
+    const mine = m.by === myId, onMe = m.target === myId;
+    if (mine || onMe) {
+      const verb = mine ? (m.crit ? 'crit' : 'hit') : (m.crit ? 'crits' : 'hits');
+      if (m.dmg > 0) {
+        const killed = T && T.data && m.targetKind === 'monster' && T.data.hp - m.dmg <= 0;
+        addCombat(mine ? `You ${verb} the ${tn} for ${m.dmg}.` : `The ${an} ${verb} you for ${m.dmg}.`, mine ? 'me' : '');
+        if (killed && mine) addCombat(`You kill the ${tn}.`, 'kill');
+      } else addCombat(mine ? `You miss the ${tn}.` : `The ${an} misses you.`, 'miss');
+    }
+  }
   if (m.target === myId && m.dmg > 0) hurtFlash('#c0392b');
   const rec = entityMeshes.get(m.target);
   if (!rec) return;
@@ -6758,14 +6781,38 @@ function updateNpcMarkers() {
 // ---------------------------------------------------------------------------
 const chatLog = document.getElementById('chatlog');
 const chatInput = document.getElementById('chatinput');
-function addChat(from, msg, sys) {
+// Channels: 'chat' (players), 'system' (quests, loot, skills, notices),
+// 'combat' (blows, kills, abilities, xp). The tabs above the log filter by
+// channel; the input always sends to Chat.
+function addChat(from, msg, sys, channel) {
   const div = document.createElement('div');
-  if (sys) { div.className = 'sys'; div.textContent = `${from}: ${msg}`; }
+  const ch = channel || (sys ? 'system' : 'chat');
+  if (sys) { div.className = 'sys'; div.textContent = from ? `${from}: ${msg}` : msg; }
   else { div.innerHTML = `<span class="name">${escapeHtml(from)}:</span> ${escapeHtml(msg)}`; }
+  div.classList.add('ch-' + ch);
   chatLog.appendChild(div);
   chatLog.scrollTop = chatLog.scrollHeight;
-  while (chatLog.children.length > 80) chatLog.removeChild(chatLog.firstChild);
+  while (chatLog.children.length > 160) chatLog.removeChild(chatLog.firstChild);
 }
+// Combat lines never spam: a line identical to the previous combat line just
+// bumps a ×N counter on it instead of being added again.
+let lastCombatLine = null;
+function addCombat(text, cls = '') {
+  if (lastCombatLine && lastCombatLine.parentNode && lastCombatLine.dataset.text === text) {
+    const n = (+lastCombatLine.dataset.n || 1) + 1; lastCombatLine.dataset.n = n;
+    lastCombatLine.innerHTML = `${escapeHtml(text)}<span class="n">×${n}</span>`;
+    chatLog.scrollTop = chatLog.scrollHeight; return;
+  }
+  const div = document.createElement('div');
+  div.className = 'combat ch-combat ' + cls; div.dataset.text = text; div.textContent = text;
+  chatLog.appendChild(div); lastCombatLine = div;
+  chatLog.scrollTop = chatLog.scrollHeight;
+  while (chatLog.children.length > 160) chatLog.removeChild(chatLog.firstChild);
+}
+document.querySelectorAll('#chattabs button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('#chattabs button').forEach(x => x.classList.toggle('on', x === b));
+  chatLog.dataset.tab = b.dataset.tab; chatLog.scrollTop = chatLog.scrollHeight;
+});
 function escapeHtml(s) { return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
 // ---------------------------------------------------------------------------
