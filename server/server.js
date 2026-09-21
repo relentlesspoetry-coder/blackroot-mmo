@@ -1242,11 +1242,6 @@ function playerAttackSpeed(p) {
   const mo = classDef(p.cls).momentum, k = mo ? 1 - mo.atkSpeedPerStack * (p.momentum || 0) : 1;
   return (WEAPON_SPEED[w] || DEFAULT_ATTACK_SPEED) * TICK * k;
 }
-// Combat XP goes to the class: xpPerDamage per point of damage dealt.
-function awardCombatXp(p, dmg) {
-  if (dmg <= 0) return;
-  grantXp(p, Math.round(classDef(p.cls).xpPerDamage * dmg));
-}
 // Meditation trains as you rest to heal: xp scales with HP recovered.
 function addMeditationXp(p, amount) {
   const sk = p.meditation; sk.xp += amount; let leveled = false;
@@ -1261,6 +1256,134 @@ const ENGAGE_T = 8;
 function engage(p, m) { p.engagedWith = m.id; p.engagedT = ENGAGE_T; }
 function engagedElsewhere(p, m) {
   return p.engagedWith != null && p.engagedWith !== m.id && (p.engagedT || 0) > 0 && !zoneOf(p).multiCombat;
+}
+
+
+// ---------------------------------------------------------------------------
+// Navigation: a lazily-built walkability grid over the surface (1m cells,
+// probed with the real collision so fences, walls, rocks, trees, furniture
+// and rivers all count), A* over it with no corner cutting, and string-pulled
+// paths so walkers cut straight across open ground. Line-of-sight for attacks
+// uses the same probe with a thin radius.
+// ---------------------------------------------------------------------------
+const NAV_CELL = 1.0, NAV_CHUNK = 16, NAV_MAX_NODES = 7000;
+function navBlocked(zone, x, z, radius = PLAYER_RADIUS * 0.9) {
+  const probe = { x, z, y: 0 };
+  const G = zone._gate, keep = G ? G.t : 0; if (G) G.t = 1;   // the gate counts as open for the map; it opens on approach
+  resolveCollision(zone, probe, radius);
+  if (G) G.t = keep;
+  return Math.hypot(probe.x - x, probe.z - z) > 0.05;
+}
+function navGrid(zone) {
+  if (!zone._nav) zone._nav = { chunks: new Map() };
+  return zone._nav;
+}
+function navCellBlocked(zone, cx, cz) {
+  const nav = navGrid(zone), kx = Math.floor(cx / NAV_CHUNK), kz = Math.floor(cz / NAV_CHUNK), key = kx + ',' + kz;
+  let ch = nav.chunks.get(key);
+  if (!ch) {
+    ch = new Uint8Array(NAV_CHUNK * NAV_CHUNK);
+    for (let j = 0; j < NAV_CHUNK; j++) for (let i = 0; i < NAV_CHUNK; i++) {
+      const x = (kx * NAV_CHUNK + i + 0.5) * NAV_CELL, z = (kz * NAV_CHUNK + j + 0.5) * NAV_CELL;
+      ch[j * NAV_CHUNK + i] = navBlocked(zone, x, z) ? 1 : 0;
+    }
+    nav.chunks.set(key, ch);
+  }
+  const i = cx - kx * NAV_CHUNK, j = cz - kz * NAV_CHUNK;
+  return ch[j * NAV_CHUNK + i] === 1;
+}
+// Straight-line walkability between two points (live collision, so a shut gate blocks).
+function lineClear(zone, ax, az, bx, bz, radius = PLAYER_RADIUS * 0.9) {
+  const d = Math.hypot(bx - ax, bz - az), n = Math.max(1, Math.ceil(d / 0.5));
+  for (let i = 1; i <= n; i++) { const t = i / n; if (navBlocked(zone, ax + (bx - ax) * t, az + (bz - az) * t, radius)) return false; }
+  return true;
+}
+// Can two combatants reach each other (nothing solid between them)? Thin probe,
+// and the ends are skipped so the bodies themselves don't count.
+function hasLos(zone, ax, az, bx, bz) {
+  const d = Math.hypot(bx - ax, bz - az); if (d < 1.2) return true;
+  const n = Math.ceil(d / 0.4);
+  for (let i = 1; i < n; i++) { const t = i / n; const x = ax + (bx - ax) * t, z = az + (bz - az) * t; if (Math.hypot(x - ax, z - az) < 0.6 || Math.hypot(x - bx, z - bz) < 0.6) continue; if (navBlocked(zone, x, z, 0.15)) return false; }
+  return true;
+}
+function nearestFreeCell(zone, cx, cz) {
+  if (!navCellBlocked(zone, cx, cz)) return [cx, cz];
+  for (let r = 1; r <= 3; r++) for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) {
+    if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
+    if (!navCellBlocked(zone, cx + dx, cz + dz)) return [cx + dx, cz + dz];
+  }
+  return null;
+}
+// A* from (ax,az) to (bx,bz). Returns waypoints (world coords, excluding the
+// start) or null. If the goal can't be reached within the node budget, the path
+// to the closest explored cell is returned instead.
+function findPath(zone, ax, az, bx, bz) {
+  const s0 = nearestFreeCell(zone, Math.floor(ax / NAV_CELL), Math.floor(az / NAV_CELL));
+  const g0 = nearestFreeCell(zone, Math.floor(bx / NAV_CELL), Math.floor(bz / NAV_CELL));
+  if (!s0 || !g0) return null;
+  const key = (x, z) => x + ',' + z;
+  const open = [], gS = new Map(), came = new Map(), closed = new Set();
+  const h = (x, z) => { const dx = Math.abs(x - g0[0]), dz = Math.abs(z - g0[1]); return Math.max(dx, dz) + 0.414 * Math.min(dx, dz); };
+  const push = (x, z, g, f) => { open.push({ x, z, g, f }); gS.set(key(x, z), g); };
+  push(s0[0], s0[1], 0, h(s0[0], s0[1]));
+  let best = { x: s0[0], z: s0[1], h: h(s0[0], s0[1]) }, expanded = 0, found = null;
+  while (open.length && expanded < NAV_MAX_NODES) {
+    let bi = 0; for (let i = 1; i < open.length; i++) if (open[i].f < open[bi].f) bi = i;
+    const cur = open[bi]; open[bi] = open[open.length - 1]; open.pop();
+    const ck = key(cur.x, cur.z); if (closed.has(ck)) continue; closed.add(ck); expanded++;
+    if (cur.x === g0[0] && cur.z === g0[1]) { found = cur; break; }
+    const hh = h(cur.x, cur.z); if (hh < best.h) best = { x: cur.x, z: cur.z, h: hh };
+    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+      if (!dx && !dz) continue;
+      const nx = cur.x + dx, nz = cur.z + dz;
+      if (navCellBlocked(zone, nx, nz)) continue;
+      if (dx && dz && (navCellBlocked(zone, cur.x + dx, cur.z) || navCellBlocked(zone, cur.x, cur.z + dz))) continue; // no corner cutting
+      const ng = cur.g + ((dx && dz) ? 1.414 : 1), nk = key(nx, nz);
+      if (closed.has(nk) || (gS.has(nk) && gS.get(nk) <= ng)) continue;
+      came.set(nk, ck); push(nx, nz, ng, ng + h(nx, nz));
+    }
+  }
+  const end = found ? key(found.x, found.z) : key(best.x, best.z);
+  if (!found && best.x === s0[0] && best.z === s0[1]) return null;
+  const cells = []; let k = end;
+  while (k && k !== key(s0[0], s0[1])) { const [x, z] = k.split(',').map(Number); cells.push([x, z]); k = came.get(k); }
+  cells.reverse();
+  const pts = cells.map(([x, z]) => ({ x: (x + 0.5) * NAV_CELL, z: (z + 0.5) * NAV_CELL }));
+  if (found) pts.push({ x: bx, z: bz }); // finish exactly on the goal
+  // String-pull: drop waypoints the walker can see straight past.
+  const out = []; let from = { x: ax, z: az }, i = 0;
+  while (i < pts.length) {
+    let j = pts.length - 1;
+    while (j > i && !lineClear(zone, from.x, from.z, pts[j].x, pts[j].z)) j--;
+    out.push(pts[j]); from = pts[j]; i = j + 1;
+  }
+  return { pts: out, partial: !found };
+}
+// Walk an entity toward (tx,tz) around obstacles. Keeps a cached route on the
+// entity (ent._nav) and recomputes when the goal moves or it gets stuck.
+// Returns true if it moved.
+function navStep(zone, ent, tx, tz, stopDist, speed) {
+  const d = Math.hypot(tx - ent.x, tz - ent.z);
+  if (d <= stopDist) { ent._nav = null; return false; }
+  const face = (x, z) => { ent.yaw = Math.atan2(x - ent.x, z - ent.z); };
+  const walk = (x, z) => { face(x, z); const dd = Math.hypot(x - ent.x, z - ent.z) || 1; const st = Math.min(dd, speed * DT); ent.x += (x - ent.x) / dd * st; ent.z += (z - ent.z) / dd * st; };
+  const before = { x: ent.x, z: ent.z };
+  const underground = (ent.y || 0) < -6;
+  if (underground || lineClear(zone, ent.x, ent.z, tx, tz)) { ent._nav = null; walk(tx, tz); return true; }
+  let nav = ent._nav;
+  const goalMoved = nav && Math.hypot(nav.tx - tx, nav.tz - tz) > 1.5;
+  if (!nav || goalMoved || nav.age > 2.5 || nav.stuck > 0.6) {
+    const r = findPath(zone, ent.x, ent.z, tx, tz);
+    nav = ent._nav = { tx, tz, pts: r ? r.pts : [{ x: tx, z: tz }], i: 0, age: 0, stuck: 0 };
+  }
+  nav.age += DT;
+  while (nav.i < nav.pts.length - 1 && Math.hypot(nav.pts[nav.i].x - ent.x, nav.pts[nav.i].z - ent.z) < 0.5) nav.i++;
+  const wp = nav.pts[Math.min(nav.i, nav.pts.length - 1)];
+  walk(wp.x, wp.z);
+  resolveCollision(zone, ent, PLAYER_RADIUS);
+  const movedBy = Math.hypot(ent.x - before.x, ent.z - before.z);
+  nav.stuck = movedBy < speed * DT * 0.25 ? nav.stuck + DT : 0;
+  return true;
 }
 
 function doPlayerAttack(p, m) {
@@ -1307,7 +1430,7 @@ function moveMult(p) { let m = 1; for (const bf of Object.values(p.buffs)) if (b
 function addBuff(p, spec) { p.buffs[spec.id] = { ...spec, t: spec.dur, charges: spec.charges || 0, since: 0 }; }
 // A landed hit: damage, xp, splat, kill; momentum / savage triggers.
 function applyHit(p, m, dmg, crit) {
-  if (dmg > 0) { m.hp -= dmg; awardCombatXp(p, dmg); m.provoked = true; m.targetId = p.id; m.state = 'combat'; }
+  if (dmg > 0) { m.hp -= dmg; m.provoked = true; m.targetId = p.id; m.state = 'combat'; } // class xp comes with the kill (killMonster), not per hit
   broadcast({ t: 'event', kind: 'hit', by: p.id, target: m.id, dmg, crit: !!crit, targetKind: 'monster' });
   p._lastCrit = !!crit;
   if (crit) savageTrigger(p);
@@ -1499,8 +1622,11 @@ function stepMonster(m) {
     m.respawnTimer -= DT;
     if (m.respawnTimer <= 0) {
       const pos = spawnInRegion(zone, m.spec.region, { passive: m.passive });
-      m.x = pos.x; m.z = pos.z; m.home = { x: pos.x, z: pos.z };
+      m.x = pos.x; m.z = pos.z; m.home = { x: pos.x, z: pos.z }; m._nav = null;
       m.hp = m.maxHp; m.alive = true; m.state = 'idle'; m.targetId = null; m.atkTimer = 0;
+      // A respawn is a new creature: give it a new id, or the client would
+      // interpolate the old corpse sliding over to the spawn point.
+      monsters.delete(m.id); m.id = nextId++; monsters.set(m.id, m);
     }
     return;
   }
@@ -1539,9 +1665,9 @@ function stepMonster(m) {
       m.targetId = null; m.provoked = false; m.state = 'idle';   // someone else has them; wait our turn
     } else {
       m.yaw = Math.atan2(target.x - m.x, target.z - m.z);
-      if (d > ATTACK_RANGE - 0.5) {
-        m.x += Math.sin(m.yaw) * m.speed * slowK * DT;
-        m.z += Math.cos(m.yaw) * m.speed * slowK * DT;
+      const los = d <= ATTACK_RANGE - 0.5 && hasLos(zone, m.x, m.z, target.x, target.z);
+      if (d > ATTACK_RANGE - 0.5 || !los) {
+        navStep(zone, m, target.x, target.z, los ? ATTACK_RANGE - 0.5 : 0.9, m.speed * slowK); // round fences, not through them
       } else if (m.atkTimer <= 0) {
         m.atkTimer = (m.attackSpeed || 4) * TICK * ((m.debuffs && m.debuffs.bonebreak_atk > 0) ? 1.15 : 1);
         // OSRS accuracy: monster attack roll vs the player's defence roll (level
@@ -1602,17 +1728,13 @@ function stepPlayer(p) {
       p.pendingFish != null || p.pendingCook != null;
     if (wantsAction || (p.combatTimer || 0) > 0) { p.resting = false; sendSkills(p); }
   }
-  const step = (tx, tz, stopDist) => {
-    const dx = tx - p.x, dz = tz - p.z, d = Math.hypot(dx, dz);
-    if (d <= stopDist) return false;
-    const yaw = Math.atan2(dx, dz);
-    p.x += Math.sin(yaw) * PLAYER_SPEED * moveMult(p) * DT; p.z += Math.cos(yaw) * PLAYER_SPEED * moveMult(p) * DT;
-    p.yaw = yaw; return true;
-  };
+  const step = (tx, tz, stopDist) => navStep(zone, p, tx, tz, stopDist, PLAYER_SPEED * moveMult(p));
+  // A shut gate on the way swings open as you reach it.
+  if (p._nav && zone._gate && zone._gate.t < 0.55 && zone._gate.target < 0.5 && dist2(p.x, p.z, zone._gate.cx, zone._gate.cz) < GATE_REACH * GATE_REACH) toggleGate(zone._gate, p);
 
   if (inp && (inp.f !== 0 || inp.r !== 0)) {
     // Manual WASD overrides click-to-move / combat.
-    p.moveTo = null; p.combatId = null; p.pendingChest = null; p.pendingPickup = null; p.pendingMine = null; p.pendingGate = false; p.pendingFish = null; p.pendingCook = null;
+    p.moveTo = null; p.combatId = null; p.pendingChest = null; p.pendingPickup = null; p.pendingMine = null; p.pendingGate = false; p.pendingFish = null; p.pendingCook = null; p._nav = null;
     const yaw = inp.yaw;
     const fx = Math.sin(yaw), fz = Math.cos(yaw);
     const rx = Math.sin(yaw - Math.PI / 2), rz = Math.cos(yaw - Math.PI / 2);
@@ -1626,8 +1748,13 @@ function stepPlayer(p) {
   } else if (p.combatId != null) {
     const m = monsters.get(p.combatId);
     if (!m || !m.alive || m.zoneId !== p.zoneId) { p.combatId = null; }
-    else if (step(m.x, m.z, ATTACK_RANGE - 0.4)) { moved = true; } // walk into range
-    else { p.yaw = Math.atan2(m.x - p.x, m.z - p.z); doPlayerAttack(p, m); }
+    else {
+      // Walk into range AND into line of sight — no swinging through a fence;
+      // the route goes round (through the gate) instead.
+      const inRange = dist2(p.x, p.z, m.x, m.z) <= (ATTACK_RANGE - 0.4) ** 2, los = inRange && hasLos(zone, p.x, p.z, m.x, m.z);
+      if (!inRange || !los) { if (step(m.x, m.z, los ? ATTACK_RANGE - 0.4 : 0.9)) moved = true; }
+      else { p._nav = null; p.yaw = Math.atan2(m.x - p.x, m.z - p.z); doPlayerAttack(p, m); }
+    }
   } else if (p.pendingChest) {
     const ch = (zone.chests || []).find(c => c.id === p.pendingChest);
     if (!ch) { p.pendingChest = null; }

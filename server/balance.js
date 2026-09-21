@@ -55,7 +55,7 @@ export const CLASSES = {
     stam: (L) => 100 + (L - 1) * 12, // stamina pool: 100 at 1, 328 at 20
     stamRegen: { combat: 8, idle: 18 },
     gcd: 1.5,                      // global cooldown between abilities
-    xpPerDamage: 5,                // class xp per point of damage dealt
+    // (class xp comes from kills — each monster's xp value — never per hit)
     critBase: 0.05, critMult: 1.5,
     // Momentum: heavy attacks stack it (max 5, 5 min), +2% attack speed a stack;
     // some abilities spend it.
