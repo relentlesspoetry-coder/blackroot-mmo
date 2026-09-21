@@ -97,8 +97,11 @@
   .slot .ic { font-size: 20px; } .slot .n { position: absolute; bottom: 1px; right: 3px; font-size: 10px; color: #fff; font-weight: 700; text-shadow: 0 1px 2px #000; }
   .slot .tip { display: none; }
   .slot:hover { border-color: #c9a44a; }
-  .slot:hover .tip { display: block; position: absolute; bottom: 104%; left: 50%; transform: translateX(-50%);
-    background: #000c; color: #ffe9b0; font-size: 11px; padding: 2px 6px; border-radius: 4px; white-space: nowrap; z-index: 2; }
+  /* Item tooltip: one floating box (#itemtip) fed from the slot's hidden .tip,
+     so the bag grid's scroll clipping can't cut it off. */
+  #itemtip { display: none; position: fixed; z-index: 45; background: #14100bee; color: #ffe9b0; font-size: 11px; line-height: 1.35;
+    padding: 5px 8px; border-radius: 5px; border: 1px solid #6a5636; white-space: nowrap; box-shadow: 0 3px 10px #000a; pointer-events: none; }
+  #itemtip b { color: #ffd24a; } #itemtip .dim { color: #b3a385; } #itemtip i { color: #d9c9a3; }
   #bag .empty { color: #8a7d63; font-size: 12px; grid-column: 1 / -1; text-align: center; padding: 12px 0; }
   /* ---- Equipment window ---- */
   #equipBtn { position: absolute; right: 136px; bottom: 12px; width: 52px; height: 52px; pointer-events: auto;
@@ -359,6 +362,7 @@
   <div id="npcmarks"></div>
   <div id="poilabels"></div>
   <div id="nameplates"></div>
+<div id="itemtip"></div>
   <div id="hurt"></div>
   <div id="toast"></div>
   <div id="editor" style="display:none; position:absolute; left:10px; top:80px; width:280px; max-height:calc(100vh - 96px); overflow-y:auto; z-index:45; pointer-events:auto; background:rgba(14,18,26,0.97); border:1px solid #3a4c68; border-radius:10px; color:#e6edf6; font-size:13px; box-shadow:0 8px 28px #000c;">
@@ -916,7 +920,7 @@ function connect(name, look) {
 function handle(m) {
   switch (m.t) {
     case 'welcome':
-      myId = m.id; zone = m.zone; startGame();
+      myId = m.id; zone = m.zone; if (m.items) itemCatalog = m.items; startGame();
       if (EDIT.on) { editInit(); ws?.send(JSON.stringify({ t: 'edit:list', key: EDIT.key })); }
       break;
     case 'snapshot':
@@ -5353,10 +5357,15 @@ function openContextMenu(e) {
   if (pk.kind === 'monster') title = pk.data.name;
   else if (pk.kind === 'npc') title = pk.name;
   else if (pk.kind === 'chest') title = 'Treasure Chest';
+  showOptions(title, opts, e.clientX, e.clientY);
+}
+// The RuneScape-style options menu at a screen point (world picks and bag items alike).
+function showOptions(title, opts, cx, cy) {
+  if (!opts.length) { hideContextMenu(); return; }
   ctxEl.innerHTML = `<div class="ctx-title">${escapeHtml(title)}</div>` +
-    opts.map((o, i) => `<div class="ctx-item" data-i="${i}">${o.label}</div>`).join('');
+    opts.map((o, i) => `<div class="ctx-item" data-i="${i}">${escapeHtml(o.label)}</div>`).join('');
   ctxEl.style.display = 'block';
-  const mx = Math.min(e.clientX, innerWidth - 200), my = Math.min(e.clientY, innerHeight - 40 - opts.length * 24);
+  const mx = Math.min(cx, innerWidth - 200), my = Math.min(cy, innerHeight - 40 - opts.length * 24);
   ctxEl.style.left = mx + 'px'; ctxEl.style.top = my + 'px';
   ctxEl.querySelectorAll('.ctx-item').forEach(el => {
     el.onclick = () => { hideContextMenu(); opts[+el.dataset.i].act(); };
@@ -5667,7 +5676,10 @@ const ITEM_META = {
   "Shaman's Spirit Stone": { slot: 'ring', atk: 2, def: 2, level: 4 },
   "Chief's Bronze Signet": { slot: 'ring', atk: 3, def: 2, level: 5 },
 };
-function metaFor(name) { return ITEM_META[name] || null; }
+let itemCatalog = {}; // name -> { slot, atk, def, level, value, heal, desc } from the server
+function metaFor(name) { const c = itemCatalog[name]; if (c && c.slot) return c; return ITEM_META[name] || null; }
+function itemInfo(name) { return itemCatalog[name] || null; }
+function isEdible(name) { const c = itemCatalog[name]; return c ? c.heal > 0 : EDIBLE.has(name); }
 function statText(m) {
   if (!m) return '';
   const bits = [];
@@ -5701,7 +5713,7 @@ const ITEM_ICON = {
   'Raw Beef': '🥩', 'Cooked Beef': '🍖', 'Burnt Food': '🔥', 'Kebab': '🌯',
 };
 function iconFor(name) { return ITEM_ICON[name] || (/Trophy/.test(name) ? '🏆' : '📦'); }
-function toggleBag(force) { bagOpen = force != null ? force : !bagOpen; document.getElementById('bag').style.display = bagOpen ? 'block' : 'none'; if (bagOpen) renderBag(); }
+function toggleBag(force) { bagOpen = force != null ? force : !bagOpen; document.getElementById('bag').style.display = bagOpen ? 'block' : 'none'; if (bagOpen) renderBag(); else hideItemTip(); }
 function renderSkills() {
   const el = document.getElementById('skillline');
   if (!el) return;
@@ -5866,20 +5878,54 @@ function renderBag() {
   for (let i = 0; i < total; i++) {
     const n = names[i];
     if (!n) { html += '<div class="slot"></div>'; continue; } // empty slot
-    const m = metaFor(n);
-    const hint = EDIBLE.has(n) ? ' \u2014 click to eat' : (m ? ' \u2014 click to equip' : '');
+    const m = metaFor(n), info = itemInfo(n);
+    const lines = [`<b>${escapeHtml(n)}</b>${counts[n] > 1 ? ` <span class="dim">×${counts[n]}</span>` : ''}`];
+    const st = statText(m).replace(/^ \(|\)$/g, '');
+    if (st) lines.push(st);
+    if (info && info.heal) lines.push(`Heals ${info.heal}`);
+    if (info && info.value) lines.push(`<span class="dim">${info.value.toLocaleString()} gp</span>`);
+    if (info && info.desc) lines.push(`<i>${escapeHtml(info.desc)}</i>`);
+    lines.push(`<span class="dim">${isEdible(n) ? 'Click to eat' : (m ? 'Click to equip' : 'Right-click for options')}</span>`);
     html += `<div class="slot" data-item="${escapeHtml(n)}"><span class="ic">${iconFor(n)}</span>` +
       `${counts[n] > 1 ? `<span class="n">${counts[n]}</span>` : ''}` +
-      `<span class="tip">${escapeHtml(n)}${statText(m)}${hint}</span></div>`;
+      `<span class="tip">${lines.join('<br>')}</span></div>`;
   }
   grid.innerHTML = html;
   grid.querySelectorAll('.slot').forEach(el => {
     el.onclick = () => {
       const name = el.dataset.item;
-      if (EDIBLE.has(name)) eatItem(name);
+      if (isEdible(name)) eatItem(name);
       else if (metaFor(name)) ws?.send(JSON.stringify({ t: 'equip', item: name }));
     };
+    el.oncontextmenu = (e) => { e.preventDefault(); e.stopPropagation(); showOptions(el.dataset.item, itemOptions(el.dataset.item), e.clientX, e.clientY); };
+    el.onmouseenter = (e) => showItemTip(el, e); el.onmousemove = (e) => showItemTip(el, e); el.onmouseleave = hideItemTip;
   });
+}
+const itemTipEl = document.getElementById('itemtip');
+function showItemTip(slotEl, e) {
+  const tip = slotEl.querySelector('.tip'); if (!tip) { hideItemTip(); return; }
+  itemTipEl.innerHTML = tip.innerHTML; itemTipEl.style.display = 'block';
+  const w = itemTipEl.offsetWidth, h = itemTipEl.offsetHeight;
+  itemTipEl.style.left = Math.max(4, Math.min(e.clientX + 14, innerWidth - w - 4)) + 'px';
+  itemTipEl.style.top = Math.max(4, e.clientY - h - 12) + 'px';
+}
+function hideItemTip() { itemTipEl.style.display = 'none'; }
+// Right-click options for an item in the bag: Eat / Equip / Drop / Examine.
+function itemOptions(name) {
+  const opts = [], m = metaFor(name), info = itemInfo(name);
+  if (isEdible(name)) opts.push({ label: `Eat ${name}`, act: () => eatItem(name) });
+  if (m) opts.push({ label: `Equip ${name}`, act: () => ws?.send(JSON.stringify({ t: 'equip', item: name })) });
+  opts.push({ label: `Drop ${name}`, act: () => ws?.send(JSON.stringify({ t: 'drop', item: name })) });
+  opts.push({ label: `Examine ${name}`, act: () => addChat('Examine', (info && info.desc) || describeItem(name), true) });
+  return opts;
+}
+function describeItem(name) {
+  const info = itemInfo(name), m = metaFor(name);
+  if (info && info.heal) return `${name}. Eating it heals ${info.heal} hitpoints.`;
+  if (m) return `${name}${statText(m)}. Worn in the ${m.slot} slot.`;
+  if (/Ore$|^Coal$/.test(name)) return `A lump of ${name.toLowerCase()}, fresh from the vein.`;
+  if (/^Raw /.test(name)) return `${name}. Cook it at a campfire.`;
+  return `It's ${/^[AEIOU]/i.test(name) ? 'an' : 'a'} ${name.toLowerCase()}.`;
 }
 
 // ---------------------------------------------------------------------------

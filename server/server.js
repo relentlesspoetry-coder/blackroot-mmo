@@ -893,6 +893,11 @@ function pickupItem(p, itemId) {
   sendBag(p);
 }
 
+// What every item is, for bag tooltips / Examine: sent once on join.
+const ITEM_CATALOG = Object.fromEntries(Object.entries(ITEMS).map(([n, d]) => [n, {
+  slot: d.slot || null, atk: d.atk || 0, def: d.def || 0, level: d.level || 1, value: d.value || 0,
+  heal: d.heal || 0, desc: d.desc || null,
+}]));
 function sendBag(p) {
   send(p.ws, { t: 'bag', items: p.inventory, gold: p.gold,
     equipment: p.equipment, stats: equipStats(p.equipment), slots: SLOT_INFO, doll: DOLL });
@@ -1712,7 +1717,7 @@ wss.on('connection', (ws) => {
         };
         player.combat = combatLevel(player.skills);
         players.set(id, player);
-        send(ws, { t: 'welcome', id, tickRate: SNAPSHOT_HZ, zone: zoneForClient(start) });
+        send(ws, { t: 'welcome', id, tickRate: SNAPSHOT_HZ, zone: zoneForClient(start), items: ITEM_CATALOG });
         sendBag(player); // sends the quest payload too
         sendSkills(player);
         systemChat(`${name} has entered ${start.name}.`);
@@ -1788,6 +1793,19 @@ wss.on('connection', (ws) => {
       case 'eat': {
         if (!player || !player.alive) break;
         eatFood(player, String(msg.item || ''));
+        break;
+      }
+      case 'drop': {
+        // Drop one of an item at the player's feet; it lies there like loot
+        // (anyone can pick it up) until the ground item times out.
+        if (!player || !player.alive) break;
+        const name = String(msg.item || '');
+        const i = player.inventory.indexOf(name);
+        if (i < 0) break;
+        player.inventory.splice(i, 1);
+        const a = Math.random() * Math.PI * 2;
+        dropItem(player.zoneId, player.x + Math.sin(a) * 0.8, player.z + Math.cos(a) * 0.8, name, 1, null);
+        sendBag(player);
         break;
       }
       // --- World editor (gated by EDIT_KEY) ---
