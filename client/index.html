@@ -143,22 +143,11 @@
   .eslot:hover .tip { display: block; position: absolute; bottom: 104%; left: 50%; transform: translateX(-50%);
     background: #000d; color: #ffe9b0; font-size: 11px; padding: 3px 7px; border-radius: 4px; white-space: nowrap; z-index: 3; }
   .eslot .tip { display: none; }
-  #skillline { color: #b9ad90; font-size: 11px; margin: -4px 0 8px; display: flex;
-    flex-direction: column; gap: 5px; }
-  #skillline b { color: #8fd070; font-weight: 600; }
-  #skillline .cskills { display: flex; flex-wrap: wrap; gap: 6px; }
-  #skillline .cskill { background: #241d13; border: 1px solid #4a3d2a; border-radius: 4px;
-    padding: 1px 6px; color: #cbb892; }
-  #skillline .cskill b { color: #ffd47a; }
-  #skillline .styles { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; color: #8a7d63; }
-  #skillline .stylebtn { pointer-events: auto; cursor: pointer; font-size: 10px; padding: 2px 7px;
+  #skillStyles { margin: -2px 0 8px; font-size: 11px; }
+  #skillStyles .styles { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; color: #8a7d63; }
+  #skillStyles .stylebtn { pointer-events: auto; cursor: pointer; font-size: 10px; padding: 2px 7px;
     background: #1a2436; color: #cfe0f5; border: 1px solid #3a4c68; border-radius: 4px; }
-  #skillline .stylebtn.on { background: #2f5aa0; border-color: #5a86c8; color: #fff; }
-  #skillline .miningrow { display: flex; align-items: center; gap: 8px; }
-  #skillline .xpbar { flex: 1; height: 4px; background: #1d1913; border: 1px solid #4a3d2a;
-    border-radius: 3px; overflow: hidden; }
-  #skillline .xpbar i { display: block; height: 100%; background: #6a9f4a; transform-origin: left; }
-  #skillline .pick { color: #8a7d63; }
+  #skillStyles .stylebtn.on { background: #2f5aa0; border-color: #5a86c8; color: #fff; }
   .slot { cursor: pointer; }
 
   /* ---- Skills window ---- */
@@ -337,7 +326,6 @@
   <button id="mapBtn" title="Map (M)" style="position:absolute; right:198px; bottom:12px; width:52px; height:52px; pointer-events:auto; background:#3f342a; border:2px solid #1c150e; border-radius:8px; color:#ffdf9e; font-size:22px; cursor:pointer;">🗺️</button>
   <div id="bag">
     <h3><span>Bag</span><span class="g" id="bagGold">0 gp</span></h3>
-    <div id="skillline"></div>
     <div id="bagGrid"></div>
   </div>
   <div id="equipwin">
@@ -348,6 +336,7 @@
   </div>
   <div id="skillwin">
     <h3><span>Skills</span><span class="g" id="skillCombat"></span></h3>
+    <div id="skillStyles"></div>
     <div id="skillGrid"></div>
     <div id="skillTotal"></div>
   </div>
@@ -5706,47 +5695,10 @@ const ITEM_ICON = {
 };
 function iconFor(name) { return ITEM_ICON[name] || (/Trophy/.test(name) ? '🏆' : '📦'); }
 function toggleBag(force) { bagOpen = force != null ? force : !bagOpen; document.getElementById('bag').style.display = bagOpen ? 'block' : 'none'; if (bagOpen) renderBag(); else hideItemTip(); }
-function renderSkills() {
-  const el = document.getElementById('skillline');
-  if (!el) return;
-  const m = skills.mining || { level: 1, into: 0, next: 1, pick: null };
-  const pct = Math.max(0, Math.min(1, m.into / (m.next || 1)));
-  const cs = skills.combat || {};
-  const label = { attack: 'Atk', strength: 'Str', defence: 'Def', hitpoints: 'HP' };
-  const chip = (k) => `<span class="cskill">${label[k]} <b>${(cs[k] || {}).level || 1}</b></span>`;
-  const chips = ['attack', 'strength', 'defence', 'hitpoints'].map(chip).join('') +
-    `<span class="cskill">⚔ Combat <b>${skills.combatLevel || 3}</b></span>`;
-  const cur = skills.style || 'controlled';
-  const slabel = { accurate: 'Accurate', aggressive: 'Aggressive', defensive: 'Defensive', controlled: 'Controlled' };
-  const styleBtns = ['accurate', 'aggressive', 'defensive', 'controlled']
-    .map(s => `<button class="stylebtn${s === cur ? ' on' : ''}" data-style="${s}">${slabel[s]}</button>`).join('');
-  const med = skills.meditation || { level: 1, xp: 0, next: 1 };
-  const medPct = Math.max(0, Math.min(1, (med.into || 0) / (med.next || 1)));
-  const fish = skills.fishing || { level: 1, into: 0, next: 1, rod: null };
-  const fishPct = Math.max(0, Math.min(1, fish.into / (fish.next || 1)));
-  const cook = skills.cooking || { level: 1, into: 0, next: 1 };
-  const cookPct = Math.max(0, Math.min(1, cook.into / (cook.next || 1)));
-  el.innerHTML =
-    `<div class="cskills">${chips}</div>` +
-    `<div class="styles"><span>Style:</span> ${styleBtns}</div>` +
-    `<div class="miningrow"><span>⛏ Mining <b>${m.level}</b></span>` +
-    `<span class="xpbar"><i style="transform:scaleX(${pct})"></i></span>` +
-    `<span class="pick">${m.pick ? escapeHtml(m.pick.replace(' Pickaxe', '')) : 'no pickaxe'}</span></div>` +
-    `<div class="miningrow"><span>🎣 Fishing <b>${fish.level}</b></span>` +
-    `<span class="xpbar"><i style="transform:scaleX(${fishPct})"></i></span>` +
-    `<span class="pick">${fish.rod ? escapeHtml(fish.rod.replace(' Rod', '')) : 'no rod'}</span></div>` +
-    `<div class="miningrow"><span>🍳 Cooking <b>${cook.level}</b></span>` +
-    `<span class="xpbar"><i style="transform:scaleX(${cookPct})"></i></span>` +
-    `<span class="pick">at a campfire</span></div>` +
-    `<div class="miningrow"><span>🧘 Meditation <b>${med.level}</b></span>` +
-    `<span class="xpbar"><i style="transform:scaleX(${medPct})"></i></span>` +
-    `<span class="pick">${skills.resting ? 'resting…' : 'press R to rest'}</span></div>`;
-  el.querySelectorAll('.stylebtn').forEach(b => b.onclick = () => ws?.send(JSON.stringify({ t: 'style', style: b.dataset.style })));
-  if (skillsOpen) renderSkillWindow();
-}
-
-// ---- Full Skills window (K) — every skill, its level and xp progress ----
+// Skill payloads only feed the Skills window (K) — the bag is just the bag.
 let skillsOpen = false;
+function renderSkills() { if (skillsOpen) renderSkillWindow(); }
+
 function toggleSkills(force) {
   skillsOpen = force != null ? force : !skillsOpen;
   document.getElementById('skillwin').style.display = skillsOpen ? 'block' : 'none';
@@ -5756,6 +5708,13 @@ function renderSkillWindow() {
   const grid = document.getElementById('skillGrid');
   if (!grid) return;
   const cs = skills.combat || {};
+  // Attack style (what combat trains) lives with the skills it feeds.
+  const cur = skills.style || 'controlled';
+  const slabel = { accurate: 'Accurate', aggressive: 'Aggressive', defensive: 'Defensive', controlled: 'Controlled' };
+  const stylesEl = document.getElementById('skillStyles');
+  stylesEl.innerHTML = `<div class="styles"><span>Style:</span> ` + ['accurate', 'aggressive', 'defensive', 'controlled']
+    .map(st => `<button class="stylebtn${st === cur ? ' on' : ''}" data-style="${st}">${slabel[st]}</button>`).join('') + `</div>`;
+  stylesEl.querySelectorAll('.stylebtn').forEach(b => b.onclick = () => ws?.send(JSON.stringify({ t: 'style', style: b.dataset.style })));
   const cell = (em, name, level, into, next, note) => {
     const pct = Math.max(0, Math.min(1, (into || 0) / (next || 1)));
     return `<div class="skcell"><div class="top"><span class="em">${em}</span>${name}<b>${level || 1}</b></div>` +
