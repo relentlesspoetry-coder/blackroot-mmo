@@ -80,6 +80,7 @@ export const killingfields = {
 
   npcs: [
     { id: 'kf_sentry',  name: 'Road Sentry Bram', x: 6,   z: -144, poi: 'entrance', model: 'Male',
+      look: { hair: 2, hairColor: '#1e1712', skin: '#b78b68', outfit: 17, slots: { cape: 30 }, colors: { cape: '#5a2a2a' } },
       idle: 'The fields eat the careless. Keep moving, keep your guard up.' },
     { id: 'kf_widow',   name: 'The Field Widow',  x: -68, z: 3,   poi: 'homestead', model: 'Female', trade: true,
       idle: 'Raiders took everything but my wares. Buy something, aye?' },

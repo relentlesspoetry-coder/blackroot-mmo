@@ -22,6 +22,10 @@
   #login p { color: #8fa3bf; font-size: 14px; }
   #login .card { background: #121a26; border: 1px solid #24344a; border-radius: 14px; padding: 24px 28px; display: flex; flex-direction: column; gap: 12px; width: 320px; }
   #login input { background: #0c131d; border: 1px solid #2a3c54; color: #e7eef7; padding: 11px 12px; border-radius: 8px; font-size: 15px; }
+  #login .lookrow { display: flex; gap: 10px; }
+  #login .lookrow label { flex: 1; display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #8fa3bf; }
+  #login select { background: #0c131d; border: 1px solid #2a3c54; color: #e7eef7; padding: 8px; border-radius: 8px; font-size: 13px; }
+  #login input[type=color] { padding: 2px; height: 36px; width: 100%; }
   #login button { background: linear-gradient(90deg,#3b82f6,#8b5cf6); border: 0; color: #fff; padding: 12px; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; }
   #login button:hover { filter: brightness(1.1); }
   #login small { color: #61748f; line-height: 1.5; }
@@ -276,6 +280,8 @@
   <p>A fully 3D browser MMO</p>
   <div class="card">
     <input id="nameInput" maxlength="16" placeholder="Character name" autocomplete="off" />
+    <div class="lookrow"><label>Hair <select id="hairSel"></select></label><label>Hair colour <input type="color" id="hairCol" value="#4a2e1a"></label></div>
+    <div class="lookrow"><label>Outfit <select id="outfitSel"></select></label><label>Skin <input type="color" id="skinCol" value="#cba281"></label></div>
     <button id="playBtn">Enter World</button>
     <small>Left-click to walk · left-click a monster to attack · right-click anything for options — mine rock veins, fish at the river, cook raw food at a campfire · arrow keys or drag to look · scroll to zoom · Enter to chat. WASD also moves. Open a second window to play together.</small>
   </div>
@@ -450,6 +456,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 
 // ---------------------------------------------------------------------------
 // 3D model assets (GLB). Loaded once up front.
@@ -472,7 +479,7 @@ const LOADED_ANIM = {}; // model key -> GLTF animation clips (kept for animated 
 // Only the player model is always needed; everything else is declared by the
 // zone (server/zones/*.js) and fetched on entry. Loading all 73 models up front
 // doubled the wait on the login button for assets most players never see.
-const CORE_MODELS = ['Male', 'items/Coins'];
+const CORE_MODELS = ['Male', 'items/Coins', 'human/Human_Male_Bald_Rigged', 'human/Human_Male_30_Outfits_Modular'];
 const MOB_MODEL = {
   goblin: { model: 'Goblin', h: 2.0 }, bandit: { model: 'Bandit', h: 2.3 }, guard: { model: 'Hill_Ogre', h: 3.0 },
   spider: { model: 'Cave_Spider', h: 1.6 }, cow: { model: 'Cow', h: 2.0 }, chicken: { model: 'Chicken', h: 1.1 },
@@ -581,6 +588,261 @@ function cloneModel(name, targetH, byMax) {
   return wrap;
 }
 
+// ---------------------------------------------------------------------------
+// Rigged human characters: Human_Male_Bald_Rigged (43-bone skinned body) +
+// the modular outfit pack (every clothing piece from 30 outfits, rigid-skinned
+// to the same skeleton) + 30 hair-only skinned GLBs. A "look" picks a hair
+// style and colour, a skin tone, and a clothing outfit per slot (torso, legs,
+// boots, ...) with an optional recolour per slot, so NPCs and players can be
+// mixed and matched from the same parts.
+// ---------------------------------------------------------------------------
+const HAIR_STYLES = ['Bald', '01_Buzz_Cut', '02_Crew_Cut', '03_Flat_Top', '04_Short_Spikes', '05_Messy_Crop',
+  '06_Side_Part_Left', '07_Side_Part_Right', '08_Slicked_Back', '09_Quiff', '10_Pompadour', '11_French_Crop',
+  '12_Caesar_Cut', '13_Curtains', '14_Bowl_Cut', '15_Undercut', '16_Faux_Hawk', '17_Mohawk', '18_Liberty_Spikes',
+  '19_Short_Curls', '20_Afro', '21_Wavy_Shag', '22_Shoulder_Length', '23_Long_Straight', '24_Low_Ponytail',
+  '25_High_Ponytail', '26_Top_Knot', '27_Double_Buns', '28_Braided_Tail', '29_Dreadlocks', '30_Cornrows'];
+const OUTFITS = ['None', '01_Rustic_Peasant', '02_Village_Farmer', '03_Town_Guard_Leather', '04_Traveling_Merchant',
+  '05_Novice_Mage', '06_Woodsman_Hunter', '07_Dock_Worker', '08_Tavern_Worker', '09_Young_Noble', '10_Desert_Traveler',
+  '11_Blacksmith_Apprentice', '12_Stable_Hand', '13_Fisherman', '14_Scholar_Scribe', '15_Forest_Ranger',
+  '16_Temple_Acolyte', '17_City_Watch_Heavy', '18_Alchemist', '19_Caravan_Trader', '20_Miner', '21_Tailor_Clothier',
+  '22_Herbalist', '23_Street_Thief', '24_Bounty_Hunter', '25_Bard_Performer', '26_Winter_Traveler', '27_Tribal_Scout',
+  '28_Carpenter', '29_Aristocrat_Steward', '30_Veteran_Adventurer'];
+// Clothing slots, by the piece-name suffix the pack uses. A look can take each
+// slot from a different outfit and recolour it independently.
+const OUTFIT_SLOTS = {
+  torso:   /(Torso_(Chest|Spine|Waist)|Tunic_Skirt|Vest_(Chest|Waist)|(Chest|Waist)_Armor|Apron_(Chest|Lower)|Robe_(Lower|Trim)|Coat_(Lower|Trim_[LR]))$/,
+  sleeves: /((Upper|Fore)Sleeve_[LR](_1)?|Bracer_[LR]|Shoulder_[LR])$/,
+  legs:    /(Trouser_(Thigh|Shin)_[LR]|KneePad_[LR]|Greave_[LR])$/,
+  boots:   /Boot(_Foot)?_[LR]$/,
+  belt:    /(Belt|Buckle)$/,
+  head:    /(Hat_(Crown|Brim)|Hood|Cap|Helmet(_Brow)?)$/,
+  cape:    /(Cape_(Upper|Mid|Lower)|Scarf)$/,
+  extra:   /Satchel$/,
+};
+const HUMAN_H = 1.87;            // rest-pose height of the base body (feet at y≈0.02)
+const HUMAN_MIN_Y = 0.02;
+// Bones the procedural rig drives, and the rig-node name each gets so buildRig
+// finds them exactly like the carved-mesh characters' parts.
+const HUMAN_DRIVEN = { UpperArmL: 'Arm_L', UpperArmR: 'Arm_R', ThighL: 'Leg_L', ThighR: 'Leg_R', ShinL: 'Shin_L', ShinR: 'Shin_R', Head: 'Head' };
+const DEFAULT_LOOK = { hair: 9, hairColor: '#4a2e1a', skin: '#cba281', outfit: 1 };
+
+let humanTemplate = null;
+// Build the shared skeleton template once. The body's skinned pieces (skin,
+// shorts, eyes...) are fused into one vertex-coloured mesh, and the skeleton is
+// rebuilt "world-aligned": every bone gets an identity rest orientation with a
+// pivot node above it holding the rest offset, and the inverse bind matrices
+// become plain translations. That throws away Blender's per-bone axes (which
+// point Y along each bone) so a rotation.x on a thigh swings it fore/aft in
+// world terms — the same convention the procedural animation was written for
+// on the carved characters. The arms also get a constant "hang" rotation on
+// the bone itself so the A-pose drops to arms-at-sides at rest, while the
+// driven node above it still animates in world axes.
+function buildHumanTemplate() {
+  const src = LOADED['Human_Male_Bald_Rigged'];
+  if (!src) return null;
+  const root = SkeletonUtils.clone(src);
+  root.updateMatrixWorld(true);
+  const skinned = []; root.traverse(o => { if (o.isSkinnedMesh) skinned.push(o); });
+  if (!skinned.length) return null;
+  const skeleton = skinned[0].skeleton, bones = skeleton.bones;
+  const byName = {}; for (const b of bones) byName[b.name] = b;
+  const wp = new Map(); for (const b of bones) wp.set(b, b.getWorldPosition(new THREE.Vector3()));
+  // Arm hang: rotate each upper arm from its A-pose direction to just-off-vertical.
+  const hang = new Map();
+  for (const side of ['L', 'R']) {
+    const ua = byName['UpperArm' + side], fa = byName['Forearm' + side];
+    if (!ua || !fa) continue;
+    const d = wp.get(fa).clone().sub(wp.get(ua)).normalize();
+    const t = new THREE.Vector3(side === 'L' ? 0.14 : -0.14, -1, 0).normalize();
+    hang.set(ua, new THREE.Quaternion().setFromUnitVectors(d, t));
+  }
+  // Parent-first order so each pivot hangs off an already-rebuilt parent bone.
+  const depth = b => { let d = 0, o = b; while (o.parent && o.parent.isBone) { d++; o = o.parent; } return d; };
+  const order = bones.slice().sort((a, b) => depth(a) - depth(b));
+  const boneNames = bones.map(b => b.name);
+  for (const b of order) {
+    const P = b.parent;
+    const pPos = P.isBone ? wp.get(P) : P.getWorldPosition(new THREE.Vector3());
+    const pivot = new THREE.Object3D(); pivot.name = 'P_' + b.name;
+    pivot.position.copy(wp.get(b)).sub(pPos);
+    P.add(pivot);
+    let holder = pivot;
+    const rigName = HUMAN_DRIVEN[b.name];
+    if (rigName) { const anim = new THREE.Object3D(); anim.name = rigName; pivot.add(anim); holder = anim; }
+    holder.add(b);
+    b.position.set(0, 0, 0); b.scale.set(1, 1, 1);
+    b.quaternion.copy(hang.get(b) || new THREE.Quaternion());
+    b.name = 'B_' + b.name;
+  }
+  skeleton.boneInverses = bones.map(b => { const p = wp.get(b); return new THREE.Matrix4().makeTranslation(-p.x, -p.y, -p.z); });
+  // Weapon mounts on the hands, counter-rotated so they sit world-aligned at rest.
+  for (const side of ['L', 'R']) {
+    const hand = byName['Hand' + side]; if (!hand) continue;
+    const mount = new THREE.Object3D(); mount.name = 'Hand_' + side;
+    const h = hang.get(byName['UpperArm' + side]); if (h) mount.quaternion.copy(h).invert();
+    hand.add(mount);
+  }
+  // Replace the body's many little skinned meshes with one fused mesh. Kept as
+  // the source for per-look skin tinting (materials are named).
+  const bodyParent = skinned[0].parent;
+  const bodyParts = skinned.map(m => ({ geo: m.geometry, matName: m.material.name, color: m.material.color.clone() }));
+  for (const m of skinned) m.removeFromParent();
+  root.updateMatrixWorld(true);
+  humanTemplate = { root, skeleton, boneNames, bodyParts, bodyParent };
+  return humanTemplate;
+}
+
+// Fuse skinned pieces ({geo, color, remap?}) into one vertex-coloured geometry
+// whose skinIndex refers to the template's bone order.
+function fuseSkinned(parts, boneNames) {
+  const geos = [];
+  for (const pt of parts) {
+    let geo = pt.geo.clone();
+    for (const attr of Object.keys(geo.attributes)) if (!['position', 'normal', 'skinIndex', 'skinWeight'].includes(attr)) geo.deleteAttribute(attr);
+    if (!geo.attributes.normal) geo.computeVertexNormals();
+    if (!geo.attributes.skinIndex || !geo.attributes.skinWeight) continue;
+    const si = geo.attributes.skinIndex, n = si.count;
+    const idx = new Uint16Array(n * 4);
+    for (let i = 0; i < n * 4; i++) { const j = si.array[i]; idx[i] = pt.remap ? pt.remap[j] : j; }
+    geo.setAttribute('skinIndex', new THREE.BufferAttribute(idx, 4));
+    geo.setAttribute('skinWeight', new THREE.BufferAttribute(Float32Array.from(geo.attributes.skinWeight.array), 4));
+    if (geo.index) geo = geo.toNonIndexed();
+    const cnt = geo.attributes.position.count, col = new Float32Array(cnt * 3), c = pt.color;
+    for (let i = 0; i < cnt; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    geos.push(geo);
+  }
+  if (!geos.length) return null;
+  return geos.length === 1 ? geos[0] : mergeGeometries(geos, false);
+}
+// Map a foreign skin's joint order (by bone name) onto the template's.
+function boneRemap(skel, boneNames) {
+  const remap = skel.bones.map(b => Math.max(0, boneNames.indexOf(b.name)));
+  return remap.every((v, i) => v === i) ? null : remap;
+}
+// Recolour a piece: keep the garment's own light/dark variation between its
+// parts, but move the hue/saturation to the requested colour.
+function recolor(base, target, meanL) {
+  const t = new THREE.Color(target), th = {}, bh = {};
+  t.getHSL(th); base.getHSL(bh);
+  return new THREE.Color().setHSL(th.h, th.s, Math.max(0.04, Math.min(0.96, th.l + (bh.l - meanL))));
+}
+
+// Which outfit's pieces fill each slot for a look, with optional recolours:
+//   look.outfit          default outfit number for every slot (0 = none)
+//   look.slots.{slot}    override: outfit number for that slot (0 = bare)
+//   look.colors.{slot}   recolour that slot ('#rrggbb')
+const outfitGeoCache = new Map();
+function outfitGeometry(look) {
+  const T = humanTemplate, mod = LOADED['Human_Male_30_Outfits_Modular'];
+  if (!T || !mod) return null;
+  const slots = look.slots || {}, colors = look.colors || {};
+  const key = JSON.stringify([look.outfit || 0, slots, colors]);
+  if (outfitGeoCache.has(key)) return outfitGeoCache.get(key);
+  const pick = {};
+  for (const slot of Object.keys(OUTFIT_SLOTS)) pick[slot] = slots[slot] != null ? slots[slot] : (look.outfit || 0);
+  const parts = [];
+  const bySlot = {};
+  mod.traverse(o => {
+    if (!o.isSkinnedMesh) return;
+    const m = o.name.match(/^Outfit_(\d\d)_(.*)$/); if (!m) return;
+    const num = +m[1];
+    for (const slot of Object.keys(OUTFIT_SLOTS)) {
+      if (pick[slot] === num && OUTFIT_SLOTS[slot].test(m[2])) { (bySlot[slot] || (bySlot[slot] = [])).push(o); break; }
+    }
+  });
+  for (const slot of Object.keys(bySlot)) {
+    const list = bySlot[slot];
+    let meanL = 0; const hsl = {};
+    for (const o of list) { o.material.color.getHSL(hsl); meanL += hsl.l; } meanL /= list.length;
+    for (const o of list) {
+      const color = colors[slot] ? recolor(o.material.color, colors[slot], meanL) : o.material.color.clone();
+      parts.push({ geo: o.geometry, color, remap: boneRemap(o.skeleton, T.boneNames) });
+    }
+  }
+  const geo = fuseSkinned(parts, T.boneNames);
+  outfitGeoCache.set(key, geo);
+  return geo;
+}
+
+// Hair: the pack's strand texture is a flat dark chestnut. Flatten it to a
+// normalised greyscale detail map once, so material.color IS the hair colour.
+const hairCache = {};
+function hairAsset(styleIdx) {
+  const style = HAIR_STYLES[styleIdx]; if (!style || style === 'Bald') return Promise.resolve(null);
+  if (hairCache[style]) return hairCache[style];
+  hairCache[style] = gltfLoader.loadAsync('models/human/hair/Hair_' + style + '.glb').then(g => {
+    let mesh = null; g.scene.traverse(o => { if (o.isSkinnedMesh && !mesh) mesh = o; });
+    if (!mesh) return null;
+    const src = mesh.material, map = src.map;
+    let detail = null;
+    if (map && map.image && map.image.width) {
+      const img = map.image, cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height;
+      const ctx = cv.getContext('2d'); ctx.drawImage(img, 0, 0);
+      const id = ctx.getImageData(0, 0, cv.width, cv.height), d = id.data;
+      let max = 1; for (let i = 0; i < d.length; i += 4) max = Math.max(max, 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]);
+      for (let i = 0; i < d.length; i += 4) { const l = (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]) / max; const v = Math.round(255 * (0.75 + 0.25 * l)); d[i] = d[i + 1] = d[i + 2] = v; }
+      ctx.putImageData(id, 0, 0);
+      detail = new THREE.CanvasTexture(cv); detail.colorSpace = THREE.SRGBColorSpace; detail.wrapS = map.wrapS; detail.wrapT = map.wrapT; detail.flipY = map.flipY;
+    }
+    // uv must survive here (unlike the fused pieces), so build the geometry by hand.
+    const T = humanTemplate;
+    let geo = mesh.geometry.clone();
+    const remap = T ? boneRemap(mesh.skeleton, T.boneNames) : null;
+    const si = geo.attributes.skinIndex, idx = new Uint16Array(si.count * 4);
+    for (let i = 0; i < idx.length; i++) idx[i] = remap ? remap[si.array[i]] : si.array[i];
+    geo.setAttribute('skinIndex', new THREE.BufferAttribute(idx, 4));
+    return { geo, detail, roughness: src.roughness };
+  }).catch(e => { console.warn('Hair failed to load:', style, e); return null; });
+  return hairCache[style];
+}
+
+// A complete character for a look, as the same wrap → body structure the rig
+// code expects (wrap.children[0] is the animated body).
+function makeHuman(look, targetH) {
+  const T = humanTemplate || buildHumanTemplate();
+  if (!T) return null;
+  look = Object.assign({}, DEFAULT_LOOK, look || {});
+  const obj = SkeletonUtils.clone(T.root);
+  let skeleton = null; obj.traverse(o => { if (o.isSkinnedMesh && !skeleton) skeleton = o.skeleton; });
+  // The clone carries no meshes (the template's were removed), so its skeleton
+  // has to be found from the bones: rebuild one over the cloned bones in order.
+  if (!skeleton) {
+    const boneByName = {}; obj.traverse(o => { if (o.isBone) boneByName[o.name] = o; });
+    skeleton = new THREE.Skeleton(T.boneNames.map(n => boneByName['B_' + n]), T.skeleton.boneInverses.map(m => m.clone()));
+  }
+  const bodyParent = obj.getObjectByName(T.bodyParent.name) || obj;
+  const addSkinned = (geo, mat, name) => {
+    if (!geo) return null;
+    const sm = new THREE.SkinnedMesh(geo, mat); sm.name = name;
+    sm.castShadow = sm.receiveShadow = true; sm.frustumCulled = false;
+    sm.bind(skeleton, new THREE.Matrix4());
+    bodyParent.add(sm); return sm;
+  };
+  // Body, tinted: skin tone from the look, brows in the hair colour.
+  const bodyKey = 'body:' + look.skin + ':' + look.hairColor;
+  if (!outfitGeoCache.has(bodyKey)) {
+    outfitGeoCache.set(bodyKey, fuseSkinned(T.bodyParts.map(pt => ({
+      geo: pt.geo,
+      color: pt.matName === 'Warm_Skin' ? new THREE.Color(look.skin) : pt.matName === 'Chestnut_Hair' ? new THREE.Color(look.hairColor) : pt.color,
+    })), T.boneNames));
+  }
+  addSkinned(outfitGeoCache.get(bodyKey), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 }), 'Body');
+  addSkinned(outfitGeometry(look), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 }), 'Outfit');
+  const s = targetH / HUMAN_H;
+  obj.scale.setScalar(s); obj.position.set(0, -HUMAN_MIN_Y * s, 0);
+  const wrap = new THREE.Group(); wrap.add(obj);
+  wrap.userData.look = look;
+  // Hair arrives async; attach it if the character is still around.
+  hairAsset(look.hair).then(h => {
+    if (!h || !wrap.parent) return;
+    const mat = new THREE.MeshStandardMaterial({ color: new THREE.Color(look.hairColor), map: h.detail, roughness: h.roughness != null ? h.roughness : 0.75 });
+    const sm = addSkinned(h.geo, mat, 'Hair');
+    if (sm) sm.traverse(o => { Object.assign(o.userData, wrap.userData.pickTag || {}); });
+  });
+  return wrap;
+}
+
 // Bake ALL of a model's mesh primitives to base-0 geometry for instancing.
 // (Trees are one glTF mesh with several primitives: trunk + leaf clusters.)
 const bakeCache = {};
@@ -643,10 +905,10 @@ let snapPrev = null, snapCur = null, snapPrevT = 0, snapCurT = 0;
 const SNAP_INTERP = 100; // ms behind for smooth interpolation
 const ENTITY_CULL_D = 150; // mobs further than this from the camera aren't drawn
 
-function connect(name) {
+function connect(name, look) {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(`${proto}://${location.host}`);
-  ws.onopen = () => ws.send(JSON.stringify({ t: 'join', name }));
+  ws.onopen = () => ws.send(JSON.stringify({ t: 'join', name, look }));
   ws.onmessage = (e) => handle(JSON.parse(e.data));
   ws.onclose = () => addChat('System', 'Disconnected from server.', true);
 }
@@ -3490,11 +3752,12 @@ function buildNpcs() {
   for (const def of (zone.npcs || [])) {
     let g = null;
     // Use a real humanoid model (Male/Female) when one is given and loaded.
-    if (def.model && LOADED[def.model]) {
+    if (def.model === 'Male' || def.look) g = makeHuman(def.look, 2.3);
+    if (!g && def.model && LOADED[def.model]) {
       g = cloneModel(def.model, 2.3);
       if (g) mergeRigidParts(g);
-      if (g) g.rotation.y = def.yaw != null ? def.yaw : Math.PI;
     }
+    if (g) g.rotation.y = def.yaw != null ? def.yaw : Math.PI;
     if (!g) {
       g = new THREE.Group();
       const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.45, 0.9, 4, 8),
@@ -3507,12 +3770,9 @@ function buildNpcs() {
       staff.position.set(0.5, 1.1, 0.1); staff.rotation.z = 0.12; g.add(staff);
     }
     g.position.set(def.x, 0, def.z);
-    g.traverse(o => {
-      if (o.isMesh) {
-        o.userData.pickKind = 'npc'; o.userData.npcId = def.id;
-        o.userData.npcName = def.name; o.userData.npcX = def.x; o.userData.npcZ = def.z;
-      }
-    });
+    const tag = { pickKind: 'npc', npcId: def.id, npcName: def.name, npcX: def.x, npcZ: def.z };
+    g.traverse(o => { if (o.isMesh) Object.assign(o.userData, tag); });
+    g.userData.pickTag = tag; // hair attaches later
     scene.add(g);
     npcMeshes.set(def.id, { mesh: g, def });
     poiWorld.push({ name: def.name, x: def.x, z: def.z, kind: 'merchant' });
@@ -3609,7 +3869,15 @@ const MALE_BONES = {
   legL: { a: [-0.11, 0.96, 0], b: [-0.11, 0.05, 0.02] },
   legR: { a: [0.11, 0.96, 0], b: [0.11, 0.05, 0.02] },
 };
-function makePlayerMesh(isSelf) {
+function makePlayerMesh(isSelf, ent) {
+  // The rigged human (skinned body + outfit + hair) when its assets are in;
+  // the old carved Male model otherwise.
+  const human = makeHuman(ent && ent.look, 2.3);
+  if (human) {
+    human.userData.faceOffset = 0;
+    human.userData.rig = buildRig(human, 'hero');
+    return human;
+  }
   const g = cloneModel('Male', 2.3);
   if (g) {
     splitHumanoid(g, MALE_BONES);
@@ -3931,7 +4199,7 @@ function makeMonsterMesh(type, elite) {
 function ensureMesh(ent, kind) {
   let rec = entityMeshes.get(ent.id);
   if (!rec) {
-    const mesh = kind === 'player' ? makePlayerMesh(ent.id === myId) : makeMonsterMesh(ent.type, ent.elite);
+    const mesh = kind === 'player' ? makePlayerMesh(ent.id === myId, ent) : makeMonsterMesh(ent.type, ent.elite);
     // Merge, don't replace: makePlayer/MonsterMesh already stored the rig and
     // faceOffset on userData, and a fresh object would wipe them out (which
     // silently disabled all procedural animation).
@@ -3939,6 +4207,7 @@ function ensureMesh(ent, kind) {
     scene.add(mesh);
     // clickable pieces carry the id
     mesh.traverse(o => { if (o.isMesh) o.userData.pickId = ent.id; o.userData.pickKind = kind; });
+    mesh.userData.pickTag = { pickId: ent.id, pickKind: kind }; // for parts that arrive later (hair)
     rec = { mesh, kind, bob: Math.random() * 10, heldWeapon: undefined };
     entityMeshes.set(ent.id, rec);
   }
@@ -3998,17 +4267,24 @@ function updateHeldWeapon(rec, name) {
   rec.heldWeapon = name;
   const rig = rec.mesh.userData.rig;
   if (!rig || !rig.armR) return;
-  const existing = findByName(rig.armR, /^Weapon$/)[0];
-  if (existing) { rig.armR.remove(existing); rig.weapon = null; rig.swingArm = null; }
+  // Skinned humans carry a mount on the hand bone; the carved model grips at
+  // the far end of its arm part.
+  const mount = rig.handR || rig.armR;
+  const existing = findByName(mount, /^Weapon$/)[0];
+  if (existing) { mount.remove(existing); rig.weapon = null; rig.swingArm = null; }
   if (!name) return;
   const w = buildHeldWeapon(name);
   w.name = 'Weapon';
-  // The hand sits at the far end of the arm; in Arm_R-local space that is
-  // (armR.b - armR.a). Grip the weapon there, tilted slightly forward.
-  const bn = MALE_BONES.armR;
-  w.position.set(bn.b[0] - bn.a[0], bn.b[1] - bn.a[1], bn.b[2] - bn.a[2] + 0.05);
+  if (rig.handR) {
+    w.position.set(0, -0.02, 0.04);
+  } else {
+    // The hand sits at the far end of the arm; in Arm_R-local space that is
+    // (armR.b - armR.a). Grip the weapon there, tilted slightly forward.
+    const bn = MALE_BONES.armR;
+    w.position.set(bn.b[0] - bn.a[0], bn.b[1] - bn.a[1], bn.b[2] - bn.a[2] + 0.05);
+  }
   w.rotation.x = -0.35;
-  rig.armR.add(w);
+  mount.add(w);
   rig.weapon = w; rig.swingArm = rig.armR;
 }
 
@@ -4079,6 +4355,7 @@ function buildRig(wrap, style) {
   rig.shinL = part(/^Shin_L$/); rig.shinR = part(/^Shin_R$/); // knee joints (player)
   rig.head  = part(/^Head$/);   // chicken: neck-pivoted head for pecking/nodding
   rig.weapon = part(/^Weapon$/); rig.shield = part(/^Shield$/);
+  rig.handR = part(/^Hand_R$/); rig.handL = part(/^Hand_L$/); // skinned humans: weapon mounts on the hands
   // Which arm carries the weapon decides which one swings on an attack.
   rig.swingArm = null;
   if (rig.weapon) {
@@ -4581,7 +4858,7 @@ function updateControls(dt) {
   // Pull the camera in if a boundary wall would end up between it and the
   // player. Standing near the zone edge used to park the camera inside the
   // wall, which filled half the screen with black.
-  if (camFrozen) return;         // a test has parked the camera somewhere
+  if (!camFrozen) {              // a test may have parked the camera somewhere
   _camHead.set(px, py + 1.8, pz);
   _camWant.set(cx, cy, cz);
   _camDir.copy(_camWant).sub(_camHead);
@@ -4627,6 +4904,7 @@ function updateControls(dt) {
   }
   camera.position.set(cx, cy, cz);
   camera.lookAt(px, py + 1.6, pz);
+  }
 
   // Movement relative to camera yaw
   let f = 0, r = 0;
@@ -5779,6 +6057,20 @@ if (location.search.includes('debug')) {
       camera.updateMatrixWorld(true);
     },
     releaseCamera() { camFrozen = false; },
+    // A posable stand-in: a human (or any mob type) at a spot, driven each
+    // frame by animateEntity with whatever fake entity state is handed in, so
+    // a walk cycle / swing / rest pose can be screenshotted without the
+    // server having to move anyone. Returns { rec, set(state) }.
+    dummy(look, x, z, type) {
+      const mesh = type ? makeMonsterMesh(type, false) : makePlayerMesh(false, { look });
+      mesh.position.set(x, groundY(x, z), z);
+      scene.add(mesh);
+      const rec = { mesh, kind: type ? 'monster' : 'player', data: { alive: true, moving: false, id: -999, weapon: null } };
+      rec.mesh.userData.id = -999;
+      const tick = () => { if (!mesh.parent) return; animateEntity(rec, rec.data, rec.kind, 1 / 60); requestAnimationFrame(tick); };
+      tick();
+      return { rec, set(state) { Object.assign(rec.data, state); if (state.weapon !== undefined) updateHeldWeapon(rec, state.weapon); if (state.atk) { const rig = mesh.userData.rig; rig.atk = 1; rig.atkKind = state.atkKind || 0; } }, remove() { scene.remove(mesh); } };
+    },
     // Freeze the sky at a given time of day so a screenshot is not at the
     // mercy of the cycle. The server keeps sending the real time; this just
     // overrides what the client draws with.
@@ -6016,11 +6308,26 @@ async function enterZone(zdata) {
   loadZone(zdata);
 }
 
+// Character look pickers on the login card; the last choice is remembered.
+const hairSel = document.getElementById('hairSel'), outfitSel = document.getElementById('outfitSel');
+const hairCol = document.getElementById('hairCol'), skinCol = document.getElementById('skinCol');
+HAIR_STYLES.forEach((h, i) => hairSel.add(new Option(h.replace(/^\d\d_/, '').replace(/_/g, ' '), i)));
+OUTFITS.forEach((o, i) => outfitSel.add(new Option(o.replace(/^\d\d_/, '').replace(/_/g, ' '), i)));
+try {
+  const saved = JSON.parse(localStorage.getItem('bk.look') || 'null');
+  if (saved) { hairSel.value = saved.hair; outfitSel.value = saved.outfit; hairCol.value = saved.hairColor; skinCol.value = saved.skin; }
+  else { hairSel.value = DEFAULT_LOOK.hair; outfitSel.value = DEFAULT_LOOK.outfit; }
+} catch (e) { hairSel.value = DEFAULT_LOOK.hair; outfitSel.value = DEFAULT_LOOK.outfit; }
+function currentLook() {
+  return { hair: +hairSel.value, hairColor: hairCol.value, skin: skinCol.value, outfit: +outfitSel.value };
+}
 async function play() {
   const name = nameInput.value.trim() || 'Adventurer';
+  const look = currentLook();
+  try { localStorage.setItem('bk.look', JSON.stringify(look)); } catch (e) {}
   playBtn.disabled = true;
   if (!modelsDone) { playBtn.textContent = 'Loading models…'; await modelsReady; }
-  connect(name);
+  connect(name, look);
 }
 playBtn.onclick = play;
 nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') play(); });

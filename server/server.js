@@ -34,6 +34,15 @@ import {
 } from './cooking.js';
 
 function rand(min, max) { return min + Math.random() * (max - min); }
+// A player's chosen appearance (see HAIR_STYLES / OUTFITS in the client): hair
+// style and outfit as indices, colours as '#rrggbb'. Anything off is dropped.
+function sanitizeLook(raw) {
+  const o = raw && typeof raw === 'object' ? raw : {};
+  const idx = (v, max, d) => { const n = Math.floor(Number(v)); return Number.isFinite(n) && n >= 0 && n <= max ? n : d; };
+  const col = (v, d) => (typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v)) ? v.toLowerCase() : d;
+  return { hair: idx(o.hair, 30, 9), hairColor: col(o.hairColor, '#4a2e1a'), skin: col(o.skin, '#cba281'), outfit: idx(o.outfit, 30, 1) };
+}
+
 function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
 import {
   QUESTS, questPayload, questProgress, canStart, recordKill, recordReach,
@@ -1554,7 +1563,8 @@ setInterval(() => {
           combat: p.combat || combatLevel(p.skills),
           xp: p.xp, xpNext: xpForLevel(p.level), gold: p.gold, alive: p.alive,
           moving: p.moving, inSafe: !!p.inSafe, resting: !!p.resting,
-          weapon: p.equipment.weapon || null }); // held item for the paperdoll
+          weapon: p.equipment.weapon || null,     // held item for the paperdoll
+          look: p.look });                          // hair / outfit / colours
       }
       for (const m of monsters.values()) {
         if (m.zoneId !== zid) continue;
@@ -1637,9 +1647,10 @@ wss.on('connection', (ws) => {
         if (player) return;
         const name = String(msg.name || 'Adventurer').slice(0, 16).replace(/[^\w \-]/g, '') || 'Adventurer';
         const id = nextId++;
+        const look = sanitizeLook(msg.look);
         const start = ZONES[START_ZONE];
         player = {
-          id, ws, kind: 'player', name, zoneId: START_ZONE,
+          id, ws, kind: 'player', name, look, zoneId: START_ZONE,
           x: start.spawn.x, z: start.spawn.z, y: 0, yaw: start.spawn.yaw, moving: false,
           level: 1, xp: 0, gold: 0, openedChests: new Set(),
           // OSRS-style combat skills. Hitpoints starts at 10 (=> 80 HP).

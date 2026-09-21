@@ -87,6 +87,7 @@ const walk = (dir, prefix = '') => {
     const rel = path.join(dir, f);
     if (fs.statSync(path.join(MODELS, rel)).isDirectory()) { walk(rel, prefix); continue; }
     if (!f.endsWith('.glb')) continue;
+    if (rel.startsWith('human/hair/')) continue; // hairstyles load on demand by the look picker
     const bare = f.replace('.glb', '');
     if (!referenced.has(bare)) console.log(`  unused: ${rel}`);
   }
