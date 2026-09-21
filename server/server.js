@@ -505,9 +505,11 @@ function resolveCollision(zone, ent, radius) {
     }
   }
 
-  // Trees are solid.
+  // Trees are solid at their trunk. Which species stands at a spot is the
+  // client's own hash of the position (speciesFor), so the trunk radius here
+  // matches the trunk drawn there, scaled by the tree's size.
   for (const t of (zone._trees || [])) {
-    const dx = ent.x - t.x, dz = ent.z - t.z, d = Math.hypot(dx, dz), min = 0.8 + radius;
+    const dx = ent.x - t.x, dz = ent.z - t.z, d = Math.hypot(dx, dz), min = treeTrunkRadius(t) + radius;
     if (d < min && d > 1e-4) { ent.x = t.x + (dx / d) * min; ent.z = t.z + (dz / d) * min; }
   }
 
@@ -1345,6 +1347,15 @@ function engagedElsewhere(p, m) {
 // uses the same probe with a thin radius.
 // ---------------------------------------------------------------------------
 const NAV_CELL = 1.0, NAV_CHUNK = 16, NAV_MAX_NODES = 7000;
+// Mirrors the client's TREE_SPECIES / speciesFor so collision knows the trunk.
+// Radii are the trunks measured at 2.5 m up a 13 m tree (roots flare wider
+// but are low enough to walk over).
+const TREE_SPECIES = ['Ancient_Forest_Tree', 'Broad_Crown_Oak', 'Tall_Leafy_Birch', 'Twisted_Darkwood', 'Weeping_Willow'];
+const TREE_TRUNK_R = { Ancient_Forest_Tree: 1.9, Broad_Crown_Oak: 1.8, Tall_Leafy_Birch: 0.8, Twisted_Darkwood: 1.6, Weeping_Willow: 1.5 };
+function treeTrunkRadius(t) {
+  const h = Math.abs(Math.floor(t.x * 73856093) ^ Math.floor(t.z * 19349663));
+  return (TREE_TRUNK_R[TREE_SPECIES[h % TREE_SPECIES.length]] || 1.0) * (t.s || 1);
+}
 function navBlocked(zone, x, z, radius = PLAYER_RADIUS * 0.9) {
   const probe = { x, z, y: 0 };
   const G = zone._gate, keep = G ? G.t : 0; if (G) G.t = 1;   // the gate counts as open for the map; it opens on approach

@@ -259,7 +259,7 @@ export const darkwoods = {
     { model: 'Pond_Reeds',      count: 10, r: 0, scale: [1.0, 1.5], near: 'creek', nearR: 14 },
     { model: 'Meadow_Sedge',    count: 8,  r: 0, scale: [1.0, 1.4], near: 'creek', nearR: 14 },
     { model: 'Green_Fern',      count: 8,  r: 0, scale: [1.0, 1.4], near: 'creek', nearR: 15 },
-    { model: 'Blue_Hydrangea',  count: 4,  r: 0.6, scale: [1.0, 1.2], near: 'creek', nearR: 13 },
+    { model: 'Blue_Hydrangea',  count: 4,  r: 0,   scale: [1.0, 1.2], near: 'creek', nearR: 13 },
     { model: 'Hollow_Stump',    count: 2,  r: 0.8, scale: [1.0, 1.2], near: 'creek', nearR: 14 },
 
     // Fallen Watchtower — an abandoned lookout gone to ruin: toppled fence,
@@ -304,15 +304,15 @@ export const darkwoods = {
     { model: 'Foxglove_Clump',      count: 10, r: 0,   scale: [0.8, 1.1] },
     { model: 'Creeping_Bellflowers',count: 12, r: 0,   scale: [0.8, 1.2] },
     { model: 'Strawberry_Patch',    count: 10, r: 0,   scale: [0.8, 1.2] },
-    // Bushes & shrubs — light collision so they read as solid cover.
-    { model: 'Meadow_Shrub',        count: 14, r: 0.7, scale: [0.9, 1.3] },
-    { model: 'Round_Box_Bush',      count: 10, r: 0.7, scale: [0.9, 1.2] },
-    { model: 'Sage_Bush',           count: 10, r: 0.7, scale: [0.9, 1.2] },
-    { model: 'Red_Berry_Bush',      count: 10, r: 0.7, scale: [0.9, 1.2] },
-    { model: 'Blackberry_Bramble',  count: 8,  r: 0.8, scale: [0.9, 1.3] },
-    { model: 'Rose_Bush',           count: 8,  r: 0.7, scale: [0.9, 1.2] },
-    { model: 'Blue_Hydrangea',      count: 8,  r: 0.7, scale: [0.9, 1.2] },
-    { model: 'Tall_Hedgerow',       count: 8,  r: 0.9, scale: [0.9, 1.3] },
+    // Bushes & shrubs — walk-through (decor), like the ground plants.
+    { model: 'Meadow_Shrub',        count: 14, r: 0,   scale: [0.9, 1.3] },
+    { model: 'Round_Box_Bush',      count: 10, r: 0,   scale: [0.9, 1.2] },
+    { model: 'Sage_Bush',           count: 10, r: 0,   scale: [0.9, 1.2] },
+    { model: 'Red_Berry_Bush',      count: 10, r: 0,   scale: [0.9, 1.2] },
+    { model: 'Blackberry_Bramble',  count: 8,  r: 0,   scale: [0.9, 1.3] },
+    { model: 'Rose_Bush',           count: 8,  r: 0,   scale: [0.9, 1.2] },
+    { model: 'Blue_Hydrangea',      count: 8,  r: 0,   scale: [0.9, 1.2] },
+    { model: 'Tall_Hedgerow',       count: 8,  r: 0,   scale: [0.9, 1.3] },
     // Reeds hug the water's edge but are decor; a few dotted around damp ground.
     { model: 'Pond_Reeds',          count: 12, r: 0,   scale: [0.9, 1.3] },
   ],
