@@ -6395,12 +6395,8 @@ function syncHazards(list) {
     seen.add(h.id);
     if (hazardFx.has(h.id)) { hazardFx.get(h.id).t = h.t; continue; }
     const fire = h.k !== 'poison';
-    const g = new THREE.Group(); g.position.set(h.x, groundY(h.x, h.z), h.z);
-    const disc = new THREE.Mesh(new THREE.CircleGeometry(h.r, 28), new THREE.MeshBasicMaterial({ color: fire ? 0x1a0a04 : 0x142a0c, transparent: true, opacity: 0.7, depthWrite: false }));
-    disc.rotation.x = -Math.PI / 2; disc.position.y = 0.07; g.add(disc);
-    const glow = new THREE.Mesh(new THREE.CircleGeometry(h.r * 0.9, 28), new THREE.MeshBasicMaterial({ color: fire ? 0xff5a10 : 0x6ad830, transparent: true, opacity: 0.3, depthWrite: false, blending: THREE.AdditiveBlending }));
-    glow.rotation.x = -Math.PI / 2; glow.position.y = 0.09; g.add(glow);
-    scene.add(g);
+    // no ground disc: the flames themselves mark the patch
+    const g = new THREE.Group(); g.position.set(h.x, groundY(h.x, h.z), h.z); scene.add(g);
     // the flames: tongues of varied size across the patch, bigger toward the middle
     const flames = allocFlames(Math.round(10 + h.r * 5));
     const y = g.position.y + 0.02;
@@ -6409,7 +6405,7 @@ function syncHazards(list) {
       const size = (fire ? 0.7 : 0.55) * (0.6 + 0.9 * Math.random()) * (1.15 - 0.5 * rr / h.r) * (1 + h.r * 0.05);
       setFlame(i, h.x + Math.cos(a) * rr, y, h.z + Math.sin(a) * rr, size, fire ? 0 : 1, Math.random());
     });
-    hazardFx.set(h.id, { g, flames, glow, t: h.t, fire, r: h.r });
+    hazardFx.set(h.id, { g, flames, t: h.t, fire, r: h.r });
   }
   for (const [id, hz] of hazardFx) if (!seen.has(id)) { scene.remove(hz.g); freeFlames(hz.flames); hazardFx.delete(id); }
 }
@@ -6422,7 +6418,6 @@ function updateHazardFx(dt) {
   let near = null, nd = 1e9;
   for (const hz of hazardFx.values()) {
     const fade = Math.min(1, hz.t / 1.5);
-    hz.glow.material.opacity = (0.22 + 0.1 * Math.sin(tt * 9 + hz.r)) * fade;
     if (fade < 1 && !hz.fading) { hz.fading = true; const g = getFlameField().geo; for (const i of hz.flames) g.attributes.iSize.setX(i, g.attributes.iSize.getX(i) * 0.6); g.attributes.iSize.needsUpdate = true; }   // dying down
     if (mp && hz.fire) { const d = Math.hypot(hz.g.position.x - mp.x, hz.g.position.z - mp.z); if (d < nd) { nd = d; near = hz; } }
   }
