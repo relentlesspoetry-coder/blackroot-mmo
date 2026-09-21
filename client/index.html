@@ -221,8 +221,8 @@
   #dialogue button:hover { background: #6d5a3f; color: #fff; }
   #dialogue button.go { background: #4a6a34; } #dialogue button.go:hover { background: #5f8544; }
   #dialogue button:disabled { background: #3a342b; color: #7d735e; cursor: default; }
-  .npcmark { position: absolute; transform: translate(-50%,-50%); font-size: 20px; font-weight: 700;
-    text-shadow: 0 2px 4px #000; pointer-events: none; }
+  .npcmark { position: absolute; transform: translate(-50%,-50%); font-size: 64px; font-weight: 900; line-height: 1;
+    -webkit-text-stroke: 2px #1a1206; text-shadow: 0 3px 6px #000, 0 0 12px rgba(0,0,0,.6); pointer-events: none; }
   .npcmark.offer { color: #ffd24a; } .npcmark.turnin { color: #8fd070; }
 
   /* ESC settings / menu overlay */
@@ -5985,7 +5985,7 @@ function updateNpcMarkers() {
     if (!el) { el = document.createElement('div'); el.className = 'npcmark'; npcMarkLayer.appendChild(el); npcMarkEls.set(id, el); }
     el.className = 'npcmark ' + state;
     el.textContent = state === 'turnin' ? '?' : '!';
-    tmpV.set(rec.mesh.position.x, 2.9 + Math.sin(performance.now() / 400) * 0.12, rec.mesh.position.z);
+    tmpV.set(rec.mesh.position.x, rec.mesh.position.y + 3.1 + Math.sin(performance.now() / 400) * 0.12, rec.mesh.position.z);
     tmpV.project(camera);
     if (tmpV.z > 1) { el.style.display = 'none'; continue; }
     el.style.display = 'block';
