@@ -56,10 +56,10 @@
   #castbar { display: none; position: absolute; left: 4px; right: 4px; top: -22px; height: 12px; border-radius: 6px; background: #120a1fb0; border: 1px solid #8a6ac0; overflow: hidden; }
   #castbar > i { position: absolute; inset: 0; transform-origin: left; background: linear-gradient(90deg,#c48bff,#ffd27a); }
   #castbar > span { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; color: #fff; text-shadow: 0 1px 2px #000; }
-  .abslot img { width: 48px; height: 48px; border-radius: 5px; pointer-events: none; }
+  .abslot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 6px; pointer-events: none; }
   .abslot.gcd img, .abslot.nostam img { filter: brightness(.6); }
   .abslot.nostam .cost { color: #ff7a6a; }
-  .abslot .cost { position: absolute; bottom: 2px; left: 4px; font-size: 9px; color: #f2c94c; text-shadow: 0 1px 2px #000; }
+  .abslot .cost { position: absolute; bottom: 2px; left: 4px; z-index: 1; font-size: 9px; color: #f2c94c; text-shadow: 0 1px 2px #000; }
   .abslot.assign { border-color: #ffd27a; box-shadow: 0 0 10px #ffd27a88; }
   .abslot.drop { border-color: #c48bff; }
   #spellbook { display: none; position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); width: 560px; max-height: 82vh; pointer-events: auto;
@@ -96,10 +96,10 @@
   .abslot:hover { border-color: #b08cff; }
   .abslot.locked { filter: grayscale(1) brightness(.55); cursor: default; }
   .abslot.empty { background: #14101b; border-style: dashed; cursor: default; }
-  .abslot .key { position: absolute; top: 2px; left: 5px; font-size: 10px; color: #cbb7f0; font-weight: 700; text-shadow: 0 1px 2px #000; }
-  .abslot .lvl { position: absolute; bottom: 2px; right: 4px; font-size: 9px; color: #ffd47a; text-shadow: 0 1px 2px #000; }
-  .abslot .cd { position: absolute; inset: 0; border-radius: 6px; background: conic-gradient(#0009 var(--p), transparent 0); pointer-events: none; }
-  .abslot .cdt { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 800; color: #fff; text-shadow: 0 1px 3px #000; pointer-events: none; }
+  .abslot .key { position: absolute; top: 2px; left: 5px; z-index: 1; font-size: 10px; color: #cbb7f0; font-weight: 700; text-shadow: 0 1px 2px #000; }
+  .abslot .lvl { position: absolute; bottom: 2px; right: 4px; z-index: 1; font-size: 9px; color: #ffd47a; text-shadow: 0 1px 2px #000; }
+  .abslot .cd { position: absolute; inset: 0; z-index: 1; border-radius: 6px; background: conic-gradient(#0009 var(--p), transparent 0); pointer-events: none; }
+  .abslot .cdt { position: absolute; inset: 0; z-index: 2; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 800; color: #fff; text-shadow: 0 1px 3px #000; pointer-events: none; }
   .abslot .tip { display: none; }
   .abslot:hover .tip { display: block; position: absolute; bottom: 110%; left: 50%; transform: translateX(-50%); width: 200px; white-space: normal;
     background: #14100bee; color: #ffe9b0; font-size: 11px; line-height: 1.35; padding: 5px 8px; border-radius: 5px; border: 1px solid #6a5636; z-index: 5; text-align: left; }
