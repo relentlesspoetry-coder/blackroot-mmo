@@ -839,7 +839,8 @@ function grantXp(p, amount) {
 }
 
 function killMonster(m, killer) {
-  m.alive = false; m.state = 'dead';
+  m.alive = false; m.state = 'dead'; m.provoked = false;
+  for (const p of players.values()) if (p.engagedWith === m.id) p.engagedWith = null;
   m.respawnTimer = m.elite ? Math.max(90, m.respawn * 2) : m.respawn;
   m.hp = 0;
   if (killer) {
@@ -1251,10 +1252,29 @@ function addMeditationXp(p, amount) {
   while (sk.xp >= xpForLevel(sk.level)) { sk.xp -= xpForLevel(sk.level); sk.level++; leveled = true; }
   if (leveled) { send(p.ws, { t: 'event', kind: 'medlevel', level: sk.level }); sendSkills(p); }
 }
+// Single-way combat (OSRS rules): unless the zone is flagged multiCombat, a
+// player can only be fought by one monster at a time, and can't turn on a
+// second monster while the first is still on them. An engagement is kept
+// alive for ENGAGE_T seconds by every blow exchanged between the two.
+const ENGAGE_T = 8;
+function engage(p, m) { p.engagedWith = m.id; p.engagedT = ENGAGE_T; }
+function engagedElsewhere(p, m) {
+  return p.engagedWith != null && p.engagedWith !== m.id && (p.engagedT || 0) > 0 && !zoneOf(p).multiCombat;
+}
+
 function doPlayerAttack(p, m) {
   if (p.atkTimer > 0) return;
+  if (engagedElsewhere(p, m)) {
+    const other = monsters.get(p.engagedWith);
+    if (other && other.alive) {
+      send(p.ws, { t: 'event', kind: 'notice', text: `You're already under attack by ${other.elite ? other.name : 'a ' + other.name}.` });
+      p.combatId = null; return;
+    }
+    p.engagedWith = null; // the other one is gone
+  }
   p.atkTimer = playerAttackSpeed(p);
-  m.state = 'combat'; m.targetId = p.id; // monster fights back even on a miss
+  m.state = 'combat'; m.targetId = p.id; m.provoked = true; // monster fights back even on a miss
+  engage(p, m);
   // OSRS accuracy: our attack roll vs the monster's defence roll; damage 0..maxHit.
   // A flat competence (+6 effective) keeps early, gear-less combat from being a
   // miss-fest against low-level foes while still scaling with skills and gear.
@@ -1287,6 +1307,7 @@ function stepMonster(m) {
     let best = null, bestD = m.aggro ** 2;
     for (const p of players.values()) {
       if (!p.alive || p.zoneId !== m.zoneId || inSafeZone(zone, p.x, p.z)) continue; // safe zones block aggro
+      if (engagedElsewhere(p, m)) continue;                                            // single-way: they're taken
       const d = dist2(m.x, m.z, p.x, p.z);
       if (d < bestD) { bestD = d; best = p; }
     }
@@ -1298,9 +1319,16 @@ function stepMonster(m) {
     // Passive mobs have aggro 0, which used to give them a zero-length leash:
     // one step from home and they reset to full health, so a cow could almost
     // never be killed. Every mob gets a real minimum.
-    const leash = m.elite ? ELITE.leash : Math.max(12, m.aggro * 2.2);
-    if (dist2(m.x, m.z, m.home.x, m.home.z) > leash ** 2 || inSafeZone(zone, target.x, target.z)) {
+    const leash = m.elite ? ELITE.leash : Math.max(m.passive ? 20 : 12, m.aggro * 2.2);
+    // A safe zone stops a monster hunting a player there, but not one hitting
+    // back at whoever is attacking it (the penned cows never fought back, and
+    // "returning" home from where they stood healed them to full each time).
+    if (dist2(m.x, m.z, m.home.x, m.home.z) > leash ** 2) {
+      m.targetId = null; m.provoked = false; m.state = 'return'; m.resetHp = true;
+    } else if (!m.provoked && inSafeZone(zone, target.x, target.z)) {
       m.targetId = null; m.state = 'return';
+    } else if (engagedElsewhere(target, m)) {
+      m.targetId = null; m.provoked = false; m.state = 'idle';   // someone else has them; wait our turn
     } else {
       m.yaw = Math.atan2(target.x - m.x, target.z - m.z);
       if (d > ATTACK_RANGE - 0.5) {
@@ -1313,12 +1341,14 @@ function stepMonster(m) {
         const eq = equipStats(target.equipment);
         const dmg = rollMonsterSwing(m.atkLevel || 1, m.atkBonus || 0, m.maxHit || 1, target.skills.defence.level, eq.def || 0);
         if (dmg > 0) { target.hp -= dmg; target.combatTimer = REGEN.combatLockout; }
+        engage(target, m);
         // Auto-retaliate: if the player isn't already fighting, strike back.
         if (target.alive && target.combatId == null && !target.pendingMine) { target.combatId = m.id; target.moveTo = null; }
         broadcast({ t: 'event', kind: 'hit', by: m.id, target: target.id, dmg, targetKind: 'player' });
         if (target.hp <= 0) {
           target.hp = 0; target.alive = false; target.deathTimer = RESPAWN_TIME;
-          m.targetId = null; m.state = 'idle';
+          target.engagedWith = null;
+          m.targetId = null; m.provoked = false; m.state = 'idle';
           systemChat(`${target.name} was slain by ${m.elite ? m.name : 'a ' + m.name}.`);
           send(target.ws, { t: 'event', kind: 'death' });
         }
@@ -1332,7 +1362,7 @@ function stepMonster(m) {
   m.wanderTimer -= DT;
   if (m.state === 'return') {
     const dx = m.home.x - m.x, dz = m.home.z - m.z, d = Math.hypot(dx, dz);
-    if (d < 1) { m.state = 'idle'; m.hp = m.maxHp; }
+    if (d < 1) { m.state = 'idle'; if (m.resetHp) m.hp = m.maxHp; m.resetHp = false; }
     else { m.yaw = Math.atan2(dx, dz); m.x += (dx / d) * m.speed * DT; m.z += (dz / d) * m.speed * DT; }
   } else if (m.wanderTimer <= 0) {
     m.wanderTimer = rand(2, 5);
@@ -1467,9 +1497,8 @@ function stepPlayer(p) {
     } else p.hazardAccum = 0;
   }
 
-  // Regen: faster inside safe zones, and locked out for a few seconds after
-  // taking a hit. Without the lockout it ticked all the way through a fight and
-  // quietly paid for roughly a third of the incoming damage.
+  // Healing: meditation (R) only, and never within a few seconds of a hit.
+  // Food heals on eating (see 'eat'). There is no passive regen at all.
   p.combatTimer = Math.max(0, (p.combatTimer || 0) - DT);
   if (p.resting && p.hp < p.maxHp && p.combatTimer <= 0) {
     // Meditation: heal at a level-scaled rate, and train the skill on the HP
@@ -1478,12 +1507,11 @@ function stepPlayer(p) {
     p.hp += heal;
     if (heal > 0) addMeditationXp(p, heal * MEDITATION.xpPerHp);
     if (p.hp >= p.maxHp) { p.resting = false; sendSkills(p); } // fully rested
-  } else if (p.hp < p.maxHp && (safe || p.combatTimer <= 0)) {
-    p.regen += DT;
-    const rate = safe ? 0.35 : 1.0; // seconds per tick of passive healing
-    if (p.regen >= rate) { p.regen = 0; p.hp = Math.min(p.maxHp, p.hp + (safe ? 6 : 2)); }
   }
+  // No passive regen: HP only comes back from food or meditating.
   p.inSafe = safe;
+  p.engagedT = Math.max(0, (p.engagedT || 0) - DT);
+  if (p.engagedT <= 0) p.engagedWith = null;
 }
 
 function respawnPlayer(p) {
