@@ -84,6 +84,7 @@ function scaleZone(zone, k) {
     (zone.farm.props || []).forEach(sp);
     (zone.farm.houses || []).forEach(h => { h.x *= k; h.z *= k; }); // sizes are metres: unscaled
     (zone.farm.trails || []).forEach(tr => tr.forEach(sp));
+    (zone.farm.trees || []).forEach(sp); (zone.farm.plants || []).forEach(sp);
     if (zone.farm.field) { zone.farm.field.x *= k; zone.farm.field.z *= k; }
     // Keep-out box so the forest/scatter don't grow through the farmyard.
     let mnx = 1e9, mxx = -1e9, mnz = 1e9, mxz = -1e9;
@@ -633,6 +634,10 @@ function buildFarm(zone) {
   // open/shut state and toggles the gap collision with it.
   if (F.gate) zone._gate = { cx: F.gate.x, cz: F.gate.z, seg: F.gate.seg || null, t: 0, target: 0, dir: 1 };
   for (const p of (F.props || [])) scat.push({ i: scat.length, m: p.m, x: p.x, z: p.z, s: p.s || 1, r: p.yaw || 0, c: p.c || 0 });
+  // Hand-placed nature inside the fence (worldgen keeps the wild forest out).
+  zone._trees = zone._trees || [];
+  for (const tr of (F.trees || [])) zone._trees.push({ x: tr.x, z: tr.z, s: tr.s || 1, r: tr.r != null ? tr.r : +(Math.random() * 6).toFixed(2) });
+  for (const pl of (F.plants || [])) scat.push({ i: scat.length, m: pl.m, x: pl.x, z: pl.z, s: pl.s || 1, r: pl.r != null ? pl.r : +(Math.random() * 6).toFixed(2), c: 0 });
   // Enterable houses: each wall is a solid segment; the door side is split in
   // two around a DOOR_W gap so you can walk in. Furniture is a round solid.
   zone._solids = zone._solids || [];

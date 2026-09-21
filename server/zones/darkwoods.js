@@ -390,6 +390,22 @@ export const darkwoods = {
     ],
     // A tilled field of crops west of the cow pen.
     field: { x: -35, z: -71, w: 22, d: 20, crops: ['Strawberry_Patch', 'Meadow_Sedge', 'Goldenrod_Patch'] },
+    // Nature inside the fence: a few trees and bushes/flowers around the yard
+    // (worldgen keeps the wild forest out of the farm, so these are placed by hand).
+    trees: [
+      { x: -38, z: -90, s: 1.15 }, { x: -12, z: -90.5, s: 1.0 }, { x: 8, z: -90.5, s: 1.05 }, { x: 27.5, z: -88, s: 0.95 },
+      { x: -39, z: -79, s: 0.9 }, { x: 28.5, z: -75, s: 1.0 }, { x: 3, z: -63.6, s: 0.85 }, { x: -36, z: -63.2, s: 0.8 },
+    ],
+    plants: [
+      { m: 'Rose_Bush',        x: -31,  z: -80.3, s: 1.0 }, { m: 'Rose_Bush',        x: -21,  z: -80.3, s: 1.0 },
+      { m: 'Lavender_Clump',   x: -6.6, z: -83.3, s: 1.0 }, { m: 'Lavender_Clump',   x: 2.6,  z: -83.3, s: 1.0 },
+      { m: 'Flowering_Bush',   x: 13.2, z: -83.0, s: 1.0 }, { m: 'Flowering_Bush',   x: 22.6, z: -83.0, s: 1.0 },
+      { m: 'Wildflower_Patch', x: -8,   z: -88.5, s: 1.1 }, { m: 'Wildflower_Patch', x: 13,   z: -88.5, s: 1.1 },
+      { m: 'Clover_Patch',     x: -20,  z: -88,   s: 1.2 }, { m: 'Clover_Patch',     x: 24,   z: -80,   s: 1.1 },
+      { m: 'Berry_Bush',       x: 29,   z: -64.5, s: 0.9 }, { m: 'Round_Box_Bush',   x: 26,   z: -63.3, s: 0.8 },
+      { m: 'Meadow_Shrub',     x: -40,  z: -86,   s: 1.0 }, { m: 'Poppy_Patch',      x: -33,  z: -63.2, s: 1.0 },
+      { m: 'Hosta_Plant',      x: -18,  z: -80.6, s: 1.0 }, { m: 'Green_Fern',       x: 30,   z: -86,   s: 1.0 },
+    ],
     props: [
       // Chicken pen: coop, house, nests, feeders.
       { m: 'Walk_In_Chicken_House', x: 13.5, z: -75, yaw: 3.14, s: 1.0, c: 2.2 },

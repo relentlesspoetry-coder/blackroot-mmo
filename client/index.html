@@ -1145,6 +1145,68 @@ function smoothPoly(points, seg) {
 // A single continuous, smoothly-curving ribbon strip that follows a polyline
 // with a constant width (mitred at joints) — no disconnected rectangles. Used
 // for the dirt path and the river so both read as one connected feature.
+// One mesh of dirt for a set of polylines + discs. Alpha per vertex = max over
+// all shapes of the soft distance field (1 inside the core, 0 at core+feather),
+// so overlapping shapes merge instead of stacking. Only grid cells that touch
+// any dirt are emitted. Texture is world-mapped (tile = `T`).
+function buildDirtField(shapes, discs, material, y, T) {
+  const CELL = 0.55;
+  let mnx = 1e9, mxx = -1e9, mnz = 1e9, mxz = -1e9;
+  const grow = (x, z, r) => { mnx = Math.min(mnx, x - r); mxx = Math.max(mxx, x + r); mnz = Math.min(mnz, z - r); mxz = Math.max(mxz, z + r); };
+  for (const s of shapes) for (const p of s.pts) grow(p.x, p.z, s.hw + s.fr);
+  for (const d of discs) grow(d.x, d.z, d.r + d.fr);
+  if (mnx > mxx) return null;
+  // segment lengths (for end fades)
+  for (const s of shapes) { s.cum = [0]; for (let i = 1; i < s.pts.length; i++) s.cum.push(s.cum[i - 1] + Math.hypot(s.pts[i].x - s.pts[i - 1].x, s.pts[i].z - s.pts[i - 1].z)); s.total = s.cum[s.cum.length - 1]; }
+  const alphaAt = (x, z) => {
+    let best = 0;
+    for (const s of shapes) {
+      const R = s.hw + s.fr, pts = s.pts;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const a = pts[i], b = pts[i + 1];
+        // cheap reject
+        if (x < Math.min(a.x, b.x) - R || x > Math.max(a.x, b.x) + R || z < Math.min(a.z, b.z) - R || z > Math.max(a.z, b.z) + R) continue;
+        const dx = b.x - a.x, dz = b.z - a.z, L2 = dx * dx + dz * dz || 1;
+        const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / L2));
+        const d = Math.hypot(x - (a.x + dx * t), z - (a.z + dz * t));
+        if (d >= R) continue;
+        let al = d <= s.hw ? 1 : 1 - (d - s.hw) / s.fr;
+        if (s.fadeEnd) { const along = s.cum[i] + Math.sqrt(L2) * t; al *= Math.max(0, Math.min(1, (s.total - along) / s.fadeEnd)); }
+        if (s.river) for (const r of worldRivers()) { const rd = distToPolyline(x, z, r.points); al *= Math.max(0, Math.min(1, (rd - riverWaterHalf(r.width)) / 2.5)); }
+        if (al > best) best = al;
+      }
+    }
+    for (const dsc of discs) {
+      const d = Math.hypot(x - dsc.x, z - dsc.z), R = dsc.r + dsc.fr;
+      if (d >= R) continue;
+      const al = d <= dsc.r ? 1 : 1 - (d - dsc.r) / dsc.fr;
+      if (al > best) best = al;
+    }
+    return best;
+  };
+  const nx = Math.ceil((mxx - mnx) / CELL), nz = Math.ceil((mxz - mnz) / CELL);
+  const A = new Float32Array((nx + 1) * (nz + 1));
+  for (let j = 0; j <= nz; j++) for (let i = 0; i <= nx; i++) A[j * (nx + 1) + i] = alphaAt(mnx + i * CELL, mnz + j * CELL);
+  const pos = [], uv = [], col = [], idx = [], vid = new Int32Array((nx + 1) * (nz + 1)).fill(-1);
+  const vert = (i, j) => {
+    const k = j * (nx + 1) + i; if (vid[k] >= 0) return vid[k];
+    const x = mnx + i * CELL, z = mnz + j * CELL;
+    vid[k] = pos.length / 3; pos.push(x, y, z); uv.push(x / T, z / T); col.push(1, 1, 1, A[k]); return vid[k];
+  };
+  for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
+    const k = j * (nx + 1) + i;
+    if (A[k] <= 0 && A[k + 1] <= 0 && A[k + nx + 1] <= 0 && A[k + nx + 2] <= 0) continue;
+    const a = vert(i, j), b = vert(i + 1, j), c = vert(i, j + 1), d = vert(i + 1, j + 1);
+    idx.push(a, c, b, b, c, d);
+  }
+  if (!idx.length) return null;
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
+  g.setIndex(idx); g.computeVertexNormals();
+  const m = new THREE.Mesh(g, material); m.receiveShadow = true; scene.add(m); return m;
+}
 // A soft round patch of dirt: opaque out to `r`, fading to nothing by r+feather.
 function buildRoundPatch(x, z, r, feather, material) {
   const N = 28, pos = [0, 0, 0], uv = [x / 3, z / 3], col = [1, 1, 1, 1], idx = [];
@@ -1318,31 +1380,21 @@ function buildZone() {
   // Paths — one or more continuous, smoothly-curving dirt trails (the fused
   // world can hold several). The core dirt is opaque; a feathered fringe melts
   // the edges into the grass instead of a hard cut.
-  // ONE dirt material shared by road, footpaths and doorstep patches, mapped in
-  // world space — every piece samples the same texels, so where they overlap
-  // (a trail meeting the road) there is no visible join.
-  const dirtMat = () => new THREE.MeshStandardMaterial({ map: loadTexture('dirt', 1, 1), color: 0x8a6a45, roughness: 1,
+  // All the dirt — road, footpaths, doorsteps — is ONE mesh: a grid whose alpha
+  // at each vertex is the UNION (max) of soft distance fields around every path
+  // and doorstep. Nothing is composited on top of anything else, so junctions
+  // are flush, every end is naturally round, and the texture is continuous.
+  const dirtMat = new THREE.MeshStandardMaterial({ map: loadTexture('dirt', 1, 1), color: 0x8a6a45, roughness: 1,
     side: THREE.DoubleSide, transparent: true, vertexColors: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
-  const DT = 3; // world units per texture tile, for everything
-  // A narrow cart track: starts flush at the farmhouse doorstep (no fade), fades
-  // out only at its far end.
-  for (const pathPts of worldPaths()) buildStripRibbon(pathPts, 1.6, 0.05, dirtMat(), DT, 1.1, true, { start: 0, end: 6 }, true);
-  // Footpaths: no fades — the doorstep end gets a round worn patch, and the
-  // other end is extended a little so its flat cap is buried inside whatever
-  // it joins (the road or the lane).
-  const extendEnd = (tr) => {
-    const p = tr.map(q => ({ x: q.x, z: q.z })), a = p[p.length - 2], b = p[p.length - 1];
-    const dx = b.x - a.x, dz = b.z - a.z, l = Math.hypot(dx, dz) || 1;
-    p[p.length - 1] = { x: b.x + dx / l * 0.9, z: b.z + dz / l * 0.9 }; return p;
-  };
-  for (const tr of (zone.trails || [])) {
-    buildStripRibbon(extendEnd(tr), 0.9, 0.05, dirtMat(), DT, 0.8, false, 0, true);
-    buildRoundPatch(tr[0].x, tr[0].z, 0.75, 0.8, dirtMat());
+  const shapes = [];
+  for (const pathPts of worldPaths()) shapes.push({ pts: smoothPoly(pathPts, 8), hw: 0.8, fr: 1.1, river: true, fadeEnd: 6 });
+  for (const tr of (zone.trails || [])) shapes.push({ pts: smoothPoly(tr, 8), hw: 0.45, fr: 0.8 });
+  const discs = [];
+  for (const h of (zone.houses || [])) {   // worn threshold in front of each door, part of the same field
+    const o = h.door === 'south' ? [0, h.d / 2 + 1.0] : h.door === 'north' ? [0, -h.d / 2 - 1.0] : h.door === 'east' ? [h.w / 2 + 1.0, 0] : [-h.w / 2 - 1.0, 0];
+    discs.push({ x: h.x + o[0], z: h.z + o[1], r: 0.9, fr: 0.9 });
   }
-  for (const h of (zone.houses || [])) {
-    const o = h.door === 'south' ? [0, h.d / 2 + 1.3] : h.door === 'north' ? [0, -h.d / 2 - 1.3] : h.door === 'east' ? [h.w / 2 + 1.3, 0] : [-h.w / 2 - 1.3, 0];
-    buildRoundPatch(h.x + o[0], h.z + o[1], 1.0, 1.0, dirtMat());
-  }
+  buildDirtField(shapes, discs, dirtMat, 0.05, 3);
 
   // Rivers — deep flowing water sitting in the carved channel, one per river.
   for (const river of worldRivers()) {
@@ -1674,7 +1726,7 @@ function buildGrass() {
     !inHouse(x, z) && !inField(x, z) &&
     worldRivers().every(r => distToPolyline(x, z, r.points) >= riverWaterHalf(r.width) + RIVER_LIP) &&
     !zone.rocks.some(o => Math.hypot(x - o.x, z - o.z) < o.r);
-  const onPathSkip = (x, z) => worldPaths().some(p => distToPolyline(x, z, p) < 2.2) && rng() > 0.12;
+  const onPathSkip = (x, z) => (worldPaths().some(p => distToPolyline(x, z, p) < 2.2) || (zone.trails || []).some(t => distToPolyline(x, z, t) < 1.5)) && rng() > 0.12;
   const spots = [];
   // Density scales with the zone's area so a larger zone stays as lush.
   const areaK = Math.min(3.2, ((b.maxX - b.minX) * (b.maxZ - b.minZ)) / 37800);
@@ -2705,12 +2757,13 @@ function buildField() {
   for (let i = 0; i < rows; i++) {
     const z = f.z - f.d / 2 + (i + 0.5) * (f.d / rows);
     // A real dirt mound: round in section with rounded ends, sunk a little into the soil.
-    const ridge = new THREE.Mesh(new THREE.CapsuleGeometry(0.55, f.w - 2.6, 2, 8), ridgeMat);
-    ridge.rotation.z = Math.PI / 2; ridge.position.set(f.x, 0.08, z); ridge.receiveShadow = ridge.castShadow = true; scene.add(ridge);
+    // Sunk into the soil so only a low hump shows (~0.2m) and the crops sit on top of it.
+    const ridge = new THREE.Mesh(new THREE.CapsuleGeometry(0.5, f.w - 2.6, 2, 8), ridgeMat);
+    ridge.rotation.z = Math.PI / 2; ridge.position.set(f.x, -0.3, z); ridge.receiveShadow = ridge.castShadow = true; scene.add(ridge);
     const m = crops[i % crops.length], n = Math.floor((f.w - 2) / 1.5);
     for (let j = 0; j < n; j++) plants.push({ m, x: f.x - f.w / 2 + 1.5 + j * 1.5, z, r: Math.random() * 6.28, s: 0.7 + Math.random() * 0.35 });
   }
-  placeInstances(plants, () => 0.28);
+  placeInstances(plants, () => 0.17);
 }
 
 let farmGate = null;       // { mesh, hinge }
