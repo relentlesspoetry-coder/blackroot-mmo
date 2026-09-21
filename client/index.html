@@ -216,12 +216,13 @@
   #skillwin h3 { color: #ffdf9e; font-size: 13px; margin-bottom: 8px; display: flex; justify-content: space-between; }
   #skillwin h3 .g { color: #ffd24a; }
   #skillGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-  .classcard { background: #1b1526; border: 1px solid #5a3f8a; border-radius: 6px; padding: 6px 8px; margin-bottom: 8px; }
-  .classcard .top { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #e8dcff; } .classcard .top .em { font-size: 18px; }
-  .classcard .top .nm { font-weight: 700; } .classcard .top b { margin-left: auto; color: #ffd47a; font-size: 15px; }
-  .classcard .bar { height: 6px; border-radius: 3px; background: #120a1f; border: 1px solid #4a3a6a; overflow: hidden; margin: 5px 0 4px; }
+  .classcard { background: #1d1913; border: 1px solid #4a3d2a; border-radius: 6px; padding: 6px 8px; margin-bottom: 8px; }
+  .classcard .top { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #d8cba8; }
+  .classcard .top img.em { width: 28px; height: 28px; } .classcard .top span.em { font-size: 18px; }
+  .classcard .top .nm { font-weight: 700; color: #ffdf9e; } .classcard .top b { margin-left: auto; color: #ffd47a; font-size: 15px; }
+  .classcard .bar { height: 6px; border-radius: 3px; background: #120e0a; border: 1px solid #4a3d2a; overflow: hidden; margin: 6px 0 4px; }
   .classcard .bar i { display: block; height: 100%; transform-origin: left; background: linear-gradient(90deg, #4a1f8f, #8a3fd8 55%, #c48bff); }
-  .classcard .sub { font-size: 10.5px; color: #b3a6cc; } .classcard .sub i { color: #cbbfe6; }
+  .classcard .sub { font-size: 10.5px; color: #b9ad90; } .classcard .sub i { color: #cdbf9e; }
   .skcell { background: #1d1913; border: 1px solid #4a3d2a; border-radius: 6px; padding: 6px 8px; position: relative; }
   .skcell .top { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #d8cba8; }
   .skcell .top .em { font-size: 16px; }
@@ -5826,7 +5827,7 @@ function renderSkillWindow() {
   // The class is the combat "skill": one card, its level and xp.
   const cpct = Math.max(0, Math.min(1, (c.into || 0) / (c.next || 1)));
   document.getElementById('skillStyles').innerHTML =
-    `<div class="classcard"><div class="top"><span class="em">${c.icon || '⚔️'}</span><span class="nm">${escapeHtml(c.name)}</span><b>${c.level}</b></div>` +
+    `<div class="classcard"><div class="top">${c.icon && /[.\/]/.test(c.icon) ? `<img class="em" src="${c.icon}" alt="">` : `<span class="em">${c.icon || '⚔️'}</span>`}<span class="nm">${escapeHtml(c.name)}</span><b>${c.level}</b></div>` +
     `<div class="bar"><i style="transform:scaleX(${cpct})"></i></div>` +
     `<div class="sub">${Math.floor(c.xp || 0).toLocaleString()} xp · ${(c.next === null || c.next == null) ? 'max' : ((c.next - (c.into || 0)).toLocaleString() + ' to next')}${c.desc ? ' · <i>' + escapeHtml(c.desc) + '</i>' : ''}</div></div>`;
   grid.innerHTML =
