@@ -1,3 +1,4 @@
+import { xpForLevel, progressForXp } from './balance.js';
 // Blackroot — mining.
 //
 // Ore veins are already part of the world (server/worldgen.js scatters them and
@@ -11,7 +12,7 @@
 export const MINING = {
   swingTime: 2.4,        // seconds per swing at pickaxe speed 1.0
   reach: 3.5,            // how close you must stand to a vein
-  maxLevel: 60,
+  maxLevel: 99,
 };
 
 // `level` gates the vein, `xp` is per ore mined, `respawn` is seconds,
@@ -70,15 +71,9 @@ export function bestPickaxe(items, miningLevel) {
 // Adamantite and Runite veins as scenery -- exactly what mining was added to
 // stop them being. Scaled so a determined miner reaches Runite rather than
 // theoretically could. See tools/mining.mjs.
-export function xpForMiningLevel(level) { return Math.floor(12 * Math.pow(level, 1.35)); }
+export function xpForMiningLevel(level) { return xpForLevel(level); } // the shared 1..99 table (balance.js)
 
-export function miningLevelFromXp(xp) {
-  let level = 1, need = xpForMiningLevel(1), spent = 0;
-  while (level < MINING.maxLevel && xp >= spent + need) {
-    spent += need; level++; need = xpForMiningLevel(level);
-  }
-  return { level, into: xp - spent, next: need };
-}
+export function miningLevelFromXp(xp) { return progressForXp(xp); }
 
 // Chance that one swing yields ore. Scales with how far past the requirement
 // the miner is, and with the pickaxe. Always leaves a floor and a ceiling so

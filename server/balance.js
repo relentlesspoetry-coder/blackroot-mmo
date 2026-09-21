@@ -15,7 +15,21 @@ export const PLAYER = {
 };
 
 export function maxHpForLevel(level) { return 80 + (level - 1) * 28; }
-export function xpForLevel(level) { return Math.floor(50 * Math.pow(level, 1.6)); }
+// One XP curve for everything that levels — the adventure level, the combat
+// skills, meditation, mining, fishing and cooking: the OSRS table, levels
+// 1..99 (83 xp to level 2, 1,154 to 10, 13,363 to 30, 101,333 to 50,
+// 13,034,431 to 99). Skills bank a running TOTAL of xp; level, progress into
+// the level and the cost of the next one are all read off the table.
+export const MAX_LEVEL = 99;
+export const XP_TABLE = (() => {           // XP_TABLE[level] = total xp at which that level is reached
+  const t = [0, 0]; let pts = 0;
+  for (let l = 1; l < MAX_LEVEL; l++) { pts += Math.floor(l + 300 * Math.pow(2, l / 7)); t[l + 1] = Math.floor(pts / 4); }
+  return t;
+})();
+export function xpTotalForLevel(level) { return XP_TABLE[Math.max(1, Math.min(MAX_LEVEL, level))]; }
+export function xpForLevel(level) { return level >= MAX_LEVEL ? Infinity : XP_TABLE[level + 1] - XP_TABLE[level]; } // xp from this level to the next
+export function levelForXp(total) { let l = 1; while (l < MAX_LEVEL && total >= XP_TABLE[l + 1]) l++; return l; }
+export function progressForXp(total) { const level = levelForXp(total); return { level, into: total - XP_TABLE[level], next: xpForLevel(level) }; }
 
 // ---------------------------------------------------------------------------
 // OSRS-style combat maths

@@ -13,7 +13,7 @@ import { hiddencave } from './zones/hiddencave.js';
 import { killingfields } from './zones/killingfields.js';
 import {
   PLAYER, ELITE, MONSTER, MONSTER_TEMPLATES,
-  maxHpForLevel, xpForLevel, rollPlayerDamage, scaledMonster, rollLoot, mitigate, REGEN,
+  maxHpForLevel, xpForLevel, xpTotalForLevel, levelForXp, rollPlayerDamage, scaledMonster, rollLoot, mitigate, REGEN,
   TICK, DEFAULT_ATTACK_SPEED, STYLES, COMBAT_SKILLS, hpForHitpoints, combatLevel,
   maxHit, rollSwing, rollMonsterSwing, MEDITATION, meditationHealRate,
 } from './balance.js';
@@ -837,10 +837,9 @@ function systemChat(msg) { broadcast({ t: 'chat', from: 'System', msg, sys: true
 // Combat & progression
 // ---------------------------------------------------------------------------
 function grantXp(p, amount) {
-  p.xp += amount;
+  p.xp += amount; // running total; the level is read off the shared 1..99 table
   send(p.ws, { t: 'event', kind: 'xp', amount });
-  while (p.xp >= xpForLevel(p.level)) {
-    p.xp -= xpForLevel(p.level);
+  while (p.level < levelForXp(p.xp)) {
     p.level++;
     // HP is driven by the Hitpoints skill now, so leveling the adventure track
     // no longer overrides it.
@@ -967,13 +966,13 @@ function minerStats(p) {
 function sendSkills(p) {
   const st = minerStats(p);
   const cs = {};
-  for (const s of COMBAT_SKILLS) cs[s] = { level: p.skills[s].level, xp: Math.floor(p.skills[s].xp), next: xpForLevel(p.skills[s].level) };
+  for (const s of COMBAT_SKILLS) cs[s] = { level: p.skills[s].level, xp: Math.floor(p.skills[s].xp), into: Math.floor(p.skills[s].xp - xpTotalForLevel(p.skills[s].level)), next: xpForLevel(p.skills[s].level) };
   const fp = fishingLevelFromXp(p.fishingXp), cp = cookingLevelFromXp(p.cookingXp);
   send(p.ws, { t: 'skills', mining: { level: st.level, xp: p.miningXp, into: st.into, next: st.next, pick: st.pick },
     fishing: { level: fp.level, into: fp.into, next: fp.next, rod: fisherStats(p).rod },
     cooking: { level: cp.level, into: cp.into, next: cp.next },
     combat: cs, combatLevel: p.combat || combatLevel(p.skills), style: p.style,
-    meditation: { level: p.meditation.level, xp: Math.floor(p.meditation.xp), next: xpForLevel(p.meditation.level) },
+    meditation: { level: p.meditation.level, xp: Math.floor(p.meditation.xp), into: Math.floor(p.meditation.xp - xpTotalForLevel(p.meditation.level)), next: xpForLevel(p.meditation.level) },
     resting: !!p.resting });
 }
 
@@ -1242,7 +1241,7 @@ function playerAttackSpeed(p) {
 function addSkillXp(p, skill, amount) {
   const sk = p.skills[skill]; if (!sk) return;
   sk.xp += amount; let leveled = false;
-  while (sk.xp >= xpForLevel(sk.level)) { sk.xp -= xpForLevel(sk.level); sk.level++; leveled = true; }
+  while (sk.level < levelForXp(sk.xp)) { sk.level++; leveled = true; }
   if (leveled) {
     if (skill === 'hitpoints') { const old = p.maxHp; p.maxHp = hpForHitpoints(sk.level); p.hp = Math.min(p.maxHp, p.hp + (p.maxHp - old)); }
     p.combat = combatLevel(p.skills);
@@ -1260,7 +1259,7 @@ function awardCombatXp(p, dmg) {
 // Meditation trains as you rest to heal: xp scales with HP recovered.
 function addMeditationXp(p, amount) {
   const sk = p.meditation; sk.xp += amount; let leveled = false;
-  while (sk.xp >= xpForLevel(sk.level)) { sk.xp -= xpForLevel(sk.level); sk.level++; leveled = true; }
+  while (sk.level < levelForXp(sk.xp)) { sk.level++; leveled = true; }
   if (leveled) { send(p.ws, { t: 'event', kind: 'medlevel', level: sk.level }); sendSkills(p); }
 }
 // Single-way combat (OSRS rules): unless the zone is flagged multiCombat, a
@@ -1600,7 +1599,7 @@ setInterval(() => {
         ps.push({ id: p.id, name: p.name, x: +p.x.toFixed(2), z: +p.z.toFixed(2), y: +(p.y || 0).toFixed(2),
           yaw: +p.yaw.toFixed(2), hp: Math.round(p.hp), maxHp: p.maxHp, level: p.level,
           combat: p.combat || combatLevel(p.skills),
-          xp: p.xp, xpNext: xpForLevel(p.level), gold: p.gold, alive: p.alive,
+          xp: p.xp - xpTotalForLevel(p.level), xpNext: xpForLevel(p.level), gold: p.gold, alive: p.alive,
           moving: p.moving, inSafe: !!p.inSafe, resting: !!p.resting,
           weapon: p.equipment.weapon || null,     // held item for the paperdoll
           look: p.look });                          // hair / outfit / colours
@@ -1695,7 +1694,7 @@ wss.on('connection', (ws) => {
           level: 1, xp: 0, gold: 0, openedChests: new Set(),
           // OSRS-style combat skills. Hitpoints starts at 10 (=> 80 HP).
           skills: { attack: { level: 1, xp: 0 }, strength: { level: 1, xp: 0 },
-            defence: { level: 1, xp: 0 }, hitpoints: { level: 10, xp: 0 } },
+            defence: { level: 1, xp: 0 }, hitpoints: { level: 10, xp: xpTotalForLevel(10) } },
           meditation: { level: 1, xp: 0 }, resting: false,
           style: 'controlled',
           // Everyone starts able to mine and fish; better tools are earned. The

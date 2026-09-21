@@ -1,3 +1,4 @@
+import { xpForLevel, progressForXp } from './balance.js';
 // Blackroot — cooking.
 //
 // Cook raw meat and fish at a campfire. Its own skill/level: higher Cooking
@@ -7,7 +8,7 @@
 export const COOKING = {
   cookTime: 2.2,   // seconds per item cooked
   reach: 3.5,      // how close to the fire you must stand
-  maxLevel: 60,
+  maxLevel: 99,
 };
 
 // raw -> { cooked, level, xp, noBurn } . `noBurn` is the Cooking level at which
@@ -22,12 +23,8 @@ export const COOKABLES = {
 };
 export const BURNT = 'Burnt Food';
 
-export function xpForCookingLevel(level) { return Math.floor(12 * Math.pow(level, 1.35)); }
-export function cookingLevelFromXp(xp) {
-  let level = 1, need = xpForCookingLevel(1), spent = 0;
-  while (level < COOKING.maxLevel && xp >= spent + need) { spent += need; level++; need = xpForCookingLevel(level); }
-  return { level, into: xp - spent, next: need };
-}
+export function xpForCookingLevel(level) { return xpForLevel(level); } // the shared 1..99 table (balance.js)
+export function cookingLevelFromXp(xp) { return progressForXp(xp); }
 
 // Chance a cook burns. Starts around 45% at the food's own level, falls linearly
 // to 0 at its noBurn level.

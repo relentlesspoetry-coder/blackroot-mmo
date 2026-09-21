@@ -1,3 +1,4 @@
+import { xpForLevel, progressForXp } from './balance.js';
 // Blackroot — fishing.
 //
 // Fishing mirrors mining: its own skill/level, gated catches, a rod that sets
@@ -8,7 +9,7 @@
 export const FISHING = {
   castTime: 3.0,   // seconds per cast at rod power 1.0
   reach: 4.5,      // how close to the spot you must stand (fish from the bank)
-  maxLevel: 60,
+  maxLevel: 99,
 };
 
 // `level` gates the fish, `xp` per catch, `item` is what lands, `difficulty`
@@ -37,12 +38,8 @@ export function bestRod(items, fishingLevel) {
 }
 
 // Flatter than combat, like mining — a two-zone game.
-export function xpForFishingLevel(level) { return Math.floor(12 * Math.pow(level, 1.35)); }
-export function fishingLevelFromXp(xp) {
-  let level = 1, need = xpForFishingLevel(1), spent = 0;
-  while (level < FISHING.maxLevel && xp >= spent + need) { spent += need; level++; need = xpForFishingLevel(level); }
-  return { level, into: xp - spent, next: need };
-}
+export function xpForFishingLevel(level) { return xpForLevel(level); } // the shared 1..99 table (balance.js)
+export function fishingLevelFromXp(xp) { return progressForXp(xp); }
 
 // Chance one cast lands a fish, scaled by how far past the requirement you are
 // and by the rod. Floored/capped so no spot is hopeless or automatic.

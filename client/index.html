@@ -5717,7 +5717,7 @@ function renderSkills() {
   const styleBtns = ['accurate', 'aggressive', 'defensive', 'controlled']
     .map(s => `<button class="stylebtn${s === cur ? ' on' : ''}" data-style="${s}">${slabel[s]}</button>`).join('');
   const med = skills.meditation || { level: 1, xp: 0, next: 1 };
-  const medPct = Math.max(0, Math.min(1, med.xp / (med.next || 1)));
+  const medPct = Math.max(0, Math.min(1, (med.into || 0) / (med.next || 1)));
   const fish = skills.fishing || { level: 1, into: 0, next: 1, rod: null };
   const fishPct = Math.max(0, Math.min(1, fish.into / (fish.next || 1)));
   const cook = skills.cooking || { level: 1, into: 0, next: 1 };
@@ -5760,8 +5760,7 @@ function renderSkillWindow() {
   };
   const combatCell = (em, name, k) => {
     const s = cs[k] || { level: 1, xp: 0, next: 1 };
-    const prevTotal = k === 'hitpoints' ? 0 : 0; // xp shown is running total into next level
-    return cell(em, name, s.level, s.xp - (xpTotalFor(s.level)), s.next, `${Math.floor(s.xp)} xp`);
+    return cell(em, name, s.level, s.into, s.next, `${Math.floor(s.xp).toLocaleString()} xp`);
   };
   const m = skills.mining || { level: 1, into: 0, next: 1, pick: null };
   const fish = skills.fishing || { level: 1, into: 0, next: 1, rod: null };
@@ -5775,22 +5774,13 @@ function renderSkillWindow() {
     cell('⛏️', 'Mining', m.level, m.into, m.next, m.pick ? m.pick.replace(' Pickaxe', '') : 'no pickaxe') +
     cell('🎣', 'Fishing', fish.level, fish.into, fish.next, fish.rod ? fish.rod.replace(' Rod', '') : 'no rod') +
     cell('🍳', 'Cooking', cook.level, cook.into, cook.next, 'cook at a fire') +
-    cell('🧘', 'Meditation', med.level, med.xp - xpTotalFor(med.level), med.next, skills.resting ? 'resting…' : 'press R');
+    cell('🧘', 'Meditation', med.level, med.into, med.next, skills.resting ? 'resting…' : 'press R');
   document.getElementById('skillCombat').textContent = 'Combat ' + (skills.combatLevel || 3);
   // Total level across every skill.
   const total = (cs.attack?.level || 1) + (cs.strength?.level || 1) + (cs.defence?.level || 1) +
     (cs.hitpoints?.level || 1) + (m.level || 1) + (fish.level || 1) + (cook.level || 1) + (med.level || 1);
   document.getElementById('skillTotal').innerHTML = `Total level <b>${total}</b>`;
 }
-// Total xp banked before reaching `level`, so we can show progress into the
-// current level for combat/meditation skills (their payload sends a running xp total).
-function xpTotalFor(level) {
-  let sum = 0;
-  for (let l = 1; l < level; l++) sum += xpForLevelClient(l);
-  return sum;
-}
-// Mirrors server/balance.js xpForLevel. Only used for the progress bar.
-function xpForLevelClient(level) { return Math.floor(50 * Math.pow(level, 1.6)); }
 
 // The slot layout is authored on the server (items.js SLOT_INFO) and arrives
 // with the bag, so adding a slot does not need a client change.
