@@ -112,24 +112,24 @@ export const darkwoods = {
   npcs: [
     { id: 'alric',    name: 'Warden Alric',        x: -20,  z: -66, poi: 'entrance', model: 'Male', yaw: 3.1,
       // Looks mix the modular outfit pack by slot (outfit numbers; see client OUTFITS) with per-slot recolours.
-      look: { hair: 8, hairColor: '#2b1d14', skin: '#c49a76', outfit: 3, slots: { cape: 15, head: 0 }, colors: { cape: '#3b4a2f', torso: '#5a3d2a' } },
+      look: { hair: 8, hairColor: '#2b1d14', skin: '#c49a76', outfit: 21 },   // Town Guard
       idle: 'Keep to the path, and keep your blade where you can reach it.' },
     // Farmstead folk at the Entrance Clearing.
     { id: 'garrick',  name: 'Drillmaster Garrick',  x: 4,    z: -65, poi: 'entrance', model: 'Male', yaw: 3.1, trainer: 'fighter',
-      look: { hair: 15, hairColor: '#3a2a1a', skin: '#b58a66', outfit: 24, colors: { torso: '#4a3a30' } },
+      look: { hair: 15, hairColor: '#3a2a1a', skin: '#b58a66', outfit: 25 },   // Sellsword
       idle: 'Swinging a stick is free. Swinging it properly costs coin. Come learn.' },
     { id: 'maggie',   name: 'Old Maggie',          x: 18,   z: -79, poi: 'entrance', model: 'Female', yaw: 3.0,
       idle: 'Mind the hens, love — and shut the gate on your way out.' },
     { id: 'bram',     name: 'Farmhand Bram',       x: -19,  z: -77, poi: 'entrance', model: 'Male', yaw: 1.4,
-      look: { hair: 5, hairColor: '#8a5a2b', skin: '#d9ab86', outfit: 2, slots: { head: 0, boots: 12 }, colors: { torso: '#7a6a4a', legs: '#4a3a2c' } },
+      look: { hair: 5, hairColor: '#8a5a2b', skin: '#d9ab86', outfit: 1, slots: { boots: 2 } },   // Fieldhand in the orchard worker's boots
       idle: 'Cows need feedin’, fences need mendin’. No rest out here.' },
     { id: 'sela',     name: 'Ranger Sela',         x: 48,   z: -70, poi: 'watchtower', model: 'Female', yaw: 2.2,
       idle: 'From the old tower you can see their fires. The Wolf Den grows bolder every night.' },
     { id: 'dorn',     name: 'Prospector Dorn',     x: -34,  z: 42,  poi: 'ravine',   model: 'Male', yaw: 5.0,
-      look: { hair: 1, hairColor: '#6b6b6b', skin: '#b8865f', outfit: 20, slots: { belt: 11 }, colors: { torso: '#6d5a44' } },
+      look: { hair: 1, hairColor: '#6b6b6b', skin: '#b8865f', outfit: 5 },    // Miner
       idle: 'That iron seam is mine by right — but the goblins dig it faster than I can chase them off.' },
     { id: 'hermit',   name: 'Hermit of the Grove', x: 9,    z: 4,   poi: 'shrine',   model: 'Male',
-      look: { hair: 29, hairColor: '#9a9a90', skin: '#c9a07c', outfit: 16, slots: { cape: 5, boots: 0 }, colors: { torso: '#6a6f5a', cape: '#3e3a4a' } },
+      look: { hair: 29, hairColor: '#9a9a90', skin: '#c9a07c', outfit: 29, slots: { boots: 0 }, colors: { top: '#6a6f5a' } },   // barefoot Pilgrim
       idle: 'The shrine holds. Not much else out here does.' },
     { id: 'merchant', name: 'Wandering Merchant',  x: -51.5, z: 9,  poi: 'camp',     model: 'Female', trade: true,
       idle: 'Wares? Aye, soon enough, traveller. Mind the woods.' },

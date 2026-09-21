@@ -562,7 +562,7 @@ const LOADED_ANIM = {}; // model key -> GLTF animation clips (kept for animated 
 // Only the player model is always needed; everything else is declared by the
 // zone (server/zones/*.js) and fetched on entry. Loading all 73 models up front
 // doubled the wait on the login button for assets most players never see.
-const CORE_MODELS = ['Male', 'items/Coins', 'human/Human_Male_Bald_Rigged', 'human/Human_Male_30_Outfits_Modular'];
+const CORE_MODELS = ['Male', 'items/Coins', 'human/Human_Male_Modular_Base'];
 const MOB_MODEL = {
   goblin: { model: 'Goblin', h: 2.0 }, bandit: { model: 'Bandit', h: 2.3 }, guard: { model: 'Hill_Ogre', h: 3.0 },
   spider: { model: 'Cave_Spider', h: 1.6 }, cow: { model: 'Cow', h: 2.0 }, chicken: { model: 'Chicken', h: 1.1 },
@@ -672,7 +672,7 @@ function cloneModel(name, targetH, byMax) {
 }
 
 // ---------------------------------------------------------------------------
-// Rigged human characters: Human_Male_Bald_Rigged (43-bone skinned body) +
+// Rigged human characters: Human_Male_Modular_Base (43-bone segmented body) +
 // the modular outfit pack (every clothing piece from 30 outfits, rigid-skinned
 // to the same skeleton) + 30 hair-only skinned GLBs. A "look" picks a hair
 // style and colour, a skin tone, and a clothing outfit per slot (torso, legs,
@@ -684,30 +684,23 @@ const HAIR_STYLES = ['Bald', '01_Buzz_Cut', '02_Crew_Cut', '03_Flat_Top', '04_Sh
   '12_Caesar_Cut', '13_Curtains', '14_Bowl_Cut', '15_Undercut', '16_Faux_Hawk', '17_Mohawk', '18_Liberty_Spikes',
   '19_Short_Curls', '20_Afro', '21_Wavy_Shag', '22_Shoulder_Length', '23_Long_Straight', '24_Low_Ponytail',
   '25_High_Ponytail', '26_Top_Knot', '27_Double_Buns', '28_Braided_Tail', '29_Dreadlocks', '30_Cornrows'];
-const OUTFITS = ['None', '01_Rustic_Peasant', '02_Village_Farmer', '03_Town_Guard_Leather', '04_Traveling_Merchant',
-  '05_Novice_Mage', '06_Woodsman_Hunter', '07_Dock_Worker', '08_Tavern_Worker', '09_Young_Noble', '10_Desert_Traveler',
-  '11_Blacksmith_Apprentice', '12_Stable_Hand', '13_Fisherman', '14_Scholar_Scribe', '15_Forest_Ranger',
-  '16_Temple_Acolyte', '17_City_Watch_Heavy', '18_Alchemist', '19_Caravan_Trader', '20_Miner', '21_Tailor_Clothier',
-  '22_Herbalist', '23_Street_Thief', '24_Bounty_Hunter', '25_Bard_Performer', '26_Winter_Traveler', '27_Tribal_Scout',
-  '28_Carpenter', '29_Aristocrat_Steward', '30_Veteran_Adventurer'];
-// Clothing slots, by the piece-name suffix the pack uses. A look can take each
-// slot from a different outfit and recolour it independently.
-const OUTFIT_SLOTS = {
-  torso:   /(Torso_(Chest|Spine|Waist)|Tunic_Skirt|Vest_(Chest|Waist)|(Chest|Waist)_Armor|Apron_(Chest|Lower)|Robe_(Lower|Trim)|Coat_(Lower|Trim_[LR]))$/,
-  sleeves: /((Upper|Fore)Sleeve_[LR](_1)?|Bracer_[LR]|Shoulder_[LR])$/,
-  legs:    /(Trouser_(Thigh|Shin)_[LR]|KneePad_[LR]|Greave_[LR])$/,
-  boots:   /Boot(_Foot)?_[LR]$/,
-  belt:    /(Belt|Buckle)$/,
-  head:    /(Hat_(Crown|Brim)|Hood|Cap|Helmet(_Brow)?)$/,
-  cape:    /(Cape_(Upper|Mid|Lower)|Scarf)$/,
-  extra:   /Satchel$/,
-};
+// The modular wardrobe pack (client/models/human): 31 outfit presets, each a
+// set of individually skinned items (Top, Trousers, Boots, Belt, Accessory,
+// optional Gloves, the Fighter's Helmet), plus which body segments each item
+// covers. outfits.json is the pack's manifest, fetched at boot.
+const OUTFITS = ['None', '01_Fieldhand', '02_Orchard_Worker', '03_Fisherman', '04_Dockhand', '05_Miner', '06_Blacksmith',
+  '07_Baker', '08_Innkeeper', '09_Merchant', '10_Wealthy_Trader', '11_Scholar', '12_Scribe', '13_Physician', '14_Alchemist',
+  '15_Apprentice', '16_Ranger', '17_Scout', '18_Hunter', '19_Trapper', '20_Courier', '21_Town_Guard', '22_Night_Watch',
+  '23_Militia', '24_Knight', '25_Sellsword', '26_Noble', '27_Courtier', '28_Bard', '29_Pilgrim', '30_Desert_Traveller', '31_Fighter'];
+const OUTFIT_SLOT_NAMES = ['top', 'trousers', 'boots', 'belt', 'accessory', 'gloves', 'helmet'];
+let outfitManifest = null;   // { outfits: [{ id, items: [{ id, slot, file, hide_body }] }] }
+const outfitManifestReady = fetch('models/human/outfits.json').then(r => r.json()).then(m => { outfitManifest = m; return m; }).catch(e => { console.warn('outfit manifest failed', e); return null; });
 const HUMAN_H = 1.87;            // rest-pose height of the base body (feet at y≈0.02)
 const HUMAN_MIN_Y = 0.02;
 // Bones the procedural rig drives, and the rig-node name each gets so buildRig
 // finds them exactly like the carved-mesh characters' parts.
 const HUMAN_DRIVEN = { UpperArmL: 'Arm_L', UpperArmR: 'Arm_R', ThighL: 'Leg_L', ThighR: 'Leg_R', ShinL: 'Shin_L', ShinR: 'Shin_R', Head: 'Head' };
-const DEFAULT_LOOK = { hair: 9, hairColor: '#4a2e1a', skin: '#cba281', outfit: 1 };
+const DEFAULT_LOOK = { hair: 9, hairColor: '#4a2e1a', skin: '#cba281', outfit: 31 }; // players start in the Fighter kit
 
 let humanTemplate = null;
 // Build the shared skeleton template once. The body's skinned pieces (skin,
@@ -721,7 +714,7 @@ let humanTemplate = null;
 // the bone itself so the A-pose drops to arms-at-sides at rest, while the
 // driven node above it still animates in world axes.
 function buildHumanTemplate() {
-  const src = LOADED['Human_Male_Bald_Rigged'];
+  const src = LOADED['Human_Male_Modular_Base'];
   if (!src) return null;
   const root = SkeletonUtils.clone(src);
   root.updateMatrixWorld(true);
@@ -768,7 +761,7 @@ function buildHumanTemplate() {
   // Replace the body's many little skinned meshes with one fused mesh. Kept as
   // the source for per-look skin tinting (materials are named).
   const bodyParent = skinned[0].parent;
-  const bodyParts = skinned.map(m => ({ geo: m.geometry, matName: m.material.name, color: m.material.color.clone() }));
+  const bodyParts = skinned.map(m => ({ name: m.name, geo: m.geometry, matName: m.material.name, color: m.material.color.clone() }));
   for (const m of skinned) m.removeFromParent();
   root.updateMatrixWorld(true);
   humanTemplate = { root, skeleton, boneNames, bodyParts, bodyParent };
@@ -816,34 +809,45 @@ function recolor(base, target, meanL) {
 //   look.slots.{slot}    override: outfit number for that slot (0 = bare)
 //   look.colors.{slot}   recolour that slot ('#rrggbb')
 const outfitGeoCache = new Map();
-function outfitGeometry(look) {
-  const T = humanTemplate, mod = LOADED['Human_Male_30_Outfits_Modular'];
-  if (!T || !mod) return null;
-  const slots = look.slots || {}, colors = look.colors || {};
-  const key = JSON.stringify([look.outfit || 0, slots, colors]);
-  if (outfitGeoCache.has(key)) return outfitGeoCache.get(key);
-  const pick = {};
-  for (const slot of Object.keys(OUTFIT_SLOTS)) pick[slot] = slots[slot] != null ? slots[slot] : (look.outfit || 0);
-  const parts = [];
-  const bySlot = {};
-  mod.traverse(o => {
-    if (!o.isSkinnedMesh) return;
-    const m = o.name.match(/^Outfit_(\d\d)_(.*)$/); if (!m) return;
-    const num = +m[1];
-    for (const slot of Object.keys(OUTFIT_SLOTS)) {
-      if (pick[slot] === num && OUTFIT_SLOTS[slot].test(m[2])) { (bySlot[slot] || (bySlot[slot] = [])).push(o); break; }
-    }
-  });
-  for (const slot of Object.keys(bySlot)) {
-    const list = bySlot[slot];
-    let meanL = 0; const hsl = {};
-    for (const o of list) { o.material.color.getHSL(hsl); meanL += hsl.l; } meanL /= list.length;
-    for (const o of list) {
-      const color = colors[slot] ? recolor(o.material.color, colors[slot], meanL) : o.material.color.clone();
-      parts.push({ geo: o.geometry, color, remap: boneRemap(o.skeleton, T.boneNames) });
-    }
+// Which manifest items a look wears: each slot from look.outfit, or from the
+// outfit named in look.slots[slot] (0 = nothing in that slot).
+function lookItems(look) {
+  if (!outfitManifest) return [];
+  const slots = look.slots || {}, items = [];
+  for (const slot of OUTFIT_SLOT_NAMES) {
+    const num = slots[slot] != null ? slots[slot] : (look.outfit || 0);
+    const o = outfitManifest.outfits[num - 1]; if (!o) continue;
+    const it = o.items.find(i => i.slot.toLowerCase() === slot); if (it) items.push({ ...it, slot });
   }
-  const geo = fuseSkinned(parts, T.boneNames);
+  return items;
+}
+// One clothing item's skinned pieces, loaded once: [{ geo, color, matName }].
+const itemCache = {};
+function itemAsset(it) {
+  if (itemCache[it.id]) return itemCache[it.id];
+  itemCache[it.id] = gltfLoader.loadAsync('models/human/' + it.file.replace(/^Items\//, 'items/')).then(g => {
+    const parts = [];
+    g.scene.traverse(o => { if (o.isSkinnedMesh) { const mats = Array.isArray(o.material) ? o.material : [o.material]; parts.push({ geo: o.geometry, color: mats[0].color.clone(), matName: mats[0].name, remap: humanTemplate ? boneRemap(o.skeleton, humanTemplate.boneNames) : null }); } });
+    return parts;
+  }).catch(e => { console.warn('Clothing failed to load:', it.file, e); return []; });
+  return itemCache[it.id];
+}
+// Fuse the worn items into one vertex-coloured geometry (recolouring a slot
+// keeps its own light/dark variation). Resolves once every item is loaded.
+async function outfitGeometry(look) {
+  const T = humanTemplate; if (!T || !outfitManifest) return null;
+  const items = lookItems(look), colors = look.colors || {};
+  const key = JSON.stringify([items.map(i => i.id), colors]);
+  if (outfitGeoCache.has(key)) return outfitGeoCache.get(key);
+  const loaded = await Promise.all(items.map(itemAsset));
+  const parts = [];
+  items.forEach((it, i) => {
+    const list = loaded[i]; if (!list.length) return;
+    let meanL = 0; const hsl = {};
+    for (const pt of list) { pt.color.getHSL(hsl); meanL += hsl.l; } meanL /= list.length;
+    for (const pt of list) parts.push({ geo: pt.geo, color: colors[it.slot] ? recolor(pt.color, colors[it.slot], meanL) : pt.color.clone(), remap: pt.remap });
+  });
+  const geo = parts.length ? fuseSkinned(parts, T.boneNames) : null;
   outfitGeoCache.set(key, geo);
   return geo;
 }
@@ -887,42 +891,44 @@ function makeHuman(look, targetH) {
   if (!T) return null;
   look = Object.assign({}, DEFAULT_LOOK, look || {});
   const obj = SkeletonUtils.clone(T.root);
-  let skeleton = null; obj.traverse(o => { if (o.isSkinnedMesh && !skeleton) skeleton = o.skeleton; });
-  // The clone carries no meshes (the template's were removed), so its skeleton
-  // has to be found from the bones: rebuild one over the cloned bones in order.
-  if (!skeleton) {
-    const boneByName = {}; obj.traverse(o => { if (o.isBone) boneByName[o.name] = o; });
-    skeleton = new THREE.Skeleton(T.boneNames.map(n => boneByName['B_' + n]), T.skeleton.boneInverses.map(m => m.clone()));
-  }
+  // The clone carries no meshes (the template's were removed), so rebuild the
+  // skeleton over the cloned bones in template order.
+  const boneByName = {}; obj.traverse(o => { if (o.isBone) boneByName[o.name] = o; });
+  const skeleton = new THREE.Skeleton(T.boneNames.map(n => boneByName['B_' + n]), T.skeleton.boneInverses.map(m => m.clone()));
   const bodyParent = obj.getObjectByName(T.bodyParent.name) || obj;
   const addSkinned = (geo, mat, name) => {
     if (!geo) return null;
     const sm = new THREE.SkinnedMesh(geo, mat); sm.name = name;
     sm.castShadow = sm.receiveShadow = true; sm.frustumCulled = false;
     sm.bind(skeleton, new THREE.Matrix4());
-    bodyParent.add(sm); return sm;
+    bodyParent.add(sm); sm.traverse(o => { Object.assign(o.userData, wrap.userData.pickTag || {}); }); return sm;
   };
-  // Body, tinted: skin tone from the look, brows in the hair colour.
-  const bodyKey = 'body:' + look.skin + ':' + look.hairColor;
-  if (!outfitGeoCache.has(bodyKey)) {
-    outfitGeoCache.set(bodyKey, fuseSkinned(T.bodyParts.map(pt => ({
-      geo: pt.geo,
-      color: pt.matName === 'Warm_Skin' ? new THREE.Color(look.skin) : pt.matName === 'Chestnut_Hair' ? new THREE.Color(look.hairColor) : pt.color,
-    })), T.boneNames));
-  }
-  addSkinned(outfitGeoCache.get(bodyKey), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 }), 'Body');
-  addSkinned(outfitGeometry(look), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 }), 'Outfit');
   const s = targetH / HUMAN_H;
   obj.scale.setScalar(s); obj.position.set(0, -HUMAN_MIN_Y * s, 0);
   const wrap = new THREE.Group(); wrap.add(obj);
   wrap.userData.look = look;
-  // Hair arrives async; attach it if the character is still around.
-  hairAsset(look.hair).then(h => {
+  // Clothes and the body they cover resolve together (items load on demand);
+  // hair last, and not under a helmet.
+  (async () => {
+    await outfitManifestReady;
+    const items = lookItems(look);
+    const hide = new Set(); for (const it of items) for (const n of (it.hide_body || [])) hide.add(n);
+    const bodyKey = 'body:' + look.skin + ':' + look.hairColor + ':' + [...hide].sort().join(',');
+    if (!outfitGeoCache.has(bodyKey)) {
+      outfitGeoCache.set(bodyKey, fuseSkinned(T.bodyParts.filter(pt => !hide.has(pt.name)).map(pt => ({
+        geo: pt.geo,
+        color: pt.matName === 'Warm_Skin' ? new THREE.Color(look.skin) : pt.matName === 'Chestnut_Hair' ? new THREE.Color(look.hairColor) : pt.color,
+      })), T.boneNames));
+    }
+    const outfitGeo = await outfitGeometry(look);
+    if (!wrap.parent) return;
+    addSkinned(outfitGeoCache.get(bodyKey), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 }), 'Body');
+    addSkinned(outfitGeo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8 }), 'Outfit');
+    if (items.some(it => it.slot === 'helmet')) return;
+    const h = await hairAsset(look.hair);
     if (!h || !wrap.parent) return;
-    const mat = new THREE.MeshStandardMaterial({ color: new THREE.Color(look.hairColor), map: h.detail, roughness: h.roughness != null ? h.roughness : 0.75 });
-    const sm = addSkinned(h.geo, mat, 'Hair');
-    if (sm) sm.traverse(o => { Object.assign(o.userData, wrap.userData.pickTag || {}); });
-  });
+    addSkinned(h.geo, new THREE.MeshStandardMaterial({ color: new THREE.Color(look.hairColor), map: h.detail, roughness: h.roughness != null ? h.roughness : 0.75 }), 'Hair');
+  })();
   return wrap;
 }
 
@@ -4336,46 +4342,47 @@ function ensureMesh(ent, kind) {
 // so you can see (and swing) your pickaxe / sword. Attached to the right arm so
 // the existing swing/chop animation drives it. Rebuilt only when it changes.
 // ---------------------------------------------------------------------------
+// Held weapons are the real item / wardrobe GLBs (upright from their base
+// along +Y). They're flipped to hang from the hand with `grip` metres of
+// handle above the fist, and pickaxes are tinted by tier. Loaded on demand.
+const HELD_WEAPONS = [
+  [/Pickaxe/, { m: 'items/Worn_Pickaxe', grip: 0.3, scale: 1.05, tierTint: true }],
+  [/^Spiderfang Dagger$/, { m: 'items/Spiderfang_Dagger', grip: 0.12, scale: 0.7 }],
+  [/Dagger/, { m: 'items/Rusty_Dagger', grip: 0.08, scale: 1.0, tierTint: true }],
+  [/Sword|Blade|Scimitar/, { m: 'human/weapons/Fighter_Arming_Sword', grip: 0, scale: 1.0 }],
+  [/Axe/, { m: 'human/weapons/Fighter_Battle_Axe', grip: 0, scale: 1.0 }],
+  [/Shield/, { m: 'human/weapons/Fighter_Kite_Shield', grip: 0, scale: 1.0 }],
+  [/Club|Maul|Hammer/, { m: 'items/Giants_Stone_Maul', grip: 0.35, scale: 0.75 }],
+  [/Bow/, { m: 'items/Goblin_Shortbow', grip: 0.5, scale: 1.0 }],
+];
+function tierColor(name) {
+  return /Iron/.test(name) ? 0x9aa0a8 : /Steel/.test(name) ? 0xc2c8d0 : /Mithril/.test(name) ? 0x4f7fd0
+    : /Adamant/.test(name) ? 0x2f8f6f : /Rune/.test(name) ? 0x49b0c8 : /Gold/.test(name) ? 0xe8c34a : /Bronze/.test(name) ? 0xb87333 : null;
+}
 function buildHeldWeapon(name) {
   const g = new THREE.Group();
-  const wood = new THREE.MeshStandardMaterial({ color: 0x6b4a2a, roughness: 0.9, flatShading: true });
-  // Metal tint keyed off the item tier so a mithril pick reads blue, gold gold, etc.
-  const tier = /Iron/.test(name) ? 0x9aa0a8 : /Steel/.test(name) ? 0xc2c8d0
-    : /Mithril/.test(name) ? 0x4f7fd0 : /Adamant/.test(name) ? 0x2f8f6f
-    : /Rune/.test(name) ? 0x49b0c8 : /Gold/.test(name) ? 0xe8c34a : 0xb87333; // bronze default
-  const metal = new THREE.MeshStandardMaterial({ color: tier, roughness: 0.45, metalness: 0.6, flatShading: true });
-  if (/Pickaxe/.test(name)) {
-    // Handle grips at the origin (the hand) and runs down; the pick head is the
-    // striking end at the bottom, so an overhead chop drives it into the rock.
-    const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.045, 0.95, 6), wood);
-    handle.position.set(0, -0.22, 0); g.add(handle);
-    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.08, 0.08), metal);
-    bar.position.set(0, -0.66, 0); g.add(bar);
-    for (const s of [-1, 1]) {
-      const tip = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.26, 4), metal);
-      tip.position.set(s * 0.28, -0.63, 0); tip.rotation.z = Math.PI / 2 + s * 0.5; g.add(tip);
-    }
-  } else if (/Sword|Dagger|Blade|Scimitar/.test(name)) {
-    const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.04, 0.22, 6), wood);
-    grip.position.set(0, -0.05, 0); g.add(grip);
-    const guard = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.06, 0.08), metal);
-    guard.position.set(0, -0.18, 0); g.add(guard);
-    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.8, 0.03), metal);
-    blade.position.set(0, -0.6, 0); g.add(blade);
-  } else if (/Club|Maul|Hammer/.test(name)) {
-    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.8, 6), wood);
-    shaft.position.set(0, -0.3, 0); g.add(shaft);
-    const head = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.22, 0.24), metal);
-    head.position.set(0, -0.72, 0); g.add(head);
-  } else if (/Bow/.test(name)) {
-    const bow = new THREE.Mesh(new THREE.TorusGeometry(0.35, 0.03, 6, 12, Math.PI * 1.2), wood);
-    bow.position.set(0, -0.35, 0); bow.rotation.z = Math.PI / 2; g.add(bow);
-  } else {
-    // A generic tool/rod so any weapon at least shows something in hand.
-    const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 0.7, 6), wood);
-    rod.position.set(0, -0.3, 0); g.add(rod);
-  }
-  g.traverse(o => { if (o.isMesh) { o.castShadow = true; o.userData.pickKind = 'player'; } });
+  const hit = HELD_WEAPONS.find(([re]) => re.test(name));
+  if (!hit) return g;
+  const spec = hit[1];
+  loadModels([spec.m]).then(() => {
+    const src = LOADED[modelKey(spec.m)]; if (!src) return;
+    const model = src.clone(true);
+    const tint = spec.tierTint ? tierColor(name) : null;
+    model.traverse(o => {
+      if (!o.isMesh) return;
+      o.material = Array.isArray(o.material) ? o.material.map(m => m.clone()) : o.material.clone();
+      o.castShadow = true; o.userData.pickKind = 'player';
+      if (tint) for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
+        const hsl = {}; m.color.getHSL(hsl);
+        const wood = hsl.h > 0.04 && hsl.h < 0.13 && hsl.s > 0.3 && hsl.l < 0.5;   // leave the handle alone
+        if (!wood) m.color.set(tint);
+      }
+    });
+    model.rotation.x = Math.PI;              // hang point-down from the fist
+    model.position.y = spec.grip * spec.scale;
+    model.scale.setScalar(spec.scale);
+    g.add(model);
+  });
   return g;
 }
 // Attach / swap / remove the held weapon on a player record to match `name`.

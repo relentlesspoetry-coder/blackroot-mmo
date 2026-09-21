@@ -1,0 +1,2054 @@
+{
+  "skeleton": "Human_Male_Rig",
+  "units": "meters",
+  "outfits": [
+    {
+      "id": "01_Fieldhand",
+      "cut": "shirt",
+      "accessory": "pouch",
+      "items": [
+        {
+          "id": "01_Fieldhand__Top",
+          "slot": "Top",
+          "file": "Items/01_Fieldhand__Top.glb",
+          "hide_body": [
+            "Body_Torso",
+            "Body_Upperarm_L",
+            "Body_Upperarm_R"
+          ],
+          "triangles": 380,
+          "vertices": 242
+        },
+        {
+          "id": "01_Fieldhand__Trousers",
+          "slot": "Trousers",
+          "file": "Items/01_Fieldhand__Trousers.glb",
+          "hide_body": [
+            "Body_Hips",
+            "Body_Thigh_L",
+            "Body_Thigh_R",
+            "Body_Shin_L",
+            "Body_Shin_R"
+          ],
+          "triangles": 452,
+          "vertices": 245
+        },
+        {
+          "id": "01_Fieldhand__Boots",
+          "slot": "Boots",
+          "file": "Items/01_Fieldhand__Boots.glb",
+          "hide_body": [
+            "Body_Foot_L",
+            "Body_Foot_R"
+          ],
+          "triangles": 296,
+          "vertices": 162
+        },
+        {
+          "id": "01_Fieldhand__Belt",
+          "slot": "Belt",
+          "file": "Items/01_Fieldhand__Belt.glb",
+          "hide_body": [],
+          "triangles": 72,
+          "vertices": 64
+        },
+        {
+          "id": "01_Fieldhand__Accessory",
+          "slot": "Accessory",
+          "file": "Items/01_Fieldhand__Accessory.glb",
+          "hide_body": [],
+          "triangles": 36,
+          "vertices": 24
+        }
+      ]
+    },
+    {
+      "id": "02_Orchard_Worker",
+      "cut": "rolled",
+      "accessory": "bib",
+      "items": [
+        {
+          "id": "02_Orchard_Worker__Top",
+          "slot": "Top",
+          "file": "Items/02_Orchard_Worker__Top.glb",
+          "hide_body": [
+            "Body_Torso",
+            "Body_Upperarm_L",
+            "Body_Upperarm_R"
+          ],
+          "triangles": 380,
+          "vertices": 242
+        },
+        {
+          "id": "02_Orchard_Worker__Trousers",
+          "slot": "Trousers",
+          "file": "Items/02_Orchard_Worker__Trousers.glb",
+          "hide_body": [
+            "Body_Hips",
+            "Body_Thigh_L",
+            "Body_Thigh_R",
+            "Body_Shin_L",
+            "Body_Shin_R"
+          ],
+          "triangles": 452,
+          "vertices": 245
+        },
+        {
+          "id": "02_Orchard_Worker__Boots",
+          "slot": "Boots",
+          "file": "Items/02_Orchard_Worker__Boots.glb",
+          "hide_body": [
+            "Body_Foot_L",
+            "Body_Foot_R"
+          ],
+          "triangles": 392,
+          "vertices": 218
+        },
+        {
+          "id": "02_Orchard_Worker__Belt",
+          "slot": "Belt",
+          "file": "Items/02_Orchard_Worker__Belt.glb",
+          "hide_body": [],
+          "triangles": 72,
+          "vertices": 64
+        },
+        {
+          "id": "02_Orchard_Worker__Accessory",
+          "slot": "Accessory",
+          "file": "Items/02_Orchard_Worker__Accessory.glb",
+          "hide_body": [],
+          "triangles": 32,
+          "vertices": 20
+        }
+      ]
+    },
+    {
+      "id": "03_Fisherman",
+      "cut": "vest",
+      "accessory": "satchel",
+      "items": [
+        {
+          "id": "03_Fisherman__Top",
+          "slot": "Top",
+          "file": "Items/03_Fisherman__Top.glb",
+          "hide_body": [
+            "Body_Torso",
+            "Body_Upperarm_L",
+            "Body_Upperarm_R",
+            "Body_Forearm_L",
+            "Body_Forearm_R"
+          ],
+          "triangles": 716,
+          "vertices": 424
+        },
+        {
+          "id": "03_Fisherman__Trousers",
+          "slot": "Trousers",
+          "file": "Items/03_Fisherman__Trousers.glb",
+          "hide_body": [
+            "Body_Hips",
+            "Body_Thigh_L",
+            "Body_Thigh_R",
+            "Body_Shin_L",
+            "Body_Shin_R"
+          ],
+          "triangles": 420,
+          "vertices": 225
+        },
+        {
+          "id": "03_Fisherman__Boots",
+          "slot": "Boots",
+          "file": "Items/03_Fisherman__Boots.glb",
+          "hide_body": [
+            "Body_Foot_L",
+            "Body_Foot_R"
+          ],
+          "triangles": 392,
+          "vertices": 218
+        },
+        {
+          "id": "03_Fisherman__Belt",
+          "slot": "Belt",
+          "file": "Items/03_Fisherman__Belt.glb",
+          "hide_body": [],
+          "triangles": 72,
+          "vertices": 64
+        },
+        {
+          "id": "03_Fisherman__Accessory",
+          "slot": "Accessory",
+          "file": "Items/03_Fisherman__Accessory.glb",
+          "hide_body": [],
+          "triangles": 52,
+          "vertices": 34
+        }
+      ]
+    },
+    {
+      "id": "04_Dockhand",
+      "cut": "stripe",
+      "accessory": "rope",
+      "items": [
+        {
+          "id": "04_Dockhand__Top",
+          "slot": "Top",
+          "file": "Items/04_Dockhand__Top.glb",
+          "hide_body": [
+            "Body_Torso",
+            "Body_Upperarm_L",
+            "Body_Upperarm_R"
+          ],
+          "triangles": 380,
+          "vertices": 242
+        },
+        {
+          "id": "04_Dockhand__Trousers",
+          "slot": "Trousers",
+          "file": "Items/04_Dockhand__Trousers.glb",
+          "hide_body": [
+            "Body_Hips",
+            "Body_Thigh_L",
+            "Body_Thigh_R",
+            "Body_Shin_L",
+            "Body_Shin_R"
+          ],
+          "triangles": 420,
+          "vertices": 225
+        },
+        {
+          "id": "04_Dockhand__Boots",
+          "slot": "Boots",
+          "file": "Items/04_Dockhand__Boots.glb",
+          "hide_body": [
+            "Body_Foot_L",
+            "Body_Foot_R"
+          ],
+          "triangles": 296,
+          "vertices": 162
+        },
+        {
+          "id": "04_Dockhand__Belt",
+          "slot": "Belt",
+          "file": "Items/04_Dockhand__Belt.glb",
+          "hide_body": [],
+          "triangles": 72,
+          "vertices": 64
+        },
+        {
+          "id": "04_Dockhand__Accessory",
+          "slot": "Accessory",
+          "file": "Items/04_Dockhand__Accessory.glb",
+          "hide_body": [],
+          "triangles": 672,
+          "vertices": 342
+        }
+      ]
+    },
+    {
+      "id": "05_Miner",
+      "cut": "sleeveless",
+      "accessory": "harness",
+      "items": [
+        {
+          "id": "05_Miner__Top",
+          "slot": "Top",
+          "file": "Items/05_Miner__Top.glb",
+          "hide_body": [
+            "Body_Torso"
+          ],
+          "triangles": 168,
+          "vertices": 134
+        },
+        {
+          "id": "05_Miner__Trousers",
+          "slot": "Trousers",
+          "file": "Items/05_Miner__Trousers.glb",
+          "hide_body": [
+            "Body_Hips",
+            "Body_Thigh_L",
+            "Body_Thigh_R",
+            "Body_Shin_L",
+            "Body_Shin_R"
+          ],
+          "triangles": 452,
+          "vertices": 245
+        },
+        {
+          "id": "05_Miner__Boots",
+          "slot": "Boots",
+          "file": "Items/05_Miner__Boots.glb",
+          "hide_body": [
+            "Body_Foot_L",
+            "Body_Foot_R"
+          ],
+          "triangles": 392,
+          "vertices": 218
+        },
+        {
+          "id": "05_Miner__Belt",
+          "slot": "Belt",
+          "file": "Items/05_Miner__Belt.glb",
+          "hide_body": [],
+          "triangles": 72,
+          "vertices": 64
+        },
+        {
+          "id": "05_Miner__Accessory",
+          "slot": "Accessory",
+          "file": "Items/05_Miner__Accessory.glb",
+          "hide_body": [],
+          "triangles": 32,
+          "vertices": 20
+        },
+        {
+          "id": "05_Miner__Gloves",
+          "slot": "Gloves",
+          "file": "Items/05_Miner__Gloves.glb",
+          "hide_body": [
+            "Body_Hand_L",
+            "Body_Hand_R"
+          ],
+          "triangles": 2408,
+          "vertices": 1216
+        }
+      ]
+    },
+    {
+      "id": "06_Blacksmith",
+      "cut": "rolled",
+      "accessory": "apron",
+      "items": [
+        {
+          "id": "06_Blacksmith__Top",
+          "slot": "Top",
+          "file": "Items/06_Blacksmith__Top.glb",
+          "hide_body": [
+            "Body_Torso",
+            "Body_Upperarm_L",
+            "Body_Upperarm_R"
+          ],
+          "triangles": 380,
+          "vertices": 242
+        },
+        {
+          "id": "06_Blacksmith__Trousers",
+          "slot": "Trousers",
+          "file": "Items/06_Blacksmith__Trousers.glb",
+          "hide_body": [
+            "Body_Hips",
+            "Body_Thigh_L",
+            "Body_Thigh_R",
+            "Body_Shin_L",
+            "Body_Shin_R"
+          ],
+          "triangles": 532,
+          "vertices": 285
+        },
+        {
+          "id": "06_Blacksmith__Boots",
+          "slot": "Boots",
+          "file": "Items/06_Blacksmith__Boots.glb",
+          "hide_body": [
+            "Body_Foot_L",
+            "Body_Foot_R"
+          ],
+          "triangles": 392,
+          "vertices": 218
+        },
+        {
+          "id": "06_Blacksmith__Belt",
+          "slot": "Belt",
+          "file": "Items/06_Blacksmith__Belt.glb",
+          "hide_body": [],
+          "triangles": 72,
+          "vertices": 64
+        },
+        {
+          "id": "06_Blacksmith__Accessory",
+          "slot": "Accessory",
+          "file": "Items/06_Blacksmith__Accessory.glb",
+          "hide_body": [],
+          "triangles": 32,
+          "vertices": 20
+        },
+        {
+          "id": "06_Blacksmith__Gloves",
+          "slot": "Gloves",
+          "file": "Items/06_Blacksmith__Gloves.glb",
+          "hide_body": [
+            "Body_Hand_L",
+            "Body_Hand_R"
+          ],
+          "triangles": 2408,
+          "vertices": 1216
+        }
+      ]
+    },
+    {
+      "id": "07_Baker",
+      "cut": "shirt",
+      "accessory": "apron",
+      "items": [
+        {
+          "id": "07_Baker__Top",
+          "slot": "Top",
+          "file": "Items/07_Baker__Top.glb",
+          "hide_body": [
+            "Body_Torso",
+            "Body_Upperarm_L",
+            "Body_Upperarm_R"
+          ],
+          "triangles": 380,
+          "vertices": 242
+        },
+        {
+          "id": "07_Baker__Trousers",
+          "slot": "Trousers",
+          "file": "Items/07_Baker__Trousers.glb",
+          "hide_body": [
+            "Body_Hips",
+            "Body_Thigh_L",
+            "Body_Thigh_R",
+            "Body_Shin_L",
+            "Body_Shin_R"
+          ],
+          "triangles": 452,
+          "vertices": 245
+        },
+        {
+          "id": "07_Baker__Boots",
+          "slot": "Boots",
+          "file": "Items/07_Baker__Boots.glb",
+          "hide_body": [
+            "Body_Foot_L",
+            "Body_Foot_R"
+          ],
+          "triangles": 296,
+          "vertices": 162
+        },
+        {
+          "id": "07_Baker__Belt",
+          "slot": "Belt",
+          "file": "Items/07_Baker__Belt.glb",
+          "hide_body": [],
+          "triangles": 72,
+          "vertices": 64
+        },
+        {
+          "id": "07_Baker__Accessory",
+          "slot": "Accessory",
+          "file": "Items/07_Baker__Accessory.glb",
+          "hide_body": [],
+          "triangles": 32,
+          "vertices": 20
+        }
+      ]
+    },
+    {
+      "id": "08_Innkeeper",
+      "cut": "vest",
+      "accessory": "keys",
+      "items": [
+        {
+          "id": "08_Innkeeper__Top",
+          "slot": "Top",
+          "file": "Items/08_Innkeeper__Top.glb",
+          "hide_body": [
+            "Body_Torso",
+            "Body_Upperarm_L",
+            "Body_Upperarm_R",
+            "Body_Forearm_L",
+            "Body_Forearm_R"
+          ],
+          "triangles": 716,
+          "vertices": 424
+        },
+        {
+          "id": "08_Innkeeper__Trousers",
+          "slot": "Trousers",
+          "file": "Items/08_Innkeeper__Trousers.glb",
+          "hide_body": [
+            "Body_Hips",
+            "Body_Thigh_L",
+            "Body_Thigh_R",
+            "Body_Shin_L",
+            "Body_Shin_R"
+          ],
+          "triangles": 452,
+          "vertices": 245
+        },
+        {
+          "id": "08_Innkeeper__Boots",
+          "slot": "Boots",
+          "file": "Items/08_Innkeeper__Boots.glb",
+          "hide_body": [
+            "Body_Foot_L",
+            "Body_Foot_R"
+          ],
+          "triangles": 392,
+          "vertices": 218
+        },
+        {
+          "id": "08_Innkeeper__Belt",
+          "slot": "Belt",
+          "file": "Items/08_Innkeeper__Belt.glb",
+          "hide_body": [],
+          "triangles": 72,
+          "vertices": 64
+        },
+        {
+          "id": "08_Innkeeper__Accessory",
+          "slot": "Accessory",
+          "file": "Items/08_Innkeeper__Accessory.glb",
+          "hide_body": [],
+          "triangles": 64,
+          "vertices": 40
+        }
+      ]
+    },
+    {
+      "id": "09_Merchant",
+      "cut": "doublet",
+      "accessory": "satchel",
+      "items": [
+        {
+          "id": "09_Merchant__Top",
+          "slot": "Top",
+          "file": "Items/09_Merchant__Top.glb",
+          "hide_body": [
+            "Body_Torso",
+            "Body_Upperarm_L",
+            "Body_Upperarm_R",
+            "Body_Forearm_L",
+            "Body_Forearm_R"
+          ],
+          "triangles": 716,
+          "vertices": 424
+        },
+        {
+          "id": "09_Merchant__Trousers",
+          "slot": "Trousers",
+          "file": "Items/09_Merchant__Trousers.glb",
+          "hide_body": [
+            "Body_Hips",
+            "Body_Thigh_L",
+            "Body_Thigh_R",
+            "Body_Shin_L",
+            "Body_Shin_R"
+          ],
+          "triangles": 420,
+          "vertices": 225
+        },
+        {
+          "id": "09_Merchant__Boots",
+          "slot": "Boots",
+          "file": "Items/09_Merchant__Boots.glb",
+          "hide_body": [
+            "Body_Foot_L",
+            "Body_Foot_R"
+          ],
+          "triangles": 392,
+          "vertices": 218
+        },
+        {
+          "id": "09_Merchant__Belt",
+          "slot": "Belt",
+          "file": "Items/09_Merchant__Belt.glb",
+          "hide_body": [],
+          "triangles": 72,
+          "vertices": 64
+        },
+        {
+          "id": "09_Merchant__Accessory",
+          "slot": "Accessory",
+          "file": "Items/09_Merchant__Accessory.glb",
+          "hide_body": [],
+          "triangles": 52,
+          "vertices": 34
+        }
+      ]
+    },
+    {
+      "id": "10_Wealthy_Trader",
+      "cut": "coat",
+      "accessory": "pouch",
+      "items": [
+        {
+          "id": "10_Wealthy_Trader__Top",
+          "slot": "Top",
+          "file": "Items/10_Wealthy_Trader__Top.glb",
+          "hide_body": [
+            "Body_Torso",
+            "Body_Upperarm_L",
+            "Body_Upperarm_R",
+            "Body_Forearm_L",
+            "Body_Forearm_R"
+          ],
+          "triangles": 748,
+          "vertices": 444
+        },
+        {
+          "id": "10_Wealthy_Trader__Trousers",
+          "slot": "Trousers",
+          "file": "Items/10_Wealthy_Trader__Trousers.glb",
+          "hide_body": [
+            "Body_Hips",
+            "Body_Thigh_L",
+            "Body_Thigh_R",
+            "Body_Shin_L",
+            "Body_Shin_R"
+          ],
+          "triangles": 420,
+          "vertices": 225
+        },
+        {
+          "id": "10_Wealthy_Trader__Boots",
+          "slot": "Boots",
+          "file": "Items/10_Wealthy_Trader__Boots.glb",
+          "hide_body": [
+            "Body_Foot_L",
+            "Body_Foot_R"
+          ],
+          "triangles": 296,
+          "vertices": 162
+        },
+        {
+          "id": "10_Wealthy_Trader__Belt",
+          "slot": "Belt",
+          "file": "Items/10_Wealthy_Trader__Belt.glb",
+          "hide_body": [],
+          "triangles": 72,
+          "vertices": 64
+        },
+        {
+          "id": "10_Wealthy_Trader__Accessory",
+          "slot": "Accessory",
+          "file": "Items/10_Wealthy_Trader__Accessory.glb",
+          "hide_body": [],
+          "triangles": 36,
+          "vertices": 24
+        }
+      ]
+    },
+    {
+      "id": "11_Scholar",
+      "cut": "longcoat",
+      "accessory": "book",
+      "items": [
+        {
+          "id": "11_Scholar__Top",
+          "slot": "Top",
+          "file": "Items/11_Scholar__Top.glb",
+          "hide_body": [
+            "Body_Torso",
+            "Body_Upperarm_L",
+            "Body_Upperarm_R",
+            "Body_Forearm_L",
+            "Body_Forearm_R"
+          ],
+          "triangles": 748,
+          "vertices": 444
+        },
+        {
+          "id": "11_Scholar__Trousers",
+          "slot": "Trousers",
+          "file": "Items/11_Scholar__Trousers.glb",
+          "hide_body": [
+            "Body_Hips",
+            "Body_Thigh_L",
+            "Body_Thigh_R",
+            "Body_Shin_L",
+            "Body_Shin_R"
+          ],
+          "triangles": 452,
+          "vertices": 245
+        },
+        {
+          "id": "11_Scholar__Boots",
+          "slot": "Boots",
+          "file": "Items/11_Scholar__Boots.glb",
+          "hide_body": [
+            "Body_Foot_L",
+            "Body_Foot_R"
+          ],
+          "triangles": 392,
+          "vertices": 218
+        },
+        {
+          "id": "11_Scholar__Belt",
+          "slot": "Belt",
+          "file": "Items/11_Scholar__Belt.glb",
+          "hide_body": [],
+          "triangles": 72,
+          "vertices": 64
+        },
+        {
+          "id": "11_Scholar__Accessory",
+          "slot": "Accessory",
+          "file": "Items/11_Scholar__Accessory.glb",
+          "hide_body": [],
+          "triangles": 36,
+          "vertices": 24
+        }
+      ]
+    },
+    {
+      "id": "12_Scribe",
+      "cut": "vest",
+      "accessory": "pouch",
+      "items": [
+        {
+          "id": "12_Scribe__Top",
+          "slot": "Top",
+          "file": "Items/12_Scribe__Top.glb",
+          "hide_body": [
+            "Body_Torso",
+            "Body_Upperarm_L",
+            "Body_Upperarm_R",
+            "Body_Forearm_L",
+            "Body_Forearm_R"
+          ],
+          "triangles": 716,
+          "vertices": 424
+        },
+        {
+          "id": "12_Scribe__Trousers",
+          "slot": "Trousers",
+          "file": "Items/12_Scribe__Trousers.glb",
+          "hide_body": [
+            "Body_Hips",
+            "Body_Thigh_L",
+            "Body_Thigh_R",
+            "Body_Shin_L",
+            "Body_Shin_R"
+          ],
+          "triangles": 532,
+          "vertices": 285
+        },
+        {
+          "id": "12_Scribe__Boots",
+          "slot": "Boots",
+          "file": "Items/12_Scribe__Boots.glb",
+          "hide_body": [
+            "Body_Foot_L",
+            "Body_Foot_R"
+          ],
+          "triangles": 392,
+          "vertices": 218
+        },
+        {
+          "id": "12_Scribe__Belt",
+          "slot": "Belt",
+          "file": "Items/12_Scribe__Belt.glb",
+          "hide_body": [],
+          "triangles": 72,
+          "vertices": 64
+        },
+        {
+          "id": "12_Scribe__Accessory",
+          "slot": "Accessory",
+          "file": "Items/12_Scribe__Accessory.glb",
+          "hide_body": [],
+          "triangles": 36,
+          "vertices": 24
+        }
+      ]
+    },
+    {
+      "id": "13_Physician",
+      "cut": "stand",
+      "accessory": "satchel",
+      "items": [
+        {
+          "id": "13_Physician__Top",
+          "slot": "Top",
+          "file": "Items/13_Physician__Top.glb",
+          "hide_body": [
+            "Body_Torso",
+            "Body_Upperarm_L",
+            "Body_Upperarm_R",
+            "Body_Forearm_L",
+            "Body_Forearm_R"
+          ],
+          "triangles": 624,
+          "vertices": 384
+        },
+        {
+          "id": "13_Physician__Trousers",
+          "slot": "Trousers",
+          "file": "Items/13_Physician__Trousers.glb",
+          "hide_body": [
+            "Body_Hips",
+            "Body_Thigh_L",
+            "Body_Thigh_R",
+            "Body_Shin_L",
+            "Body_Shin_R"
+          ],
+          "triangles": 452,
+          "vertices": 245
+        },
+        {
+          "id": "13_Physician__Boots",
+          "slot": "Boots",
+          "file": "Items/13_Physician__Boots.glb",
+          "hide_body": [
+            "Body_Foot_L",
+            "Body_Foot_R"
+          ],
+          "triangles": 296,
+          "vertices": 162
+        },
+        {
+          "id": "13_Physician__Belt",
+          "slot": "Belt",
+          "file": "Items/13_Physician__Belt.glb",
+          "hide_body": [],
+          "triangles": 72,
+          "vertices": 64
+        },
+        {
+          "id": "13_Physician__Accessory",
+          "slot": "Accessory",
+          "file": "Items/13_Physician__Accessory.glb",
+          "hide_body": [],
+          "triangles": 52,
+          "vertices": 34
+        }
+      ]
+    },
+    {
+      "id": "14_Alchemist",
+      "cut": "asymmetric",
+      "accessory": "vials",
+      "items": [
+        {
+          "id": "14_Alchemist__Top",
+          "slot": "Top",
+          "file": "Items/14_Alchemist__Top.glb",
+          "hide_body": [
+            "Body_Torso",
+            "Body_Upperarm_L",
+            "Body_Upperarm_R",
+            "Body_Forearm_L",
+            "Body_Forearm_R"
+          ],
+          "triangles": 640,
+          "vertices": 394
+        },
+        {
+          "id": "14_Alchemist__Trousers",
+          "slot": "Trousers",
+          "file": "Items/14_Alchemist__Trousers.glb",
+          "hide_body": [
+            "Body_Hips",
+            "Body_Thigh_L",
+            "Body_Thigh_R",
+            "Body_Shin_L",
+            "Body_Shin_R"
+          ],
+          "triangles": 452,
+          "vertices": 245
+        },
+        {
+          "id": "14_Alchemist__Boots",
+          "slot": "Boots",
+          "file": "Items/14_Alchemist__Boots.glb",
+          "hide_body": [
+            "Body_Foot_L",
+            "Body_Foot_R"
+          ],
+          "triangles": 392,
+          "vertices": 218
+        },
+        {
+          "id": "14_Alchemist__Belt",
+          "slot": "Belt",
+          "file": "Items/14_Alchemist__Belt.glb",
+          "hide_body": [],
+          "triangles": 72,
+          "vertices": 64
+        },
+        {
+          "id": "14_Alchemist__Accessory",
+          "slot": "Accessory",
+          "file": "Items/14_Alchemist__Accessory.glb",
+          "hide_body": [],
+          "triangles": 168,
+          "vertices": 96
+        }
+      ]
+    },
+    {
+      "id": "15_Apprentice",
+      "cut": "shirt",
+      "accessory": "scarf",
+      "items": [
+        {
+          "id": "15_Apprentice__Top",
+          "slot": "Top",
+          "file": "Items/15_Apprentice__Top.glb",
+          "hide_body": [
+            "Body_Torso",
+            "Body_Upperarm_L",
+            "Body_Upperarm_R"
+          ],
+          "triangles": 380,
+          "vertices": 242
+        },
+        {
+          "id": "15_Apprentice__Trousers",
+          "slot": "Trousers",
+          "file": "Items/15_Apprentice__Trousers.glb",
+          "hide_body": [
+            "Body_Hips",
+            "Body_Thigh_L",
+            "Body_Thigh_R",
+            "Body_Shin_L",
+            "Body_Shin_R"
+          ],
+          "triangles": 420,
+          "vertices": 225
+        },
+        {
+          "id": "15_Apprentice__Boots",
+          "slot": "Boots",
+          "file": "Items/15_Apprentice__Boots.glb",
+          "hide_body": [
+            "Body_Foot_L",
+            "Body_Foot_R"
+          ],
+          "triangles": 392,
+          "vertices": 218
+        },
+        {
+          "id": "15_Apprentice__Belt",
+          "slot": "Belt",
+          "file": "Items/15_Apprentice__Belt.glb",
+          "hide_body": [],
+          "triangles": 72,
+          "vertices": 64
+        },
+        {
+          "id": "15_Apprentice__Accessory",
+          "slot": "Accessory",
+          "file": "Items/15_Apprentice__Accessory.glb",
+          "hide_body": [],
+          "triangles": 64,
+          "vertices": 58
+        }
+      ]
+    },
+    {
+      "id": "16_Ranger",
+      "cut": "leather",
+      "accessory": "quiver",
+      "items": [
+        {
+          "id": "16_Ranger__Top",
+          "slot": "Top",
+          "file": "Items/16_Ranger__Top.glb",
+          "hide_body": [
+            "Body_Torso",
+            "Body_Upperarm_L",
+            "Body_Upperarm_R",
+            "Body_Forearm_L",
+            "Body_Forearm_R"
+          ],
+          "triangles": 716,
+          "vertices": 424
+        },
+        {
+          "id": "16_Ranger__Trousers",
+          "slot": "Trousers",
+          "file": "Items/16_Ranger__Trousers.glb",
+          "hide_body": [
+            "Body_Hips",
+            "Body_Thigh_L",
+            "Body_Thigh_R",
+            "Body_Shin_L",
+            "Body_Shin_R"
+          ],
+          "triangles": 420,
+          "vertices": 225
+        },
+        {
+          "id": "16_Ranger__Boots",
+          "slot": "Boots",
+          "file": "Items/16_Ranger__Boots.glb",
+          "hide_body": [
+            "Body_Foot_L",
+            "Body_Foot_R"
+          ],
+          "triangles": 296,
+          "vertices": 162
+        },
+        {
+          "id": "16_Ranger__Belt",
+          "slot": "Belt",
+          "file": "Items/16_Ranger__Belt.glb",
+          "hide_body": [],
+          "triangles": 72,
+          "vertices": 64
+        },
+        {
+          "id": "16_Ranger__Accessory",
+          "slot": "Accessory",
+          "file": "Items/16_Ranger__Accessory.glb",
+          "hide_body": [],
+          "triangles": 140,
+          "vertices": 86
+        },
+        {
+          "id": "16_Ranger__Gloves",
+          "slot": "Gloves",
+          "file": "Items/16_Ranger__Gloves.glb",
+          "hide_body": [
+            "Body_Hand_L",
+            "Body_Hand_R"
+          ],
+          "triangles": 2408,
+          "vertices": 1216
+        }
+      ]
+    },
+    {
+      "id": "17_Scout",
+      "cut": "sleeveless",
+      "accessory": "harness",
+      "items": [
+        {
+          "id": "17_Scout__Top",
+          "slot": "Top",
+          "file": "Items/17_Scout__Top.glb",
+          "hide_body": [
+            "Body_Torso"
+          ],
+          "triangles": 168,
+          "vertices": 134
+        },
+        {
+          "id": "17_Scout__Trousers",
+          "slot": "Trousers",
+          "file": "Items/17_Scout__Trousers.glb",
+          "hide_body": [
+            "Body_Hips",
+            "Body_Thigh_L",
+            "Body_Thigh_R",
+            "Body_Shin_L",
+            "Body_Shin_R"
+          ],
+          "triangles": 452,
+          "vertices": 245
+        },
+        {
+          "id": "17_Scout__Boots",
+          "slot": "Boots",
+          "file": "Items/17_Scout__Boots.glb",
+          "hide_body": [
+            "Body_Foot_L",
+            "Body_Foot_R"
+          ],
+          "triangles": 392,
+          "vertices": 218
+        },
+        {
+          "id": "17_Scout__Belt",
+          "slot": "Belt",
+          "file": "Items/17_Scout__Belt.glb",
+          "hide_body": [],
+          "triangles": 72,
+          "vertices": 64
+        },
+        {
+          "id": "17_Scout__Accessory",
+          "slot": "Accessory",
+          "file": "Items/17_Scout__Accessory.glb",
+          "hide_body": [],
+          "triangles": 32,
+          "vertices": 20
+        },
+        {
+          "id": "17_Scout__Gloves",
+          "slot": "Gloves",
+          "file": "Items/17_Scout__Gloves.glb",
+          "hide_body": [
+            "Body_Hand_L",
+            "Body_Hand_R"
+          ],
+          "triangles": 2408,
+          "vertices": 1216
+        }
+      ]
+    },
+    {
+      "id": "18_Hunter",
+      "cut": "coat",
+      "accessory": "fur",
+      "items": [
+        {
+          "id": "18_Hunter__Top",
+          "slot": "Top",
+          "file": "Items/18_Hunter__Top.glb",
+          "hide_body": [
+            "Body_Torso",
+            "Body_Upperarm_L",
+            "Body_Upperarm_R",
+            "Body_Forearm_L",
+            "Body_Forearm_R"
+          ],
+          "triangles": 748,
+          "vertices": 444
+        },
+        {
+          "id": "18_Hunter__Trousers",
+          "slot": "Trousers",
+          "file": "Items/18_Hunter__Trousers.glb",
+          "hide_body": [
+            "Body_Hips",
+            "Body_Thigh_L",
+            "Body_Thigh_R",
+            "Body_Shin_L",
+            "Body_Shin_R"
+          ],
+          "triangles": 532,
+          "vertices": 285
+        },
+        {
+          "id": "18_Hunter__Boots",
+          "slot": "Boots",
+          "file": "Items/18_Hunter__Boots.glb",
+          "hide_body": [
+            "Body_Foot_L",
+            "Body_Foot_R"
+          ],
+          "triangles": 392,
+          "vertices": 218
+        },
+        {
+          "id": "18_Hunter__Belt",
+          "slot": "Belt",
+          "file": "Items/18_Hunter__Belt.glb",
+          "hide_body": [],
+          "triangles": 72,
+          "vertices": 64
+        },
+        {
+          "id": "18_Hunter__Accessory",
+          "slot": "Accessory",
+          "file": "Items/18_Hunter__Accessory.glb",
+          "hide_body": [],
+          "triangles": 64,
+          "vertices": 58
+        },
+        {
+          "id": "18_Hunter__Gloves",
+          "slot": "Gloves",
+          "file": "Items/18_Hunter__Gloves.glb",
+          "hide_body": [
+            "Body_Hand_L",
+            "Body_Hand_R"
+          ],
+          "triangles": 2408,
+          "vertices": 1216
+        }
+      ]
+    },
+    {
+      "id": "19_Trapper",
+      "cut": "rolled",
+      "accessory": "pouch",
+      "items": [
+        {
+          "id": "19_Trapper__Top",
+          "slot": "Top",
+          "file": "Items/19_Trapper__Top.glb",
+          "hide_body": [
+            "Body_Torso",
+            "Body_Upperarm_L",
+            "Body_Upperarm_R"
+          ],
+          "triangles": 380,
+          "vertices": 242
+        },
+        {
+          "id": "19_Trapper__Trousers",
+          "slot": "Trousers",
+          "file": "Items/19_Trapper__Trousers.glb",
+          "hide_body": [
+            "Body_Hips",
+            "Body_Thigh_L",
+            "Body_Thigh_R",
+            "Body_Shin_L",
+            "Body_Shin_R"
+          ],
+          "triangles": 452,
+          "vertices": 245
+        },
+        {
+          "id": "19_Trapper__Boots",
+          "slot": "Boots",
+          "file": "Items/19_Trapper__Boots.glb",
+          "hide_body": [
+            "Body_Foot_L",
+            "Body_Foot_R"
+          ],
+          "triangles": 296,
+          "vertices": 162
+        },
+        {
+          "id": "19_Trapper__Belt",
+          "slot": "Belt",
+          "file": "Items/19_Trapper__Belt.glb",
+          "hide_body": [],
+          "triangles": 72,
+          "vertices": 64
+        },
+        {
+          "id": "19_Trapper__Accessory",
+          "slot": "Accessory",
+          "file": "Items/19_Trapper__Accessory.glb",
+          "hide_body": [],
+          "triangles": 36,
+          "vertices": 24
+        }
+      ]
+    },
+    {
+      "id": "20_Courier",
+      "cut": "doublet",
+      "accessory": "scarf",
+      "items": [
+        {
+          "id": "20_Courier__Top",
+          "slot": "Top",
+          "file": "Items/20_Courier__Top.glb",
+          "hide_body": [
+            "Body_Torso",
+            "Body_Upperarm_L",
+            "Body_Upperarm_R",
+            "Body_Forearm_L",
+            "Body_Forearm_R"
+          ],
+          "triangles": 716,
+          "vertices": 424
+        },
+        {
+          "id": "20_Courier__Trousers",
+          "slot": "Trousers",
+          "file": "Items/20_Courier__Trousers.glb",
+          "hide_body": [
+            "Body_Hips",
+            "Body_Thigh_L",
+            "Body_Thigh_R",
+            "Body_Shin_L",
+            "Body_Shin_R"
+          ],
+          "triangles": 452,
+          "vertices": 245
+        },
+        {
+          "id": "20_Courier__Boots",
+          "slot": "Boots",
+          "file": "Items/20_Courier__Boots.glb",
+          "hide_body": [
+            "Body_Foot_L",
+            "Body_Foot_R"
+          ],
+          "triangles": 392,
+          "vertices": 218
+        },
+        {
+          "id": "20_Courier__Belt",
+          "slot": "Belt",
+          "file": "Items/20_Courier__Belt.glb",
+          "hide_body": [],
+          "triangles": 72,
+          "vertices": 64
+        },
+        {
+          "id": "20_Courier__Accessory",
+          "slot": "Accessory",
+          "file": "Items/20_Courier__Accessory.glb",
+          "hide_body": [],
+          "triangles": 64,
+          "vertices": 58
+        }
+      ]
+    },
+    {
+      "id": "21_Town_Guard",
+      "cut": "tabard",
+      "accessory": "shoulder",
+      "items": [
+        {
+          "id": "21_Town_Guard__Top",
+          "slot": "Top",
+          "file": "Items/21_Town_Guard__Top.glb",
+          "hide_body": [
+            "Body_Torso",
+            "Body_Upperarm_L",
+            "Body_Upperarm_R",
+            "Body_Forearm_L",
+            "Body_Forearm_R"
+          ],
+          "triangles": 640,
+          "vertices": 376
+        },
+        {
+          "id": "21_Town_Guard__Trousers",
+          "slot": "Trousers",
+          "file": "Items/21_Town_Guard__Trousers.glb",
+          "hide_body": [
+            "Body_Hips",
+            "Body_Thigh_L",
+            "Body_Thigh_R",
+            "Body_Shin_L",
+            "Body_Shin_R"
+          ],
+          "triangles": 420,
+          "vertices": 225
+        },
+        {
+          "id": "21_Town_Guard__Boots",
+          "slot": "Boots",
+          "file": "Items/21_Town_Guard__Boots.glb",
+          "hide_body": [
+            "Body_Foot_L",
+            "Body_Foot_R"
+          ],
+          "triangles": 392,
+          "vertices": 218
+        },
+        {
+          "id": "21_Town_Guard__Belt",
+          "slot": "Belt",
+          "file": "Items/21_Town_Guard__Belt.glb",
+          "hide_body": [],
+          "triangles": 72,
+          "vertices": 64
+        },
+        {
+          "id": "21_Town_Guard__Accessory",
+          "slot": "Accessory",
+          "file": "Items/21_Town_Guard__Accessory.glb",
+          "hide_body": [],
+          "triangles": 40,
+          "vertices": 24
+        },
+        {
+          "id": "21_Town_Guard__Gloves",
+          "slot": "Gloves",
+          "file": "Items/21_Town_Guard__Gloves.glb",
+          "hide_body": [
+            "Body_Hand_L",
+            "Body_Hand_R"
+          ],
+          "triangles": 2408,
+          "vertices": 1216
+        }
+      ]
+    },
+    {
+      "id": "22_Night_Watch",
+      "cut": "quilted",
+      "accessory": "cape",
+      "items": [
+        {
+          "id": "22_Night_Watch__Top",
+          "slot": "Top",
+          "file": "Items/22_Night_Watch__Top.glb",
+          "hide_body": [
+            "Body_Torso",
+            "Body_Upperarm_L",
+            "Body_Upperarm_R",
+            "Body_Forearm_L",
+            "Body_Forearm_R"
+          ],
+          "triangles": 804,
+          "vertices": 504
+        },
+        {
+          "id": "22_Night_Watch__Trousers",
+          "slot": "Trousers",
+          "file": "Items/22_Night_Watch__Trousers.glb",
+          "hide_body": [
+            "Body_Hips",
+            "Body_Thigh_L",
+            "Body_Thigh_R",
+            "Body_Shin_L",
+            "Body_Shin_R"
+          ],
+          "triangles": 420,
+          "vertices": 225
+        },
+        {
+          "id": "22_Night_Watch__Boots",
+          "slot": "Boots",
+          "file": "Items/22_Night_Watch__Boots.glb",
+          "hide_body": [
+            "Body_Foot_L",
+            "Body_Foot_R"
+          ],
+          "triangles": 296,
+          "vertices": 162
+        },
+        {
+          "id": "22_Night_Watch__Belt",
+          "slot": "Belt",
+          "file": "Items/22_Night_Watch__Belt.glb",
+          "hide_body": [],
+          "triangles": 72,
+          "vertices": 64
+        },
+        {
+          "id": "22_Night_Watch__Accessory",
+          "slot": "Accessory",
+          "file": "Items/22_Night_Watch__Accessory.glb",
+          "hide_body": [],
+          "triangles": 12,
+          "vertices": 12
+        },
+        {
+          "id": "22_Night_Watch__Gloves",
+          "slot": "Gloves",
+          "file": "Items/22_Night_Watch__Gloves.glb",
+          "hide_body": [
+            "Body_Hand_L",
+            "Body_Hand_R"
+          ],
+          "triangles": 2408,
+          "vertices": 1216
+        }
+      ]
+    },
+    {
+      "id": "23_Militia",
+      "cut": "brigandine",
+      "accessory": "shoulder",
+      "items": [
+        {
+          "id": "23_Militia__Top",
+          "slot": "Top",
+          "file": "Items/23_Militia__Top.glb",
+          "hide_body": [
+            "Body_Torso",
+            "Body_Upperarm_L",
+            "Body_Upperarm_R",
+            "Body_Forearm_L",
+            "Body_Forearm_R"
+          ],
+          "triangles": 896,
+          "vertices": 544
+        },
+        {
+          "id": "23_Militia__Trousers",
+          "slot": "Trousers",
+          "file": "Items/23_Militia__Trousers.glb",
+          "hide_body": [
+            "Body_Hips",
+            "Body_Thigh_L",
+            "Body_Thigh_R",
+            "Body_Shin_L",
+            "Body_Shin_R"
+          ],
+          "triangles": 452,
+          "vertices": 245
+        },
+        {
+          "id": "23_Militia__Boots",
+          "slot": "Boots",
+          "file": "Items/23_Militia__Boots.glb",
+          "hide_body": [
+            "Body_Foot_L",
+            "Body_Foot_R"
+          ],
+          "triangles": 392,
+          "vertices": 218
+        },
+        {
+          "id": "23_Militia__Belt",
+          "slot": "Belt",
+          "file": "Items/23_Militia__Belt.glb",
+          "hide_body": [],
+          "triangles": 72,
+          "vertices": 64
+        },
+        {
+          "id": "23_Militia__Accessory",
+          "slot": "Accessory",
+          "file": "Items/23_Militia__Accessory.glb",
+          "hide_body": [],
+          "triangles": 40,
+          "vertices": 24
+        },
+        {
+          "id": "23_Militia__Gloves",
+          "slot": "Gloves",
+          "file": "Items/23_Militia__Gloves.glb",
+          "hide_body": [
+            "Body_Hand_L",
+            "Body_Hand_R"
+          ],
+          "triangles": 2408,
+          "vertices": 1216
+        }
+      ]
+    },
+    {
+      "id": "24_Knight",
+      "cut": "cuirass",
+      "accessory": "cape",
+      "items": [
+        {
+          "id": "24_Knight__Top",
+          "slot": "Top",
+          "file": "Items/24_Knight__Top.glb",
+          "hide_body": [
+            "Body_Torso",
+            "Body_Upperarm_L",
+            "Body_Upperarm_R",
+            "Body_Forearm_L",
+            "Body_Forearm_R"
+          ],
+          "triangles": 760,
+          "vertices": 450
+        },
+        {
+          "id": "24_Knight__Trousers",
+          "slot": "Trousers",
+          "file": "Items/24_Knight__Trousers.glb",
+          "hide_body": [
+            "Body_Hips",
+            "Body_Thigh_L",
+            "Body_Thigh_R",
+            "Body_Shin_L",
+            "Body_Shin_R"
+          ],
+          "triangles": 532,
+          "vertices": 285
+        },
+        {
+          "id": "24_Knight__Boots",
+          "slot": "Boots",
+          "file": "Items/24_Knight__Boots.glb",
+          "hide_body": [
+            "Body_Foot_L",
+            "Body_Foot_R"
+          ],
+          "triangles": 392,
+          "vertices": 218
+        },
+        {
+          "id": "24_Knight__Belt",
+          "slot": "Belt",
+          "file": "Items/24_Knight__Belt.glb",
+          "hide_body": [],
+          "triangles": 72,
+          "vertices": 64
+        },
+        {
+          "id": "24_Knight__Accessory",
+          "slot": "Accessory",
+          "file": "Items/24_Knight__Accessory.glb",
+          "hide_body": [],
+          "triangles": 12,
+          "vertices": 12
+        },
+        {
+          "id": "24_Knight__Gloves",
+          "slot": "Gloves",
+          "file": "Items/24_Knight__Gloves.glb",
+          "hide_body": [
+            "Body_Hand_L",
+            "Body_Hand_R"
+          ],
+          "triangles": 2408,
+          "vertices": 1216
+        }
+      ]
+    },
+    {
+      "id": "25_Sellsword",
+      "cut": "leather",
+      "accessory": "shoulder",
+      "items": [
+        {
+          "id": "25_Sellsword__Top",
+          "slot": "Top",
+          "file": "Items/25_Sellsword__Top.glb",
+          "hide_body": [
+            "Body_Torso",
+            "Body_Upperarm_L",
+            "Body_Upperarm_R",
+            "Body_Forearm_L",
+            "Body_Forearm_R"
+          ],
+          "triangles": 716,
+          "vertices": 424
+        },
+        {
+          "id": "25_Sellsword__Trousers",
+          "slot": "Trousers",
+          "file": "Items/25_Sellsword__Trousers.glb",
+          "hide_body": [
+            "Body_Hips",
+            "Body_Thigh_L",
+            "Body_Thigh_R",
+            "Body_Shin_L",
+            "Body_Shin_R"
+          ],
+          "triangles": 452,
+          "vertices": 245
+        },
+        {
+          "id": "25_Sellsword__Boots",
+          "slot": "Boots",
+          "file": "Items/25_Sellsword__Boots.glb",
+          "hide_body": [
+            "Body_Foot_L",
+            "Body_Foot_R"
+          ],
+          "triangles": 296,
+          "vertices": 162
+        },
+        {
+          "id": "25_Sellsword__Belt",
+          "slot": "Belt",
+          "file": "Items/25_Sellsword__Belt.glb",
+          "hide_body": [],
+          "triangles": 72,
+          "vertices": 64
+        },
+        {
+          "id": "25_Sellsword__Accessory",
+          "slot": "Accessory",
+          "file": "Items/25_Sellsword__Accessory.glb",
+          "hide_body": [],
+          "triangles": 40,
+          "vertices": 24
+        },
+        {
+          "id": "25_Sellsword__Gloves",
+          "slot": "Gloves",
+          "file": "Items/25_Sellsword__Gloves.glb",
+          "hide_body": [
+            "Body_Hand_L",
+            "Body_Hand_R"
+          ],
+          "triangles": 2408,
+          "vertices": 1216
+        }
+      ]
+    },
+    {
+      "id": "26_Noble",
+      "cut": "puffed",
+      "accessory": "chain",
+      "items": [
+        {
+          "id": "26_Noble__Top",
+          "slot": "Top",
+          "file": "Items/26_Noble__Top.glb",
+          "hide_body": [
+            "Body_Torso",
+            "Body_Upperarm_L",
+            "Body_Upperarm_R",
+            "Body_Forearm_L",
+            "Body_Forearm_R"
+          ],
+          "triangles": 624,
+          "vertices": 384
+        },
+        {
+          "id": "26_Noble__Trousers",
+          "slot": "Trousers",
+          "file": "Items/26_Noble__Trousers.glb",
+          "hide_body": [
+            "Body_Hips",
+            "Body_Thigh_L",
+            "Body_Thigh_R",
+            "Body_Shin_L",
+            "Body_Shin_R"
+          ],
+          "triangles": 452,
+          "vertices": 245
+        },
+        {
+          "id": "26_Noble__Boots",
+          "slot": "Boots",
+          "file": "Items/26_Noble__Boots.glb",
+          "hide_body": [
+            "Body_Foot_L",
+            "Body_Foot_R"
+          ],
+          "triangles": 392,
+          "vertices": 218
+        },
+        {
+          "id": "26_Noble__Belt",
+          "slot": "Belt",
+          "file": "Items/26_Noble__Belt.glb",
+          "hide_body": [],
+          "triangles": 72,
+          "vertices": 64
+        },
+        {
+          "id": "26_Noble__Accessory",
+          "slot": "Accessory",
+          "file": "Items/26_Noble__Accessory.glb",
+          "hide_body": [],
+          "triangles": 72,
+          "vertices": 40
+        }
+      ]
+    },
+    {
+      "id": "27_Courtier",
+      "cut": "coat",
+      "accessory": "chain",
+      "items": [
+        {
+          "id": "27_Courtier__Top",
+          "slot": "Top",
+          "file": "Items/27_Courtier__Top.glb",
+          "hide_body": [
+            "Body_Torso",
+            "Body_Upperarm_L",
+            "Body_Upperarm_R",
+            "Body_Forearm_L",
+            "Body_Forearm_R"
+          ],
+          "triangles": 748,
+          "vertices": 444
+        },
+        {
+          "id": "27_Courtier__Trousers",
+          "slot": "Trousers",
+          "file": "Items/27_Courtier__Trousers.glb",
+          "hide_body": [
+            "Body_Hips",
+            "Body_Thigh_L",
+            "Body_Thigh_R",
+            "Body_Shin_L",
+            "Body_Shin_R"
+          ],
+          "triangles": 420,
+          "vertices": 225
+        },
+        {
+          "id": "27_Courtier__Boots",
+          "slot": "Boots",
+          "file": "Items/27_Courtier__Boots.glb",
+          "hide_body": [
+            "Body_Foot_L",
+            "Body_Foot_R"
+          ],
+          "triangles": 392,
+          "vertices": 218
+        },
+        {
+          "id": "27_Courtier__Belt",
+          "slot": "Belt",
+          "file": "Items/27_Courtier__Belt.glb",
+          "hide_body": [],
+          "triangles": 72,
+          "vertices": 64
+        },
+        {
+          "id": "27_Courtier__Accessory",
+          "slot": "Accessory",
+          "file": "Items/27_Courtier__Accessory.glb",
+          "hide_body": [],
+          "triangles": 72,
+          "vertices": 40
+        }
+      ]
+    },
+    {
+      "id": "28_Bard",
+      "cut": "quartered",
+      "accessory": "satchel",
+      "items": [
+        {
+          "id": "28_Bard__Top",
+          "slot": "Top",
+          "file": "Items/28_Bard__Top.glb",
+          "hide_body": [
+            "Body_Torso",
+            "Body_Upperarm_L",
+            "Body_Upperarm_R",
+            "Body_Forearm_L",
+            "Body_Forearm_R"
+          ],
+          "triangles": 608,
+          "vertices": 356
+        },
+        {
+          "id": "28_Bard__Trousers",
+          "slot": "Trousers",
+          "file": "Items/28_Bard__Trousers.glb",
+          "hide_body": [
+            "Body_Hips",
+            "Body_Thigh_L",
+            "Body_Thigh_R",
+            "Body_Shin_L",
+            "Body_Shin_R"
+          ],
+          "triangles": 420,
+          "vertices": 225
+        },
+        {
+          "id": "28_Bard__Boots",
+          "slot": "Boots",
+          "file": "Items/28_Bard__Boots.glb",
+          "hide_body": [
+            "Body_Foot_L",
+            "Body_Foot_R"
+          ],
+          "triangles": 296,
+          "vertices": 162
+        },
+        {
+          "id": "28_Bard__Belt",
+          "slot": "Belt",
+          "file": "Items/28_Bard__Belt.glb",
+          "hide_body": [],
+          "triangles": 72,
+          "vertices": 64
+        },
+        {
+          "id": "28_Bard__Accessory",
+          "slot": "Accessory",
+          "file": "Items/28_Bard__Accessory.glb",
+          "hide_body": [],
+          "triangles": 52,
+          "vertices": 34
+        }
+      ]
+    },
+    {
+      "id": "29_Pilgrim",
+      "cut": "stand",
+      "accessory": "cape",
+      "items": [
+        {
+          "id": "29_Pilgrim__Top",
+          "slot": "Top",
+          "file": "Items/29_Pilgrim__Top.glb",
+          "hide_body": [
+            "Body_Torso",
+            "Body_Upperarm_L",
+            "Body_Upperarm_R",
+            "Body_Forearm_L",
+            "Body_Forearm_R"
+          ],
+          "triangles": 624,
+          "vertices": 384
+        },
+        {
+          "id": "29_Pilgrim__Trousers",
+          "slot": "Trousers",
+          "file": "Items/29_Pilgrim__Trousers.glb",
+          "hide_body": [
+            "Body_Hips",
+            "Body_Thigh_L",
+            "Body_Thigh_R",
+            "Body_Shin_L",
+            "Body_Shin_R"
+          ],
+          "triangles": 452,
+          "vertices": 245
+        },
+        {
+          "id": "29_Pilgrim__Boots",
+          "slot": "Boots",
+          "file": "Items/29_Pilgrim__Boots.glb",
+          "hide_body": [
+            "Body_Foot_L",
+            "Body_Foot_R"
+          ],
+          "triangles": 392,
+          "vertices": 218
+        },
+        {
+          "id": "29_Pilgrim__Belt",
+          "slot": "Belt",
+          "file": "Items/29_Pilgrim__Belt.glb",
+          "hide_body": [],
+          "triangles": 72,
+          "vertices": 64
+        },
+        {
+          "id": "29_Pilgrim__Accessory",
+          "slot": "Accessory",
+          "file": "Items/29_Pilgrim__Accessory.glb",
+          "hide_body": [],
+          "triangles": 12,
+          "vertices": 12
+        }
+      ]
+    },
+    {
+      "id": "30_Desert_Traveller",
+      "cut": "sleeveless",
+      "accessory": "scarf",
+      "items": [
+        {
+          "id": "30_Desert_Traveller__Top",
+          "slot": "Top",
+          "file": "Items/30_Desert_Traveller__Top.glb",
+          "hide_body": [
+            "Body_Torso"
+          ],
+          "triangles": 168,
+          "vertices": 134
+        },
+        {
+          "id": "30_Desert_Traveller__Trousers",
+          "slot": "Trousers",
+          "file": "Items/30_Desert_Traveller__Trousers.glb",
+          "hide_body": [
+            "Body_Hips",
+            "Body_Thigh_L",
+            "Body_Thigh_R",
+            "Body_Shin_L",
+            "Body_Shin_R"
+          ],
+          "triangles": 532,
+          "vertices": 285
+        },
+        {
+          "id": "30_Desert_Traveller__Boots",
+          "slot": "Boots",
+          "file": "Items/30_Desert_Traveller__Boots.glb",
+          "hide_body": [
+            "Body_Foot_L",
+            "Body_Foot_R"
+          ],
+          "triangles": 392,
+          "vertices": 218
+        },
+        {
+          "id": "30_Desert_Traveller__Belt",
+          "slot": "Belt",
+          "file": "Items/30_Desert_Traveller__Belt.glb",
+          "hide_body": [],
+          "triangles": 72,
+          "vertices": 64
+        },
+        {
+          "id": "30_Desert_Traveller__Accessory",
+          "slot": "Accessory",
+          "file": "Items/30_Desert_Traveller__Accessory.glb",
+          "hide_body": [],
+          "triangles": 64,
+          "vertices": 58
+        }
+      ]
+    },
+    {
+      "id": "31_Fighter",
+      "cut": "cuirass",
+      "accessory": "shoulder",
+      "items": [
+        {
+          "id": "31_Fighter__Top",
+          "slot": "Top",
+          "file": "Items/31_Fighter__Top.glb",
+          "hide_body": [
+            "Body_Torso",
+            "Body_Upperarm_L",
+            "Body_Upperarm_R",
+            "Body_Forearm_L",
+            "Body_Forearm_R"
+          ],
+          "triangles": 760,
+          "vertices": 450
+        },
+        {
+          "id": "31_Fighter__Trousers",
+          "slot": "Trousers",
+          "file": "Items/31_Fighter__Trousers.glb",
+          "hide_body": [
+            "Body_Hips",
+            "Body_Thigh_L",
+            "Body_Thigh_R",
+            "Body_Shin_L",
+            "Body_Shin_R"
+          ],
+          "triangles": 492,
+          "vertices": 269
+        },
+        {
+          "id": "31_Fighter__Boots",
+          "slot": "Boots",
+          "file": "Items/31_Fighter__Boots.glb",
+          "hide_body": [
+            "Body_Foot_L",
+            "Body_Foot_R"
+          ],
+          "triangles": 296,
+          "vertices": 162
+        },
+        {
+          "id": "31_Fighter__Belt",
+          "slot": "Belt",
+          "file": "Items/31_Fighter__Belt.glb",
+          "hide_body": [],
+          "triangles": 72,
+          "vertices": 64
+        },
+        {
+          "id": "31_Fighter__Accessory",
+          "slot": "Accessory",
+          "file": "Items/31_Fighter__Accessory.glb",
+          "hide_body": [],
+          "triangles": 40,
+          "vertices": 24
+        },
+        {
+          "id": "31_Fighter__Gloves",
+          "slot": "Gloves",
+          "file": "Items/31_Fighter__Gloves.glb",
+          "hide_body": [
+            "Body_Hand_L",
+            "Body_Hand_R"
+          ],
+          "triangles": 2408,
+          "vertices": 1216
+        },
+        {
+          "id": "31_Fighter__Helmet",
+          "slot": "Helmet",
+          "file": "Items/31_Fighter__Helmet.glb",
+          "hide_body": [],
+          "triangles": 250,
+          "vertices": 138
+        }
+      ]
+    }
+  ],
+  "weapons": [
+    {
+      "id": "Fighter_Arming_Sword__Equipped",
+      "file": "Weapons/Fighter_Arming_Sword__Equipped.glb",
+      "standalone": "Weapons/Fighter_Arming_Sword.glb",
+      "slot": "main_hand",
+      "bone": "Hand.R"
+    },
+    {
+      "id": "Fighter_Battle_Axe__Equipped",
+      "file": "Weapons/Fighter_Battle_Axe__Equipped.glb",
+      "standalone": "Weapons/Fighter_Battle_Axe.glb",
+      "slot": "main_hand",
+      "bone": "Hand.R"
+    },
+    {
+      "id": "Fighter_Kite_Shield__Equipped",
+      "file": "Weapons/Fighter_Kite_Shield__Equipped.glb",
+      "standalone": "Weapons/Fighter_Kite_Shield.glb",
+      "slot": "off_hand",
+      "bone": "Hand.L"
+    }
+  ]
+}

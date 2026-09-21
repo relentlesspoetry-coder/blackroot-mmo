@@ -40,7 +40,7 @@ function sanitizeLook(raw) {
   const o = raw && typeof raw === 'object' ? raw : {};
   const idx = (v, max, d) => { const n = Math.floor(Number(v)); return Number.isFinite(n) && n >= 0 && n <= max ? n : d; };
   const col = (v, d) => (typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v)) ? v.toLowerCase() : d;
-  return { hair: idx(o.hair, 30, 9), hairColor: col(o.hairColor, '#4a2e1a'), skin: col(o.skin, '#cba281'), outfit: idx(o.outfit, 30, 1) };
+  return { hair: idx(o.hair, 30, 9), hairColor: col(o.hairColor, '#4a2e1a'), skin: col(o.skin, '#cba281'), outfit: idx(o.outfit, 31, 31) };
 }
 
 function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
