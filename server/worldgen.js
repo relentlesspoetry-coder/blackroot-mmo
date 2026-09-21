@@ -379,3 +379,84 @@ export function caveOutline(cav, bounds, opts = {}) {
 
   return simplify(best).map(p => ({ x: +p[0].toFixed(1), z: +p[1].toFixed(1) }));
 }
+
+// ---------------------------------------------------------------------------
+// The world's outline. Two zones stacked north/south each have their own
+// natural boundary polygon; the world's boundary is the two joined into one
+// (each loses the arc that faces the seam, and short bridges close the sides)
+// and then roughened: subdivided every few metres and pushed OUTWARD by
+// layered noise so the mountain wall wanders in bays and headlands instead of
+// running in straight edges. Only outward, so nothing authored inside either
+// zone ends up in the rock.
+// ---------------------------------------------------------------------------
+function signedArea(poly) { let a = 0; for (let i = 0; i < poly.length; i++) { const p = poly[i], q = poly[(i + 1) % poly.length]; a += p.x * q.z - q.x * p.z; } return a / 2; }
+function ccw(poly) { return signedArea(poly) > 0 ? poly.slice() : poly.slice().reverse(); }
+export function mergeOutlines(north, south, seamZ, keep = 40) {
+  // Both counter-clockwise (in x/z). Drop each polygon's points that face the
+  // seam, then walk north's remaining arc and south's remaining arc so the
+  // result is one loop: north arc (west -> east along its far side), bridge,
+  // south arc, bridge back.
+  const N = ccw(north).filter(p => p.z < seamZ - keep), S = ccw(south).filter(p => p.z > seamZ + keep);
+  // rotate each arc so it starts at its end nearest the seam on one side: for
+  // the north arc start at the south-west-most kept point and go around the
+  // top to the south-east-most; south arc from north-east to north-west.
+  const rot = (arr, startIdx) => arr.slice(startIdx).concat(arr.slice(0, startIdx));
+  const nIdx = N.reduce((b, p, i) => (p.z - p.x * 0.3 > N[b].z - N[b].x * 0.3 ? i : b), 0);      // SW-most
+  let n = rot(N, nIdx);
+  // ensure it runs west->north->east (x increasing over the top): if the next point heads south-east, reverse
+  if (n[1].z > n[0].z) n = [n[0]].concat(n.slice(1).reverse());
+  const sIdx = S.reduce((b, p, i) => (p.z + p.x * 0.3 < S[b].z + S[b].x * 0.3 ? i : b), 0);      // NE-most
+  let sArr = rot(S, sIdx);
+  if (sArr[1].z < sArr[0].z) sArr = [sArr[0]].concat(sArr.slice(1).reverse());
+  return n.concat(sArr).map(p => ({ x: p.x, z: p.z }));
+}
+export function roughenOutline(poly, seed, opts = {}) {
+  const step = opts.step || 5, big = opts.big || 18, mid = opts.mid || 5, small = opts.small || 1.6;
+  const rng = mulberry32(seed);
+  const lat = (n) => { const a = []; for (let i = 0; i < n; i++) a.push(rng()); return a; };
+  const L1 = lat(24), L2 = lat(96), L3 = lat(384);
+  const per = (L, u) => { const n = L.length, x = ((u % 1) + 1) % 1 * n, i = Math.floor(x), f = x - i, t = f * f * (3 - 2 * f); return L[i % n] * (1 - t) + L[(i + 1) % n] * t; };
+  const P = ccw(poly), N = P.length;
+  let total = 0; const cum = [0];
+  for (let i = 0; i < N; i++) { const a = P[i], b = P[(i + 1) % N]; total += Math.hypot(b.x - a.x, b.z - a.z); cum.push(total); }
+  let cx = 0, cz = 0; for (const p of P) { cx += p.x; cz += p.z; } cx /= N; cz /= N;
+  const out = [];
+  for (let i = 0; i < N; i++) {
+    const a = P[i], b = P[(i + 1) % N], len = Math.hypot(b.x - a.x, b.z - a.z), segs = Math.max(1, Math.round(len / step));
+    // outward normal of this edge (polygon is ccw, so the left of the edge is inside)
+    let nx = (b.z - a.z) / len, nz = -(b.x - a.x) / len;
+    if ((a.x + b.x) / 2 * nx + (a.z + b.z) / 2 * nz < cx * nx + cz * nz) { nx = -nx; nz = -nz; }
+    for (let s = 0; s < segs; s++) {
+      const t = s / segs, u = (cum[i] + len * t) / total;
+      const x = a.x + (b.x - a.x) * t, z = a.z + (b.z - a.z) * t;
+      // layered, purely outward: broad bays, mid-size shoulders, small crags
+      const d = Math.max(0, per(L1, u) - 0.3) / 0.7 * big + per(L2, u) * mid + per(L3, u) * small;
+      out.push({ x: +(x + nx * d).toFixed(1), z: +(z + nz * d).toFixed(1) });
+    }
+  }
+  return out;
+}
+// Forest for the world's edge: the bays the roughened outline opened up and a
+// dense band inside the wall, so the border reads as deep woods rather than a
+// bare strip of grass in front of rock.
+export function generateEdgeForest(zone, innerPolys, seed, band = 32) {
+  const b = zone.bounds, rng = mulberry32(seed), out = [], trees = zone._trees || [];
+  const ring = zone.boundary.concat([zone.boundary[0]]);
+  const minSpace = 7.5, tries = 9000;
+  for (let k = 0; k < tries; k++) {
+    const x = b.minX + rng() * (b.maxX - b.minX), z = b.minZ + rng() * (b.maxZ - b.minZ);
+    if (!pointInPoly(x, z, zone.boundary)) continue;
+    const dEdge = closestOnPolyline(x, z, ring).dist;
+    const inside = innerPolys.some(pg => pointInPoly(x, z, pg));
+    if (inside && dEdge > band) continue;                   // deep interior already has its forest
+    if (dEdge < 2.5) continue;                              // not in the rock
+    if ((zone.paths || []).some(p => closestOnPolyline(x, z, p).dist < 6)) continue;
+    if ((zone.rivers || []).some(r => closestOnPolyline(x, z, r.points).dist < r.width / 2 + RIVER_BANK + 3)) continue;
+    if (inFarm(zone, x, z, 3) || inMine(zone, x, z, 4)) continue;
+    if ((zone.pois || []).some(p => dist2(x, z, p.x, p.z) < clearRadiusS(p) ** 2)) continue;
+    const near = (t) => dist2(x, z, t.x, t.z) < minSpace * minSpace;
+    if (trees.some(near) || out.some(near)) continue;
+    out.push({ x: +x.toFixed(1), z: +z.toFixed(1), s: +(0.85 + rng() * 0.35).toFixed(2), r: +(rng() * 6).toFixed(2) });
+  }
+  return out;
+}

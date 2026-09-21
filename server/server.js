@@ -19,6 +19,7 @@ import {
 import { ITEMS, SLOTS, SLOT_INFO, DOLL, itemDef, slotOf, valueOf, equipStats, slotsFor, emptySlots } from './items.js';
 import {
   dist2, closestOnPolyline, mulberry32, pointInPoly, polyCentroid, generateTrees, generateScatter, generateHanging,
+  mergeOutlines, roughenOutline, generateEdgeForest,
   caveOutline,
 } from './worldgen.js';
 import {
@@ -176,13 +177,18 @@ function buildSeamlessWorld() {
   ];
   b.minX = Math.min(b.minX, kb.minX); b.maxX = Math.max(b.maxX, kb.maxX);
   b.minZ = Math.min(b.minZ, kb.minZ); b.maxZ = Math.max(b.maxZ, kb.maxZ);
-  const ins = 3;
-  w.boundary = [
-    { x: b.minX + ins, z: b.minZ + ins }, { x: b.maxX - ins, z: b.minZ + ins },
-    { x: b.maxX - ins, z: b.maxZ - ins }, { x: b.minX + ins, z: b.maxZ - ins },
-  ];
+  // One natural outline for the whole world: the two zones' own polygons
+  // joined across the seam, then roughened into bays and headlands (outward
+  // only, so nothing authored ends up inside the rock). The bounds grow to
+  // cover the bays so the ground still reaches the wall everywhere.
+  const dwOutline = w.regions[0].boundary, kfOutline = w.regions[1].boundary;
+  const seamZ = (w.regions[0].bounds.maxZ + w.regions[1].bounds.minZ) / 2;
+  w.boundary = roughenOutline(mergeOutlines(dwOutline, kfOutline, seamZ, 40), 90210, { step: 5, big: 20, mid: 5, small: 1.6 });
+  for (const p of w.boundary) { b.minX = Math.min(b.minX, p.x - 6); b.maxX = Math.max(b.maxX, p.x + 6); b.minZ = Math.min(b.minZ, p.z - 6); b.maxZ = Math.max(b.maxZ, p.z + 6); }
   w.models = [...new Set([...(w.models || []), ...(kf.models || [])])];
   w.treeCount = (w.treeCount || 0) + (kf.treeCount || 0);
+  // Fill the bays and a band along the wall with forest so the border isn't bare.
+  w._trees = w._trees.concat(generateEdgeForest(w, [dwOutline, kfOutline], 777));
   // The world is far bigger than either zone was, and now spans dense forest AND
   // open fields — push the fog back so the open south isn't a grey wall while the
   // forest still feels close. A blend of the two zones' original depths.
