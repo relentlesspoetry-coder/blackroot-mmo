@@ -6088,21 +6088,37 @@ function attackMonster(id) {
   ws?.send(JSON.stringify({ t: 'attack', target: id }));
   spawnMarker(rec.mesh.position.x, rec.mesh.position.z, 0xff3b30);
 }
-// Tab targeting: cycle to the next-nearest living monster and engage it.
+// Tab targeting: the nearest living monster that is actually on screen, close
+// enough to matter and in plain sight (no picking things through walls or
+// off in the distance); pressing again cycles outward through those.
+const TAB_RANGE = 28;
+const _tabRay = new THREE.Raycaster();
 function tabTarget() {
   const selfRec = entityMeshes.get(myId);
   if (!selfRec) return;
   const sx = selfRec.mesh.position.x, sz = selfRec.mesh.position.z;
   const mons = [];
+  const ndc = new THREE.Vector3();
   for (const [id, rec] of entityMeshes) {
-    if (rec.kind === 'monster' && rec.data && rec.data.alive) {
-      const d = Math.hypot(rec.mesh.position.x - sx, rec.mesh.position.z - sz);
-      if (d < 60) mons.push({ id, d });
-    }
+    if (rec.kind !== 'monster' || !rec.data || !rec.data.alive || rec.data.hidden) continue;
+    const mp = rec.mesh.position;
+    const d = Math.hypot(mp.x - sx, mp.z - sz);
+    if (d > TAB_RANGE) continue;
+    ndc.set(mp.x, mp.y + 1.0, mp.z).project(camera);
+    if (ndc.z > 1 || Math.abs(ndc.x) > 1 || Math.abs(ndc.y) > 1) continue;                 // must be in the camera's view
+    // in plain sight: not inside a building you're outside of (or the other
+    // way round), and no wall or cliff between you
+    const houseOf = (x, z) => houseRoofs.findIndex(({ h }) => Math.abs(x - h.x) < h.w / 2 + 0.3 && Math.abs(z - h.z) < h.d / 2 + 0.3);
+    if (houseOf(mp.x, mp.z) !== houseOf(sx, sz)) continue;
+    const from = new THREE.Vector3(sx, selfRec.mesh.position.y + 1.2, sz), to = new THREE.Vector3(mp.x, mp.y + 1.0, mp.z);
+    _tabRay.set(from, to.clone().sub(from).normalize()); _tabRay.far = from.distanceTo(to);
+    if (camBlockers.length && _tabRay.intersectObjects(camBlockers, true).length) continue;
+    mons.push({ id, d });
   }
   if (!mons.length) return;
   mons.sort((a, b) => a.d - b.d);
-  attackMonster(mons[0].id); // always the closest
+  const i = mons.findIndex(m => m.id === targetId);
+  attackMonster(mons[(i + 1) % mons.length].id);   // nearest first, then the next one out
 }
 // Mirrors server/mining.js; used only for menu labels and tooltips.
 const ORE_LEVEL = { Copper: 1, Tin: 1, Iron: 8, Silver: 12, Coal: 16, Gold: 22,
