@@ -4755,10 +4755,10 @@ function updateHeldWeapon(rec, name) {
   w.name = 'Weapon';
   if (rig.handR) {
     // In the mount's frame (measured) the fingers run -Y from the wrist, the
-    // knuckle line is Z with the thumb on +Z, and the palm faces -X. The grip
+    // knuckle line is Z with the thumb on +Z, and the palm faces +X. The grip
     // sits in the middle of the closed fist and the blade hangs straight down
     // past the fingers (the classic carry), pommel just above the fist.
-    w.position.set(-0.045, -0.09, 0.0);
+    w.position.set(0.04, -0.09, 0.0);   // palm side is +X: the grip sits inside the curl of the fingers
     w.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), new THREE.Vector3(0.12, -1, 0.1).normalize());   // point down past the little finger, pommel above the fist
     mount.add(w);
     rig.weapon = w; rig.swingArm = rig.armR;
