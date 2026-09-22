@@ -2026,6 +2026,210 @@
           "vertices": 138
         }
       ]
+    },
+    {
+      "id": "32_Barbarian",
+      "cut": "harness",
+      "accessory": "fur_mantle",
+      "items": [
+        {
+          "id": "32_Barbarian__Top",
+          "file": "Items/32_Barbarian__Top.glb",
+          "hide_body": [],
+          "triangles": 240,
+          "vertices": 720,
+          "slot": "Top"
+        },
+        {
+          "id": "32_Barbarian__Accessory",
+          "file": "Items/32_Barbarian__Accessory.glb",
+          "hide_body": [],
+          "triangles": 826,
+          "vertices": 2478,
+          "slot": "Accessory"
+        },
+        {
+          "id": "32_Barbarian__Gloves",
+          "file": "Items/32_Barbarian__Gloves.glb",
+          "hide_body": [],
+          "triangles": 444,
+          "vertices": 1152,
+          "slot": "Gloves"
+        },
+        {
+          "id": "32_Barbarian__Trousers",
+          "file": "Items/32_Barbarian__Trousers.glb",
+          "hide_body": [
+            "Body_Hips",
+            "Body_Thigh_L",
+            "Body_Thigh_R",
+            "Body_Shin_L",
+            "Body_Shin_R"
+          ],
+          "triangles": 708,
+          "vertices": 1704,
+          "slot": "Trousers"
+        },
+        {
+          "id": "32_Barbarian__Belt",
+          "file": "Items/32_Barbarian__Belt.glb",
+          "hide_body": [],
+          "triangles": 342,
+          "vertices": 1054,
+          "slot": "Belt"
+        },
+        {
+          "id": "32_Barbarian__Boots",
+          "file": "Items/32_Barbarian__Boots.glb",
+          "hide_body": [
+            "Body_Foot_L",
+            "Body_Foot_R"
+          ],
+          "triangles": 544,
+          "vertices": 1232,
+          "slot": "Boots"
+        }
+      ]
+    },
+    {
+      "id": "33_Minstrel",
+      "cut": "longcoat",
+      "accessory": "hood",
+      "items": [
+        {
+          "id": "33_Minstrel__Top",
+          "file": "Items/33_Minstrel__Top.glb",
+          "hide_body": [
+            "Body_Torso",
+            "Body_Upperarm_L",
+            "Body_Upperarm_R",
+            "Body_Forearm_L",
+            "Body_Forearm_R"
+          ],
+          "triangles": 890,
+          "vertices": 2168,
+          "slot": "Top"
+        },
+        {
+          "id": "33_Minstrel__Accessory",
+          "file": "Items/33_Minstrel__Accessory.glb",
+          "hide_body": [],
+          "triangles": 260,
+          "vertices": 804,
+          "slot": "Accessory"
+        },
+        {
+          "id": "33_Minstrel__Gloves",
+          "file": "Items/33_Minstrel__Gloves.glb",
+          "hide_body": [],
+          "triangles": 182,
+          "vertices": 400,
+          "slot": "Gloves"
+        },
+        {
+          "id": "33_Minstrel__Trousers",
+          "file": "Items/33_Minstrel__Trousers.glb",
+          "hide_body": [
+            "Body_Hips",
+            "Body_Thigh_L",
+            "Body_Thigh_R",
+            "Body_Shin_L",
+            "Body_Shin_R"
+          ],
+          "triangles": 420,
+          "vertices": 840,
+          "slot": "Trousers"
+        },
+        {
+          "id": "33_Minstrel__Belt",
+          "file": "Items/33_Minstrel__Belt.glb",
+          "hide_body": [],
+          "triangles": 68,
+          "vertices": 204,
+          "slot": "Belt"
+        },
+        {
+          "id": "33_Minstrel__Boots",
+          "file": "Items/33_Minstrel__Boots.glb",
+          "hide_body": [
+            "Body_Foot_L",
+            "Body_Foot_R"
+          ],
+          "triangles": 584,
+          "vertices": 1352,
+          "slot": "Boots"
+        }
+      ]
+    },
+    {
+      "id": "34_Templar",
+      "cut": "vestments",
+      "accessory": "circlet_cape",
+      "items": [
+        {
+          "id": "34_Templar__Top",
+          "file": "Items/34_Templar__Top.glb",
+          "hide_body": [
+            "Body_Torso",
+            "Body_Upperarm_L",
+            "Body_Upperarm_R",
+            "Body_Forearm_L",
+            "Body_Forearm_R"
+          ],
+          "triangles": 1162,
+          "vertices": 2932,
+          "slot": "Top"
+        },
+        {
+          "id": "34_Templar__Trousers",
+          "file": "Items/34_Templar__Trousers.glb",
+          "hide_body": [
+            "Body_Hips",
+            "Body_Thigh_L",
+            "Body_Thigh_R",
+            "Body_Shin_L",
+            "Body_Shin_R"
+          ],
+          "triangles": 932,
+          "vertices": 2376,
+          "slot": "Trousers"
+        },
+        {
+          "id": "34_Templar__Belt",
+          "file": "Items/34_Templar__Belt.glb",
+          "hide_body": [],
+          "triangles": 428,
+          "vertices": 1284,
+          "slot": "Belt"
+        },
+        {
+          "id": "34_Templar__Gloves",
+          "file": "Items/34_Templar__Gloves.glb",
+          "hide_body": [],
+          "triangles": 140,
+          "vertices": 312,
+          "slot": "Gloves"
+        },
+        {
+          "id": "34_Templar__Boots",
+          "file": "Items/34_Templar__Boots.glb",
+          "hide_body": [
+            "Body_Foot_L",
+            "Body_Foot_R"
+          ],
+          "triangles": 400,
+          "vertices": 832,
+          "slot": "Boots"
+        },
+        {
+          "id": "34_Templar__Accessory",
+          "file": "Items/34_Templar__Accessory.glb",
+          "hide_body": [],
+          "triangles": 608,
+          "vertices": 1824,
+          "slot": "Accessory"
+        }
+      ]
     }
   ],
   "weapons": [

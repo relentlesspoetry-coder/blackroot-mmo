@@ -833,7 +833,8 @@ const HAIR_STYLES = ['Bald', '01_Buzz_Cut', '02_Crew_Cut', '03_Flat_Top', '04_Sh
 const OUTFITS = ['None', '01_Fieldhand', '02_Orchard_Worker', '03_Fisherman', '04_Dockhand', '05_Miner', '06_Blacksmith',
   '07_Baker', '08_Innkeeper', '09_Merchant', '10_Wealthy_Trader', '11_Scholar', '12_Scribe', '13_Physician', '14_Alchemist',
   '15_Apprentice', '16_Ranger', '17_Scout', '18_Hunter', '19_Trapper', '20_Courier', '21_Town_Guard', '22_Night_Watch',
-  '23_Militia', '24_Knight', '25_Sellsword', '26_Noble', '27_Courtier', '28_Bard', '29_Pilgrim', '30_Desert_Traveller', '31_Fighter'];
+  '23_Militia', '24_Knight', '25_Sellsword', '26_Noble', '27_Courtier', '28_Bard', '29_Pilgrim', '30_Desert_Traveller', '31_Fighter',
+  '32_Barbarian', '33_Minstrel', '34_Templar'];   // the class starting kits (tools/build_outfits.py)
 const OUTFIT_SLOT_NAMES = ['top', 'trousers', 'boots', 'belt', 'accessory', 'gloves', 'helmet'];
 // The armour wardrobe (Male_20_Armored_Outfits, client/models/human/armor):
 // worn over the base outfit slot by slot from look.gear, plus two slots the
@@ -8716,20 +8717,13 @@ function currentLook() {
 try { const c = localStorage.getItem('bk.cls'); if (['fighter', 'cleric', 'bard'].includes(c)) pickedClass = c; } catch (e) {}
 // Each class has a base outfit from the wardrobe pack; picking a class dresses
 // the character in it (you can still change it afterwards).
-// The starting kits, after the class concept sheets, put together from the
-// wardrobe and armour packs slot by slot with recolours: the Fighter's hide
-// harness, bracers and spiked shoulders; the Cleric's white-and-gold coat
-// over an ivory robe; the Bard's dark long coat with a maroon mantle. They
-// apply while the outfit picker still shows the class's base outfit.
+// The starting kits after the class concept sheets: the Barbarian (Fighter),
+// the Minstrel (Bard) and the Templar (Cleric) outfits. Picking a class
+// selects its outfit; extra per-slot overrides would go in `slots`/`colors`.
 const CLASS_LOOK = {
-  fighter: { outfit: 17, slots: { accessory: 18, shoulders: '10_Obsidian_Warlord__Shoulders', gloves: '02_Brigand_Studded__Gloves', boots: '01_Frontier_Hide__Boots', belt: 31, trousers: 31 },
-    colors: { top: '#4e3322', accessory: '#3a2a1c', shoulders: '#4a3a2a', trousers: '#2a2320' } },
-  cleric:  { outfit: 29, slots: { top: '09_Gilded_Paladin__Top', shoulders: '09_Gilded_Paladin__Shoulders', boots: '09_Gilded_Paladin__Boots', overlayer: '20_Astral_Archmage__Overlayer', gloves: '09_Gilded_Paladin__Gloves', belt: 1 },
-    colors: { overlayer: '#ece6d6', trousers: '#d8d2c4' } },
-  bard:    { outfit: 28, slots: { top: 27, shoulders: '12_Crimson_Duelist__Shoulders', overlayer: '16_Hedge_Mage__Overlayer', gloves: '12_Crimson_Duelist__Gloves', boots: 28, belt: 9, accessory: 29 },
-    colors: { top: '#1f2a24', shoulders: '#5a1e2c', overlayer: '#1f2a24', trousers: '#2b2622', accessory: '#5a1e2c' } },
+  fighter: { outfit: 32 }, cleric: { outfit: 34 }, bard: { outfit: 33 },   // built from the concept sheets by tools/build_outfits.py
 };
-const CLASS_OUTFIT = { fighter: 17, cleric: 29, bard: 28 };
+const CLASS_OUTFIT = { fighter: 32, cleric: 34, bard: 33 };
 document.querySelectorAll('#classRow .classopt').forEach(d => {
   d.classList.toggle('sel', d.dataset.cls === pickedClass);
   d.onclick = () => { pickedClass = d.dataset.cls; document.querySelectorAll('#classRow .classopt').forEach(x => x.classList.toggle('sel', x === d)); if (CLASS_OUTFIT[pickedClass] != null) outfitSel.value = CLASS_OUTFIT[pickedClass]; try { localStorage.setItem('bk.cls', pickedClass); } catch (e) {} };
