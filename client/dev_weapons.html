@@ -23,7 +23,7 @@ await Promise.all(list.map(async (name, i) => {
   const s = (cell * 0.8) / Math.max(size.x, size.y, size.z);
   const wrap = new THREE.Group(); wrap.add(obj); obj.position.copy(c).negate();
   // the packs run their length along +Z: stand it up on screen, tilted for depth
-  wrap.rotation.set(-Math.PI / 2 + 0.35, 0.5, 0);
+  wrap.rotation.set(-Math.PI / 2 + 0.35, 0.5, +(q.get('roll') || 0));   // roll=3.14 shows the other face
   wrap.scale.setScalar(s);
   const col = i % cols, row = Math.floor(i / cols);
   wrap.position.set(-W / 2 + cell * (col + 0.5), H / 2 - cell * (row + 0.5), 0);

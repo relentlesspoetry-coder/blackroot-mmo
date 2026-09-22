@@ -4763,6 +4763,74 @@ function updateHeldWeapon(rec, name) {
   rig.weapon = w; rig.swingArm = rig.armR;
 }
 
+// The Bard carries a lute in the left hand (models/weapons/00_Lute, from
+// tools/build_weapons.py): the neck in the fist, the body back along the
+// forearm so it sits against the chest in the playing pose.
+function updateInstrument(rec, ent) {
+  const want = ent.cls === 'bard' ? 'lute' : null;
+  if (rec.instrument === want) return;
+  const rig = rec.mesh.userData.rig; if (!rig || !rig.body) return;
+  rec.instrument = want;
+  if (rec.instrumentObj) { rec.instrumentObj.parent.remove(rec.instrumentObj); rec.instrumentObj = null; }
+  if (!want) return;
+  // The lute hangs on the torso (it leans and bobs with it): body against the
+  // belly, neck up to the character's left, soundboard facing out. The arms
+  // are then solved onto it every frame (luteArms): left hand on the neck,
+  // right hand over the rose, strumming.
+  const g = new THREE.Group(); g.name = 'Instrument'; rig.body.add(g); rec.instrumentObj = g;
+  const a = 0.62, zAxis = new THREE.Vector3(Math.cos(a), Math.sin(a), 0.12).normalize(), yAxis0 = new THREE.Vector3(0, 0.25, 1).normalize();
+  const xAxis = new THREE.Vector3().crossVectors(yAxis0, zAxis).normalize(), yAxis = new THREE.Vector3().crossVectors(zAxis, xAxis).normalize();
+  g.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(xAxis, yAxis, zAxis));
+  g.position.set(0.04, 0.96 - rig.home.y, 0.21); g.scale.setScalar(0.88);
+  loadModels(['weapons/00_Lute']).then(() => {
+    const src = LOADED['00_Lute']; if (!src || rec.instrument !== want) return;
+    const model = src.clone(true);
+    model.traverse(o => { if (o.isMesh) { o.material = Array.isArray(o.material) ? o.material.map(m => m.clone()) : o.material.clone(); o.castShadow = true; o.userData.pickKind = 'player'; for (const m of (Array.isArray(o.material) ? o.material : [o.material])) detailize(m, 'wood', { scale: 0.5, strength: 0.5 }); } });
+    g.add(model);
+  });
+}
+// Two-bone arm solve onto the lute. Shoulder pivots are "model-aligned"
+// (rotation.x swings fore/aft, .z out to the side, with the A-pose hang baked
+// into the bone), so the upper arm is set analytically from the wanted
+// direction; the elbow pivot then gets the rotation that turns the forearm's
+// rest direction onto the hand target, worked out from live world matrices.
+const _lv = Array.from({ length: 10 }, () => new THREE.Vector3()), _lq = [new THREE.Quaternion(), new THREE.Quaternion(), new THREE.Quaternion()];
+const ARM_UPPER = 0.29, ARM_FORE = 0.31;
+function luteArms(rec, rig, strum, dt) {
+  const g = rec.instrumentObj; if (!g || !rig.foreL || !rig.foreR || !rig.handL || !rig.handR) return;
+  const wrap = rec.mesh, [tl, tr, S, d1, hint, u, n, E, d2, tmp] = _lv, [qw, qp, qd] = _lq;
+  // hand targets on the lute (its local frame: length along +Z, board +Y, X across the strings)
+  g.updateWorldMatrix(true, false);
+  tl.set(0.0, 0.05, 0.14); g.localToWorld(tl);
+  tr.set(-0.02 + strum * 0.06, 0.09, -0.34); g.localToWorld(tr);
+  wrap.getWorldQuaternion(qw); const qwi = qp.copy(qw).invert();
+  for (const side of ['L', 'R']) {
+    const arm = side === 'L' ? rig.armL : rig.armR, fore = side === 'L' ? rig.foreL : rig.foreR, T = side === 'L' ? tl : tr, sx = side === 'L' ? 1 : -1;
+    const upperBone = arm.children.find(c => c.isBone) || arm.children[0];
+    arm.getWorldPosition(S);
+    // elbow: the classic triangle, elbow pushed down and out
+    u.subVectors(T, S); let d = u.length(); const reach = ARM_UPPER + ARM_FORE - 0.01; if (d > reach) { u.multiplyScalar(reach / d); d = reach; T.copy(S).add(u); } u.normalize();
+    hint.set(sx * 0.9, -0.8, -0.35).applyQuaternion(qw); n.copy(hint).addScaledVector(u, -hint.dot(u)).normalize();
+    const cosA = Math.max(-1, Math.min(1, (ARM_UPPER * ARM_UPPER + d * d - ARM_FORE * ARM_FORE) / (2 * ARM_UPPER * d)));
+    E.copy(S).addScaledVector(u, ARM_UPPER * cosA).addScaledVector(n, ARM_UPPER * Math.sin(Math.acos(cosA)));
+    // upper arm: model-space direction -> (x, z) rotations around the baked hang
+    d1.subVectors(E, S).normalize().applyQuaternion(qwi);
+    const rx = 0.14 * sx, ry = -0.99, A = rx, B = -ry;   // d1.x = rx cos az - ry sin az
+    const az = Math.asin(Math.max(-1, Math.min(1, d1.x / Math.hypot(A, B)))) - Math.atan2(A, B);
+    const ax = Math.atan2(-d1.z, -d1.y);
+    arm.rotation.set(ax, 0, az);
+    // forearm: measure its rest direction with the elbow straight, then turn it onto the target
+    fore.rotation.set(0, 0, 0); arm.updateWorldMatrix(false, true);
+    const hand = side === 'L' ? rig.handL : rig.handR, elbow = fore;
+    elbow.getWorldPosition(E); hand.getWorldPosition(tmp);
+    d2.subVectors(tmp, E).normalize();                  // rest forearm direction
+    tmp.subVectors(T, E).normalize();                   // wanted
+    qd.setFromUnitVectors(d2, tmp);
+    fore.parent.getWorldQuaternion(qp);                 // express the world turn in the elbow pivot's parent frame
+    fore.quaternion.copy(qp).invert().multiply(qd).multiply(qp);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Procedural animation
 // ---------------------------------------------------------------------------
@@ -4831,6 +4899,7 @@ function buildRig(wrap, style) {
   rig.head  = part(/^Head$/);   // chicken: neck-pivoted head for pecking/nodding
   rig.weapon = part(/^Weapon$/); rig.shield = part(/^Shield$/);
   rig.handR = part(/^Hand_R$/); rig.handL = part(/^Hand_L$/); // skinned humans: weapon mounts on the hands
+  rig.foreL = part(/^P_ForearmL$/); rig.foreR = part(/^P_ForearmR$/); // elbows (world-aligned pivots): x bends the forearm forward/up, z swings it across
   // Which arm carries the weapon decides which one swings on an attack.
   rig.swingArm = null;
   if (rig.weapon) {
@@ -5072,6 +5141,7 @@ function animateEntity(rec, e, kind, dt) {
     let lShin = Math.max(0, -stride) * 0.7 * a, rShin = Math.max(0, stride) * 0.7 * a;
     let lArm = -stride * 0.5 + sway, rArm = stride * 0.5 + sway;
     let lArmZ = 0.10 + 0.03 * a, rArmZ = -(0.10 + 0.03 * a);
+    let lFore = null, rFore = null;   // elbow bends [x, y, z]; null = straight
 
     // Jump: bend the knees — thighs forward, calves fold back — on the takeoff
     // crouch and again to absorb the landing; arms come forward for balance.
@@ -5100,6 +5170,12 @@ function animateEntity(rec, e, kind, dt) {
         b.rotation.x = 0.10 * a - 0.12 * punch;        // lean back a touch
       }
     }
+    // A Bard carries the lute: left hand up on the neck, right forearm resting
+    // over the body, whether standing or walking — only a swing lets go.
+    rec.holdLute = !!(rec.instrument && punch <= 0);   // arms solved onto the lute below (luteArms); a swing lets go
+    if (rec.holdLute) rig.luteStrum = Math.sin(rig.breath * 0.6) * 0.15;   // idle: the hand drifts over the strings
+    if (rec.instrument && rig.weapon && !rig.anim) rig.weapon.visible = punch > 0;   // the weapon only comes out to swing
+    if (isLocal && window.__poseOv) { const o = window.__poseOv; if (o.lArm != null) lArm = o.lArm; if (o.lArmZ != null) lArmZ = o.lArmZ; if (o.rArm != null) rArm = o.rArm; if (o.rArmZ != null) rArmZ = o.rArmZ; if (o.lFore) lFore = o.lFore; if (o.rFore) rFore = o.rFore; }   // ?debug pose tuning
     // An ability animation overrides whatever the walk/attack logic decided.
     if (rig.anim) {
       const an = rig.anim, A = ABILITY_ANIMS[an.id];
@@ -5108,7 +5184,10 @@ function animateEntity(rec, e, kind, dt) {
       const P = {};
       if (casting) { if (A.castPose) A.castPose(an.t, P, hold); else A.pose(0, P, rig); if (!an.castFx) { an.castFx = true; beginCastFx(rec, an.id); } }
       else { if (an.castFx) { an.castFx = false; endCastFx(rec); } A.pose(u, P, rig); }
+      if (rig.weapon) rig.weapon.visible = !A.hideWeapon;   // a Bard puts the weapon away to play
       if (P.lArm != null) lArm = P.lArm; if (P.rArm != null) rArm = P.rArm; if (P.lArmZ != null) lArmZ = P.lArmZ; if (P.rArmZ != null) rArmZ = P.rArmZ;
+      if (P.lFore !== undefined) lFore = P.lFore; if (P.rFore !== undefined) rFore = P.rFore;
+      if (P.strum != null) rig.luteStrum = P.strum; else rec.holdLute = false;   // horn / drum / harp poses (and a swing) take the arms off the lute
       if (P.lLeg != null) lLeg = P.lLeg; if (P.rLeg != null) rLeg = P.rLeg; if (P.lShin != null) lShin = P.lShin; if (P.rShin != null) rShin = P.rShin;
       if (P.bodyX != null) b.rotation.x = P.bodyX; if (P.bodyY != null) b.rotation.y = P.bodyY; if (P.bodyZ != null) b.rotation.z = P.bodyZ;
       if (P.spin != null) b.rotation.y = P.spin; if (P.bob != null) b.position.y = rig.home.y + P.bob;
@@ -5116,11 +5195,14 @@ function animateEntity(rec, e, kind, dt) {
       // Effects keyed to the animation's beats, at the character's feet, facing its yaw.
       const mp = rec.mesh.position, yaw = rec.mesh.rotation.y;
       if (!casting) for (let i = 0; i < (A.fx || []).length; i++) { const f = A.fx[i]; if (u >= f.at && !an.fired.has(i)) { an.fired.add(i); spawnFx(f.kind, mp.x, mp.y, mp.z, yaw, f); } }
-      if (an.t >= hold + an.dur) rig.anim = null;
+      if (an.t >= hold + an.dur) { rig.anim = null; if (rig.weapon) rig.weapon.visible = true; }
     }
     updateWeaponTrail(rec, !!(rig.anim && ABILITY_ANIMS[rig.anim.id].trail !== false), dt);
     if (rig.armL) rig.armL.rotation.set(lArm, 0, lArmZ);
     if (rig.armR) rig.armR.rotation.set(rArm, 0, rArmZ);
+    if (rig.foreL) { if (lFore) rig.foreL.rotation.set(lFore[0], lFore[1], lFore[2]); else rig.foreL.rotation.set(0, 0, 0); }
+    if (rig.foreR) { if (rFore) rig.foreR.rotation.set(rFore[0], rFore[1], rFore[2]); else rig.foreR.rotation.set(0, 0, 0); }
+    if (rec.instrumentObj && rec.holdLute) luteArms(rec, rig, rig.luteStrum || 0, dt);
     if (rig.legL) rig.legL.rotation.set(lLeg, 0, 0);
     if (rig.legR) rig.legR.rotation.set(rLeg, 0, 0);
     if (rig.shinL) rig.shinL.rotation.set(lShin, 0, 0);
@@ -5243,6 +5325,7 @@ function renderWorld(dt) {
       rec.mesh.rotation.y = yaw + (rec.mesh.userData.faceOffset || 0);
       rec.data = e;
       if (kind === 'player' && e.weapon !== rec.heldWeapon) updateHeldWeapon(rec, e.weapon);
+      if (kind === 'player') updateInstrument(rec, e);
       if (rec.mesh.visible) animateEntity(rec, e, kind, dt);
     }
   };
@@ -5972,9 +6055,9 @@ function kf(u, keys) {
 const overhead = (u, up = -2.6, down = 0.9, peak = 0.42) => kf(u, [[0, 0], [peak, up], [peak + 0.18, down], [1, 0]]);  // raise, chop, settle
 const crouch = (u, depth, peak = 0.6) => kf(u, [[0, 0], [peak, depth], [1, 0]]);
 // Bard instrument poses (mimed). t: seconds of playing; speed: strums per second-ish.
-function lutePose(P, t, speed) {     // left hand out on the neck, right hand strumming across the body
-  P.lArm = -1.05; P.lArmZ = 0.55; P.rArm = -0.85 + Math.sin(t * Math.PI * 2 * speed) * 0.22; P.rArmZ = -0.1 + Math.cos(t * Math.PI * 2 * speed) * 0.12;
-  P.bodyX = 0.08; P.bodyZ = Math.sin(t * Math.PI * speed) * 0.03;
+function lutePose(P, t, speed) {     // the arms are solved onto the lute; this drives the strum and the body's sway
+  P.strum = Math.sin(t * Math.PI * 2 * speed);   // -1..1: the right hand sweeping across the strings
+  P.bodyX = 0.06; P.bodyZ = Math.sin(t * Math.PI * speed) * 0.03; P.head = 0.2; P.bob = Math.abs(Math.sin(t * Math.PI * speed)) * 0.02;
 }
 function drumPose(P, u) {            // both hands beating a drum at the hip, alternating
   const f = Math.sin(u * Math.PI * 8);
@@ -6178,26 +6261,26 @@ const ABILITY_ANIMS = {
   // ---- Bard: the instrument is mimed — a lute held across the body and strummed,
   // a drum beaten at the hip, a horn raised to the lips, a harp plucked at the
   // chest. Songs are instant strums; the casts hold the playing pose.
-  quick_note: { trail: false, dur: 0.45, pose(u, P) { lutePose(P, u * 2.2, 1.2); P.bodyY = kf(u, [[0, 0], [0.3, -0.3], [1, 0]]); }, fx: [{ at: 0.05, kind: 'sfx', key: 'note' }, { at: 0.15, kind: 'notes', n: 3, color: 0xc9a6ff, fwd: 0.8 }, { at: 0.15, kind: 'streak', fwd: 1.5, y: 1.2, len: 2.6, color: 0xc9a6ff }] },
-  song_of_mending: { trail: false, dur: 1.0, pose(u, P) { lutePose(P, u * 2, 0.7); P.head = 0.15; }, fx: [{ at: 0.05, kind: 'sfx', key: 'lute' }, { at: 0.2, kind: 'notes', n: 8, color: 0x9be6a0 }, { at: 0.2, kind: 'ripple', r: 3.5, color: 0x9be6a0, life: 0.8 }, { at: 0.6, kind: 'ripple', r: 3.5, color: 0xd8e88a, life: 0.8 }] },
-  mana_melody: { trail: false, dur: 1.0, pose(u, P) { lutePose(P, u * 2, 0.7); P.head = -0.1; }, fx: [{ at: 0.05, kind: 'sfx', key: 'lute' }, { at: 0.2, kind: 'notes', n: 8, color: 0x8ab0ff }, { at: 0.2, kind: 'ripple', r: 3.5, color: 0x8ab0ff, life: 0.8 }, { at: 0.6, kind: 'ripple', r: 3.5, color: 0xb090ff, life: 0.8 }] },
-  hymn_of_courage: { trail: false, dur: 1.0, pose(u, P) { hornPose(P, u); }, fx: [{ at: 0.05, kind: 'sfx', key: 'horn' }, { at: 0.3, kind: 'ripple', r: 4.5, color: 0xffb04a, life: 0.9 }, { at: 0.3, kind: 'notes', n: 6, color: 0xffc46a, fwd: 0.8 }, { at: 0.3, kind: 'glow', color: 0xffa040 }] },
-  dissonant_chord: { trail: false, dur: 0.6, pose(u, P) { lutePose(P, u * 3, 1.6); P.bodyX = kf(u, [[0, 0], [0.3, 0.2], [1, 0]]); }, fx: [{ at: 0.05, kind: 'sfx', key: 'dissonant' }, { at: 0.15, kind: 'notes', n: 4, color: 0xb890e8, fwd: 0.8, jag: true }, { at: 0.15, kind: 'streak', fwd: 1.6, y: 1.2, len: 3.0, color: 0xa080d0 }] },
-  lullaby: { trail: false, dur: 0.8, castPose(t, P) { harpPose(P, t); P.head = 0.25; }, pose(u, P) { harpPose(P, u * 1.5 + 2); P.head = kf(u, [[0, 0.25], [1, 0]]); }, fx: [{ at: 0.05, kind: 'sfx', key: 'lullaby' }, { at: 0.1, kind: 'notes', n: 6, color: 0x9ac8ff, fwd: 1.0, slow: true }, { at: 0.1, kind: 'ripple', r: 2.5, color: 0x8ab8ff, life: 1.2 }] },
-  battle_hymn: { trail: false, dur: 1.0, pose(u, P) { hornPose(P, u); P.bob = 0.04 * Math.abs(Math.sin(u * Math.PI * 4)); }, fx: [{ at: 0.05, kind: 'sfx', key: 'horn' }, { at: 0.3, kind: 'ripple', r: 4.5, color: 0xffd27a, life: 0.9 }, { at: 0.55, kind: 'ripple', r: 4.5, color: 0xffd27a, life: 0.9 }, { at: 0.3, kind: 'notes', n: 8, color: 0xffd27a }] },
-  drumbeat_rush: { trail: false, dur: 1.1, pose(u, P) { drumPose(P, u); }, fx: [{ at: 0.05, kind: 'sfx', key: 'drum' }, { at: 0.12, kind: 'ring', r: 3.0, color: 0xffb060 }, { at: 0.37, kind: 'ring', r: 3.0, color: 0xffb060 }, { at: 0.62, kind: 'ring', r: 3.0, color: 0xffb060 }, { at: 0.87, kind: 'ring', r: 4.5, color: 0xffd090 }, { at: 0.87, kind: 'dust', r: 1.4 }] },
-  mournful_note: { trail: false, dur: 0.7, pose(u, P) { lutePose(P, u * 1.5, 0.9); P.head = 0.3; P.bodyX = 0.15; }, fx: [{ at: 0.05, kind: 'sfx', key: 'mournful' }, { at: 0.2, kind: 'notes', n: 5, color: 0x9a86c8, fwd: 0.8, jag: true, slow: true }, { at: 0.2, kind: 'streak', fwd: 1.6, y: 1.2, len: 3.0, color: 0x8a76b8 }] },
-  perfect_harmony: { trail: false, dur: 1.2, pose(u, P) { harpPose(P, u * 3); P.head = -0.15; P.bob = 0.03 * Math.sin(u * Math.PI * 2); }, fx: [{ at: 0.05, kind: 'sfx', key: 'harp' }, { at: 0.2, kind: 'ripple', r: 4.0, color: 0xa0e8d8, life: 1.4 }, { at: 0.5, kind: 'ripple', r: 4.0, color: 0xa0e8d8, life: 1.4 }, { at: 0.8, kind: 'ripple', r: 4.0, color: 0xa0e8d8, life: 1.4 }, { at: 0.2, kind: 'notes', n: 8, color: 0xb0f0e0, slow: true }] },
-  blade_rhythm: { trail: false, dur: 1.0, pose(u, P) { lutePose(P, u * 4, 1.4); P.bodyY = Math.sin(u * Math.PI * 4) * 0.12; }, fx: [{ at: 0.05, kind: 'sfx', key: 'lute_fast' }, { at: 0.2, kind: 'notes', n: 8, color: 0xffc070 }, { at: 0.2, kind: 'ripple', r: 4.0, color: 0xff9a4a, life: 0.7 }, { at: 0.6, kind: 'ripple', r: 4.0, color: 0xff9a4a, life: 0.7 }] },
-  chorus_of_clarity: { trail: false, dur: 1.1, pose(u, P) { harpPose(P, u * 2.5); P.head = -0.3; }, fx: [{ at: 0.05, kind: 'sfx', key: 'harp' }, { at: 0.2, kind: 'ripple', r: 4.0, color: 0xdfe8ff, life: 1.0 }, { at: 0.5, kind: 'ripple', r: 4.0, color: 0xdfe8ff, life: 1.0 }, { at: 0.2, kind: 'notes', n: 8, color: 0xe8f0ff }] },
-  dirge_of_weakness: { trail: false, dur: 0.8, castPose(t, P) { lutePose(P, t * 1.2, 0.6); P.head = 0.35; P.bodyX = 0.2; }, pose(u, P) { lutePose(P, u * 3 + 1, 1.8); P.bodyX = kf(u, [[0, 0.2], [0.3, -0.1], [1, 0]]); P.head = kf(u, [[0, 0.35], [0.3, -0.2], [1, 0]]); }, fx: [{ at: 0.05, kind: 'sfx', key: 'dirge' }, { at: 0.1, kind: 'notes', n: 10, color: 0x9a80c8, jag: true }, { at: 0.1, kind: 'streak', fwd: 1.8, y: 1.2, len: 4.0, color: 0x8a70b8 }] },
-  echoing_verse: { trail: false, dur: 0.9, pose(u, P) { lutePose(P, u * 2, 0.8); P.bodyY = kf(u, [[0, 0], [0.5, 0.4], [1, 0]]); }, fx: [{ at: 0.05, kind: 'sfx', key: 'lute' }, { at: 0.2, kind: 'ripple', r: 2.0, color: 0xffffff, life: 1.0 }, { at: 0.45, kind: 'ripple', r: 2.6, color: 0xffffff, life: 1.0 }, { at: 0.7, kind: 'ripple', r: 3.2, color: 0xffffff, life: 1.0 }] },
-  resonant_shield: { trail: false, dur: 1.1, pose(u, P) { drumPose(P, u); P.head = -0.1; }, fx: [{ at: 0.05, kind: 'sfx', key: 'drum' }, { at: 0.12, kind: 'ripple', r: 3.0, color: 0x9ad0ff, life: 0.9 }, { at: 0.37, kind: 'ripple', r: 3.6, color: 0x9ad0ff, life: 0.9 }, { at: 0.62, kind: 'ripple', r: 4.2, color: 0x9ad0ff, life: 0.9 }, { at: 0.62, kind: 'glow', color: 0x9ad0ff }] },
-  chorus_of_war: { trail: false, dur: 1.2, pose(u, P) { drumPose(P, u * 1.5); P.bodyX = -0.1; P.head = -0.25; }, fx: [{ at: 0.05, kind: 'sfx', key: 'war' }, { at: 0.12, kind: 'ring', r: 3.0, color: 0xff5a3a }, { at: 0.3, kind: 'ripple', r: 5.0, color: 0xff7a3a, life: 0.8 }, { at: 0.5, kind: 'ring', r: 3.0, color: 0xff5a3a }, { at: 0.7, kind: 'ripple', r: 5.0, color: 0xffd27a, life: 0.8 }, { at: 0.7, kind: 'flash', r: 2.2, color: 0xffb060 }, { at: 0.7, kind: 'notes', n: 10, color: 0xffb060 }] },
-  final_refrain: { trail: false, dur: 0.8, pose(u, P) { lutePose(P, u * 2, 2.0); P.bodyX = kf(u, [[0, 0], [0.25, -0.2], [0.45, 0.35], [1, 0]]); P.rLeg = kf(u, [[0, 0], [0.45, -0.6], [1, 0]]); }, fx: [{ at: 0.05, kind: 'sfx', key: 'refrain' }, { at: 0.35, kind: 'notes', n: 10, color: 0xd8a0ff, fwd: 1.0, jag: true }, { at: 0.35, kind: 'streak', fwd: 2.0, y: 1.2, len: 5.0, color: 0xc090ff }, { at: 0.35, kind: 'flash', r: 1.8, color: 0xd8b0ff, fwd: 1.2 }] },
-  songweave: { trail: false, dur: 1.2, pose(u, P) { harpPose(P, u * 3.5); P.bodyY = Math.sin(u * Math.PI * 2) * 0.25; }, fx: [{ at: 0.05, kind: 'sfx', key: 'harp' }, { at: 0.2, kind: 'notes', n: 12, color: 0xffd27a }, { at: 0.2, kind: 'ripple', r: 4.0, color: 0xffd27a, life: 1.0 }, { at: 0.5, kind: 'ripple', r: 4.0, color: 0x8ab0ff, life: 1.0 }, { at: 0.8, kind: 'ripple', r: 4.0, color: 0x9be6a0, life: 1.0 }] },
-  legendary_ballad: { trail: false, dur: 1.6, pose(u, P) { lutePose(P, u * 3, 0.9); P.head = -0.35; P.bodyX = -0.15; P.bob = 0.05 + 0.03 * Math.sin(u * Math.PI * 3); }, fx: [{ at: 0.05, kind: 'sfx', key: 'ballad' }, { at: 0.15, kind: 'ripple', r: 5.0, color: 0xffd27a, life: 1.3 }, { at: 0.4, kind: 'ripple', r: 5.0, color: 0xffe9a0, life: 1.3 }, { at: 0.65, kind: 'ripple', r: 5.0, color: 0xffd27a, life: 1.3 }, { at: 0.4, kind: 'notes', n: 16, color: 0xffe0a0 }, { at: 0.4, kind: 'staff', r: 6.0, color: 0xffd27a, life: 2.5 }, { at: 0.4, kind: 'glow', color: 0xffd27a }] },
-  dreamsong_crescendo: { trail: false, dur: 1.6, castPose(t, P) { lutePose(P, t * 2.5, 0.8 + t * 0.4); P.head = -0.2 - Math.min(0.3, t * 0.15); P.bob = Math.min(0.25, t * 0.12); }, pose(u, P) { lutePose(P, u * 5 + 5, 2.2); P.head = -0.5; P.bob = kf(u, [[0, 0.25], [0.5, 0.45], [1, 0]]); P.bodyX = -0.2; }, fx: [{ at: 0.02, kind: 'sfx', key: 'crescendo' }, { at: 0.05, kind: 'flash', r: 3.5, color: 0xd8b0ff }, { at: 0.05, kind: 'ripple', r: 6.0, color: 0xc9a6ff, life: 1.4 }, { at: 0.25, kind: 'ripple', r: 6.5, color: 0xffd27a, life: 1.4 }, { at: 0.45, kind: 'ripple', r: 7.0, color: 0x8ab0ff, life: 1.4 }, { at: 0.65, kind: 'ripple', r: 7.5, color: 0xffffff, life: 1.4 }, { at: 0.2, kind: 'notes', n: 24, color: 0xffffff, spread: 2.5 }, { at: 0.2, kind: 'staff', r: 8.0, color: 0xc9a6ff, life: 3.5 }, { at: 0.3, kind: 'shock', r: 22, color: 0xd8b0ff, life: 1.4 }] },
+  quick_note: { trail: false, hideWeapon: true, dur: 0.45, pose(u, P) { lutePose(P, u * 2.2, 1.2); P.bodyY = kf(u, [[0, 0], [0.3, -0.3], [1, 0]]); }, fx: [{ at: 0.05, kind: 'sfx', key: 'note' }, { at: 0.15, kind: 'notes', n: 3, color: 0xc9a6ff, fwd: 0.8 }, { at: 0.15, kind: 'streak', fwd: 1.5, y: 1.2, len: 2.6, color: 0xc9a6ff }] },
+  song_of_mending: { trail: false, hideWeapon: true, dur: 1.0, pose(u, P) { lutePose(P, u * 2, 0.7); P.head = 0.15; }, fx: [{ at: 0.05, kind: 'sfx', key: 'lute' }, { at: 0.2, kind: 'notes', n: 8, color: 0x9be6a0 }, { at: 0.2, kind: 'ripple', r: 3.5, color: 0x9be6a0, life: 0.8 }, { at: 0.6, kind: 'ripple', r: 3.5, color: 0xd8e88a, life: 0.8 }] },
+  mana_melody: { trail: false, hideWeapon: true, dur: 1.0, pose(u, P) { lutePose(P, u * 2, 0.7); P.head = -0.1; }, fx: [{ at: 0.05, kind: 'sfx', key: 'lute' }, { at: 0.2, kind: 'notes', n: 8, color: 0x8ab0ff }, { at: 0.2, kind: 'ripple', r: 3.5, color: 0x8ab0ff, life: 0.8 }, { at: 0.6, kind: 'ripple', r: 3.5, color: 0xb090ff, life: 0.8 }] },
+  hymn_of_courage: { trail: false, hideWeapon: true, dur: 1.0, pose(u, P) { hornPose(P, u); }, fx: [{ at: 0.05, kind: 'sfx', key: 'horn' }, { at: 0.3, kind: 'ripple', r: 4.5, color: 0xffb04a, life: 0.9 }, { at: 0.3, kind: 'notes', n: 6, color: 0xffc46a, fwd: 0.8 }, { at: 0.3, kind: 'glow', color: 0xffa040 }] },
+  dissonant_chord: { trail: false, hideWeapon: true, dur: 0.6, pose(u, P) { lutePose(P, u * 3, 1.6); P.bodyX = kf(u, [[0, 0], [0.3, 0.2], [1, 0]]); }, fx: [{ at: 0.05, kind: 'sfx', key: 'dissonant' }, { at: 0.15, kind: 'notes', n: 4, color: 0xb890e8, fwd: 0.8, jag: true }, { at: 0.15, kind: 'streak', fwd: 1.6, y: 1.2, len: 3.0, color: 0xa080d0 }] },
+  lullaby: { trail: false, hideWeapon: true, dur: 0.8, castPose(t, P) { harpPose(P, t); P.head = 0.25; }, pose(u, P) { harpPose(P, u * 1.5 + 2); P.head = kf(u, [[0, 0.25], [1, 0]]); }, fx: [{ at: 0.05, kind: 'sfx', key: 'lullaby' }, { at: 0.1, kind: 'notes', n: 6, color: 0x9ac8ff, fwd: 1.0, slow: true }, { at: 0.1, kind: 'ripple', r: 2.5, color: 0x8ab8ff, life: 1.2 }] },
+  battle_hymn: { trail: false, hideWeapon: true, dur: 1.0, pose(u, P) { hornPose(P, u); P.bob = 0.04 * Math.abs(Math.sin(u * Math.PI * 4)); }, fx: [{ at: 0.05, kind: 'sfx', key: 'horn' }, { at: 0.3, kind: 'ripple', r: 4.5, color: 0xffd27a, life: 0.9 }, { at: 0.55, kind: 'ripple', r: 4.5, color: 0xffd27a, life: 0.9 }, { at: 0.3, kind: 'notes', n: 8, color: 0xffd27a }] },
+  drumbeat_rush: { trail: false, hideWeapon: true, dur: 1.1, pose(u, P) { drumPose(P, u); }, fx: [{ at: 0.05, kind: 'sfx', key: 'drum' }, { at: 0.12, kind: 'ring', r: 3.0, color: 0xffb060 }, { at: 0.37, kind: 'ring', r: 3.0, color: 0xffb060 }, { at: 0.62, kind: 'ring', r: 3.0, color: 0xffb060 }, { at: 0.87, kind: 'ring', r: 4.5, color: 0xffd090 }, { at: 0.87, kind: 'dust', r: 1.4 }] },
+  mournful_note: { trail: false, hideWeapon: true, dur: 0.7, pose(u, P) { lutePose(P, u * 1.5, 0.9); P.head = 0.3; P.bodyX = 0.15; }, fx: [{ at: 0.05, kind: 'sfx', key: 'mournful' }, { at: 0.2, kind: 'notes', n: 5, color: 0x9a86c8, fwd: 0.8, jag: true, slow: true }, { at: 0.2, kind: 'streak', fwd: 1.6, y: 1.2, len: 3.0, color: 0x8a76b8 }] },
+  perfect_harmony: { trail: false, hideWeapon: true, dur: 1.2, pose(u, P) { harpPose(P, u * 3); P.head = -0.15; P.bob = 0.03 * Math.sin(u * Math.PI * 2); }, fx: [{ at: 0.05, kind: 'sfx', key: 'harp' }, { at: 0.2, kind: 'ripple', r: 4.0, color: 0xa0e8d8, life: 1.4 }, { at: 0.5, kind: 'ripple', r: 4.0, color: 0xa0e8d8, life: 1.4 }, { at: 0.8, kind: 'ripple', r: 4.0, color: 0xa0e8d8, life: 1.4 }, { at: 0.2, kind: 'notes', n: 8, color: 0xb0f0e0, slow: true }] },
+  blade_rhythm: { trail: false, hideWeapon: true, dur: 1.0, pose(u, P) { lutePose(P, u * 4, 1.4); P.bodyY = Math.sin(u * Math.PI * 4) * 0.12; }, fx: [{ at: 0.05, kind: 'sfx', key: 'lute_fast' }, { at: 0.2, kind: 'notes', n: 8, color: 0xffc070 }, { at: 0.2, kind: 'ripple', r: 4.0, color: 0xff9a4a, life: 0.7 }, { at: 0.6, kind: 'ripple', r: 4.0, color: 0xff9a4a, life: 0.7 }] },
+  chorus_of_clarity: { trail: false, hideWeapon: true, dur: 1.1, pose(u, P) { harpPose(P, u * 2.5); P.head = -0.3; }, fx: [{ at: 0.05, kind: 'sfx', key: 'harp' }, { at: 0.2, kind: 'ripple', r: 4.0, color: 0xdfe8ff, life: 1.0 }, { at: 0.5, kind: 'ripple', r: 4.0, color: 0xdfe8ff, life: 1.0 }, { at: 0.2, kind: 'notes', n: 8, color: 0xe8f0ff }] },
+  dirge_of_weakness: { trail: false, hideWeapon: true, dur: 0.8, castPose(t, P) { lutePose(P, t * 1.2, 0.6); P.head = 0.35; P.bodyX = 0.2; }, pose(u, P) { lutePose(P, u * 3 + 1, 1.8); P.bodyX = kf(u, [[0, 0.2], [0.3, -0.1], [1, 0]]); P.head = kf(u, [[0, 0.35], [0.3, -0.2], [1, 0]]); }, fx: [{ at: 0.05, kind: 'sfx', key: 'dirge' }, { at: 0.1, kind: 'notes', n: 10, color: 0x9a80c8, jag: true }, { at: 0.1, kind: 'streak', fwd: 1.8, y: 1.2, len: 4.0, color: 0x8a70b8 }] },
+  echoing_verse: { trail: false, hideWeapon: true, dur: 0.9, pose(u, P) { lutePose(P, u * 2, 0.8); P.bodyY = kf(u, [[0, 0], [0.5, 0.4], [1, 0]]); }, fx: [{ at: 0.05, kind: 'sfx', key: 'lute' }, { at: 0.2, kind: 'ripple', r: 2.0, color: 0xffffff, life: 1.0 }, { at: 0.45, kind: 'ripple', r: 2.6, color: 0xffffff, life: 1.0 }, { at: 0.7, kind: 'ripple', r: 3.2, color: 0xffffff, life: 1.0 }] },
+  resonant_shield: { trail: false, hideWeapon: true, dur: 1.1, pose(u, P) { drumPose(P, u); P.head = -0.1; }, fx: [{ at: 0.05, kind: 'sfx', key: 'drum' }, { at: 0.12, kind: 'ripple', r: 3.0, color: 0x9ad0ff, life: 0.9 }, { at: 0.37, kind: 'ripple', r: 3.6, color: 0x9ad0ff, life: 0.9 }, { at: 0.62, kind: 'ripple', r: 4.2, color: 0x9ad0ff, life: 0.9 }, { at: 0.62, kind: 'glow', color: 0x9ad0ff }] },
+  chorus_of_war: { trail: false, hideWeapon: true, dur: 1.2, pose(u, P) { drumPose(P, u * 1.5); P.bodyX = -0.1; P.head = -0.25; }, fx: [{ at: 0.05, kind: 'sfx', key: 'war' }, { at: 0.12, kind: 'ring', r: 3.0, color: 0xff5a3a }, { at: 0.3, kind: 'ripple', r: 5.0, color: 0xff7a3a, life: 0.8 }, { at: 0.5, kind: 'ring', r: 3.0, color: 0xff5a3a }, { at: 0.7, kind: 'ripple', r: 5.0, color: 0xffd27a, life: 0.8 }, { at: 0.7, kind: 'flash', r: 2.2, color: 0xffb060 }, { at: 0.7, kind: 'notes', n: 10, color: 0xffb060 }] },
+  final_refrain: { trail: false, hideWeapon: true, dur: 0.8, pose(u, P) { lutePose(P, u * 2, 2.0); P.bodyX = kf(u, [[0, 0], [0.25, -0.2], [0.45, 0.35], [1, 0]]); P.rLeg = kf(u, [[0, 0], [0.45, -0.6], [1, 0]]); }, fx: [{ at: 0.05, kind: 'sfx', key: 'refrain' }, { at: 0.35, kind: 'notes', n: 10, color: 0xd8a0ff, fwd: 1.0, jag: true }, { at: 0.35, kind: 'streak', fwd: 2.0, y: 1.2, len: 5.0, color: 0xc090ff }, { at: 0.35, kind: 'flash', r: 1.8, color: 0xd8b0ff, fwd: 1.2 }] },
+  songweave: { trail: false, hideWeapon: true, dur: 1.2, pose(u, P) { harpPose(P, u * 3.5); P.bodyY = Math.sin(u * Math.PI * 2) * 0.25; }, fx: [{ at: 0.05, kind: 'sfx', key: 'harp' }, { at: 0.2, kind: 'notes', n: 12, color: 0xffd27a }, { at: 0.2, kind: 'ripple', r: 4.0, color: 0xffd27a, life: 1.0 }, { at: 0.5, kind: 'ripple', r: 4.0, color: 0x8ab0ff, life: 1.0 }, { at: 0.8, kind: 'ripple', r: 4.0, color: 0x9be6a0, life: 1.0 }] },
+  legendary_ballad: { trail: false, hideWeapon: true, dur: 1.6, pose(u, P) { lutePose(P, u * 3, 0.9); P.head = -0.35; P.bodyX = -0.15; P.bob = 0.05 + 0.03 * Math.sin(u * Math.PI * 3); }, fx: [{ at: 0.05, kind: 'sfx', key: 'ballad' }, { at: 0.15, kind: 'ripple', r: 5.0, color: 0xffd27a, life: 1.3 }, { at: 0.4, kind: 'ripple', r: 5.0, color: 0xffe9a0, life: 1.3 }, { at: 0.65, kind: 'ripple', r: 5.0, color: 0xffd27a, life: 1.3 }, { at: 0.4, kind: 'notes', n: 16, color: 0xffe0a0 }, { at: 0.4, kind: 'staff', r: 6.0, color: 0xffd27a, life: 2.5 }, { at: 0.4, kind: 'glow', color: 0xffd27a }] },
+  dreamsong_crescendo: { trail: false, hideWeapon: true, dur: 1.6, castPose(t, P) { lutePose(P, t * 2.5, 0.8 + t * 0.4); P.head = -0.2 - Math.min(0.3, t * 0.15); P.bob = Math.min(0.25, t * 0.12); }, pose(u, P) { lutePose(P, u * 5 + 5, 2.2); P.head = -0.5; P.bob = kf(u, [[0, 0.25], [0.5, 0.45], [1, 0]]); P.bodyX = -0.2; }, fx: [{ at: 0.02, kind: 'sfx', key: 'crescendo' }, { at: 0.05, kind: 'flash', r: 3.5, color: 0xd8b0ff }, { at: 0.05, kind: 'ripple', r: 6.0, color: 0xc9a6ff, life: 1.4 }, { at: 0.25, kind: 'ripple', r: 6.5, color: 0xffd27a, life: 1.4 }, { at: 0.45, kind: 'ripple', r: 7.0, color: 0x8ab0ff, life: 1.4 }, { at: 0.65, kind: 'ripple', r: 7.5, color: 0xffffff, life: 1.4 }, { at: 0.2, kind: 'notes', n: 24, color: 0xffffff, spread: 2.5 }, { at: 0.2, kind: 'staff', r: 8.0, color: 0xc9a6ff, life: 3.5 }, { at: 0.3, kind: 'shock', r: 22, color: 0xd8b0ff, life: 1.4 }] },
   perfect_masterstroke: { dur: 1.15, pose(u, P) {   // planted stance, weapon drawn far back, a beat, one clean cut
     P.bob = -crouch(u, 0.18, 0.5);
     P.rArm = kf(u, [[0, 0], [0.35, 1.4], [0.58, 1.5], [0.7, -1.6], [1, 0]]); P.rArmZ = kf(u, [[0, 0], [0.35, -0.9], [0.58, -1.0], [0.7, 0.8], [1, 0]]);
@@ -7418,7 +7501,7 @@ function onEvent(m) {
       addChat('Class', `You are now a level ${m.level} ${m.cls || ''}.`, true); addCombat(`You reach level ${m.level}.`, 'kill'); break;
     case 'ability': {
       const arec = entityMeshes.get(m.by);
-      if (m.cancel) { if (arec && arec.mesh.userData.rig) arec.mesh.userData.rig.anim = null; endCastFx(m.by); break; }
+      if (m.cancel) { if (arec && arec.mesh.userData.rig) { arec.mesh.userData.rig.anim = null; if (arec.mesh.userData.rig.weapon) arec.mesh.userData.rig.weapon.visible = true; } endCastFx(m.by); break; }
       if (arec) startAbilityAnim(arec, m.id, m.windup);
       if (m.by === myId) { flyText(m.name, 'xp'); addCombat(`You ${m.windup ? 'begin casting' : 'use'} ${m.name}.`, 'me'); gcdUntil = performance.now() + ((abilityClass && abilityClass.gcd) || 1.5) * 1000; } break;
     }
@@ -8591,9 +8674,12 @@ function currentLook() {
 // Class pick on the login card; remembered like the look.
 let pickedClass = 'fighter';
 try { const c = localStorage.getItem('bk.cls'); if (['fighter', 'cleric', 'bard'].includes(c)) pickedClass = c; } catch (e) {}
+// Each class has a base outfit from the wardrobe pack; picking a class dresses
+// the character in it (you can still change it afterwards).
+const CLASS_OUTFIT = { fighter: 31, cleric: 29, bard: 28 };   // Fighter kit, Pilgrim, Bard
 document.querySelectorAll('#classRow .classopt').forEach(d => {
   d.classList.toggle('sel', d.dataset.cls === pickedClass);
-  d.onclick = () => { pickedClass = d.dataset.cls; document.querySelectorAll('#classRow .classopt').forEach(x => x.classList.toggle('sel', x === d)); try { localStorage.setItem('bk.cls', pickedClass); } catch (e) {} };
+  d.onclick = () => { pickedClass = d.dataset.cls; document.querySelectorAll('#classRow .classopt').forEach(x => x.classList.toggle('sel', x === d)); if (CLASS_OUTFIT[pickedClass] != null) outfitSel.value = CLASS_OUTFIT[pickedClass]; try { localStorage.setItem('bk.cls', pickedClass); } catch (e) {} };
 });
 setInterval(() => { if (!zone) music.update(0.1); }, 100); // fades tick on the login screen too (the render loop isn't running yet)
 async function play() {

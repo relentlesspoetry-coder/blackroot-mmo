@@ -674,6 +674,60 @@ def r_crownbreaker_relicblade(w):
     for a in (0.3, 1.0, 1.7, 2.4, 3.1): w.crystal((0, 0, 0.04), (math.cos(a), 0, math.sin(a) * 0.5 + 0.1), 0.13, 0.025, C['gold'], n=4); w.crystal((0, 0, 0.04), (-math.cos(a), 0, math.sin(a) * 0.5 + 0.1), 0.13, 0.025, C['gold'], n=4)
     w.ribbon(-0.02, C['purple']); w.ribbon(-0.02, C['purple'], side=-1)
 
+# ---------------------------------------------------------------- instruments (the Bard)
+def i_lute(w):
+    """A lute after the Bard's emblem: a deep teardrop bowl of dark wood, a pale
+    soundboard with a gold rosette and a blue gem at the tail, a fretted neck
+    with a pegbox bent back and its pegs, four strings. Neck along +Z; the
+    origin is where the left hand holds the neck, the body hangs at -Z. The
+    soundboard faces +Y."""
+    R = trimesh.transformations.rotation_matrix
+    # bowl: a squashed sphere just behind the soundboard
+    bowl = trimesh.creation.icosphere(subdivisions=2, radius=1.0)
+    bowl.apply_transform(np.diag([0.19, 0.12, 0.27, 1.0])); bowl.apply_translation((0, -0.125, -0.33))
+    w.add(bowl, C['wood_lo'])
+    # soundboard: a teardrop, narrow at the neck, round at the tail
+    def half(u):   # half-width at u = -1 (tail) .. 1 (neck)
+        return 0.19 * math.sqrt(max(0.0, 1 - u * u)) * (0.62 + 0.38 * (1 - u) / 2)
+    us = [1 - i / 14 * 2 for i in range(15)]           # 1 .. -1
+    pts = [(half(u), -0.33 + u * 0.26) for u in us] + [(-half(u), -0.33 + u * 0.26) for u in us[-2:0:-1]]
+    w.prism(pts, 0.02, C['tan'], y=0.0)
+    n = len(pts)
+    for i in range(n):   # gold binding round the rim
+        p0 = pts[i]; p1 = pts[(i + 1) % n]
+        w.seg((p0[0], 0.012, p0[1]), (p1[0], 0.012, p1[1]), 0.006, C['gold'], n=4)
+    # the rosette and bridge
+    ring = trimesh.creation.annulus(r_min=0.035, r_max=0.055, height=0.008); ring.apply_transform(R(math.pi / 2, (1, 0, 0))); ring.apply_translation((0, 0.012, -0.36)); w.add(ring, C['gold'])
+    hole = trimesh.creation.cylinder(radius=0.036, height=0.006, sections=12); hole.apply_transform(R(math.pi / 2, (1, 0, 0))); hole.apply_translation((0, 0.011, -0.36)); w.add(hole, C['black'])
+    for k in range(6):   # rosette spokes
+        a = k / 6 * math.pi
+        w.seg((math.cos(a) * 0.034, 0.015, -0.36 + math.sin(a) * 0.034), (-math.cos(a) * 0.034, 0.015, -0.36 - math.sin(a) * 0.034), 0.003, C['gold_hi'], n=4)
+    w.box((0.11, 0.014, 0.022), (0, 0.016, -0.5), C['wood_lo'])   # bridge
+    w.gem((0, 0.02, -0.575), 0.022, C['blue'], stretch=1.4)       # the tail gem
+    w.gem((0, 0.026, -0.575), 0.01, C['blue_hi'])
+    # neck and fingerboard, frets, a gold collar where it meets the body
+    w.box((0.062, 0.032, 0.42), (0, -0.004, 0.13), C['wood'])
+    w.box((0.064, 0.008, 0.42), (0, 0.016, 0.13), C['black'])
+    for zf in (0.0, 0.05, 0.095, 0.135, 0.17, 0.205, 0.235, 0.265, 0.29):
+        w.box((0.066, 0.004, 0.006), (0, 0.021, zf), C['gold'])
+    w.box((0.07, 0.04, 0.03), (0, 0.0, -0.08), C['gold_lo'])
+    # pegbox bent back (away from the soundboard), four pegs, a gold finial
+    tilt = 0.6
+    peg = trimesh.creation.box(extents=(0.056, 0.03, 0.15)); peg.apply_translation((0, 0, 0.075)); peg.apply_transform(R(tilt, (1, 0, 0))); peg.apply_translation((0, 0.0, 0.34)); w.add(peg, C['wood_lo'])
+    along = (0, -math.sin(tilt), math.cos(tilt))
+    for k in range(4):
+        t = 0.03 + k * 0.03
+        cy = along[1] * t; cz = 0.34 + along[2] * t
+        side = 1 if k % 2 == 0 else -1
+        w.seg((side * 0.028, cy, cz), (side * 0.06, cy, cz), 0.007, C['gold'], n=6)
+        w.ball((side * 0.062, cy, cz), 0.011, C['gold_hi'])
+    w.gem((0, along[1] * 0.165, 0.34 + along[2] * 0.165), 0.018, C['gold_hi'], stretch=1.6)
+    # strings from the bridge over the rosette to the nut
+    for xs in (-0.024, -0.008, 0.008, 0.024):
+        w.seg((xs, 0.028, -0.49), (xs, 0.028, 0.33), 0.0025, C['string'], n=4)
+
+PACK_INSTR = [('00_Lute', i_lute)]
+
 PACK20 = [
     ('01_Short_Sword', w_short_sword), ('02_Scimitar', w_scimitar), ('03_Longsword', w_longsword), ('04_Greatsword', w_greatsword),
     ('05_Dagger', w_dagger), ('06_Battle_Axe', w_battle_axe), ('07_Greataxe', w_greataxe), ('08_Mace', w_mace), ('09_Warhammer', w_warhammer),
@@ -703,3 +757,4 @@ def build(pack, out):
 if __name__ == '__main__':
     build(PACK20, OUT20)
     build(PACK30, OUT30)
+    build(PACK_INSTR, OUT20)
