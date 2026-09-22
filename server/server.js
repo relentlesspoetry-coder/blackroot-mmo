@@ -1828,11 +1828,55 @@ function hurtPlayer(p, dmg, m, kind) {
   if (p.alive && p.hp > 0) afterHit(clericCtx, p, dmg + mit.absorbed, kind);
   if (mit.changed) sendStatus(p);
   if (p.hp <= 0) {
-    p.hp = 0; p.alive = false; p.deathTimer = RESPAWN_TIME; p.engagedWith = null;
     if (m) { m.targetId = null; m.provoked = false; m.state = 'idle'; }
-    systemChat(`${p.name} was slain by ${m ? (m.elite ? m.name : 'a ' + m.name) : (kind === 'poison' ? 'poison' : 'fire')}.`);
-    send(p.ws, { t: 'event', kind: 'death' });
+    killPlayer(p, `was slain by ${m ? (m.elite ? m.name : 'a ' + m.name) : (kind === 'poison' ? 'poison' : 'fire')}`);
   }
+}
+// Death. Everything the player carried and wore goes into a gravestone where
+// they fell; it stands for GRAVE_TTL seconds, and only they can dig it up.
+const GRAVE_TTL = 120;
+const graves = new Map();
+function killPlayer(p, how) {
+  p.hp = 0; p.alive = false; p.deathTimer = RESPAWN_TIME; p.engagedWith = null;
+  systemChat(`${p.name} ${how}.`);
+  const items = p.inventory.slice(), equipment = { ...p.equipment };
+  const hasGear = items.length || Object.values(equipment).some(Boolean);
+  if (hasGear) {
+    const id = nextId++;
+    graves.set(id, { id, zoneId: p.zoneId, x: +p.x.toFixed(2), z: +p.z.toFixed(2), name: p.name, owner: p.id, items, equipment, ttl: GRAVE_TTL });
+    p.inventory = []; p.equipment = emptySlots(); p.gear = gearOf(p.equipment);
+    sendBag(p);
+    send(p.ws, { t: 'event', kind: 'grave', id, text: `Your belongings lie in a grave where you fell. You have ${GRAVE_TTL / 60} minutes to get back to them.` });
+  }
+  send(p.ws, { t: 'event', kind: 'death' });
+}
+function stepGraves() {
+  for (const [id, g] of graves) {
+    g.ttl -= DT;
+    if (g.ttl <= 0) {
+      graves.delete(id);
+      const owner = [...players.values()].find(q => q.name === g.name);
+      if (owner) send(owner.ws, { t: 'event', kind: 'notice', text: 'Your grave has crumbled away, and everything in it with it.' });
+    }
+  }
+}
+function lootGrave(p, id) {
+  const g = graves.get(id); if (!g || g.zoneId !== p.zoneId) return;
+  const notice = (text) => send(p.ws, { t: 'event', kind: 'notice', text });
+  if (dist2(p.x, p.z, g.x, g.z) > 3.5 * 3.5) return notice('You need to be at the grave.');
+  if (g.owner !== p.id && g.name !== p.name) return notice(`This is ${g.name}'s grave. It is not yours to open.`);
+  let n = 0;
+  for (const [slot, name] of Object.entries(g.equipment)) { if (!name) continue; if (!p.equipment[slot]) p.equipment[slot] = name; else p.inventory.push(name); n++; }
+  for (const name of g.items) { p.inventory.push(name); n++; }
+  p.gear = gearOf(p.equipment);
+  graves.delete(id);
+  send(p.ws, { t: 'event', kind: 'loot', text: `You recover ${n} item${n === 1 ? '' : 's'} from your grave.`, gold: p.gold });
+  sendBag(p);
+}
+function graveList(zid) {
+  const out = [];
+  for (const g of graves.values()) if (g.zoneId === zid) out.push({ id: g.id, x: g.x, z: g.z, name: g.name, owner: g.owner, ttl: Math.ceil(g.ttl) });
+  return out;
 }
 function addSlow(p, t, k) { const ck = controlMult(p); if (ck < 1) spendSongCharges(clericCtx, p, 'control'); p.slow = { t: t * ck, k }; }
 function addDot(p, kind, t, dps) { if (resistsDot(clericCtx, p)) return; p.dots = p.dots || {}; p.dots[kind] = { t, dps, acc: 0 }; }
@@ -2061,11 +2105,7 @@ function stepPlayer(p) {
         p.hp -= d;
         p.combatTimer = REGEN.combatLockout;
         send(p.ws, { t: 'event', kind: 'hazard', dmg: d, hazard: inHazard.type });
-        if (p.hp <= 0) {
-          p.hp = 0; p.alive = false; p.deathTimer = RESPAWN_TIME;
-          send(p.ws, { t: 'event', kind: 'death' });
-          systemChat(`${p.name} succumbed to the ${inHazard.label}.`);
-        }
+        if (p.hp <= 0) killPlayer(p, `succumbed to the ${inHazard.label}`);
       }
     } else p.hazardAccum = 0;
   }
@@ -2154,6 +2194,7 @@ setInterval(() => {
   stepGates();
   for (const m of monsters.values()) stepMonster(m);
   for (const zone of Object.values(ZONES)) { stepHazards(bossCtx, zone, DT); stepSanctuaries(zone, DT); }
+  stepGraves();
   for (const p of players.values()) stepPlayer(p);
   for (const [id, p] of players) {   // bodies left behind by a mid-fight disconnect
     if (p.lingerT == null) continue;
@@ -2205,6 +2246,7 @@ setInterval(() => {
         depleted: depletedIds(ZONES[zid]),
         hazards: hazardList(ZONES[zid]),
         sanct: sanctuaryList(ZONES[zid]),
+        graves: graveList(zid),
         gate: gate ? +(gate.t * gate.dir).toFixed(3) : undefined, // signed: sign = swing direction
         time: +dayTime.toFixed(4), weather }));
     };
@@ -2360,6 +2402,7 @@ wss.on('connection', (ws) => {
         player.pendingChest = String(msg.id || ''); player.combatId = null; player.moveTo = null; player.pendingPickup = null; player.pendingMine = null;
         break;
       }
+      case 'lootgrave': { if (player && player.alive) lootGrave(player, Number(msg.id)); break; }
       case 'pickup': {
         if (!player || !player.alive) break;
         player.pendingPickup = Number(msg.id); player.combatId = null; player.moveTo = null; player.pendingChest = null; player.pendingMine = null;

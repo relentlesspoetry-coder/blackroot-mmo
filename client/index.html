@@ -64,6 +64,7 @@
   .splat.healamt { background: radial-gradient(circle at 40% 35%, #7de08c, #1c6b2a); }
   .splat.healamt.crit { background: radial-gradient(circle at 40% 35%, #fff3b0, #d8a81c); color: #2a1a00; }
   .splat.absorb { background: radial-gradient(circle at 40% 35%, #ffe9a0, #b8901c); color: #2a1a00; }
+  .plate.grave .nm { color: #c9d6ff; } .plate.grave .sub { font-size: 10px; color: #9aa6c4; text-align: center; }
   #momentum { display: flex; gap: 5px; justify-content: center; margin-bottom: 5px; height: 10px; }
   #momentum i { width: 10px; height: 10px; border-radius: 50%; background: #2a2038; border: 1px solid #6a4f9a; }
   #momentum i.on { background: radial-gradient(circle at 40% 35%, #ffd27a, #d8781c); border-color: #ffd27a; box-shadow: 0 0 6px #ffb347aa; }
@@ -1179,6 +1180,7 @@ function handle(m) {
       applyDepleted(m.depleted);
       syncHazards(m.hazards);
       syncSanctuaries(m.sanct);
+      syncGraves(window.__fakeGraves ? (m.graves || []).concat(window.__fakeGraves) : m.graves);   // (?debug: extra graves to look at)
       updateHudFromSnapshot(m);
       break;
     case 'transition':
@@ -1516,6 +1518,7 @@ function loadZone(zdata) {
   npcMarkLayer.innerHTML = ''; npcMarkEls.clear();
   closeDialogue();
   fireflies = null; critters = []; targetId = null;
+  for (const [, gr] of graveMeshes) if (gr.plate) gr.plate.remove(); graveMeshes.clear();   // rebuilt from the next snapshot in the new scene
 
   const e = zone.env || {};
   const bg = e.bg != null ? e.bg : 0x243240;
@@ -5464,6 +5467,60 @@ function renderWorld(dt) {
   updateGroundItems(b.items);
 }
 
+// ---- Graves: where a player fell, their gear stands under a headstone for
+// two minutes. A slab from the cave pack stood on end over a rubble pile; the
+// name and the time left float over it. Only the owner can dig it up.
+const graveMeshes = new Map();   // id -> { g, data, plate }
+function syncGraves(list) {
+  const seen = new Set();
+  for (const gv of (list || [])) {
+    seen.add(gv.id);
+    let rec = graveMeshes.get(gv.id);
+    if (!rec) {
+      const g = new THREE.Group(); g.position.set(gv.x, groundY(gv.x, gv.z), gv.z); g.rotation.y = (gv.id * 2.39) % 6.283;
+      scene.add(g); rec = { g, data: gv, built: false }; graveMeshes.set(gv.id, rec);
+      loadModels(['cave/Floor_Rock_Slab', 'cave/Rubble_Pile']).then(() => {
+        if (!graveMeshes.has(gv.id)) return;
+        const slab = cloneModel('Floor_Rock_Slab', 0.95, true), pile = cloneModel('Rubble_Pile', 0.7, true);
+        if (slab) { slab.rotation.set(0.1, Math.PI / 2, Math.PI / 2); slab.position.set(0, 0.34, -0.14); slab.scale.set(1.15, 0.8, 0.6); g.add(slab); }   // the floor slab stood on its long edge, face-on: a headstone
+        if (pile) { pile.position.set(0, 0, 0.25); pile.scale.multiplyScalar(1.2); g.add(pile); }
+        g.traverse(o => { if (o.isMesh) { o.userData.pickKind = 'grave'; o.userData.pickId = gv.id; o.castShadow = true; for (const mt of (Array.isArray(o.material) ? o.material : [o.material])) if (mt && mt.color) mt.color.multiplyScalar(0.7); } });
+        rec.built = true;
+        if (gv.owner === myId) spawnFx('glow', gv.x, g.position.y, gv.z, 0, { color: 0xc9d6ff, life: 1.2 });
+      });
+    }
+    rec.data = gv;
+  }
+  for (const [id, rec] of graveMeshes) if (!seen.has(id)) { scene.remove(rec.g); if (rec.plate) { rec.plate.remove(); } graveMeshes.delete(id); }
+}
+function updateGravePlates() {
+  for (const [id, rec] of graveMeshes) {
+    const gv = rec.data;
+    tmpV.set(rec.g.position.x, rec.g.position.y + 1.35, rec.g.position.z); tmpV.project(camera);
+    const selfRec = entityMeshes.get(myId);
+    const far = !selfRec || Math.hypot(selfRec.mesh.position.x - gv.x, selfRec.mesh.position.z - gv.z) > PLATE_RANGE;
+    if (tmpV.z > 1 || far) { if (rec.plate) rec.plate.style.display = 'none'; continue; }
+    if (!rec.plate) { rec.plate = document.createElement('div'); rec.plate.className = 'plate grave'; rec.plate.innerHTML = '<div class="nm"></div><div class="sub"></div>'; nameplatesEl.appendChild(rec.plate); }
+    rec.plate.style.display = 'block';
+    rec.plate.style.left = (tmpV.x * 0.5 + 0.5) * innerWidth + 'px'; rec.plate.style.top = (-tmpV.y * 0.5 + 0.5) * innerHeight + 'px';
+    rec.plate.querySelector('.nm').textContent = `⚰ Here lies ${gv.name}`;
+    rec.plate.querySelector('.sub').textContent = `${Math.floor(gv.ttl / 60)}:${String(gv.ttl % 60).padStart(2, '0')} left`;
+  }
+}
+let pendingGrave = null;
+function digGrave(id) {
+  const rec = graveMeshes.get(id); if (!rec) return;
+  const me = entityMeshes.get(myId); if (!me) return;
+  if (Math.hypot(me.mesh.position.x - rec.data.x, me.mesh.position.z - rec.data.z) < 3) { ws?.send(JSON.stringify({ t: 'lootgrave', id })); pendingGrave = null; return; }
+  pendingGrave = id; walkTo({ x: rec.data.x + 1.2, z: rec.data.z + 1.2 });
+}
+function updatePendingGrave() {
+  if (pendingGrave == null) return;
+  const rec = graveMeshes.get(pendingGrave), me = entityMeshes.get(myId);
+  if (!rec || !me) { pendingGrave = null; return; }
+  if (Math.hypot(me.mesh.position.x - rec.data.x, me.mesh.position.z - rec.data.z) < 3) { ws?.send(JSON.stringify({ t: 'lootgrave', id: pendingGrave })); pendingGrave = null; }
+}
+
 // Ground loot uses the authored drop models where one exists. Items without a
 // model (hides, bones, ores) still fall back to a glinting shard, which also
 // keeps loot visible if a model fails to load.
@@ -5887,6 +5944,7 @@ function pickAt(e) {
       if (rec && rec.data) return { kind: 'player', id: u.pickId, data: rec.data, point: h.point };
     }
     if (u.pickKind === 'chest' && u.pickId != null) return { kind: 'chest', id: u.pickId, point: h.point };
+    if (u.pickKind === 'grave' && u.pickId != null) { const gr = graveMeshes.get(u.pickId); return { kind: 'grave', id: u.pickId, data: gr ? gr.data : null, point: h.point }; }
     if (u.pickKind === 'fishspot' && u.pickId != null) { const s = fishSpots.find(f => f.id === u.pickId); return { kind: 'fishspot', id: u.pickId, tier: s ? s.tier : '', point: h.point }; }
     if (u.pickKind === 'cookfire' && u.pickId != null) return { kind: 'cookfire', id: u.pickId, point: h.point };
     if (u.pickKind === 'item' && u.pickId != null) { const r = itemMeshes.get(u.pickId); return { kind: 'item', id: u.pickId, name: r ? r.name : 'Item', qty: r ? r.qty : 1, point: h.point }; }
@@ -5920,6 +5978,13 @@ function optionsFor(pk) {
     return [
       { label: self ? 'Target <b>yourself</b>' : `Target <b>${escapeHtml(pk.data.name)}</b> <span class="lvl">(level ${pk.data.level}${pk.data.alive ? '' : ', dead'})</span>`, act: () => setFriend(self ? null : pk.id) },
       { label: `Examine ${escapeHtml(self ? 'yourself' : pk.data.name)}`, act: () => examineText(self ? 'That would be you.' : `${pk.data.name}, a level ${pk.data.level} ${CLASS_NAME[pk.data.cls] || 'Fighter'}.`) },
+    ];
+  }
+  if (pk.kind === 'grave') {
+    const mine = pk.data && (pk.data.owner === myId || (selfEnt() && pk.data.name === selfEnt().name));
+    return [
+      mine ? { label: 'Dig up <b>your grave</b>', act: () => digGrave(pk.id) } : { label: `Examine <b>${escapeHtml(pk.data ? pk.data.name + "'s grave" : 'grave')}</b>`, act: () => examineText(`Here lies ${pk.data ? pk.data.name : 'someone'}. Their belongings are buried with them — for now.`) },
+      { label: 'Examine grave', act: () => examineText(`A rough headstone. ${pk.data ? pk.data.name : 'Someone'} fell here.`) },
     ];
   }
   if (pk.kind === 'chest') return [
@@ -7636,6 +7701,7 @@ function onEvent(m) {
       if (m.by === myId) { flyText(m.name, 'xp'); addCombat(`You ${m.windup ? 'begin casting' : 'use'} ${m.name}.`, 'me'); gcdUntil = performance.now() + ((abilityClass && abilityClass.gcd) || 1.5) * 1000; } break;
     }
     case 'heal': showHeal(m); break;
+    case 'grave': addChat('', m.text, true); flyText('Your gear is in your grave', 'dmg'); break;
     case 'spell': spellFx(m); break;
     case 'learned':
       { const lrec = entityMeshes.get(myId); if (lrec && m.id === 'momentum') startAbilityAnim(lrec, 'momentum'); sfx.play('quest_complete', { rate: 1.1, vol: 0.7 }); }
@@ -8685,7 +8751,7 @@ function animate() {
   _pf('roofs', () => updateHouseRoofs());
   _pf('lights', () => updateLightGroups());
   _pf('poi', () => updatePoiLabels());
-  _pf('plates', () => updateNameplates());
+  _pf('plates', () => { updateNameplates(); updateGravePlates(); updatePendingGrave(); });
   _pf('npcmk', () => updateNpcMarkers());
   _pf('npcidle', () => animateNpcs(dt));
   _pf('veins', () => updateVeinFade(dt));

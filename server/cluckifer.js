@@ -112,7 +112,7 @@ function knockback(ctx, zone, p, fromX, fromZ, dist) {
 function target(ctx, m) {
   let t = m.targetId ? ctx.players.get(m.targetId) : null;
   if (t && (!t.alive || t.zoneId !== m.zoneId)) t = null;
-  if (!t) { let best = null, bd = 45 * 45; for (const p of ctx.players.values()) { if (!p.alive || p.zoneId !== m.zoneId) continue; const d = ctx.dist2(p.x, p.z, m.x, m.z); if (d < bd) { bd = d; best = p; } } t = best; m.targetId = t ? t.id : null; }   // someone else nearby (a healer standing off) inherits the fight; nobody within 45 m and the event ends
+  if (!t) { let best = null, bd = 28 * 28; for (const p of ctx.players.values()) { if (!p.alive || p.zoneId !== m.zoneId) continue; const d = ctx.dist2(p.x, p.z, m.x, m.z); if (d < bd) { bd = d; best = p; } } t = best; m.targetId = t ? t.id : null; }   // someone else close by (a healer standing off) inherits the fight; nobody within 28 m and the event ends
   return t;
 }
 function face(m, p) { if (p) m.yaw = Math.atan2(p.x - m.x, p.z - m.z); }
