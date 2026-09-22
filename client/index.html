@@ -1256,7 +1256,7 @@ function handle(m) {
     case 'bag':
       bag = { items: m.items || [], gold: m.gold || 0,
         equipment: m.equipment || {},
-        stats: m.stats || { atk: 0, def: 0 } };
+        stats: m.stats || { atk: 0, def: 0 }, swing: m.swing || null };
       if (m.slots) slotInfo = m.slots;
       if (m.doll) dollSize = m.doll;
       renderBag();
@@ -1272,7 +1272,7 @@ function handle(m) {
       fillBarDefaults(); renderActionBar(); renderSpellbook(); refreshDialogue();
       break;
     case 'status':
-      selfMomentum = m.momentum || 0; buffList = m.buffs || []; renderMomentum(); renderBuffs();
+      selfMomentum = m.momentum || 0; buffList = m.buffs || []; selfBuffs = buffList.map(b => b.id); renderMomentum(); renderBuffs();
       break;
     case 'quests':
       questData = { active: m.active || [], available: m.available || [], completed: m.completed || [], markers: m.markers || {} };
@@ -7925,7 +7925,6 @@ function updateHudFromSnapshot(snap) {
     document.getElementById('stamfill').parentElement.classList.toggle('mana', !!me.manaMax);
     selfStam = res;
   }
-  selfBuffs = me.fx || [];
   updateAllyFrame(snap);
   updateTargetFrame(snap);
   updateSwingBar(me);
@@ -8342,6 +8341,11 @@ function statText(m) {
   const bits = [];
   if (m.atk) bits.push(`+${m.atk} atk`);
   if (m.def) bits.push(`+${m.def} def`);
+  // Two weapons with the same +atk can fight completely differently, so the
+  // swing speed, the damage type and the grip belong on the tooltip too.
+  if (m.spd) bits.push(`${m.spd}s ${m.dmgType}${m.hands === 2 ? ' 2H' : ''}`);
+  if (m.rangedAt) bits.push(`${m.rangedAt}m range`);
+  else if (m.reach) bits.push(`+${m.reach}m reach`);
   if (m.level > 1) bits.push(`lv ${m.level}`);
   return bits.length ? ' (' + bits.join(', ') + ')' : '';
 }
@@ -8525,7 +8529,8 @@ const BUFF_LABEL = { rushing_force: 'Rushing Force', weapon_flow: 'Weapon Flow',
   purified_soul: 'Purified Soul', divine_intervention: 'Divine Intervention', di_mend: 'Intervention Mend', guardian_prayer: 'Guardian Prayer', revival_sickness: 'Revival Sickness', avatar_of_mercy: 'Avatar of Mercy',
   song_of_mending: 'Song of Mending', mana_melody: 'Mana Melody', hymn_of_courage: 'Hymn of Courage', battle_hymn: 'Battle Hymn', drumbeat_rush: 'Drumbeat Rush', perfect_harmony: 'Perfect Harmony',
   blade_rhythm: 'Blade Rhythm', chorus_of_clarity: 'Chorus of Clarity', resonant_shield: 'Resonant Shield', chorus_of_war: 'Chorus of War', songweave: 'Songweave', legendary_ballad: 'Legendary Ballad',
-  dreamsong: 'Dreamsong', echoing_verse: 'Echoing Verse' };
+  dreamsong: 'Dreamsong', echoing_verse: 'Echoing Verse',
+  opening: 'Opening!', blessed_hands: 'Blessed Hands', encore: 'Encore!' };
 const BAD_BUFF = new Set(['reckless_exposure', 'revival_sickness']);
 function renderBuffs() {
   const el = document.getElementById('buffrow'); if (!el) return;
@@ -8616,9 +8621,10 @@ function renderEquipment() {
   stage.innerHTML = dollFigure(d.w, d.h) +
     Object.entries(slotInfo).map(([slot, info]) => slotCell(slot, info)).join('');
 
-  const st = bag.stats || { atk: 0, def: 0 };
+  const st = bag.stats || { atk: 0, def: 0 }, sw = bag.swing;
   document.getElementById('equipStats').innerHTML =
     `<span>Attack <b>+${st.atk || 0}</b></span><span>Defence <b>+${st.def || 0}</b></span>` +
+    (sw ? `<span>Swing <b>${sw.lo}-${sw.hi}</b> ${sw.type} every <b>${sw.sec}s</b></span>` : '') +
     `<span>Worn <b>${wornCount}</b>/${Object.keys(slotInfo).length}</span>`;
   document.getElementById('equipCount').textContent = '';
   document.getElementById('equipHint').textContent =

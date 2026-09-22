@@ -1013,13 +1013,24 @@ function pickupItem(p, itemId) {
 }
 
 // What every item is, for bag tooltips / Examine: sent once on join.
-const ITEM_CATALOG = Object.fromEntries(Object.entries(ITEMS).map(([n, d]) => [n, {
-  slot: d.slot || null, atk: d.atk || 0, def: d.def || 0, level: d.level || 1, value: d.value || 0,
-  heal: d.heal || 0, desc: d.desc || null, gear: d.gear || null, model: d.model || null, len: d.len || null, tier: d.tier || 0, set: d.set || null, rarity: d.rarity || null,
-}]));
+// Weapons carry their combat profile to the client as well as their bonus:
+// how often they swing, what kind of damage they do and whether they need two
+// hands is the difference between two weapons with the same +atk.
+const ITEM_CATALOG = Object.fromEntries(Object.entries(ITEMS).map(([n, d]) => {
+  const w = d.slot === 'weapon' ? weaponProfile(n) : null;
+  return [n, {
+    slot: d.slot || null, atk: d.atk || 0, def: d.def || 0, level: d.level || 1, value: d.value || 0,
+    heal: d.heal || 0, desc: d.desc || null, gear: d.gear || null, model: d.model || null, len: d.len || null, tier: d.tier || 0, set: d.set || null, rarity: d.rarity || null,
+    spd: w ? +swingSeconds(w).toFixed(1) : undefined, dmgType: w ? w.type : undefined,
+    hands: w ? w.hands : undefined, reach: w && w.reach ? w.reach : undefined, rangedAt: w && w.range ? w.range : undefined, arch: w ? w.arch : undefined,
+  }];
+}));
 function sendBag(p) {
+  const w = weaponOf(p), cs = classStats(p.cls, p.level), eq = equipStats(p.equipment);
+  const [lo, hi] = swingBand(w, cs.str, eq.atk || 0);
   send(p.ws, { t: 'bag', items: p.inventory, gold: p.gold,
-    equipment: p.equipment, stats: equipStats(p.equipment), slots: SLOT_INFO, doll: DOLL });
+    equipment: p.equipment, stats: eq, slots: SLOT_INFO, doll: DOLL,
+    swing: { sec: +swingSeconds(w).toFixed(1), type: w.type, lo, hi, reach: +reachOf(p).toFixed(1), hands: w.hands } });
   // A 'collect' objective reads straight off the inventory, so any bag change
   // can complete (or un-complete) a quest.
   sendQuests(p);
@@ -1677,7 +1688,7 @@ function addMomentum(p, n) {
 // one, and it is spent by the ability it lights up (see spendCharges / the
 // free-cost check in useAbility).
 const CRIT_PROCS = {
-  fighter: { id: 'overpower_ready', chance: 0.25, dur: 8,  name: 'Overpower', dmg: 0.30, charges: 1, text: 'Overpower ready!' },
+  fighter: { id: 'opening', chance: 0.25, dur: 8,  name: 'Opening', dmg: 0.30, charges: 1, text: 'An opening! Your next ability strikes for +30%.' },
   cleric:  { id: 'blessed_hands',   chance: 0.20, dur: 10, name: 'Blessed Hands', heal: 0.30, charges: 1, text: 'Your hands blaze with light!' },
   bard:    { id: 'encore',          chance: 0.22, dur: 10, name: 'Encore', free: true, charges: 1, text: 'Encore! Your next song is free.' },
 };
