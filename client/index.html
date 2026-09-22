@@ -22,6 +22,7 @@
   #login p { color: #8fa3bf; font-size: 14px; }
   #login .card { background: #121a26; border: 1px solid #24344a; border-radius: 14px; padding: 24px 28px; display: flex; flex-direction: column; gap: 12px; width: 320px; }
   #login input { background: #0c131d; border: 1px solid #2a3c54; color: #e7eef7; padding: 11px 12px; border-radius: 8px; font-size: 15px; }
+  #fixedlook { display: none; font-size: 11px; color: #8fa3bf; margin: 4px 2px 6px; }
   #login .lookrow { display: flex; gap: 10px; }
   #login .lookrow label { flex: 1; display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #8fa3bf; }
   #login select { background: #0c131d; border: 1px solid #2a3c54; color: #e7eef7; padding: 8px; border-radius: 8px; font-size: 13px; }
@@ -414,8 +415,11 @@
   <p>A fully 3D browser MMO</p>
   <div class="card">
     <input id="nameInput" maxlength="16" placeholder="Character name" autocomplete="off" />
-    <div class="lookrow"><label>Hair <select id="hairSel"></select></label><label>Hair colour <input type="color" id="hairCol" value="#4a2e1a"></label></div>
-    <div class="lookrow"><label>Outfit <select id="outfitSel"></select></label><label>Skin <input type="color" id="skinCol" value="#cba281"></label></div>
+    <div id="lookrows">
+      <div class="lookrow"><label>Hair <select id="hairSel"></select></label><label>Hair colour <input type="color" id="hairCol" value="#4a2e1a"></label></div>
+      <div class="lookrow"><label>Outfit <select id="outfitSel"></select></label><label>Skin <input type="color" id="skinCol" value="#cba281"></label></div>
+    </div>
+    <div id="fixedlook">The Fighter comes as he is — mantle, pauldron and all.</div>
     <div class="classrow" id="classRow">
       <div class="classopt sel" data-cls="fighter"><img src="ui/fighter/emblem.png" alt=""><div><b>Fighter</b>Two-handed bruiser. Rage.</div></div>
       <div class="classopt" data-cls="cleric"><img src="ui/cleric/emblem.png" alt=""><div><b>Cleric</b>Holy healer. Mana.</div></div>
@@ -9398,8 +9402,15 @@ const CLASS_LOOK = {
 const CLASS_OUTFIT = { fighter: 32, cleric: 34, bard: 33 };
 document.querySelectorAll('#classRow .classopt').forEach(d => {
   d.classList.toggle('sel', d.dataset.cls === pickedClass);
-  d.onclick = () => { pickedClass = d.dataset.cls; document.querySelectorAll('#classRow .classopt').forEach(x => x.classList.toggle('sel', x === d)); if (CLASS_OUTFIT[pickedClass] != null) outfitSel.value = CLASS_OUTFIT[pickedClass]; try { localStorage.setItem('bk.cls', pickedClass); } catch (e) {} };
+  d.onclick = () => { pickedClass = d.dataset.cls; document.querySelectorAll('#classRow .classopt').forEach(x => x.classList.toggle('sel', x === d)); syncLookRows(); if (CLASS_OUTFIT[pickedClass] != null) outfitSel.value = CLASS_OUTFIT[pickedClass]; try { localStorage.setItem('bk.cls', pickedClass); } catch (e) {} };
 });
+// A Fighter's figure is fixed, so the pickers that wouldn't do anything hide.
+function syncLookRows() {
+  const fixed = pickedClass === 'fighter';
+  document.getElementById('lookrows').style.display = fixed ? 'none' : 'block';
+  document.getElementById('fixedlook').style.display = fixed ? 'block' : 'none';
+}
+syncLookRows();
 setInterval(() => { if (!zone) music.update(0.1); }, 100); // fades tick on the login screen too (the render loop isn't running yet)
 async function play() {
   const name = nameInput.value.trim() || 'Adventurer';
