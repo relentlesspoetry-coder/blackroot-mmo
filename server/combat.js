@@ -161,8 +161,6 @@ export function facing(defX, defZ, defYaw, srcX, srcZ, halfAngle = 1.75) {
   while (d < -Math.PI) d += 2 * Math.PI;
   return Math.abs(d) <= halfAngle;
 }
-// Behind the target — a rogue's home, and no parry or block reaches there.
-export function behind(defX, defZ, defYaw, srcX, srcZ) { return !facing(defX, defZ, defYaw, srcX, srcZ, 1.05); }
 
 // ---------------------------------------------------------------------------
 // Monster archetypes

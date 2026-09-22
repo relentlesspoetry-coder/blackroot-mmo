@@ -17,7 +17,7 @@ import {
   TICK, CLASSES, DEFAULT_CLASS, classDef, classStats, abilityCost,
   maxHit, MEDITATION, meditationHealPerTick, rollGear } from './balance.js';
 import { ITEMS, SLOTS, SLOT_INFO, DOLL, itemDef, slotOf, valueOf, equipStats, slotsFor, emptySlots } from './items.js';
-import { weaponProfile, swingSeconds, weaponRange, swingBand, resolveAttack, facing, behind,
+import { weaponProfile, swingSeconds, weaponRange, swingBand, resolveAttack, facing,
          MOB_ARCH, MOB_DEF, archOf, addThreat, threatOf, dropThreat, clearThreat, taunt, topThreat, decayThreat } from './combat.js';
 import { BOSS_TEMPLATES, BOSS_ITEMS, maybeSpawnCluckifer, stepCluckifer, stepMinion, stepHazards, hazardList, onMinionKilled, onBossKilled } from './cluckifer.js';
 import { isSpell, checkCast, castSpell, costOf, hymnTick, mitigate, onLethal, afterHit, resistsDot, monsterDmgMult, fleeStep, stepHots, stepSanctuaries, sanctuaryList } from './cleric.js';
@@ -1597,10 +1597,12 @@ function playerSwing(p, m, dmgMult) {
 // shielded defender blocks, a scuttling spider dodges, a beast does neither.
 function monsterDefence(m, from) {
   const a = MOB_DEF[m.arch] || MOB_DEF.beast;
+  // A defender that has just raised its shield is much harder to get through.
+  const wall = (m.debuffs && m.debuffs.mob_shield_wall > 0) ? 0.25 : 0;
   return {
     level: monsterDef(m),
     dodge: a.dodge * ((m.debuffs && m.debuffs.crushed_armor > 0) ? 0.8 : 1),
-    parry: a.parry, block: a.block,
+    parry: a.parry, block: a.block + wall,
     blockAmt: Math.round((a.block ? 3 + (m.level || 1) * 1.4 : 0)),
     armour: m.defBonus || 0,
     facing: from ? facing(m.x, m.z, m.yaw, from.x, from.z) : true,
@@ -1903,10 +1905,11 @@ function useAbility(p, id, fromQueue) {
     freeProc.charges--; if (freeProc.charges <= 0) delete p.buffs[freeProc.id];
   }
   p.cooldowns[id] = a.cd || 0; p.gcd = gcdFor(p, a);
+  const gcd = p.gcd;
   let windup = a.windup || a.cast || 0;
   if (windup && a.cast) windup = Math.max(Math.min(windup, 1), windup * castTimeMult(p));   // Battle Hymn quickens casts, never under a second
-  if (windup) { p.windup = { id, t: windup, dur: windup, cost, fire }; broadcast({ t: 'event', kind: 'ability', by: p.id, id, name: a.name, windup }); }
-  else { broadcast({ t: 'event', kind: 'ability', by: p.id, id, name: a.name }); fire(); }
+  if (windup) { p.windup = { id, t: windup, dur: windup, cost, fire }; broadcast({ t: 'event', kind: 'ability', by: p.id, id, name: a.name, windup, gcd }); }
+  else { broadcast({ t: 'event', kind: 'ability', by: p.id, id, name: a.name, gcd }); fire(); }
   sendAbilities(p); sendStatus(p);
 }
 // Per-tick class upkeep: rage, cooldowns, buffs, momentum, wind-ups, channels.
@@ -2035,7 +2038,7 @@ function interruptMonster(m, by, lockout = 5) {
 }
 function fireMonsterAbility(m, ab, target) {
   const arch = MOB_ARCH[m.arch] || MOB_ARCH.warrior;
-  if (ab.self) { m.debuffs = m.debuffs || {}; m.buffFlags = m.buffFlags || {}; m.buffFlags[ab.self.id] = ab.self; m.debuffs[ab.self.id] = ab.self.dur; broadcast({ t: 'event', kind: 'mobbuff', by: m.id, id: ab.self.id, name: ab.name, dur: ab.self.dur }); return; }
+  if (ab.self) { m.debuffs = m.debuffs || {}; m.debuffs[ab.self.id] = ab.self.dur; broadcast({ t: 'event', kind: 'mobbuff', by: m.id, id: ab.self.id, name: ab.name, dur: ab.self.dur }); return; }
   if (ab.heal) {
     const friend = woundedAlly(m) || m;
     const amt = Math.round(friend.maxHp * ab.heal);

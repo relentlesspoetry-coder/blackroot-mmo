@@ -7961,7 +7961,9 @@ function onEvent(m) {
       const arec = entityMeshes.get(m.by);
       if (m.cancel) { if (arec && arec.mesh.userData.rig) { arec.mesh.userData.rig.anim = null; if (arec.mesh.userData.rig.weapon) arec.mesh.userData.rig.weapon.visible = true; } endCastFx(m.by); break; }
       if (arec) startAbilityAnim(arec, m.id, m.windup);
-      if (m.by === myId) { flyText(m.name, 'xp'); addCombat(`You ${m.windup ? 'begin casting' : 'use'} ${m.name}.`, 'me'); gcdUntil = performance.now() + ((abilityClass && abilityClass.gcd) || 1.5) * 1000; } break;
+      // The server says what global cooldown it actually applied — an
+      // off-GCD interrupt shouldn't grey out the rest of the bar.
+      if (m.by === myId) { flyText(m.name, 'xp'); addCombat(`You ${m.windup ? 'begin casting' : 'use'} ${m.name}.`, 'me'); gcdUntil = performance.now() + (m.gcd != null ? m.gcd : ((abilityClass && abilityClass.gcd) || 1.5)) * 1000; } break;
     }
     case 'heal': showHeal(m); break;
     case 'grave': addChat('', m.text, true); flyText('Your gear is in your grave', 'dmg'); break;
