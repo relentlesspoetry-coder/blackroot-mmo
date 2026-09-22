@@ -19,6 +19,8 @@ import {
 import { ITEMS, SLOTS, SLOT_INFO, DOLL, itemDef, slotOf, valueOf, equipStats, slotsFor, emptySlots } from './items.js';
 import { BOSS_TEMPLATES, BOSS_ITEMS, maybeSpawnCluckifer, stepCluckifer, stepMinion, stepHazards, hazardList, onMinionKilled, onBossKilled } from './cluckifer.js';
 import { isSpell, checkCast, castSpell, costOf, hymnTick, mitigate, onLethal, afterHit, resistsDot, monsterDmgMult, fleeStep, stepHots, stepSanctuaries, sanctuaryList } from './cleric.js';
+import { isBardSpell, checkBardCast, castBard, spendSongCharges, songAmp, atkSpeedMult, castTimeMult, meditationMult, manaRegenMult, controlMult, hasBardDebuff,
+  bardMonsterDmgMult, bardMonsterDefMult, bardMonsterTakenMult, bardMonsterSpeedMult, bardMonsterAtkSpeedMult, stepSongs } from './bard.js';
 import {
   dist2, closestOnPolyline, mulberry32, pointInPoly, polyCentroid, generateTrees, generateScatter, generateHanging,
   mergeOutlines, roughenOutline, generateEdgeForest,
@@ -1337,7 +1339,7 @@ const WEAPON_SPEED = {
 function playerAttackSpeed(p) {
   const w = p.equipment && p.equipment.weapon;
   const mo = classDef(p.cls).momentum, k = mo ? 1 - mo.atkSpeedPerStack * (p.momentum || 0) : 1;
-  return (WEAPON_SPEED[w] || DEFAULT_ATTACK_SPEED) * TICK * k;
+  return (WEAPON_SPEED[w] || DEFAULT_ATTACK_SPEED) * TICK * k * atkSpeedMult(p);
 }
 // Meditation trains as you rest to heal: xp scales with HP recovered.
 function addMeditationXp(p, amount) {
@@ -1516,7 +1518,7 @@ function playerSwing(p, m, dmgMult) {
   const eq = equipStats(p.equipment), bonus = eq.atk || 0, cs = classStats(p.cls, p.level);
   const dmg = rollSwing(cs.atk, cs.str, bonus, bonus, monsterDef(m), m.defBonus || 0, dmgMult * (1 + dmgBuff(p, false)) * takenMult(m));
   applyHit(p, m, dmg, false);
-  if (dmg > 0) addRage(p, (classDef(p.cls).rage || {}).autoHit || 0);   // landing a blow feeds the rage
+  if (dmg > 0) { addRage(p, (classDef(p.cls).rage || {}).autoHit || 0); spendSongCharges(clericCtx, p, 'weapon'); }   // landing a blow feeds the rage (and spends Blade Rhythm)
   return dmg;
 }
 function addRage(p, n) { const R = classDef(p.cls).rage; if (!R || !n) return; p.rage = Math.min(R.max, (p.rage || 0) + n); p.rageIdle = 0; }
@@ -1525,27 +1527,33 @@ function resOf(p) { return classDef(p.cls).mana ? (p.mana || 0) : (p.rage || 0);
 function spendRes(p, n) { if (classDef(p.cls).mana) p.mana = Math.max(0, (p.mana || 0) - n); else p.rage = Math.max(0, (p.rage || 0) - n); }
 function refundRes(p, n) { if (classDef(p.cls).mana) p.mana = Math.min(p.manaMax || 0, (p.mana || 0) + n); else p.rage = Math.min(p.rageMax || 0, (p.rage || 0) + n); }
 // Monster effective defence, with Crushed Armour.
-function monsterDef(m) { return (m.defLevel || 1) * ((m.debuffs && m.debuffs.crushed_armor > 0) ? 0.92 : 1); }
-function takenMult(m) { return (m.debuffs && m.debuffs.split_guard > 0) ? 1.08 : 1; }
-// Damage bonus from the player's active buffs (heavy: the ability spends Weapon Flow).
-function dmgBuff(p, heavy) {
+function monsterDef(m) { return (m.defLevel || 1) * ((m.debuffs && m.debuffs.crushed_armor > 0) ? 0.92 : 1) * bardMonsterDefMult(m); }
+function takenMult(m) { return ((m.debuffs && m.debuffs.split_guard > 0) ? 1.08 : 1) * bardMonsterTakenMult(m); }
+// Damage bonus from the player's active buffs (heavy: the ability spends
+// Weapon Flow; spell: a cast, which weapon-only songs don't help).
+function dmgBuff(p, heavy, spell) {
   let b = 0;
   for (const [id, bf] of Object.entries(p.buffs)) {
     if (!(bf.t > 0) || !bf.dmg) continue;
     if (bf.heavyOnly && !heavy) continue;
-    b += bf.dmg;
+    if (bf.meleeOnly && spell) continue;
+    b += bf.dmg * songAmp(p, bf);
   }
   return b;
 }
-function critChance(p) { let c = classDef(p.cls).critBase || 0.05; for (const bf of Object.values(p.buffs)) if (bf.t > 0 && bf.crit) c += bf.crit; return c; }
+function critChance(p) { let c = classDef(p.cls).critBase || 0.05; for (const bf of Object.values(p.buffs)) if (bf.t > 0 && bf.crit) c += bf.crit * songAmp(p, bf); return c; }
 function incomingMult(p) { let m = 1; for (const bf of Object.values(p.buffs)) if (bf.t > 0 && bf.taken) m += bf.taken; return m; }
-function moveMult(p) { let m = 1; for (const bf of Object.values(p.buffs)) if (bf.t > 0 && bf.move) m += bf.move; if (p.channel) m *= 0.6; if (p.slow && p.slow.t > 0) m *= p.slow.k; return m; }
+function moveMult(p) {
+  let m = 1;
+  for (const bf of Object.values(p.buffs)) { if (!(bf.t > 0) || !bf.move) continue; const v = bf.moveCombat != null && (p.combatTimer || 0) > 0 ? bf.moveCombat : bf.move; m += v * songAmp(p, bf); }
+  if (p.channel) m *= 0.6; if (p.slow && p.slow.t > 0) m *= p.slow.k; return m;
+}
 function addBuff(p, spec) { p.buffs[spec.id] = { ...spec, t: spec.dur, charges: spec.charges || 0, since: 0 }; if (p.ws) sendStatus(p); }
 // A landed hit: damage, xp, splat, kill; momentum / savage triggers.
 function applyHit(p, m, dmg, crit, kind) {
   p.lastCombat = Date.now(); p.combatTimer = REGEN.combatLockout;
   if (m.vulnerable > 0 && dmg > 0) dmg = Math.round(dmg * 1.5);   // a stunned boss takes it hard
-  if (dmg > 0) { m.hp -= dmg; m.provoked = true; if (!m.boss) { m.targetId = p.id; m.state = 'combat'; } } // class xp comes with the kill (killMonster), not per hit
+  if (dmg > 0) { m.hp -= dmg; m.provoked = true; if (!m.boss) { m.targetId = p.id; m.state = 'combat'; } if (m.debuffs && m.debuffs.asleep) delete m.debuffs.asleep; spendSongCharges(clericCtx, p, 'offensive'); } // class xp comes with the kill (killMonster), not per hit; a blow wakes a lullaby
   broadcast({ t: 'event', kind: 'hit', by: p.id, target: m.id, dmg, crit: !!crit, targetKind: 'monster', hitKind: kind || null });
   if (crit) savageTrigger(p);
   if (m.hp <= 0) killMonster(m, p);
@@ -1581,6 +1589,7 @@ function abilityHit(p, m, ab, extra = {}) {
   const dmg = Math.max(1, Math.round(base * mult));
   applyHit(p, m, dmg, crit);
   addRage(p, (classDef(p.cls).rage || {}).abilityHit || 0);   // every blow that lands builds a little more
+  spendSongCharges(clericCtx, p, 'weapon');
   p.lastHit = { dmg, crit };   // Heavy Swing's extra stack on a crit reads this
   return dmg;
 }
@@ -1641,6 +1650,7 @@ function useAbility(p, id) {
   const cost = isSpell(a) ? costOf(p, a) : (a.cost || 0);
   if (resOf(p) < cost) return notice(`Not enough ${(c.resource || 'rage').toLowerCase()}.`);
   if (isSpell(a)) { const err = checkCast(clericCtx, p, a); if (err) return notice(err); }
+  if (isBardSpell(a)) { const err = checkBardCast(clericCtx, p, a); if (err) return notice(err); }
   const target = p.combatId != null ? monsters.get(p.combatId) : null;
   const inReach = target && target.alive && dist2(p.x, p.z, target.x, target.z) <= ATTACK_RANGE * ATTACK_RANGE;
   const needTarget = ['melee', 'execute', 'cone', 'rush'].includes(a.kind);
@@ -1653,6 +1663,7 @@ function useAbility(p, id) {
 
   const fire = () => {
     if (isSpell(a)) { castSpell(clericCtx, p, a); sendStatus(p); return; }
+    if (isBardSpell(a)) { castBard(clericCtx, p, a); sendStatus(p); return; }
     const t = p.combatId != null ? monsters.get(p.combatId) : null;
     if (['melee', 'execute'].includes(a.kind) && !(t && t.alive && dist2(p.x, p.z, t.x, t.z) <= ATTACK_RANGE * ATTACK_RANGE)) return;
     switch (a.kind) {
@@ -1715,7 +1726,8 @@ function useAbility(p, id) {
   };
   spendRes(p, cost);
   p.cooldowns[id] = a.cd || 0; p.gcd = c.gcd || 0;
-  const windup = a.windup || a.cast || 0;
+  let windup = a.windup || a.cast || 0;
+  if (windup && a.cast) windup = Math.max(Math.min(windup, 1), windup * castTimeMult(p));   // Battle Hymn quickens casts, never under a second
   if (windup) { p.windup = { id, t: windup, dur: windup, cost, fire }; broadcast({ t: 'event', kind: 'ability', by: p.id, id, name: a.name, windup }); }
   else { broadcast({ t: 'event', kind: 'ability', by: p.id, id, name: a.name }); fire(); }
   sendAbilities(p); sendStatus(p);
@@ -1734,10 +1746,10 @@ function stepClass(p, inCombat) {
   if (M) {
     // Mana: a share of the pool every few seconds, far more of it out of a fight.
     if (p.mana == null) p.mana = p.manaMax;
-    const rate = (inCombat ? M.combatRegen : M.idleRegen) * (p.resting ? 1.5 : 1) / M.period;
+    const rate = (inCombat ? M.combatRegen : M.idleRegen) * (p.resting ? 1.5 : 1) * manaRegenMult(p, inCombat) / M.period;
     p.mana = Math.min(p.manaMax, p.mana + p.manaMax * rate * DT);
   }
-  stepHots(clericCtx, p, DT);
+  stepHots(clericCtx, p, DT); stepSongs(clericCtx, p, DT);
   p.gcd = Math.max(0, (p.gcd || 0) - DT);
   p.savageCd = Math.max(0, (p.savageCd || 0) - DT);
   if (p.slow && p.slow.t > 0) p.slow.t -= DT;
@@ -1789,9 +1801,10 @@ function stepClass(p, inCombat) {
 // Hurt a player from any source (a monster, a hazard, a boss mechanic):
 // health, combat lockout, rage, the hit splat, and death.
 const LOGOUT_COMBAT_WAIT = 30;   // seconds out of combat before a player may log out
+const VIS_BUFFS = new Set(['renewing_prayer', 'prayer_of_mending', 'divine_intervention', 'guardian_prayer', 'avatar_of_mercy']);   // buffs the client draws on the body
 function hurtPlayer(p, dmg, m, kind) {
   if (!p.alive || dmg <= 0) return;
-  if (m && m.debuffs) dmg = Math.max(1, Math.round(dmg * monsterDmgMult(m)));
+  if (m && m.debuffs) dmg = Math.max(1, Math.round(dmg * monsterDmgMult(m) * bardMonsterDmgMult(m)));
   const mit = mitigate(clericCtx, p, dmg, m, kind); dmg = mit.dmg;
   if (dmg >= p.hp) dmg = onLethal(clericCtx, p, dmg);
   p.hp -= dmg; p.combatTimer = REGEN.combatLockout; p.lastCombat = Date.now();
@@ -1807,11 +1820,11 @@ function hurtPlayer(p, dmg, m, kind) {
     send(p.ws, { t: 'event', kind: 'death' });
   }
 }
-function addSlow(p, t, k) { p.slow = { t, k }; }
+function addSlow(p, t, k) { const ck = controlMult(p); if (ck < 1) spendSongCharges(clericCtx, p, 'control'); p.slow = { t: t * ck, k }; }
 function addDot(p, kind, t, dps) { if (resistsDot(clericCtx, p)) return; p.dots = p.dots || {}; p.dots[kind] = { t, dps, acc: 0 }; }
 // What the Cleric module needs from the world.
 const clericCtx = {
-  players, monsters, send, broadcast, systemChat, zoneOf, addBuff, applyHit, critChance, sendStatus,
+  players, monsters, send, broadcast, systemChat, zoneOf, addBuff, applyHit, critChance, sendStatus, dmgBuff,
   nextId: () => nextId++,
 };
 const bossCtx = {
@@ -1842,12 +1855,14 @@ function stepMonster(m) {
   if (m.minion) {
     if (m.debuffs) for (const k of Object.keys(m.debuffs)) { m.debuffs[k] -= DT; if (m.debuffs[k] <= 0) delete m.debuffs[k]; }
     if (fleeStep(clericCtx, zone, m, DT)) { resolveCollision(zone, m, 0.5); return; }
+    if (m.debuffs && m.debuffs.asleep > 0) return;
     stepMinion(bossCtx, m, DT); if (m.alive && m.speed > 0) resolveCollision(zone, m, 0.5); return;
   }
   if (m.debuffs) for (const k of Object.keys(m.debuffs)) { m.debuffs[k] -= DT; if (m.debuffs[k] <= 0) delete m.debuffs[k]; }
   if ((m.stagger || 0) > 0) { m.stagger -= DT; return; }   // staggered: can't move or swing
   if (fleeStep(clericCtx, zone, m, DT)) { resolveCollision(zone, m, PLAYER_RADIUS); return; }   // turned by a Cleric: running
-  const slowK = (m.debuffs && m.debuffs.bonebreak > 0) ? 0.6 : 1;
+  if (m.debuffs && m.debuffs.asleep > 0) { m.targetId = null; m.state = 'idle'; return; }   // a Bard's lullaby: out cold until struck
+  const slowK = ((m.debuffs && m.debuffs.bonebreak > 0) ? 0.6 : 1) * bardMonsterSpeedMult(m);
 
   let target = m.targetId ? players.get(m.targetId) : null;
   if (target && (!target.alive || target.zoneId !== m.zoneId)) { target = null; m.targetId = null; }
@@ -1883,7 +1898,7 @@ function stepMonster(m) {
       if (d > ATTACK_RANGE - 0.5 || !los) {
         navStep(zone, m, target.x, target.z, los ? ATTACK_RANGE - 0.5 : 0.9, m.speed * slowK); // round fences, not through them
       } else if (m.atkTimer <= 0) {
-        m.atkTimer = (m.attackSpeed || 4) * TICK * ((m.debuffs && m.debuffs.bonebreak_atk > 0) ? 1.15 : 1);
+        m.atkTimer = (m.attackSpeed || 4) * TICK * ((m.debuffs && m.debuffs.bonebreak_atk > 0) ? 1.15 : 1) * bardMonsterAtkSpeedMult(m);
         // OSRS accuracy: monster attack roll vs the player's defence roll (level
         // + armour), damage 0..monster maxHit.
         const eq = equipStats(target.equipment), tcs = classStats(target.cls, target.level);
@@ -2050,8 +2065,8 @@ function stepPlayer(p) {
     p.medT = (p.medT || 0) + DT;
     if (p.medT >= MEDITATION.tick) {
       p.medT -= MEDITATION.tick;
-      const heal = Math.min(p.maxHp - p.hp, meditationHealPerTick(p.meditation.level));
-      p.hp += heal;
+      const heal = Math.min(p.maxHp - p.hp, Math.round(meditationHealPerTick(p.meditation.level) * meditationMult(p)));   // Perfect Harmony hastens it
+      p.hp += heal; spendSongCharges(clericCtx, p, 'recovery');
       const xp = MEDITATION.xpPerTick + heal * MEDITATION.xpPerHp;
       addMeditationXp(p, xp);
       send(p.ws, { t: 'event', kind: 'medtick', heal, xp });
@@ -2151,8 +2166,8 @@ setInterval(() => {
           mana: p.manaMax ? Math.round(p.mana || 0) : undefined, manaMax: p.manaMax || undefined,
           channel: p.channel ? p.channel.id : null, windup: p.windup ? p.windup.id : null,
           castT: p.windup ? p.windup.dur : p.channel ? p.channel.dur : undefined,
-          ward: (() => { let a = 0; for (const k of ['holy_ward', 'blessed_barrier']) { const b = p.buffs[k]; if (b && b.t > 0) a += b.absorb; } return a || undefined; })(),
-          fx: (() => { const o = []; for (const k of ['renewing_prayer', 'prayer_of_mending', 'divine_intervention', 'guardian_prayer', 'avatar_of_mercy']) { const b = p.buffs[k]; if (b && b.t > 0) o.push(k); } return o.length ? o : undefined; })(),
+          ward: (() => { let a = 0; for (const b of Object.values(p.buffs)) if (b.t > 0 && b.absorb > 0) a += b.absorb; return Math.round(a) || undefined; })(),
+          fx: (() => { const o = []; for (const [k, b] of Object.entries(p.buffs)) if (b.t > 0 && (b.vis || VIS_BUFFS.has(k))) o.push(k); return o.length ? o : undefined; })(),
           moving: p.moving, inSafe: !!p.inSafe, resting: !!p.resting,
           combatWait: p.lastCombat ? Math.max(0, Math.ceil(LOGOUT_COMBAT_WAIT - (Date.now() - p.lastCombat) / 1000)) : 0,
           weapon: p.equipment.weapon || null,     // held item for the paperdoll
@@ -2163,7 +2178,8 @@ setInterval(() => {
         ms.push({ id: m.id, type: m.type, name: m.name, level: m.level, elite: m.elite,
           x: +m.x.toFixed(2), z: +m.z.toFixed(2), yaw: +m.yaw.toFixed(2), y: +(m.y || 0).toFixed(2), cave: m.cave || undefined,
           hp: Math.round(m.hp), maxHp: m.maxHp, alive: m.alive,
-          boss: m.boss || undefined, phase: m.phase || undefined, stun: m.stunT > 0 || undefined, hidden: m.untargetable || undefined, grow: m.grow != null ? +m.grow.toFixed(2) : undefined });
+          boss: m.boss || undefined, phase: m.phase || undefined, stun: m.stunT > 0 || undefined, hidden: m.untargetable || undefined, grow: m.grow != null ? +m.grow.toFixed(2) : undefined,
+          asleep: (m.debuffs && m.debuffs.asleep > 0) || undefined, deb: hasBardDebuff(m) || undefined });
       }
       const items = [];
       for (const it of groundItems.values()) {

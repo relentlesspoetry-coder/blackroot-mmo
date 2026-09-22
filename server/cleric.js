@@ -118,7 +118,7 @@ const mostHurt = (list) => list.slice().sort((a, b) => a.hp / a.maxHp - b.hp / b
 // stronger on the undead and the demonic, crits like everything else.
 function holyHit(ctx, p, m, a) {
   const L = p.level;
-  let mult = 1 + (evil(m) ? a.evil || 0 : 0);
+  let mult = (1 + (evil(m) ? a.evil || 0 : 0)) * (1 + ctx.dmgBuff(p, false, true));   // Bard songs lift holy damage too
   const av = buffOn(p, 'avatar_of_mercy'); if (av) mult += av.holyBonus || 0;
   if (buffOn(p, 'revival_sickness')) mult -= 0.15;
   const crit = Math.random() < ctx.critChance(p);
@@ -314,11 +314,14 @@ export function mitigate(ctx, p, dmg, m, kind) {
   const di = buffOn(p, 'divine_intervention'); if (di && di.fired) { k *= 1 - di.dr; if (direct) { di.drCharges--; if (di.drCharges <= 0) { delete p.buffs.divine_intervention; changed = true; } } }
   const uw = buffOn(p, 'undead_ward'); if (uw && evil(m)) { k *= 0.9; spend(uw, 'charges'); }
   const s = sanctuaryAt(ctx.zoneOf(p), p.x, p.z); if (s) { k *= 1 - s.dr; if (direct) s.charges--; }
+  // a Bard's Resonant Shield (and a Songweave carrying it): reduction, then its absorb, per protected hit
+  for (const b of Object.values(p.buffs)) if (b.t > 0 && b.song && b.dr) { k *= 1 - b.dr * (buffOn(p, 'dreamsong') ? 1.35 : 1); if (b.protect || b.charges) spend(b, 'charges'); }
   dmg = Math.max(0, Math.round(dmg * k));
-  for (const id of ['holy_ward', 'blessed_barrier']) {
-    const w = buffOn(p, id); if (!w || dmg <= 0) continue;
+  const wards = ['holy_ward', 'blessed_barrier', ...Object.keys(p.buffs).filter(id => p.buffs[id].song && p.buffs[id].absorb > 0)];
+  for (const id of wards) {
+    const w = buffOn(p, id); if (!w || !(w.absorb > 0) || dmg <= 0) continue;
     const take = Math.min(w.absorb, dmg); w.absorb -= take; dmg -= take; absorbed += take;
-    if (w.absorb <= 0) { delete p.buffs[id]; changed = true; }
+    if (w.absorb <= 0 && !w.song) { delete p.buffs[id]; changed = true; }
   }
   return { dmg, absorbed, changed };
 }
@@ -382,8 +385,9 @@ export function stepHots(ctx, p, dt) {
     b.acc += dt; if (b.acc < b.tick) continue; b.acc -= b.tick;
     const by = ctx.players.get(b.by) || p;
     const left = b.cap - b.done; if (left < Math.max(1, b.heal * 0.15)) { delete p.buffs[id]; ctx.sendStatus(p); continue; }   // the cap is spent
-    const got = healPlayer(ctx, by, p, Math.min(b.heal, left), { id, crit: false, tick: true });
+    const got = healPlayer(ctx, by, p, Math.min(b.heal, left) * (b.song && buffOn(p, 'dreamsong') ? 1.35 : 1), { id, crit: false, tick: true });
     b.done += Math.max(got, Math.min(b.heal, left) * 0.5);   // overhealing still spends the cap, at half rate
     if (b.done >= b.cap) { delete p.buffs[id]; ctx.sendStatus(p); }
+    else if (b.ticksLeft != null && --b.ticksLeft <= 0) { delete p.buffs[id]; ctx.sendStatus(p); }   // songs with a fixed number of ticks
   }
 }

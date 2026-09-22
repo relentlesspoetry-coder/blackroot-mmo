@@ -27,8 +27,8 @@
   #login select { background: #0c131d; border: 1px solid #2a3c54; color: #e7eef7; padding: 8px; border-radius: 8px; font-size: 13px; }
   #login input[type=color] { padding: 2px; height: 36px; width: 100%; }
   #login .classrow { display: flex; gap: 8px; }
-  #login .classopt { flex: 1; display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; border: 1px solid #2a3c54; background: #0c131d; cursor: pointer; color: #8fa3bf; font-size: 12px; }
-  #login .classopt img { width: 40px; height: 40px; flex: none; }
+  #login .classopt { flex: 1; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4px; padding: 8px 4px 6px; border-radius: 8px; border: 1px solid #2a3c54; background: #0c131d; cursor: pointer; color: #8fa3bf; font-size: 11px; line-height: 1.25; }
+  #login .classopt img { width: 44px; height: 44px; flex: none; }
   #login .classopt b { display: block; color: #e7eef7; font-size: 13px; }
   #login .classopt.sel { border-color: #ffd24a; background: #1a2230; box-shadow: 0 0 0 1px #ffd24a44 inset; }
   #login .classopt:hover { border-color: #4a6a94; }
@@ -368,6 +368,7 @@
     <div class="classrow" id="classRow">
       <div class="classopt sel" data-cls="fighter"><img src="ui/fighter/emblem.png" alt=""><div><b>Fighter</b>Two-handed bruiser. Rage.</div></div>
       <div class="classopt" data-cls="cleric"><img src="ui/cleric/emblem.png" alt=""><div><b>Cleric</b>Holy healer. Mana.</div></div>
+      <div class="classopt" data-cls="bard"><img src="ui/bard/emblem.png" alt=""><div><b>Bard</b>Songs and debuffs. Mana.</div></div>
     </div>
     <button id="playBtn">Enter World</button>
     <small>Left-click to walk · left-click a monster to attack · right-click anything for options — mine rock veins, fish at the river, cook raw food at a campfire · arrow keys or drag to look · scroll to zoom · Enter to chat. WASD also moves. Open a second window to play together.</small>
@@ -5710,7 +5711,7 @@ function optionsFor(pk) {
     const self = pk.id === myId;
     return [
       { label: self ? 'Target <b>yourself</b>' : `Target <b>${escapeHtml(pk.data.name)}</b> <span class="lvl">(level ${pk.data.level}${pk.data.alive ? '' : ', dead'})</span>`, act: () => setFriend(self ? null : pk.id) },
-      { label: `Examine ${escapeHtml(self ? 'yourself' : pk.data.name)}`, act: () => examineText(self ? 'That would be you.' : `${pk.data.name}, a level ${pk.data.level} ${pk.data.cls === 'cleric' ? 'Cleric' : 'Fighter'}.`) },
+      { label: `Examine ${escapeHtml(self ? 'yourself' : pk.data.name)}`, act: () => examineText(self ? 'That would be you.' : `${pk.data.name}, a level ${pk.data.level} ${CLASS_NAME[pk.data.cls] || 'Fighter'}.`) },
     ];
   }
   if (pk.kind === 'chest') return [
@@ -5782,6 +5783,7 @@ function monsterExamine(d) {
 // The Cleric's friendly target: a player picked with a click (or F for the
 // nearest ally). Heals and wards go to them; with none, to yourself.
 let friendId = null;
+const CLASS_NAME = { fighter: 'Fighter', cleric: 'Cleric', bard: 'Bard' };
 function setFriend(id) {
   friendId = id != null && id !== myId ? id : null;
   ws?.send(JSON.stringify({ t: 'target', id: friendId }));
@@ -5800,7 +5802,7 @@ function updateAllyFrame(snap) {
   if (!t) { el.style.display = 'none'; if (friendId != null && snap && snapCur) { /* left the zone */ friendId = null; } return; }
   el.style.display = 'block';
   document.getElementById('allyname').textContent = t.name;
-  document.getElementById('allysub').textContent = `Lv ${t.level} ${t.cls === 'cleric' ? 'Cleric' : 'Fighter'}${t.alive ? '' : ' · dead'}`;
+  document.getElementById('allysub').textContent = `Lv ${t.level} ${CLASS_NAME[t.cls] || 'Fighter'}${t.alive ? '' : ' · dead'}`;
   document.getElementById('allyfill').style.transform = `scaleX(${Math.max(0, t.hp / t.maxHp)})`;
   document.getElementById('allyward').style.transform = `scaleX(${Math.min(1, (t.ward || 0) / t.maxHp)})`;
   document.getElementById('allytext').textContent = `${t.hp}/${t.maxHp}${t.ward ? ' +' + t.ward : ''}`;
@@ -5969,6 +5971,22 @@ function kf(u, keys) {
 // Common building blocks.
 const overhead = (u, up = -2.6, down = 0.9, peak = 0.42) => kf(u, [[0, 0], [peak, up], [peak + 0.18, down], [1, 0]]);  // raise, chop, settle
 const crouch = (u, depth, peak = 0.6) => kf(u, [[0, 0], [peak, depth], [1, 0]]);
+// Bard instrument poses (mimed). t: seconds of playing; speed: strums per second-ish.
+function lutePose(P, t, speed) {     // left hand out on the neck, right hand strumming across the body
+  P.lArm = -1.05; P.lArmZ = 0.55; P.rArm = -0.85 + Math.sin(t * Math.PI * 2 * speed) * 0.22; P.rArmZ = -0.1 + Math.cos(t * Math.PI * 2 * speed) * 0.12;
+  P.bodyX = 0.08; P.bodyZ = Math.sin(t * Math.PI * speed) * 0.03;
+}
+function drumPose(P, u) {            // both hands beating a drum at the hip, alternating
+  const f = Math.sin(u * Math.PI * 8);
+  P.rArm = -0.5 + Math.max(0, f) * 0.6; P.lArm = -0.5 + Math.max(0, -f) * 0.6; P.rArmZ = -0.35; P.lArmZ = 0.35; P.bodyX = 0.12; P.bob = -0.03 * Math.abs(f);
+}
+function hornPose(P, u) {            // horn raised to the lips, head back, chest out
+  const k = kf(u, [[0, 0], [0.2, 1], [0.8, 1], [1, 0]]);
+  P.rArm = -2.1 * k; P.rArmZ = 0.5 * k; P.lArm = -1.9 * k; P.lArmZ = -0.4 * k; P.head = -0.35 * k; P.bodyX = -0.15 * k;
+}
+function harpPose(P, t) {            // a harp cradled at the chest, fingers picking
+  P.lArm = -1.3; P.lArmZ = 0.7; P.rArm = -1.25 + Math.sin(t * 5) * 0.1; P.rArmZ = -0.2 + Math.sin(t * 7) * 0.12; P.bodyX = 0.1; P.bodyY = -0.25;
+}
 const ABILITY_ANIMS = {
   heavy_swing: { dur: 0.75, pose(u, P) {            // slow heavy two-hander: both arms over, hard chop, body dips
     P.rArm = overhead(u, -2.8, -0.45, 0.45); P.lArm = overhead(u, -2.3, -0.35, 0.45); P.rArmZ = 0.15; P.lArmZ = -0.15;
@@ -6157,6 +6175,29 @@ const ABILITY_ANIMS = {
     P.rArmZ = kf(u, [[0, 0], [0.4, -1.2], [0.8, -1.2], [1, 0]]); P.lArmZ = kf(u, [[0, 0], [0.4, 1.2], [0.8, 1.2], [1, 0]]); P.head = kf(u, [[0, 0], [0.4, -0.7], [0.8, -0.7], [1, 0]]); P.bodyX = kf(u, [[0, 0], [0.4, -0.3], [0.8, -0.3], [1, 0]]);
     P.lLeg = kf(u, [[0, 0], [0.4, 0.3], [0.8, 0.3], [1, 0]]); P.rLeg = kf(u, [[0, 0], [0.4, 0.3], [0.8, 0.3], [1, 0]]);
   }, fx: [{ at: 0.05, kind: 'sfx', key: 'avatar' }, { at: 0.4, kind: 'pillar', color: 0xffffff, h: 8, life: 1.2 }, { at: 0.4, kind: 'flash', r: 4.0, color: 0xfff6d0, shake: 0.1 }, { at: 0.45, kind: 'shock', r: 6.0, color: 0xffe9a0 }, { at: 0.45, kind: 'wings', color: 0xfff6d0 }, { at: 0.5, kind: 'rise', n: 40, color: 0xfff1c8, y: 0.5, spread: 2 }] },
+  // ---- Bard: the instrument is mimed — a lute held across the body and strummed,
+  // a drum beaten at the hip, a horn raised to the lips, a harp plucked at the
+  // chest. Songs are instant strums; the casts hold the playing pose.
+  quick_note: { trail: false, dur: 0.45, pose(u, P) { lutePose(P, u * 2.2, 1.2); P.bodyY = kf(u, [[0, 0], [0.3, -0.3], [1, 0]]); }, fx: [{ at: 0.05, kind: 'sfx', key: 'note' }, { at: 0.15, kind: 'notes', n: 3, color: 0xc9a6ff, fwd: 0.8 }, { at: 0.15, kind: 'streak', fwd: 1.5, y: 1.2, len: 2.6, color: 0xc9a6ff }] },
+  song_of_mending: { trail: false, dur: 1.0, pose(u, P) { lutePose(P, u * 2, 0.7); P.head = 0.15; }, fx: [{ at: 0.05, kind: 'sfx', key: 'lute' }, { at: 0.2, kind: 'notes', n: 8, color: 0x9be6a0 }, { at: 0.2, kind: 'ripple', r: 3.5, color: 0x9be6a0, life: 0.8 }, { at: 0.6, kind: 'ripple', r: 3.5, color: 0xd8e88a, life: 0.8 }] },
+  mana_melody: { trail: false, dur: 1.0, pose(u, P) { lutePose(P, u * 2, 0.7); P.head = -0.1; }, fx: [{ at: 0.05, kind: 'sfx', key: 'lute' }, { at: 0.2, kind: 'notes', n: 8, color: 0x8ab0ff }, { at: 0.2, kind: 'ripple', r: 3.5, color: 0x8ab0ff, life: 0.8 }, { at: 0.6, kind: 'ripple', r: 3.5, color: 0xb090ff, life: 0.8 }] },
+  hymn_of_courage: { trail: false, dur: 1.0, pose(u, P) { hornPose(P, u); }, fx: [{ at: 0.05, kind: 'sfx', key: 'horn' }, { at: 0.3, kind: 'ripple', r: 4.5, color: 0xffb04a, life: 0.9 }, { at: 0.3, kind: 'notes', n: 6, color: 0xffc46a, fwd: 0.8 }, { at: 0.3, kind: 'glow', color: 0xffa040 }] },
+  dissonant_chord: { trail: false, dur: 0.6, pose(u, P) { lutePose(P, u * 3, 1.6); P.bodyX = kf(u, [[0, 0], [0.3, 0.2], [1, 0]]); }, fx: [{ at: 0.05, kind: 'sfx', key: 'dissonant' }, { at: 0.15, kind: 'notes', n: 4, color: 0xb890e8, fwd: 0.8, jag: true }, { at: 0.15, kind: 'streak', fwd: 1.6, y: 1.2, len: 3.0, color: 0xa080d0 }] },
+  lullaby: { trail: false, dur: 0.8, castPose(t, P) { harpPose(P, t); P.head = 0.25; }, pose(u, P) { harpPose(P, u * 1.5 + 2); P.head = kf(u, [[0, 0.25], [1, 0]]); }, fx: [{ at: 0.05, kind: 'sfx', key: 'lullaby' }, { at: 0.1, kind: 'notes', n: 6, color: 0x9ac8ff, fwd: 1.0, slow: true }, { at: 0.1, kind: 'ripple', r: 2.5, color: 0x8ab8ff, life: 1.2 }] },
+  battle_hymn: { trail: false, dur: 1.0, pose(u, P) { hornPose(P, u); P.bob = 0.04 * Math.abs(Math.sin(u * Math.PI * 4)); }, fx: [{ at: 0.05, kind: 'sfx', key: 'horn' }, { at: 0.3, kind: 'ripple', r: 4.5, color: 0xffd27a, life: 0.9 }, { at: 0.55, kind: 'ripple', r: 4.5, color: 0xffd27a, life: 0.9 }, { at: 0.3, kind: 'notes', n: 8, color: 0xffd27a }] },
+  drumbeat_rush: { trail: false, dur: 1.1, pose(u, P) { drumPose(P, u); }, fx: [{ at: 0.05, kind: 'sfx', key: 'drum' }, { at: 0.12, kind: 'ring', r: 3.0, color: 0xffb060 }, { at: 0.37, kind: 'ring', r: 3.0, color: 0xffb060 }, { at: 0.62, kind: 'ring', r: 3.0, color: 0xffb060 }, { at: 0.87, kind: 'ring', r: 4.5, color: 0xffd090 }, { at: 0.87, kind: 'dust', r: 1.4 }] },
+  mournful_note: { trail: false, dur: 0.7, pose(u, P) { lutePose(P, u * 1.5, 0.9); P.head = 0.3; P.bodyX = 0.15; }, fx: [{ at: 0.05, kind: 'sfx', key: 'mournful' }, { at: 0.2, kind: 'notes', n: 5, color: 0x9a86c8, fwd: 0.8, jag: true, slow: true }, { at: 0.2, kind: 'streak', fwd: 1.6, y: 1.2, len: 3.0, color: 0x8a76b8 }] },
+  perfect_harmony: { trail: false, dur: 1.2, pose(u, P) { harpPose(P, u * 3); P.head = -0.15; P.bob = 0.03 * Math.sin(u * Math.PI * 2); }, fx: [{ at: 0.05, kind: 'sfx', key: 'harp' }, { at: 0.2, kind: 'ripple', r: 4.0, color: 0xa0e8d8, life: 1.4 }, { at: 0.5, kind: 'ripple', r: 4.0, color: 0xa0e8d8, life: 1.4 }, { at: 0.8, kind: 'ripple', r: 4.0, color: 0xa0e8d8, life: 1.4 }, { at: 0.2, kind: 'notes', n: 8, color: 0xb0f0e0, slow: true }] },
+  blade_rhythm: { trail: false, dur: 1.0, pose(u, P) { lutePose(P, u * 4, 1.4); P.bodyY = Math.sin(u * Math.PI * 4) * 0.12; }, fx: [{ at: 0.05, kind: 'sfx', key: 'lute_fast' }, { at: 0.2, kind: 'notes', n: 8, color: 0xffc070 }, { at: 0.2, kind: 'ripple', r: 4.0, color: 0xff9a4a, life: 0.7 }, { at: 0.6, kind: 'ripple', r: 4.0, color: 0xff9a4a, life: 0.7 }] },
+  chorus_of_clarity: { trail: false, dur: 1.1, pose(u, P) { harpPose(P, u * 2.5); P.head = -0.3; }, fx: [{ at: 0.05, kind: 'sfx', key: 'harp' }, { at: 0.2, kind: 'ripple', r: 4.0, color: 0xdfe8ff, life: 1.0 }, { at: 0.5, kind: 'ripple', r: 4.0, color: 0xdfe8ff, life: 1.0 }, { at: 0.2, kind: 'notes', n: 8, color: 0xe8f0ff }] },
+  dirge_of_weakness: { trail: false, dur: 0.8, castPose(t, P) { lutePose(P, t * 1.2, 0.6); P.head = 0.35; P.bodyX = 0.2; }, pose(u, P) { lutePose(P, u * 3 + 1, 1.8); P.bodyX = kf(u, [[0, 0.2], [0.3, -0.1], [1, 0]]); P.head = kf(u, [[0, 0.35], [0.3, -0.2], [1, 0]]); }, fx: [{ at: 0.05, kind: 'sfx', key: 'dirge' }, { at: 0.1, kind: 'notes', n: 10, color: 0x9a80c8, jag: true }, { at: 0.1, kind: 'streak', fwd: 1.8, y: 1.2, len: 4.0, color: 0x8a70b8 }] },
+  echoing_verse: { trail: false, dur: 0.9, pose(u, P) { lutePose(P, u * 2, 0.8); P.bodyY = kf(u, [[0, 0], [0.5, 0.4], [1, 0]]); }, fx: [{ at: 0.05, kind: 'sfx', key: 'lute' }, { at: 0.2, kind: 'ripple', r: 2.0, color: 0xffffff, life: 1.0 }, { at: 0.45, kind: 'ripple', r: 2.6, color: 0xffffff, life: 1.0 }, { at: 0.7, kind: 'ripple', r: 3.2, color: 0xffffff, life: 1.0 }] },
+  resonant_shield: { trail: false, dur: 1.1, pose(u, P) { drumPose(P, u); P.head = -0.1; }, fx: [{ at: 0.05, kind: 'sfx', key: 'drum' }, { at: 0.12, kind: 'ripple', r: 3.0, color: 0x9ad0ff, life: 0.9 }, { at: 0.37, kind: 'ripple', r: 3.6, color: 0x9ad0ff, life: 0.9 }, { at: 0.62, kind: 'ripple', r: 4.2, color: 0x9ad0ff, life: 0.9 }, { at: 0.62, kind: 'glow', color: 0x9ad0ff }] },
+  chorus_of_war: { trail: false, dur: 1.2, pose(u, P) { drumPose(P, u * 1.5); P.bodyX = -0.1; P.head = -0.25; }, fx: [{ at: 0.05, kind: 'sfx', key: 'war' }, { at: 0.12, kind: 'ring', r: 3.0, color: 0xff5a3a }, { at: 0.3, kind: 'ripple', r: 5.0, color: 0xff7a3a, life: 0.8 }, { at: 0.5, kind: 'ring', r: 3.0, color: 0xff5a3a }, { at: 0.7, kind: 'ripple', r: 5.0, color: 0xffd27a, life: 0.8 }, { at: 0.7, kind: 'flash', r: 2.2, color: 0xffb060 }, { at: 0.7, kind: 'notes', n: 10, color: 0xffb060 }] },
+  final_refrain: { trail: false, dur: 0.8, pose(u, P) { lutePose(P, u * 2, 2.0); P.bodyX = kf(u, [[0, 0], [0.25, -0.2], [0.45, 0.35], [1, 0]]); P.rLeg = kf(u, [[0, 0], [0.45, -0.6], [1, 0]]); }, fx: [{ at: 0.05, kind: 'sfx', key: 'refrain' }, { at: 0.35, kind: 'notes', n: 10, color: 0xd8a0ff, fwd: 1.0, jag: true }, { at: 0.35, kind: 'streak', fwd: 2.0, y: 1.2, len: 5.0, color: 0xc090ff }, { at: 0.35, kind: 'flash', r: 1.8, color: 0xd8b0ff, fwd: 1.2 }] },
+  songweave: { trail: false, dur: 1.2, pose(u, P) { harpPose(P, u * 3.5); P.bodyY = Math.sin(u * Math.PI * 2) * 0.25; }, fx: [{ at: 0.05, kind: 'sfx', key: 'harp' }, { at: 0.2, kind: 'notes', n: 12, color: 0xffd27a }, { at: 0.2, kind: 'ripple', r: 4.0, color: 0xffd27a, life: 1.0 }, { at: 0.5, kind: 'ripple', r: 4.0, color: 0x8ab0ff, life: 1.0 }, { at: 0.8, kind: 'ripple', r: 4.0, color: 0x9be6a0, life: 1.0 }] },
+  legendary_ballad: { trail: false, dur: 1.6, pose(u, P) { lutePose(P, u * 3, 0.9); P.head = -0.35; P.bodyX = -0.15; P.bob = 0.05 + 0.03 * Math.sin(u * Math.PI * 3); }, fx: [{ at: 0.05, kind: 'sfx', key: 'ballad' }, { at: 0.15, kind: 'ripple', r: 5.0, color: 0xffd27a, life: 1.3 }, { at: 0.4, kind: 'ripple', r: 5.0, color: 0xffe9a0, life: 1.3 }, { at: 0.65, kind: 'ripple', r: 5.0, color: 0xffd27a, life: 1.3 }, { at: 0.4, kind: 'notes', n: 16, color: 0xffe0a0 }, { at: 0.4, kind: 'staff', r: 6.0, color: 0xffd27a, life: 2.5 }, { at: 0.4, kind: 'glow', color: 0xffd27a }] },
+  dreamsong_crescendo: { trail: false, dur: 1.6, castPose(t, P) { lutePose(P, t * 2.5, 0.8 + t * 0.4); P.head = -0.2 - Math.min(0.3, t * 0.15); P.bob = Math.min(0.25, t * 0.12); }, pose(u, P) { lutePose(P, u * 5 + 5, 2.2); P.head = -0.5; P.bob = kf(u, [[0, 0.25], [0.5, 0.45], [1, 0]]); P.bodyX = -0.2; }, fx: [{ at: 0.02, kind: 'sfx', key: 'crescendo' }, { at: 0.05, kind: 'flash', r: 3.5, color: 0xd8b0ff }, { at: 0.05, kind: 'ripple', r: 6.0, color: 0xc9a6ff, life: 1.4 }, { at: 0.25, kind: 'ripple', r: 6.5, color: 0xffd27a, life: 1.4 }, { at: 0.45, kind: 'ripple', r: 7.0, color: 0x8ab0ff, life: 1.4 }, { at: 0.65, kind: 'ripple', r: 7.5, color: 0xffffff, life: 1.4 }, { at: 0.2, kind: 'notes', n: 24, color: 0xffffff, spread: 2.5 }, { at: 0.2, kind: 'staff', r: 8.0, color: 0xc9a6ff, life: 3.5 }, { at: 0.3, kind: 'shock', r: 22, color: 0xd8b0ff, life: 1.4 }] },
   perfect_masterstroke: { dur: 1.15, pose(u, P) {   // planted stance, weapon drawn far back, a beat, one clean cut
     P.bob = -crouch(u, 0.18, 0.5);
     P.rArm = kf(u, [[0, 0], [0.35, 1.4], [0.58, 1.5], [0.7, -1.6], [1, 0]]); P.rArmZ = kf(u, [[0, 0], [0.35, -0.9], [0.58, -1.0], [0.7, 0.8], [1, 0]]);
@@ -6268,6 +6309,21 @@ const ABILITY_SFX = {
   revive:           [['level_up', { rate: 0.7, vol: 0.7 }], ['heal_chime', { rate: 0.6, delay: 0.3, vol: 0.6 }]],
   avatar:           [['level_up', { rate: 0.8, vol: 0.9 }], ['thunder_roll', { rate: 1.3, delay: 0.1, vol: 0.5, lowpass: 1500 }]],
   cast_loop:        [['magic_cast', { rate: 0.5, vol: 0.2, lowpass: 1200 }]],
+  // Bard: chimes and tones standing in for the instruments.
+  note:             [['heal_chime', { rate: 1.9, vol: 0.35 }], ['ui_select', { rate: 1.6, vol: 0.25 }]],
+  lute:             [['heal_chime', { rate: 1.2, vol: 0.4 }], ['heal_chime', { rate: 1.5, delay: 0.18, vol: 0.35 }], ['heal_chime', { rate: 1.8, delay: 0.36, vol: 0.3 }]],
+  lute_fast:        [['heal_chime', { rate: 1.6, vol: 0.4 }], ['heal_chime', { rate: 1.9, delay: 0.1, vol: 0.35 }], ['heal_chime', { rate: 2.2, delay: 0.2, vol: 0.3 }], ['heal_chime', { rate: 1.6, delay: 0.3, vol: 0.3 }]],
+  horn:             [['merc_command', { rate: 0.9, vol: 0.6, lowpass: 2500 }], ['thunder_roll', { rate: 2.0, delay: 0.05, vol: 0.25, lowpass: 1500 }]],
+  drum:             [['hit_thud', { rate: 0.7, vol: 0.8, lowpass: 900 }], ['hit_thud', { rate: 0.7, delay: 0.27, vol: 0.8, lowpass: 900 }], ['hit_thud', { rate: 0.7, delay: 0.54, vol: 0.8, lowpass: 900 }], ['hit_thud', { rate: 0.55, delay: 0.81, vol: 1, lowpass: 900 }]],
+  harp:             [['heal_chime', { rate: 2.2, vol: 0.3 }], ['heal_chime', { rate: 2.6, delay: 0.12, vol: 0.28 }], ['heal_chime', { rate: 3.0, delay: 0.24, vol: 0.25 }], ['heal_chime', { rate: 2.6, delay: 0.36, vol: 0.22 }]],
+  dissonant:        [['heal_chime', { rate: 0.55, vol: 0.5, lowpass: 1800 }], ['ui_error', { rate: 0.7, delay: 0.05, vol: 0.4 }]],
+  mournful:         [['heal_chime', { rate: 0.5, vol: 0.5 }], ['heal_chime', { rate: 0.42, delay: 0.3, vol: 0.4 }]],
+  lullaby:          [['heal_chime', { rate: 0.8, vol: 0.35 }], ['heal_chime', { rate: 0.7, delay: 0.4, vol: 0.3 }], ['heal_chime', { rate: 0.6, delay: 0.8, vol: 0.25 }]],
+  dirge:            [['heal_chime', { rate: 0.45, vol: 0.6, lowpass: 1500 }], ['thunder_roll', { rate: 1.8, delay: 0.05, vol: 0.3, lowpass: 900 }], ['ui_error', { rate: 0.6, delay: 0.1, vol: 0.35 }]],
+  war:              [['hit_thud', { rate: 0.6, vol: 1, lowpass: 900 }], ['merc_command', { rate: 1.0, delay: 0.2, vol: 0.6 }], ['hit_thud', { rate: 0.6, delay: 0.4, vol: 1, lowpass: 900 }], ['thunder_roll', { rate: 1.6, delay: 0.5, vol: 0.4, lowpass: 1500 }]],
+  refrain:          [['heal_chime', { rate: 0.7, vol: 0.5 }], ['magic_cast', { rate: 1.4, delay: 0.25, vol: 0.5 }], ['attack_slash', { rate: 1.5, delay: 0.3, vol: 0.3 }]],
+  ballad:           [['heal_chime', { rate: 1.0, vol: 0.5 }], ['heal_chime', { rate: 1.25, delay: 0.3, vol: 0.45 }], ['heal_chime', { rate: 1.5, delay: 0.6, vol: 0.4 }], ['level_up', { rate: 1.2, delay: 0.7, vol: 0.35 }]],
+  crescendo:        [['level_up', { rate: 0.9, vol: 0.8 }], ['heal_chime', { rate: 1.0, delay: 0.2, vol: 0.5 }], ['heal_chime', { rate: 1.5, delay: 0.5, vol: 0.5 }], ['heal_chime', { rate: 2.0, delay: 0.8, vol: 0.5 }], ['thunder_roll', { rate: 1.4, delay: 0.9, vol: 0.4, lowpass: 2000 }]],
   heavy_swing:      [['attack_slash', { rate: 0.7, vol: 0.9 }], ['hit_thud', { rate: 0.8, delay: 0.12, vol: 0.9 }]],
   cleave:           [['attack_slash', { rate: 0.85, vol: 1 }], ['attack_slash', { rate: 0.75, delay: 0.09, vol: 0.7 }]],
   battle_rush:      [['footstep_dirt', { rate: 1.3, vol: 0.9 }], ['footstep_dirt', { rate: 1.4, delay: 0.12, vol: 0.9 }], ['attack_claw', { rate: 0.6, delay: 0.05, vol: 0.5, lowpass: 900 }]],
@@ -6434,6 +6490,40 @@ function wingTexture() {
   c.globalAlpha = 0.5; const g = c.createRadialGradient(20, S - 20, 0, 20, S - 20, 90); g.addColorStop(0, 'rgba(255,255,255,0.8)'); g.addColorStop(1, 'rgba(255,255,255,0)'); c.fillStyle = g; c.fillRect(0, 0, S, S);
   wingTex = new THREE.CanvasTexture(cv); return wingTex;
 }
+// Bard art: note glyphs (♪ ♫ ♩, and a jagged one for debuffs), a thin ring
+// for sound ripples, a curved musical staff for the ballads.
+const noteTexs = [];
+function noteTexture(i) {
+  if (noteTexs[i]) return noteTexs[i];
+  const S = 64, cv = document.createElement('canvas'); cv.width = cv.height = S; const c = cv.getContext('2d');
+  c.fillStyle = '#fff'; c.strokeStyle = '#fff'; c.lineWidth = 3; c.lineCap = 'round'; c.lineJoin = 'round';
+  if (i === 3) {   // a jagged burst: unpleasant
+    c.beginPath(); for (let k = 0; k < 14; k++) { const a = k / 14 * 6.283, r = k % 2 ? 12 : 26; c.lineTo(32 + Math.cos(a) * r, 32 + Math.sin(a) * r); } c.closePath(); c.stroke();
+    c.beginPath(); c.moveTo(24, 40); c.lineTo(30, 26); c.lineTo(34, 36); c.lineTo(40, 22); c.stroke();
+  } else {
+    c.font = 'bold 54px serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.shadowColor = '#fff'; c.shadowBlur = 6; c.fillText(['\u266A', '\u266B', '\u2669'][i], 32, 34);
+  }
+  noteTexs[i] = new THREE.CanvasTexture(cv); return noteTexs[i];
+}
+let ringTexObj = null, staffTexObj = null;
+function ringTexture() {
+  if (ringTexObj) return ringTexObj;
+  const S = 128, cv = document.createElement('canvas'); cv.width = cv.height = S; const c = cv.getContext('2d');
+  const g = c.createRadialGradient(64, 64, 44, 64, 64, 62); g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(0.5, 'rgba(255,255,255,1)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+  c.fillStyle = g; c.fillRect(0, 0, S, S);
+  ringTexObj = new THREE.CanvasTexture(cv); return ringTexObj;
+}
+function staffTexture() {
+  if (staffTexObj) return staffTexObj;
+  const S = 256, cv = document.createElement('canvas'); cv.width = cv.height = S; const c = cv.getContext('2d'); c.translate(S / 2, S / 2);
+  c.strokeStyle = '#fff'; c.fillStyle = '#fff';
+  for (let k = 0; k < 5; k++) { c.lineWidth = 1.6; c.beginPath(); c.arc(0, 0, 92 + k * 6, 0.2, 5.6); c.stroke(); }   // five staff lines as arcs, a gap for the clef
+  c.font = 'bold 40px serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+  for (let k = 0; k < 9; k++) { const a = 0.5 + k * 0.58, r = 96 + (k % 3) * 8; c.save(); c.translate(Math.cos(a) * r, Math.sin(a) * r); c.rotate(a + Math.PI / 2); c.fillText(k % 2 ? '\u266A' : '\u266B', 0, 0); c.restore(); }
+  c.font = 'bold 64px serif'; c.fillText('\uD834\uDD1E', 0, -104);
+  staffTexObj = new THREE.CanvasTexture(cv); return staffTexObj;
+}
 // While a spell is being cast the hands hold the light: two glowing sprites
 // on the palms and motes drifting up between them.
 const castFxMap = new Map();
@@ -6488,26 +6578,40 @@ function spellFx(m) {
     case 'hymn_wave': if (m.x != null) { const y = groundY(m.x, m.z); spawnFx('shock', m.x, y, m.z, 0, { r: m.r || 14, color: 0xffe9a0, life: 0.9 }); spawnFx('ring', m.x, y, m.z, 0, { r: (m.r || 14) * 0.5, color: 0xfff1c8, life: 0.7 }); sfx.play('heal_chime', { x: m.x, z: m.z, rate: 0.9 + Math.random() * 0.4, vol: 0.35 }); } break;
     case 'revive': if (tp) { spawnFx('pillar', tp.x, tp.y, tp.z, 0, { color: 0xfff6d0, h: 7, life: 1.6 }); spawnFx('glyph', tp.x, tp.y, tp.z, 0, { r: 1.8, color: 0xffd86a, life: 2.0, spin: 0.5 }); spawnFx('rise', tp.x, tp.y, tp.z, 0, { n: 36, color: 0xfff1c8, spread: 1.0, life: 1.8 }); spawnFx('wings', tp.x, tp.y, tp.z, T.mesh.rotation.y, { color: 0xfff6d0, life: 1.4 }); beam(0xfff6d0); } break;
     case 'avatar': break;   // the caster's release plays it; the aura persists from the snapshot
+    // ---- Bard ----
+    case 'note': case 'sonic': break;   // the sonic hit splat carries it
+    case 'refrain': if (tp) { spawnFx('ripple', tp.x, tp.y, tp.z, 0, { color: 0xd8a0ff, r: 3.2, life: 0.6 }); spawnFx('notes', tp.x, tp.y, tp.z, 0, { n: 8, color: 0xd8a0ff, jag: true }); } break;
+    case 'lullaby': if (tp) { spawnFx('notes', tp.x, tp.y, tp.z, 0, { n: 6, color: 0x9ac8ff, slow: true, life: 2.0 }); spawnFx('ripple', tp.x, tp.y, tp.z, 0, { color: 0x8ab8ff, r: 2.2, life: 1.2 }); } break;
+    case 'dirge': if (m.x != null) { const y = groundY(m.x, m.z); spawnFx('shock', m.x, y, m.z, 0, { r: m.r || 8, color: 0x9a80c8, life: 0.9 }); spawnFx('notes', m.x, y, m.z, 0, { n: 14, color: 0x9a80c8, jag: true, spread: m.r || 8 }); } break;
+    case 'song': if (m.x != null) { const col = SONG_COLOR[m.family] || 0xffe0a0; const y = groundY(m.x, m.z); spawnFx('ring', m.x, y, m.z, 0, { r: m.r || 18, color: col, life: 1.2 }); } break;
+    case 'echo': break;
+    case 'crescendo': if (m.x != null) { const y = groundY(m.x, m.z); spawnFx('shock', m.x, y, m.z, 0, { r: m.r || 22, color: 0xd8b0ff, life: 1.6 }); spawnFx('staff', m.x, y, m.z, 0, { r: (m.r || 22) * 0.5, color: 0xc9a6ff, life: 4 }); } break;
   }
 }
+// Colour per song family (regen green-gold, mana blue-violet, morale gold,
+// rhythm orange, drums amber, harmony teal, shield ice-blue, war red-gold,
+// ballad gold, weave white).
+const SONG_COLOR = { regen: 0x9be6a0, mana: 0x8ab0ff, morale: 0xffc46a, rhythm: 0xffa050, drum: 0xffb060, harmony: 0xa0e8d8, shield: 0x9ad0ff, war: 0xff6a3a, ballad: 0xffd27a, weave: 0xffffff };
+const SONG_OF = { song_of_mending: 'regen', mana_melody: 'mana', hymn_of_courage: 'morale', battle_hymn: 'rhythm', drumbeat_rush: 'drum', perfect_harmony: 'harmony', blade_rhythm: 'rhythm', chorus_of_clarity: 'harmony', resonant_shield: 'shield', chorus_of_war: 'war', songweave: 'weave', legendary_ballad: 'ballad' };
 // Long-lived holy effects read straight off the snapshot: wards (a golden
 // shell that thins as it is spent), Renewing Prayer (a slow prayer circle
 // over the head), Prayer of Mending (a hovering star), Divine Intervention
 // (a halo), Guardian Prayer (a rune ring at the feet), Avatar of Mercy (a
 // bright aura, motes and a wide turning circle) — and Sanctuary circles on
 // the ground.
-const holyFx = new Map(), sanctFx = new Map();
+const holyFx = new Map(), sanctFx = new Map(), monFx = new Map();
 function mkSprite(tex, color, op) { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, color, transparent: true, opacity: op, depthWrite: false, blending: THREE.AdditiveBlending })); sp.frustumCulled = false; scene.add(sp); return sp; }
 function mkGlyph(color, r, op) { const m = new THREE.Mesh(new THREE.PlaneGeometry(r * 2, r * 2), new THREE.MeshBasicMaterial({ map: runeTexture(), color, transparent: true, opacity: op, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending })); m.rotation.x = -Math.PI / 2; m.frustumCulled = false; scene.add(m); return m; }
 function mkMotes(n, color, size) { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3)); const pts = new THREE.Points(g, new THREE.PointsMaterial({ color, size, map: fxDot(), transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending })); pts.frustumCulled = false; pts.userData.life = new Float32Array(n).map(() => Math.random()); pts.userData.seed = new Float32Array(n).map(() => Math.random() * 6.28); scene.add(pts); return pts; }
 function dropObj(o) { if (!o) return; scene.remove(o); if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }
+function dropHoly(h) { for (const k of Object.keys(h)) { const v = h[k]; if (v && v.isObject3D) dropObj(v); else if (v instanceof Map) { for (const [, sg] of v) sg.forEach(dropObj); } } }
 function updateHolyFx(dt) {
   const tt = performance.now() / 1000;
   for (const [id, rec] of entityMeshes) {
     if (rec.kind !== 'player' || !rec.data) continue;
     const d = rec.data, want = new Set(d.fx || []); if (d.ward > 0) want.add('ward');
     let h = holyFx.get(id);
-    if (!want.size) { if (h) { for (const k of Object.keys(h)) if (h[k] && h[k].isObject3D) dropObj(h[k]); holyFx.delete(id); } continue; }
+    if (!want.size) { if (h) { dropHoly(h); holyFx.delete(id); } continue; }
     if (!h) { h = {}; holyFx.set(id, h); }
     const mp = rec.mesh.position, alive = d.alive;
     // ward: a translucent golden shell, brighter the more it still holds
@@ -6538,8 +6642,52 @@ function updateHolyFx(dt) {
       for (let i = 0; i < pos.count; i++) { life[i] += dt * (0.35 + (i % 5) * 0.08); if (life[i] > 1) { life[i] = 0; seed[i] = Math.random() * 6.28; } const l = life[i], a = seed[i] + l * 2.5, r = 0.5 + l * 1.1; pos.setXYZ(i, mp.x + Math.cos(a) * r, mp.y + 0.1 + l * 2.8, mp.z + Math.sin(a) * r); }
       pos.needsUpdate = true;
     } else if (h.av) { dropObj(h.av); dropObj(h.avG); dropObj(h.avM); h.av = h.avG = h.avM = null; }
+    // Bard songs: a few notes in the song's colour circling the body, one ring
+    // of them per active song; Resonant Shield adds a faint humming shell;
+    // Dreamsong a slow stage-light staff underfoot and a bright glow.
+    const songs = [...want].filter(k => SONG_OF[k]);
+    if (songs.length) {
+      if (!h.songs) h.songs = new Map();
+      for (const k of songs) {
+        let sg = h.songs.get(k);
+        if (!sg) { sg = []; const col = SONG_COLOR[SONG_OF[k]]; for (let i = 0; i < 3; i++) { const spr = mkSprite(noteTexture(i % 3), col, 0.85); spr.scale.set(0.28, 0.28, 1); sg.push(spr); } h.songs.set(k, sg); }
+        const idx = songs.indexOf(k), base = tt * (0.9 + idx * 0.2) + idx * 2.1, hgt = 1.55 + idx * 0.35;
+        sg.forEach((spr, i) => { const a = base + i * 2.094; spr.position.set(mp.x + Math.cos(a) * 0.7, mp.y + hgt + Math.sin(tt * 2.5 + i + idx) * 0.08, mp.z + Math.sin(a) * 0.7); spr.material.opacity = (0.55 + 0.3 * Math.sin(tt * 3 + i)) * (alive ? 1 : 0); });
+      }
+      for (const [k, sg] of h.songs) if (!want.has(k)) { sg.forEach(dropObj); h.songs.delete(k); }
+    } else if (h.songs) { for (const [, sg] of h.songs) sg.forEach(dropObj); h.songs = null; }
+    if (want.has('resonant_shield') || want.has('songweave') && d.ward > 0) {
+      if (!h.rs) { const sh = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), new THREE.MeshBasicMaterial({ color: 0x9ad0ff, transparent: true, opacity: 0.1, depthWrite: false, blending: THREE.AdditiveBlending, wireframe: true })); sh.frustumCulled = false; scene.add(sh); h.rs = sh; }
+      h.rs.position.set(mp.x, mp.y + 1.05, mp.z); const rs = 1.0 + 0.04 * Math.sin(tt * 9); h.rs.scale.set(rs, rs * 1.25, rs); h.rs.rotation.y = tt * 0.3; h.rs.material.opacity = (0.08 + 0.05 * Math.sin(tt * 9)) * (alive ? 1 : 0);
+    } else if (h.rs) { dropObj(h.rs); h.rs = null; }
+    if (want.has('dreamsong')) {
+      if (!h.ds) { h.ds = mkSprite(fxDot(), 0xc9a6ff, 0.3); h.dsG = new THREE.Mesh(new THREE.PlaneGeometry(4.4, 4.4), new THREE.MeshBasicMaterial({ map: staffTexture(), color: 0xc9a6ff, transparent: true, opacity: 0.5, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending })); h.dsG.rotation.x = -Math.PI / 2; h.dsG.frustumCulled = false; scene.add(h.dsG); }
+      h.ds.position.set(mp.x, mp.y + 1.1, mp.z); const dss = 2.8 + 0.3 * Math.sin(tt * 2.5); h.ds.scale.set(dss, dss, 1); h.ds.material.opacity = 0.22 + 0.08 * Math.sin(tt * 2.5);
+      h.dsG.position.set(mp.x, groundY(mp.x, mp.z) + 0.07, mp.z); h.dsG.rotation.z = tt * 0.35;
+    } else if (h.ds) { dropObj(h.ds); dropObj(h.dsG); h.ds = h.dsG = null; }
+    if (want.has('echoing_verse')) { if (!h.ev) { h.ev = mkSprite(ringTexture(), 0xffffff, 0.5); } h.ev.position.set(mp.x, mp.y + 1.2, mp.z); const es = 1.2 + ((tt * 0.6) % 1) * 1.6; h.ev.scale.set(es, es, 1); h.ev.material.opacity = 0.5 * (1 - ((tt * 0.6) % 1)); }
+    else if (h.ev) { dropObj(h.ev); h.ev = null; }
   }
-  for (const [id, h] of holyFx) if (!entityMeshes.has(id)) { for (const k of Object.keys(h)) if (h[k] && h[k].isObject3D) dropObj(h[k]); holyFx.delete(id); }
+  // Monsters: asleep under a Lullaby (notes drifting up, slumped) or carrying a
+  // Bard debuff (a jagged grey-purple ring pulsing round them).
+  for (const [id, rec] of entityMeshes) {
+    if (rec.kind !== 'monster' || !rec.data) continue;
+    const d = rec.data, mp = rec.mesh.position;
+    let h = monFx.get(id);
+    if (!d.alive || (!d.asleep && !d.deb)) { if (h) { for (const k of Object.keys(h)) if (h[k] && h[k].isObject3D) dropObj(h[k]); monFx.delete(id); } continue; }
+    if (!h) { h = {}; monFx.set(id, h); }
+    if (d.asleep) {
+      if (!h.zz) { h.zz = []; for (let i = 0; i < 3; i++) { const spr = mkSprite(noteTexture(i % 3), 0x9ac8ff, 0.8); spr.scale.set(0.3, 0.3, 1); spr.userData.ph = i * 0.33; h.zz.push(spr); } }
+      h.zz.forEach((spr, i) => { const l = (tt * 0.4 + spr.userData.ph) % 1; spr.position.set(mp.x + Math.sin(l * 6 + i) * 0.25, mp.y + 1.4 + l * 1.4, mp.z + Math.cos(l * 5 + i) * 0.25); spr.material.opacity = Math.sin(l * Math.PI) * 0.85; });
+      const rig = rec.mesh.userData.rig; if (rig && rig.body) rig.body.rotation.x = Math.max(rig.body.rotation.x, 0.25);   // a drowsy droop
+    } else if (h.zz) { h.zz.forEach(dropObj); h.zz = null; }
+    if (d.deb) {
+      if (!h.jag) { h.jag = new THREE.Mesh(new THREE.RingGeometry(0.8, 1.0, 9), new THREE.MeshBasicMaterial({ color: 0x9a80c8, transparent: true, opacity: 0.5, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending })); h.jag.rotation.x = -Math.PI / 2; h.jag.frustumCulled = false; scene.add(h.jag); }
+      h.jag.position.set(mp.x, groundY(mp.x, mp.z) + 0.1, mp.z); const js = 1.1 + 0.15 * Math.abs(Math.sin(tt * 7)); h.jag.scale.set(js, js, 1); h.jag.rotation.z = tt * 1.5; h.jag.material.opacity = 0.35 + 0.25 * Math.abs(Math.sin(tt * 7));
+    } else if (h.jag) { dropObj(h.jag); h.jag = null; }
+  }
+  for (const [id, h] of monFx) if (!entityMeshes.has(id)) { for (const k of Object.keys(h)) if (h[k] && h[k].isObject3D) dropObj(h[k]); monFx.delete(id); }
+  for (const [id, h] of holyFx) if (!entityMeshes.has(id)) { dropHoly(h); holyFx.delete(id); }
   for (const [, sf] of sanctFx) { sf.t += dt; sf.g1.rotation.z = sf.t * 0.25; sf.g2.rotation.z = -sf.t * 0.45; sf.ring.material.opacity = 0.35 + 0.15 * Math.sin(sf.t * 2); sf.g1.material.opacity = 0.45 + 0.1 * Math.sin(sf.t * 1.7); const pos = sf.motes.geometry.attributes.position, life = sf.motes.userData.life, seed = sf.motes.userData.seed; for (let i = 0; i < pos.count; i++) { life[i] += dt * 0.25; if (life[i] > 1) { life[i] = 0; seed[i] = Math.random() * 6.28; } const l = life[i], a = seed[i], r = Math.sqrt((i % 17) / 17) * sf.r; pos.setXYZ(i, sf.x + Math.cos(a) * r, sf.y + l * 2.4, sf.z + Math.sin(a) * r); } pos.needsUpdate = true; sf.motes.material.opacity = 0.7; }
 }
 function syncSanctuaries(list) {
@@ -6994,7 +7142,7 @@ function crackTexture() {
 }
 function spawnFx(kind, x, y, z, yaw, o = {}) {
   if (kind === 'sfx') { playAbilitySfx(o.key, x, z); return; }
-  const life = o.life || { dust: 0.55, ring: 0.5, shock: 0.6, flash: 0.22, sparks: 0.6, arc: 0.35, cracks: 4.0, impact: 0.25, streak: 0.3, glow: 0.5, pillar: 0.6, rise: 1.0, glyph: 0.9, wings: 0.9, beam: 0.35 }[kind] || 0.5;
+  const life = o.life || { dust: 0.55, ring: 0.5, shock: 0.6, flash: 0.22, sparks: 0.6, arc: 0.35, cracks: 4.0, impact: 0.25, streak: 0.3, glow: 0.5, pillar: 0.6, rise: 1.0, glyph: 0.9, wings: 0.9, beam: 0.35, notes: 1.4, ripple: 0.7, staff: 2.0 }[kind] || 0.5;
   let obj;
   if (kind === 'dust' || kind === 'ring' || kind === 'shock') {
     const col = o.color || (kind === 'dust' ? 0xb9a77c : 0xffffff);
@@ -7057,6 +7205,22 @@ function spawnFx(kind, x, y, z, yaw, o = {}) {
       w.scale.set(side * 2.2, 2.2, 1); w.position.set(side * 0.9, 1.4, -0.2); obj.add(w);
     }
     obj.position.set(x, y, z); obj.rotation.y = yaw;
+  } else if (kind === 'notes') {   // musical notes rising and swaying away from the player (jag: harsh, grey-purple)
+    obj = new THREE.Group(); const n = o.n || 6, sp = o.spread || 0.7;
+    for (let i = 0; i < n; i++) {
+      const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: noteTexture(o.jag ? 3 : i % 3), color: o.color || 0xffe0a0, transparent: true, opacity: 0.95, depthWrite: false, blending: THREE.AdditiveBlending }));
+      const a = Math.random() * 6.28, r = Math.random() * sp;
+      spr.position.set(Math.cos(a) * r + Math.sin(yaw) * (o.fwd || 0), 1.0 + Math.random() * 0.6, Math.sin(a) * r + Math.cos(yaw) * (o.fwd || 0));
+      spr.userData.v = [(Math.random() - 0.5) * 0.8, (o.slow ? 0.6 : 1.2) + Math.random() * 0.8, (Math.random() - 0.5) * 0.8]; spr.userData.ph = Math.random() * 6.28;
+      const ss = 0.32 + Math.random() * 0.2; spr.scale.set(ss, ss, 1); obj.add(spr);
+    }
+    obj.position.set(x, y, z);
+  } else if (kind === 'ripple') {  // a ring of sound spreading out at chest height, facing the camera
+    obj = new THREE.Sprite(new THREE.SpriteMaterial({ map: ringTexture(), color: o.color || 0xffffff, transparent: true, opacity: 0.85, depthWrite: false, blending: THREE.AdditiveBlending }));
+    obj.position.set(x, y + 1.1, z); obj.scale.set(0.3, 0.3, 1);
+  } else if (kind === 'staff') {   // a wide musical staff turning on the ground (ballads, the crescendo)
+    obj = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: staffTexture(), color: o.color || 0xffd27a, transparent: true, opacity: 0.8, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
+    obj.rotation.x = -Math.PI / 2; obj.position.set(x, y + 0.08, z); const gs = (o.r || 5) * 2; obj.scale.set(gs, gs, 1);
   } else if (kind === 'beam') {    // a thread of light from the caster to the ally
     const a = o.from, b = o.to, len = a.distanceTo(b);
     obj = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, len, 6, 1, true), new THREE.MeshBasicMaterial({ color: o.color || 0xfff1c8, transparent: true, opacity: 0.85, depthWrite: false, blending: THREE.AdditiveBlending }));
@@ -7095,6 +7259,9 @@ function updateFx(dt) {
     else if (f.kind === 'glyph') { f.obj.rotation.z += dt * (f.obj.userData.spin || 1.5); f.obj.material.opacity = 0.9 * (u < 0.15 ? u / 0.15 : u < 0.7 ? 1 : 1 - (u - 0.7) / 0.3); }
     else if (f.kind === 'wings') { const k = u < 0.25 ? u / 0.25 : 1; f.obj.children.forEach((w, i) => { const sd = i ? 1 : -1; w.scale.set(sd * 2.2 * (0.3 + 0.7 * k) * (1 + u * 0.6), 2.2 * (0.3 + 0.7 * k) * (1 + u * 0.6), 1); w.material.opacity = 0.9 * (1 - u); w.position.y = 1.4 + u * 0.8; }); }
     else if (f.kind === 'beam') { f.obj.material.opacity = 0.85 * (1 - u); f.obj.scale.x = f.obj.scale.z = 1 + u * 2; }
+    else if (f.kind === 'notes') { for (const spr of f.obj.children) { const v = spr.userData.v; spr.position.x += (v[0] + Math.sin(f.t * 4 + spr.userData.ph) * 0.6) * dt; spr.position.y += v[1] * dt; spr.position.z += v[2] * dt; spr.material.opacity = 0.95 * (u < 0.6 ? 1 : 1 - (u - 0.6) / 0.4); spr.material.rotation = Math.sin(f.t * 3 + spr.userData.ph) * 0.3; } }
+    else if (f.kind === 'ripple') { const rs = 0.3 + (f.r || 2) * 2 * smooth(Math.min(1, u)); f.obj.scale.set(rs, rs, 1); f.obj.material.opacity = 0.85 * (1 - u); }
+    else if (f.kind === 'staff') { f.obj.rotation.z += dt * 0.5; f.obj.material.opacity = 0.8 * (u < 0.15 ? u / 0.15 : u < 0.7 ? 1 : 1 - (u - 0.7) / 0.3); }
     else if (f.kind === 'tele') {   // warning shape: outline pulses, the fill sweeps up as the blow lands
       const pulse = 0.7 + 0.3 * Math.sin(f.t * 18);
       if (f.outline) f.outline.material.opacity = (f.outline.material.opacity > 0.6 ? 0.9 : 0.55) * pulse * (u > 0.9 ? (1 - u) * 10 : 1);
@@ -7106,7 +7273,7 @@ function updateFx(dt) {
       f.spr.material.opacity = u > 0.85 ? (1 - u) / 0.15 : 1;
       if (f.trail) { const pos = f.trail.geometry.attributes.position, N = pos.count; for (let i = N - 1; i > 0; i--) pos.setXYZ(i, pos.getX(i - 1), pos.getY(i - 1), pos.getZ(i - 1)); pos.setXYZ(0, f.obj.position.x, f.obj.position.y, f.obj.position.z); pos.needsUpdate = true; }
     }
-    if (u >= 1) { scene.remove(f.obj); f.obj.geometry && f.obj.geometry.dispose(); if (f.kind === 'tele' || f.kind === 'wings') f.obj.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material && o.isSprite) o.material.dispose(); }); if (f.trail) { scene.remove(f.trail); f.trail.geometry.dispose(); } fxList.splice(i, 1); }
+    if (u >= 1) { scene.remove(f.obj); f.obj.geometry && f.obj.geometry.dispose(); if (f.kind === 'tele' || f.kind === 'wings' || f.kind === 'notes') f.obj.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material && o.isSprite) o.material.dispose(); }); if (f.trail) { scene.remove(f.trail); f.trail.geometry.dispose(); } fxList.splice(i, 1); }
   }
 }
 
@@ -7393,7 +7560,8 @@ function showHit(m) {
   if (!rec) return;
   // Something struck: a burst on the target, bigger and gold on a crit.
   const mp = rec.mesh.position;
-  if (m.dmg > 0 && m.hitKind === 'holy') { spawnFx('impact', mp.x, mp.y, mp.z, 0, { color: 0xfff6d0, sparkColor: 0xffd24a, n: m.crit ? 18 : 10, y: 1.1 }); spawnFx('flash', mp.x, mp.y, mp.z, 0, { r: m.crit ? 2.4 : 1.6, color: 0xfff0b0, life: 0.3 }); spawnFx('pillar', mp.x, mp.y, mp.z, 0, { color: 0xffe9a0, h: 3.5, life: 0.45 }); sfx.play('magic_cast', { x: mp.x, z: mp.z, rate: 1.4, vol: 0.5 }); sfx.play('hit_thud', { x: mp.x, z: mp.z, rate: 1.2, vol: 0.5 }); }
+  if (m.dmg > 0 && m.hitKind === 'sonic') { spawnFx('ripple', mp.x, mp.y, mp.z, 0, { color: m.crit ? 0xd8b0ff : 0xb890e8, r: m.crit ? 2.6 : 1.8, life: 0.4 }); spawnFx('notes', mp.x, mp.y, mp.z, 0, { n: m.crit ? 8 : 4, color: 0xc9a6ff, jag: true }); sfx.play('magic_cast', { x: mp.x, z: mp.z, rate: 1.9, vol: 0.4 }); sfx.play('hit_thud', { x: mp.x, z: mp.z, rate: 1.4, vol: 0.4 }); }
+  else if (m.dmg > 0 && m.hitKind === 'holy') { spawnFx('impact', mp.x, mp.y, mp.z, 0, { color: 0xfff6d0, sparkColor: 0xffd24a, n: m.crit ? 18 : 10, y: 1.1 }); spawnFx('flash', mp.x, mp.y, mp.z, 0, { r: m.crit ? 2.4 : 1.6, color: 0xfff0b0, life: 0.3 }); spawnFx('pillar', mp.x, mp.y, mp.z, 0, { color: 0xffe9a0, h: 3.5, life: 0.45 }); sfx.play('magic_cast', { x: mp.x, z: mp.z, rate: 1.4, vol: 0.5 }); sfx.play('hit_thud', { x: mp.x, z: mp.z, rate: 1.2, vol: 0.5 }); }
   else if (m.dmg > 0) { spawnFx('impact', mp.x, mp.y, mp.z, 0, { color: m.crit ? 0xffd27a : 0xffe0c0, sparkColor: m.crit ? 0xffb020 : 0xff6a4a, n: m.crit ? 12 : 6, y: 1.1 }); sfx.play('hit_thud', { x: mp.x, z: mp.z, rate: m.crit ? 1.15 : 0.95, vol: m.crit ? 1 : 0.7 }); if (m.crit) sfx.play('attack_slash', { x: mp.x, z: mp.z, rate: 1.3, vol: 0.5 }); }
   else sfx.play('attack_claw', { x: mp.x, z: mp.z, rate: 1.4, vol: 0.35, lowpass: 2500 }); // a whiff
   tmpV.copy(rec.mesh.position); tmpV.y += 2.0; tmpV.project(camera);
@@ -7444,7 +7612,7 @@ function splatAt(rec, text, cls) {
   el.style.left = (tmpV.x * 0.5 + 0.5) * innerWidth + 'px'; el.style.top = (-tmpV.y * 0.5 + 0.5) * innerHeight + 'px';
   document.getElementById('nameplates').appendChild(el); setTimeout(() => el.remove(), 800);
 }
-const SPELL_NAME = { minor_heal: 'Minor Heal', greater_heal: 'Greater Heal', radiant_touch: 'Radiant Touch', renewing_prayer: 'Renewing Prayer', prayer_of_mending: 'Prayer of Mending', divine_light: 'Divine Light', hymn_of_renewal: 'Hymn of Renewal', judgment_light: 'Judgment Light', di_mend: 'Divine Intervention' };
+const SPELL_NAME = { minor_heal: 'Minor Heal', greater_heal: 'Greater Heal', radiant_touch: 'Radiant Touch', renewing_prayer: 'Renewing Prayer', prayer_of_mending: 'Prayer of Mending', divine_light: 'Divine Light', hymn_of_renewal: 'Hymn of Renewal', judgment_light: 'Judgment Light', di_mend: 'Divine Intervention', song_of_mending: 'Song of Mending', legendary_ballad: 'Legendary Ballad', songweave: 'Songweave' };
 function showHeal(m) {
   const T = entityMeshes.get(m.target), B = entityMeshes.get(m.by);
   const mine = m.by === myId, onMe = m.target === myId;
@@ -7664,7 +7832,10 @@ function renderMomentum() {
 const BUFF_LABEL = { rushing_force: 'Rushing Force', weapon_flow: 'Weapon Flow', savage_watcher: 'Savage Watch', savage: 'Savage Momentum', bloodrush: 'Bloodrush',
   footwork: 'Footwork', berserkers_roar: "Berserker's Roar", reckless_exposure: 'Exposed', riposte_ready: 'Riposte Ready',
   renewing_prayer: 'Renewing Prayer', holy_ward: 'Holy Ward', blessed_barrier: 'Blessed Barrier', prayer_of_mending: 'Prayer of Mending', undead_ward: 'Undead Ward',
-  purified_soul: 'Purified Soul', divine_intervention: 'Divine Intervention', di_mend: 'Intervention Mend', guardian_prayer: 'Guardian Prayer', revival_sickness: 'Revival Sickness', avatar_of_mercy: 'Avatar of Mercy' };
+  purified_soul: 'Purified Soul', divine_intervention: 'Divine Intervention', di_mend: 'Intervention Mend', guardian_prayer: 'Guardian Prayer', revival_sickness: 'Revival Sickness', avatar_of_mercy: 'Avatar of Mercy',
+  song_of_mending: 'Song of Mending', mana_melody: 'Mana Melody', hymn_of_courage: 'Hymn of Courage', battle_hymn: 'Battle Hymn', drumbeat_rush: 'Drumbeat Rush', perfect_harmony: 'Perfect Harmony',
+  blade_rhythm: 'Blade Rhythm', chorus_of_clarity: 'Chorus of Clarity', resonant_shield: 'Resonant Shield', chorus_of_war: 'Chorus of War', songweave: 'Songweave', legendary_ballad: 'Legendary Ballad',
+  dreamsong: 'Dreamsong', echoing_verse: 'Echoing Verse' };
 const BAD_BUFF = new Set(['reckless_exposure', 'revival_sickness']);
 function renderBuffs() {
   const el = document.getElementById('buffrow'); if (!el) return;
@@ -8419,7 +8590,7 @@ function currentLook() {
 }
 // Class pick on the login card; remembered like the look.
 let pickedClass = 'fighter';
-try { const c = localStorage.getItem('bk.cls'); if (c === 'fighter' || c === 'cleric') pickedClass = c; } catch (e) {}
+try { const c = localStorage.getItem('bk.cls'); if (['fighter', 'cleric', 'bard'].includes(c)) pickedClass = c; } catch (e) {}
 document.querySelectorAll('#classRow .classopt').forEach(d => {
   d.classList.toggle('sel', d.dataset.cls === pickedClass);
   d.onclick = () => { pickedClass = d.dataset.cls; document.querySelectorAll('#classRow .classopt').forEach(x => x.classList.toggle('sel', x === d)); try { localStorage.setItem('bk.cls', pickedClass); } catch (e) {} };

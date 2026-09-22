@@ -121,6 +121,9 @@ export const darkwoods = {
     { id: 'aldis',    name: 'Mother Aldis',         x: -8,   z: -60, poi: 'entrance', model: 'Female', yaw: 3.0, trainer: 'cleric',
       look: { hair: 3, hairColor: '#d9d2c4', skin: '#d4b394', outfit: 29, colors: { top: '#e8e0cc' } },   // a pilgrim in undyed linen
       idle: 'The Light asks little of us: mend what is broken, and stand between the dark and those who cannot.' },
+    { id: 'lark',     name: 'Lark the Minstrel',    x: 14,   z: -58, poi: 'entrance', model: 'Male', yaw: 3.4, trainer: 'bard',
+      look: { hair: 12, hairColor: '#7a4a22', skin: '#d2a67f', outfit: 17, colors: { top: '#3b4f8a' } },   // a traveller in a blue doublet
+      idle: 'Every fight has a rhythm, friend. Learn to hear it and the whole party keeps time.' },
     { id: 'maggie',   name: 'Old Maggie',          x: 18,   z: -79, poi: 'entrance', model: 'Female', yaw: 3.0,
       idle: 'Mind the hens, love — and shut the gate on your way out.' },
     { id: 'bram',     name: 'Farmhand Bram',       x: -19,  z: -77, poi: 'entrance', model: 'Male', yaw: 1.4,
