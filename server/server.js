@@ -2052,7 +2052,7 @@ function monsterStrike(m, target, o = {}) {
   // A swing that goes nowhere is an opening — Heavy Riposte reads this.
   if (res.dmg <= 0) addBuff(target, { id: 'riposte_ready', dur: 300 });
   if (res.dmg > 0) {
-    hurtPlayer(target, res.dmg, m, o.kind, res);
+    hurtPlayer(target, res.dmg, m, o.kind || o.type || arch.dmgType, res);
     if (o.poison) { target.dots = target.dots || []; target.dots.push({ kind: 'poison', dmg: o.poison, t: 12, period: 3, next: 3 }); }
   } else {
     engage(target, m);

@@ -61,6 +61,32 @@
   #allyframe .bar { margin-bottom: 0; height: 14px; }
   #allyfill { background: linear-gradient(90deg,#1c6b2a,#3fbf55,#7de08c); }
   #allyward { position: absolute; top: 0; bottom: 0; left: 0; background: linear-gradient(90deg,#c9a640aa,#ffe28aaa); transform-origin: left; }
+  /* The enemy you have selected: everything you need to fight it without
+     looking away from the fight — health, what it is casting, what it is
+     angry at, and how far out of your league it is (the con colour). */
+  #targetframe { display: none; margin-top: 6px; padding: 6px 10px; border-radius: 8px; background: #2a2018; border: 2px solid #1c150e; box-shadow: 0 8px 24px #000a; min-width: 214px; }
+  #targetframe.elite { border-color: #b8901c; }
+  #targetframe .tn { font-size: 13px; font-weight: 700; color: #ffdf9e; text-shadow: 0 1px 2px #000; margin-bottom: 4px; display: flex; justify-content: space-between; gap: 8px; }
+  #targetframe .tn span { font-weight: 400; font-size: 11px; }
+  #targetframe .bar { margin-bottom: 0; height: 14px; }
+  #tgtfill { background: linear-gradient(90deg,#6b1c1c,#bf3f3f,#e08c7d); }
+  #targetframe .tot { font-size: 10px; color: #b9ad90; margin-top: 3px; height: 12px; }
+  #targetframe .tot b { color: #ff9a8a; }
+  #targetframe .tot i { color: #7de08c; font-style: normal; }
+  #tgtcast { display: none; position: relative; height: 12px; margin-top: 4px; border-radius: 6px; overflow: hidden; background: #120a1fb0; border: 1px solid #8a6ac0; }
+  #tgtcast > i { position: absolute; inset: 0; transform-origin: left; background: linear-gradient(90deg,#c48bff,#ffd27a); }
+  #tgtcast.int > i { background: linear-gradient(90deg,#ffd27a,#ff8a3a); }
+  #tgtcast > span { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; color: #fff; text-shadow: 0 1px 2px #000; }
+  #targetframe .pips { display: flex; gap: 3px; margin-top: 4px; min-height: 13px; }
+  #targetframe .pips i { font-style: normal; font-size: 9px; padding: 1px 5px; border-radius: 6px; background: #1c150e; color: #ffdf9e; border: 1px solid #4a3c28; }
+  #targetframe .pips i.bad { background: #3a1010; color: #ff9a8a; border-color: #6b2020; }
+  /* Con colours: EverQuest's old lesson about what you can safely pick a fight with. */
+  .con-grey { color: #9aa0a8; } .con-green { color: #6ad86a; } .con-blue { color: #6ab4ff; }
+  .con-white { color: #f0ece4; } .con-yellow { color: #ffd24a; } .con-red { color: #ff6a5a; }
+  .plate .pcast { display: none; position: relative; height: 9px; margin-top: 2px; border-radius: 5px; overflow: hidden; background: #120a1fcc; border: 1px solid #8a6ac0; }
+  .plate .pcast > i { position: absolute; inset: 0; transform-origin: left; background: linear-gradient(90deg,#c48bff,#ffd27a); }
+  .plate .pcast.int > i { background: linear-gradient(90deg,#ffd27a,#ff8a3a); }
+  .plate .pcast > span { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 8px; font-weight: 700; color: #fff; text-shadow: 0 1px 2px #000; }
   .splat.healamt { background: radial-gradient(circle at 40% 35%, #7de08c, #1c6b2a); }
   .splat.healamt.crit { background: radial-gradient(circle at 40% 35%, #fff3b0, #d8a81c); color: #2a1a00; }
   .splat.absorb { background: radial-gradient(circle at 40% 35%, #ffe9a0, #b8901c); color: #2a1a00; }
@@ -74,11 +100,24 @@
   #castbar { display: none; position: absolute; left: 4px; right: 4px; top: -22px; height: 12px; border-radius: 6px; background: #120a1fb0; border: 1px solid #8a6ac0; overflow: hidden; }
   #castbar > i { position: absolute; inset: 0; transform-origin: left; background: linear-gradient(90deg,#c48bff,#ffd27a); }
   #castbar > span { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; color: #fff; text-shadow: 0 1px 2px #000; }
+  /* The auto-attack swing timer: the heartbeat of the fight. */
+  #swingbar { display: none; position: absolute; left: 4px; right: 4px; bottom: -9px; height: 5px; border-radius: 3px; background: #1c150e; border: 1px solid #0d0906; overflow: hidden; }
+  #swingbar > i { position: absolute; inset: 0; transform-origin: left; background: linear-gradient(90deg,#8a5a1c,#ffb648); }
+  #swingbar.ready > i { background: linear-gradient(90deg,#c9a640,#fff0b0); }
   .abslot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 6px; pointer-events: none; }
   .abslot.gcd img, .abslot.nostam img { filter: brightness(.6); }
   .abslot.nostam .cost { color: #ff7a6a; }
   .abslot .cost { position: absolute; bottom: 2px; left: 4px; z-index: 1; font-size: 9px; color: #f2c94c; text-shadow: 0 1px 2px #000; }
   .abslot.assign { border-color: #ffd27a; box-shadow: 0 0 10px #ffd27a88; }
+  /* Out of range or without a target: dim, so you know before you press it. */
+  .abslot.noreach img { filter: brightness(.45) saturate(.4); }
+  .abslot.noreach { border-color: #3a2a2a; }
+  /* A proc: this one is lit, use it before the window closes. */
+  .abslot .glow { position: absolute; inset: -3px; border-radius: 10px; pointer-events: none; opacity: 0; }
+  .abslot.proc .glow { opacity: 1; box-shadow: 0 0 14px 3px #ffd27a, inset 0 0 12px #ffd27a80; border: 2px solid #ffe9a0; animation: procpulse 1.1s ease-in-out infinite; }
+  @keyframes procpulse { 0%,100% { opacity: .55; } 50% { opacity: 1; } }
+  /* Queued behind the global cooldown: the press was taken, it is coming. */
+  .abslot.queued { border-color: #6ab4ff; box-shadow: 0 0 10px #6ab4ff99; }
   .abslot.drop { border-color: #c48bff; }
   #spellbook { display: none; position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); width: 560px; max-height: 82vh; pointer-events: auto;
     background: #0d0a12 url('ui/fighter/background.jpg') center/cover; border: 2px solid #6a4f9a; border-radius: 12px; box-shadow: 0 8px 40px #000c; color: #efe6ff; overflow: hidden; }
@@ -338,6 +377,17 @@
     text-shadow: 0 1px 1px #000; animation: rise 0.8s ease-out forwards; pointer-events: none; }
   .splat.hitdmg { background: radial-gradient(circle at 40% 35%, #e2554a, #a41d13); }
   .splat.hitmiss { background: radial-gradient(circle at 40% 35%, #4a7fe2, #1d43a4); }
+  /* The attack table, in colour: what happened matters as much as how much. */
+  .splat.avoid { width: auto; min-width: 26px; padding: 0 7px; border-radius: 13px; font-size: 11px; letter-spacing: 0.4px; }
+  .splat.o-miss  { background: linear-gradient(180deg,#6a7180,#39404d); }
+  .splat.o-dodge { background: linear-gradient(180deg,#48c8d8,#166b7a); }
+  .splat.o-parry { background: linear-gradient(180deg,#b9c6d8,#5a6a80); color: #10161f; text-shadow: none; }
+  .splat.o-resist{ background: linear-gradient(180deg,#a98ce0,#4a2f80); }
+  .splat.o-block { background: radial-gradient(circle at 40% 35%, #cdd6e2, #6a7688); color: #131820; text-shadow: none; }
+  .splat.o-glance { background: radial-gradient(circle at 40% 35%, #c8a05a, #6d4a18); font-size: 11px; }
+  .splat.big { width: 38px; height: 38px; line-height: 38px; font-size: 17px; }
+  .splat.mine { box-shadow: 0 0 0 2px #ffffff40; }
+  .splat.incoming { font-style: italic; }
 
   #ctxmenu { position: fixed; z-index: 40; min-width: 150px; background: #3f342a;
     border: 2px solid #1c150e; border-radius: 3px; box-shadow: 0 6px 18px #000a; overflow: hidden;
@@ -392,6 +442,13 @@
       <div class="an"><b id="allyname">—</b><span id="allysub"></span></div>
       <div class="bar"><i id="allyfill"></i><i id="allyward"></i><span><em>HP:</em><b id="allytext"></b></span></div>
     </div>
+    <div id="targetframe" title="Your target — Tab cycles, Escape clears">
+      <div class="tn"><b id="tgtname">—</b><span id="tgtsub"></span></div>
+      <div class="bar"><i id="tgtfill"></i><span><em>HP:</em><b id="tgttext"></b></span></div>
+      <div id="tgtcast"><i></i><span></span></div>
+      <div class="pips" id="tgtpips"></div>
+      <div class="tot" id="tgttot"></div>
+    </div>
   </div>
   <!-- Action bar: class xp above, six ability slots (keys 1-6) below -->
   <div id="actionbar">
@@ -400,6 +457,7 @@
     <div id="xpbar"><i id="xpfill"></i><span id="xptext">XP 0 / 83</span></div>
     <div id="slots"></div>
     <div id="castbar"><i></i><span></span></div>
+    <div id="swingbar"><i></i></div>
   </div>
   <div id="spellbook">
     <div class="sbhead"><img id="sbEmblem" alt=""><div><h3 id="sbTitle">Fighter</h3><div id="sbSub"></div></div><button id="sbClose">✕</button></div>
@@ -5132,8 +5190,18 @@ function animateEntity(rec, e, kind, dt) {
   if (moving) rig.gait += (Math.max(rig.speed, 1.2) / g.stride) * Math.PI * dt;
   else rig.gait += dt * 1.5; // idle breathing keeps the same phase running
 
-  // --- attack lunge (triggered by the server's hit event)
-  if (rig.atk > 0) rig.atk = Math.max(0, rig.atk - dt / (rig.style === 'hero' ? 0.5 : 0.36));   // the player's weapon swing gets a beat longer
+  // --- flinch: whatever just landed rocks the body, and the bigger the blow
+  // the further it rocks. It rides on top of everything else the rig is doing,
+  // so a small hit never interrupts a swing — it just shows.
+  if (rig.flinch > 0) {
+    rig.flinch = Math.max(0, rig.flinch - dt * 3.4);
+    const k = Math.sin(Math.PI * Math.min(1, rig.flinch)) * 0.5 + rig.flinch * 0.5;
+    const lean = (rig.flinchDir || 0) - (rec.mesh.rotation.y || 0);
+    rig.flinchX = Math.cos(lean) * k; rig.flinchZ = -Math.sin(lean) * k;
+  } else { rig.flinchX = 0; rig.flinchZ = 0; }
+
+  // --- attack lunge (triggered by the server's swing event)
+  if (rig.atk > 0) rig.atk = Math.max(0, rig.atk - dt / (rig.atkDur || (rig.style === 'hero' ? 0.5 : 0.36)));   // paced so the blade lands on the impact frame
   const u = rig.atk > 0 ? 1 - rig.atk : 0;
   const punch = rig.atk > 0 ? Math.sin(Math.PI * u) : 0;
 
@@ -5184,8 +5252,8 @@ function animateEntity(rec, e, kind, dt) {
     const breathe = (1 - a) * (Math.sin(rig.breath) * 0.5 + 0.5); // 0..1 idle only
 
     b.position.y = rig.home.y + bob;                            // step-bob only
-    b.position.z = rig.home.z + thrust + punch * 0.4;
-    b.rotation.x = 0.04 * a;                                    // slight forward lean when walking
+    b.position.z = rig.home.z + thrust + punch * 0.4 - (rig.flinchX || 0) * 0.12;
+    b.rotation.x = 0.04 * a - (rig.flinchX || 0) * 0.22;        // slight forward lean when walking, plus the rock of a blow
     b.rotation.y = Math.sin(rig.gait) * 0.12 * a;               // waddle turn
     b.rotation.z = Math.sin(rig.gait * 0.5) * g.roll * a;
     // Real stepping: the split legs swing fore/aft in anti-phase while walking.
@@ -5226,10 +5294,10 @@ function animateEntity(rec, e, kind, dt) {
     // Body: step-bob, forward lean into a walk (+Z), gentle roll, breathing swell.
     const br = (1 - a) * (Math.sin(rig.breath) * 0.5 + 0.5);
     b.position.y = rig.home.y + Math.abs(Math.sin(rig.gait)) * g.bob * a - crouch * 0.28;
-    b.position.z = rig.home.z + punch * 0.35;         // lunge forward (+Z) on a strike
-    b.rotation.x = 0.10 * a + crouch * 0.14;           // lean forward while moving / crouching
+    b.position.z = rig.home.z + punch * 0.35 - (rig.flinchX || 0) * 0.14;   // lunge forward (+Z) on a strike, rock back from one taken
+    b.rotation.x = 0.10 * a + crouch * 0.14 - (rig.flinchX || 0) * 0.26;   // lean forward while moving / crouching
     b.rotation.y = 0;
-    b.rotation.z = Math.sin(rig.gait * 0.5) * g.roll * a;
+    b.rotation.z = Math.sin(rig.gait * 0.5) * g.roll * a + (rig.flinchZ || 0) * 0.20;
     b.scale.set(bs.x * (1 - br * 0.02), bs.y * (1 + br * 0.03), bs.z * (1 - br * 0.02));
 
     // Walk stride: thighs anti-phase; the knee bends on the back-swing; arms
@@ -5310,7 +5378,7 @@ function animateEntity(rec, e, kind, dt) {
       if (!casting) for (let i = 0; i < (A.fx || []).length; i++) { const f = A.fx[i]; if (u >= f.at && !an.fired.has(i)) { an.fired.add(i); spawnFx(f.kind, mp.x, mp.y, mp.z, yaw, f); } }
       if (an.t >= hold + an.dur) { rig.anim = null; if (rig.weapon) rig.weapon.visible = true; }
     }
-    updateWeaponTrail(rec, !!(rig.anim && ABILITY_ANIMS[rig.anim.id].trail !== false), dt);
+    updateWeaponTrail(rec, !!(rig.anim && ABILITY_ANIMS[rig.anim.id].trail !== false) || rig.atk > 0.15, dt);
     if (rig.armL) rig.armL.rotation.set(lArm, 0, lArmZ);
     if (rig.armR) rig.armR.rotation.set(rArm, 0, rArmZ);
     if (rig.foreL) { if (lFore) rig.foreL.rotation.set(lFore[0], lFore[1], lFore[2]); else rig.foreL.rotation.set(0, 0, 0); }
@@ -5405,12 +5473,47 @@ function animateEntity(rec, e, kind, dt) {
 }
 
 // The server tells us who swung; the client plays the swing.
-function triggerAttackAnim(id) {
+// A swing begins. `dur` is how long until the weapon reaches the target, so
+// the animation is stretched to put its furthest point of extension exactly on
+// the impact frame — the damage number never appears before the blade arrives.
+function triggerAttackAnim(id, dur) {
   const rec = entityMeshes.get(id);
   const rig = rec && rec.mesh.userData.rig;
+  if (!rig) return;
   // Pick the striking hand at random each swing (the player alternates
   // punch/kick instead — that branch reads atkKind the same way).
-  if (rig) { rig.atk = 1; rig.atkKind = Math.random() < 0.5 ? 0 : 1; rig.readyT = 6; }   // and stay on guard a while after
+  rig.atk = 1; rig.atkKind = Math.random() < 0.5 ? 0 : 1; rig.readyT = 6;   // and stay on guard a while after
+  rig.atkDur = dur ? Math.max(0.3, dur * 2) : (rig.style === 'hero' ? 0.5 : 0.36);
+  if (rec.kind === 'monster') rig.atkDur = Math.min(rig.atkDur, 1.2);
+}
+// The swing's trail colour, by what the weapon is: the existing ribbon
+// (updateWeaponTrail) is simply switched on for auto-attacks too.
+const TRAIL_COLOR = { slash: 0xfff1c8, crush: 0xffcf90, pierce: 0xd8ecff, magic: 0xc9a6ff, holy: 0xfff0b0 };
+function startTrail(rec, dur, type) { rec.swingTrail = TRAIL_COLOR[type] || TRAIL_COLOR.slash; }
+
+// An arrow or bolt crossing the gap, so a shot from range reads as a shot.
+function shotStreak(from, to, type) {
+  const a = from.mesh.position.clone().setY(from.mesh.position.y + 1.2);
+  const b = to.mesh.position.clone().setY(to.mesh.position.y + 1.1);
+  const geo = new THREE.BufferGeometry().setFromPoints([a, b]);
+  const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: type === 'magic' ? 0xc9a6ff : 0xffe6b0, transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending }));
+  line.frustumCulled = false; scene.add(line);
+  const t0 = performance.now();
+  const fade = () => {
+    const u = (performance.now() - t0) / 160;
+    if (u >= 1) { scene.remove(line); geo.dispose(); line.material.dispose(); return; }
+    line.material.opacity = 0.9 * (1 - u); requestAnimationFrame(fade);
+  };
+  fade();
+  sfx.play('attack_slash', { x: b.x, z: b.z, rate: 1.8, vol: 0.35 });
+}
+
+// A blow arriving: the target rocks back from it. Small hits nudge, heavy hits
+// and crits rock the whole body — minor attacks get minor reactions.
+function flinch(rec, amount, dir) {
+  const rig = rec && rec.mesh.userData.rig; if (!rig) return;
+  rig.flinch = Math.min(1, Math.max(rig.flinch || 0, amount));
+  rig.flinchDir = dir || 0;
 }
 
 function lerpAngle(a, b, t) {
@@ -5912,7 +6015,7 @@ function addEventListeners() {
       if (!any) openSettings();
       return;
     }
-    if (/^[1-6]$/.test(e.key) && !e.ctrlKey && !e.altKey) { const id = barSlots[+e.key - 1]; if (id) useAbility(id); return; }
+    if (/^[1-8]$/.test(e.key) && !e.ctrlKey && !e.altKey) { const id = barSlots[+e.key - 1]; if (id) useAbility(id); return; }
     if (e.key === ' ' || e.code === 'Space') { e.preventDefault(); if (!jump.active) { jump.active = true; jump.t = 0; } return; }
     const k = e.key.toLowerCase();
     if (k.startsWith('arrow')) e.preventDefault();
@@ -6083,6 +6186,48 @@ function updateAllyFrame(snap) {
   document.getElementById('allytext').textContent = `${t.hp}/${t.maxHp}${t.ward ? ' +' + t.ward : ''}`;
 }
 document.getElementById('allyframe').onclick = () => setFriend(null);
+// How far out of your league something is, at a glance — the old con colours.
+function conClass(lvl, mine) {
+  const d = (lvl || 1) - (mine || 1);
+  return d >= 5 ? 'con-red' : d >= 3 ? 'con-yellow' : d >= -2 ? 'con-white' : d >= -5 ? 'con-blue' : d >= -9 ? 'con-green' : 'con-grey';
+}
+const MOB_ROLE = { warrior: 'Warrior', brute: 'Brute', defender: 'Defender', archer: 'Archer', caster: 'Caster', rogue: 'Skirmisher', swarm: 'Vermin', beast: 'Beast' };
+// Everything you need to keep fighting without looking away: its health, what
+// it is casting (and whether that can be stopped), what it is angry at.
+function updateTargetFrame(snap) {
+  const el = document.getElementById('targetframe'); if (!el) return;
+  const rec = targetId != null ? entityMeshes.get(targetId) : null;
+  const t = rec && rec.data;
+  if (!t || !t.alive) { el.style.display = 'none'; return; }
+  const me = snap && snap.players ? snap.players.find(p => p.id === myId) : null;
+  el.style.display = 'block';
+  el.className = t.elite ? 'elite' : '';
+  document.getElementById('tgtname').textContent = `${t.elite ? '★ ' : ''}${t.name}`;
+  const sub = document.getElementById('tgtsub');
+  sub.className = conClass(t.level, me && me.level);
+  sub.textContent = `Lv ${t.level}${t.arch ? ' · ' + (MOB_ROLE[t.arch] || '') : ''}`;
+  document.getElementById('tgtfill').style.transform = `scaleX(${Math.max(0, t.hp / t.maxHp)})`;
+  document.getElementById('tgttext').textContent = `${t.hp}/${t.maxHp}`;
+  // Its cast bar. Interruptible casts are the orange ones — the ones worth
+  // holding an interrupt for.
+  const cb = document.getElementById('tgtcast');
+  if (t.cast) {
+    cb.style.display = 'block'; cb.className = t.cast.i ? 'int' : '';
+    cb.querySelector('span').textContent = t.cast.n + (t.cast.i ? ' ⚡' : '');
+    cb.querySelector('i').style.transform = `scaleX(${Math.max(0, Math.min(1, 1 - t.cast.t / (t.cast.d || 1)))})`;
+  } else cb.style.display = 'none';
+  const pips = [];
+  if (t.enraged) pips.push('<i class="bad">Enraged</i>');
+  if (t.asleep) pips.push('<i>Asleep</i>');
+  if (t.deb) pips.push('<i class="bad">Weakened</i>');
+  if (t.stun) pips.push('<i>Stunned</i>');
+  document.getElementById('tgtpips').innerHTML = pips.join('');
+  // Target of target: whether it is on you, on someone else, or on nobody.
+  const tot = document.getElementById('tgttot');
+  if (t.tgt == null) tot.innerHTML = '<i>not fighting</i>';
+  else if (t.tgt === myId) tot.innerHTML = '→ <b>You</b>';
+  else { const o = entityMeshes.get(t.tgt); tot.innerHTML = '→ ' + escapeHtml((o && o.data && o.data.name) || 'someone'); }
+}
 function attackMonster(id) {
   const rec = entityMeshes.get(id);
   if (!rec || !rec.data || !rec.data.alive) return;
@@ -7444,6 +7589,7 @@ function updateWeaponTrail(rec, active, dt) {
   }
   const w = rig.weapon, hand = rig.handR || rig.armR;
   if (active && rig.anim) tr.color.set(ABILITY_ANIMS[rig.anim.id].trailColor || 0xfff1c8);
+  else if (active && rec.swingTrail) tr.color.set(rec.swingTrail);   // an ordinary swing, coloured by the weapon
   if (active && w && hand) {
     const tip = w.localToWorld(new THREE.Vector3(0, -0.85, 0)), base = hand.getWorldPosition(new THREE.Vector3());
     tr.pts.push({ tip, base, t: 0 });
@@ -7697,7 +7843,7 @@ function updateNameplates() {
     let plate = platePool[i];
     if (!plate) {
       plate = document.createElement('div'); plate.className = 'plate';
-      plate.innerHTML = '<div class="nm"></div><div class="hpp"><i></i></div>';
+      plate.innerHTML = '<div class="nm"></div><div class="hpp"><i></i></div><div class="pcast"><i></i><span></span></div>';
       nameplatesEl.appendChild(plate); platePool.push(plate);
     }
     const x = (tmpV.x * 0.5 + 0.5) * innerWidth;
@@ -7707,9 +7853,19 @@ function updateNameplates() {
     const d = rec.data;
     plate.className = 'plate ' + (rec.kind === 'monster' ? 'mob ' + (d.elite ? 'ogre' : d.type) : '')
       + (id === targetId ? ' target' : '') + (d.elite ? ' elite' : '');
-    plate.querySelector('.nm').textContent = rec.kind === 'monster'
-      ? `${d.elite ? '★ ' : ''}${d.name} · Lv ${d.level}` : `${d.name} · Lv ${d.level}`;
+    const myLvl = (snapCur && snapCur.players && (snapCur.players.find(p => p.id === myId) || {}).level) || 1;
+    plate.querySelector('.nm').innerHTML = (rec.kind === 'monster' ? `${d.elite ? '★ ' : ''}${escapeHtml(d.name)}` : escapeHtml(d.name))
+      + ` · <span class="${rec.kind === 'monster' ? conClass(d.level, myLvl) : ''}">Lv ${d.level}</span>`
+      + (d.enraged ? ' <span class="con-red">⚡</span>' : '');
     plate.querySelector('.hpp > i').style.transform = `scaleX(${Math.max(0, d.hp / d.maxHp)})`;
+    // Anything winding up a spell shows it over its own head, so you can react
+    // to a shaman across the camp without having it targeted.
+    const pc = plate.querySelector('.pcast');
+    if (d.cast) {
+      pc.style.display = 'block'; pc.className = 'pcast' + (d.cast.i ? ' int' : '');
+      pc.querySelector('span').textContent = d.cast.n;
+      pc.querySelector('i').style.transform = `scaleX(${Math.max(0, Math.min(1, 1 - d.cast.t / (d.cast.d || 1)))})`;
+    } else pc.style.display = 'none';
     i++;
   }
   for (; i < platePool.length; i++) platePool[i].style.display = 'none';
@@ -7769,7 +7925,10 @@ function updateHudFromSnapshot(snap) {
     document.getElementById('stamfill').parentElement.classList.toggle('mana', !!me.manaMax);
     selfStam = res;
   }
+  selfBuffs = me.fx || [];
   updateAllyFrame(snap);
+  updateTargetFrame(snap);
+  updateSwingBar(me);
   if (abilityClass) { document.getElementById('ccls').textContent = abilityClass.cls || 'Fighter'; if (abilityClass.icon) document.getElementById('cemblem').src = abilityClass.icon; }
   if (me.momentum !== selfMomentum) { selfMomentum = me.momentum || 0; renderMomentum(); }
   const cb = document.getElementById('castbar'), castId = me.windup || me.channel;
@@ -7902,6 +8061,62 @@ function onEvent(m) {
       flyText(`+${m.heal}`, 'heal');
       break;
     case 'hit': showHit(m); break;
+    // A swing starting. The animation is stretched so the weapon arrives on
+    // the impact frame, which is when the 'hit' above turns up.
+    case 'swing': {
+      triggerAttackAnim(m.by, m.dur);
+      const R = entityMeshes.get(m.by);
+      if (R && !m.ranged) startTrail(R, m.dur, m.type);
+      if (m.ranged) {
+        const T = entityMeshes.get(m.target);
+        if (R && T) setTimeout(() => shotStreak(R, T, m.type), Math.max(0, m.dur * 1000 - 120));
+      }
+      break;
+    }
+    // An enemy winding up something worth reacting to.
+    case 'mobcast': {
+      const R = entityMeshes.get(m.by);
+      if (m.cancel) {
+        if (R) { R.cast = null; if (m.interrupted) { splatAt(R, 'INTERRUPTED', 'avoid o-parry'); spawnFx('flash', R.mesh.position.x, R.mesh.position.y, R.mesh.position.z, 0, { r: 2.2, color: 0xbcd8ff, life: 0.3 }); sfx.play('ui_error', { vol: 0.5, rate: 0.8 }); if (m.name) addCombat(`${R.data ? R.data.name : 'The enemy'}'s ${m.name} is interrupted!`, 'kill'); } }
+        break;
+      }
+      if (R) {
+        R.cast = { name: m.name, t0: performance.now(), dur: m.dur, int: m.interruptible };
+        const mp = R.mesh.position;
+        if (m.telegraph === 'heal') spawnFx('rise', mp.x, mp.y, mp.z, 0, { n: 8, color: 0x8aff9a });
+        else if (m.telegraph === 'smash') { telegraph('circle', { x: mp.x, z: mp.z, r: 3.2, dur: m.dur, color: 0xff6a2a }); sfx.play('merc_command', { x: mp.x, z: mp.z, rate: 0.6, vol: 0.4, lowpass: 900 }); }
+        else if (m.telegraph === 'aim') spawnFx('glow', mp.x, mp.y, mp.z, 0, { color: 0xffd27a, life: 0.5 });
+        else spawnFx('glow', mp.x, mp.y, mp.z, 0, { color: 0xc9a6ff, life: 0.5 });
+        if (m.interruptible && targetId === m.by) addCombat(`${R.data ? R.data.name : 'The enemy'} begins casting ${m.name} — interrupt it!`, 'me');
+      }
+      break;
+    }
+    case 'mobheal': {
+      const T = entityMeshes.get(m.target);
+      if (T) { splatAt(T, `+${m.amount}`, 'healamt'); const mp = T.mesh.position; spawnFx('rise', mp.x, mp.y, mp.z, 0, { n: 10, color: 0x8aff9a }); spawnFx('glow', mp.x, mp.y, mp.z, 0, { color: 0x6ae06a, life: 0.5 }); sfx.play('heal_chime', { x: mp.x, z: mp.z, rate: 0.8, vol: 0.4 }); }
+      addCombat(`${m.name} heals ${T && T.data ? 'the ' + T.data.name : 'an enemy'} for ${m.amount}.`, '');
+      break;
+    }
+    case 'enrage': {
+      const R = entityMeshes.get(m.monster);
+      if (R) { const mp = R.mesh.position; spawnFx('shock', mp.x, mp.y, mp.z, 0, { r: 3.5, color: 0xff3a20, life: 0.8 }); spawnFx('impact', mp.x, mp.y, mp.z, 0, { y: 1.4, n: 18, color: 0xffb070, sparkColor: 0xff4a10 }); sfx.play('thunder_roll', { x: mp.x, z: mp.z, rate: 1.3, vol: 0.6, lowpass: 1600 }); }
+      addCombat(`${m.name} goes berserk!`, 'miss');
+      break;
+    }
+    case 'taunt': {
+      if (at) { spawnFx('shock', at.x, at.y, at.z, 0, { r: m.r || 10, color: 0xff8a3a, life: 0.7 }); sfx.play('merc_command', { x: at.x, z: at.z, rate: 0.7, vol: 0.7 }); }
+      break;
+    }
+    case 'aggro': {
+      if (m.target === myId) { const R = entityMeshes.get(m.monster); if (R) { splatAt(R, 'AGGRO', 'avoid o-miss'); addCombat(`${R.data ? 'The ' + R.data.name : 'An enemy'} turns on you!`, 'miss'); } }
+      break;
+    }
+    case 'proc': {
+      procFlash(m.id, m.name);
+      if (m.text) addCombat(m.text, 'kill');
+      break;
+    }
+    case 'queued': { queuedId = m.id || null; break; }
     case 'death': showDeath(); break;
     case 'respawned': hideDeath(); break;
     case 'miss': if (m.reason === 'out_of_range') flyText('Out of range', 'dmg'); break;
@@ -7920,71 +8135,130 @@ function hurtFlash(color) {
 }
 
 let lastNotice = { text: '', t: 0 };
+// What one blow looks and sounds like. The server has already decided the
+// outcome; this is where it lands — the right impact for the weapon, a splat
+// that says what happened, a line in the log, and a flinch on whoever took it.
+const OUT_TEXT = { miss: 'MISS', dodge: 'DODGE', parry: 'PARRY', resist: 'RESIST' };
+const OUT_VERB = { miss: 'miss', dodge: 'is dodged by', parry: 'is parried by', resist: 'is resisted by' };
 function showHit(m) {
-  triggerAttackAnim(m.by);
-  {
-    const A = entityMeshes.get(m.by), T = entityMeshes.get(m.target);
-    const nameOf = (r, id) => id === myId ? 'You' : (r && r.data && r.data.name) || (id === myId ? 'You' : (m.hitKind === 'poison' ? 'poison' : m.hitKind === 'burn' ? 'fire' : m.hitKind === 'bleed' ? 'bleeding' : 'Something'));
-    const an = nameOf(A, m.by), tn = nameOf(T, m.target);
-    const mine = m.by === myId, onMe = m.target === myId;
-    if (mine || onMe) {
-      const verb = mine ? (m.crit ? 'crit' : 'hit') : (m.crit ? 'crits' : 'hits');
-      if (m.dmg > 0) {
-        const killed = T && T.data && m.targetKind === 'monster' && T.data.hp - m.dmg <= 0;
-        const src = m.by == null ? (m.hitKind === 'poison' ? 'The poison' : m.hitKind === 'bleed' ? 'Your wounds bleed' : 'The fire') : `The ${an}`;
-        addCombat(mine ? `You ${verb} the ${tn} for ${m.dmg}.` : `${src} ${m.by == null && m.hitKind === 'bleed' ? 'for' : verb + ' you for'} ${m.dmg}.`, mine ? 'me' : '');
-        if (killed && mine) addCombat(`You kill the ${tn}.`, 'kill');
-      } else addCombat(mine ? `You miss the ${tn}.` : `The ${an} misses you.`, 'miss');
-    }
+  const A = entityMeshes.get(m.by), T = entityMeshes.get(m.target);
+  const mine = m.by === myId, onMe = m.target === myId;
+  const res = m.res || (m.dmg > 0 ? 'hit' : 'miss');
+  const avoided = m.dmg <= 0 && res !== 'hit';
+  const nameOf = (r, id) => id === myId ? 'You' : (r && r.data && r.data.name)
+    || (m.hitKind === 'poison' ? 'poison' : m.hitKind === 'burn' ? 'fire' : m.hitKind === 'bleed' ? 'bleeding' : 'Something');
+  const an = nameOf(A, m.by), tn = nameOf(T, m.target);
+
+  // ---- combat log
+  if (mine || onMe) {
+    if (m.dmg > 0) {
+      const killed = T && T.data && m.targetKind === 'monster' && T.data.hp - m.dmg <= 0;
+      const how = res === 'crit' ? ' (critical)' : res === 'glance' ? ' (glancing)' : res === 'block' ? ` (${m.blocked} blocked)` : '';
+      const src = m.by == null ? (m.hitKind === 'poison' ? 'The poison' : m.hitKind === 'bleed' ? 'Your wounds bleed' : 'The fire') : `The ${an}`;
+      if (mine) addCombat(`You ${res === 'crit' ? 'crit' : 'hit'} the ${tn} for ${m.dmg}${how}.`, 'me');
+      else addCombat(`${src} ${m.by == null && m.hitKind === 'bleed' ? 'for' : (res === 'crit' ? 'crits you for' : 'hits you for')} ${m.dmg}${how}.`, '');
+      if (killed && mine) addCombat(`You have slain the ${tn}!`, 'kill');
+    } else if (mine) addCombat(res === 'miss' ? `You miss the ${tn}.` : `The ${tn} ${res === 'dodge' ? 'dodges' : res === 'parry' ? 'parries' : 'resists'} your attack.`, 'miss');
+    else addCombat(res === 'miss' ? `The ${an} misses you.` : `You ${res === 'dodge' ? 'dodge' : res === 'parry' ? 'parry' : 'resist'} the ${an}'s attack.`, 'miss');
   }
   if (m.target === myId && m.dmg > 0) hurtFlash(m.hitKind === 'poison' ? '#3faa4a' : m.hitKind === 'burn' ? '#ff6a1a' : '#c0392b');
-  if (m.absorbed) { const rr = entityMeshes.get(m.target); if (rr) { spawnFx('glow', rr.mesh.position.x, rr.mesh.position.y, rr.mesh.position.z, 0, { color: 0xffe28a, life: 0.35 }); splatAt(rr, m.absorbed, 'absorb'); if (m.target === myId) addCombat(`Your ward absorbs ${m.absorbed}.`, 'kill'); } }
+  if (m.absorbed) {
+    const rr = entityMeshes.get(m.target);
+    if (rr) { spawnFx('glow', rr.mesh.position.x, rr.mesh.position.y, rr.mesh.position.z, 0, { color: 0xffe28a, life: 0.35 }); splatAt(rr, m.absorbed, 'absorb'); if (onMe) addCombat(`Your ward absorbs ${m.absorbed}.`, 'kill'); }
+  }
   if (m.targetKind === 'player' && m.dmg > 0) markStatus(m.target, m.hitKind);
-  const rec = entityMeshes.get(m.target);
-  if (!rec) return;
-  // Something struck: a burst on the target, bigger and gold on a crit.
+  const rec = T; if (!rec) return;
   const mp = rec.mesh.position;
-  if (m.dmg > 0 && m.hitKind === 'sonic') { spawnFx('ripple', mp.x, mp.y, mp.z, 0, { color: m.crit ? 0xd8b0ff : 0xb890e8, r: m.crit ? 2.6 : 1.8, life: 0.4 }); spawnFx('notes', mp.x, mp.y, mp.z, 0, { n: m.crit ? 8 : 4, color: 0xc9a6ff, jag: true }); sfx.play('magic_cast', { x: mp.x, z: mp.z, rate: 1.9, vol: 0.4 }); sfx.play('hit_thud', { x: mp.x, z: mp.z, rate: 1.4, vol: 0.4 }); }
-  else if (m.dmg > 0 && m.hitKind === 'holy') { spawnFx('impact', mp.x, mp.y, mp.z, 0, { color: 0xfff6d0, sparkColor: 0xffd24a, n: m.crit ? 18 : 10, y: 1.1 }); spawnFx('flash', mp.x, mp.y, mp.z, 0, { r: m.crit ? 2.4 : 1.6, color: 0xfff0b0, life: 0.3 }); spawnFx('pillar', mp.x, mp.y, mp.z, 0, { color: 0xffe9a0, h: 3.5, life: 0.45 }); sfx.play('magic_cast', { x: mp.x, z: mp.z, rate: 1.4, vol: 0.5 }); sfx.play('hit_thud', { x: mp.x, z: mp.z, rate: 1.2, vol: 0.5 }); }
-  else if (m.dmg > 0) { spawnFx('impact', mp.x, mp.y, mp.z, 0, { color: m.crit ? 0xffd27a : 0xffe0c0, sparkColor: m.crit ? 0xffb020 : 0xff6a4a, n: m.crit ? 12 : 6, y: 1.1 }); sfx.play('hit_thud', { x: mp.x, z: mp.z, rate: m.crit ? 1.15 : 0.95, vol: m.crit ? 1 : 0.7 }); if (m.crit) sfx.play('attack_slash', { x: mp.x, z: mp.z, rate: 1.3, vol: 0.5 }); }
-  else sfx.play('attack_claw', { x: mp.x, z: mp.z, rate: 1.4, vol: 0.35, lowpass: 2500 }); // a whiff
-  tmpV.copy(rec.mesh.position); tmpV.y += 2.0; tmpV.project(camera);
-  // Old School RuneScape hitsplat: blue "0" on a miss, red on a hit. (Skipped if
-  // damage numbers are turned off in the menu; the hit flash still plays.)
-  if (showSplats && tmpV.z <= 1) {
-    const x = (tmpV.x * 0.5 + 0.5) * innerWidth, y = (-tmpV.y * 0.5 + 0.5) * innerHeight;
-    const el = document.createElement('div');
-    el.className = 'splat ' + (m.dmg > 0 ? (m.crit ? 'hitdmg crit' : 'hitdmg') : 'hitmiss');
-    el.textContent = m.dmg;
-    el.style.left = x + 'px'; el.style.top = y + 'px';
-    document.getElementById('nameplates').appendChild(el);
-    setTimeout(() => el.remove(), 800);
+  const dir = A ? Math.atan2(mp.x - A.mesh.position.x, mp.z - A.mesh.position.z) : 0;
+
+  // ---- what it sounds and looks like on the way in
+  if (avoided) {
+    if (res === 'parry') { spawnFx('impact', mp.x, mp.y, mp.z, 0, { y: 1.15, n: 7, color: 0xfff0d0, sparkColor: 0xbcc8d8 }); sfx.play('item_equip', { x: mp.x, z: mp.z, rate: 1.7, vol: 0.5 }); }
+    else if (res === 'dodge') sfx.play('attack_claw', { x: mp.x, z: mp.z, rate: 1.7, vol: 0.3, lowpass: 3000 });
+    else sfx.play('attack_claw', { x: mp.x, z: mp.z, rate: 1.4, vol: 0.32, lowpass: 2500 });   // a whiff
+  } else {
+    hitImpact(rec, mp, m, res, dir);
   }
+
+  // ---- the splat
+  if (showSplats) {
+    if (avoided) splatAt(rec, OUT_TEXT[res] || 'MISS', `avoid o-${res}` + (mine ? ' mine' : onMe ? ' incoming' : ''));
+    else splatAt(rec, String(m.dmg), (res === 'crit' ? 'hitdmg crit big' : res === 'glance' ? 'o-glance' : res === 'block' ? 'o-block' : 'hitdmg')
+      + (mine ? ' mine' : onMe ? ' incoming' : ''));
+  }
+  // ---- and what it does to the body that took it
   if (m.dmg > 0) {
-    // Flash white, then restore. Overlapping hits (two mobs on one target, or a
-    // fast weapon) used to capture the already-white colour as the "original"
-    // and leave the model stuck white. Store the true colour ONCE per material
-    // (only while it isn't already flashing) and let only the most recent flash
-    // restore it, via a per-material token.
-    const seen = new Set();
-    rec.mesh.traverse(o => {
-      if (!o.isMesh || !o.material) return;
-      for (const mm of (Array.isArray(o.material) ? o.material : [o.material])) {
-        if (!mm.emissive || seen.has(mm)) continue;
-        seen.add(mm);
-        // Flash through emissive: the fused character materials carry their
-        // colour in vertex colours, which material.color can't override.
-        if (!mm._flashing) { mm._flashOrig = mm.emissive.clone(); mm._flashOrigI = mm.emissiveIntensity; mm._flashing = true; }
-        mm.emissive.set(0xffffff); mm.emissiveIntensity = 0.9;
-        const token = (mm._flashTok = (mm._flashTok || 0) + 1);
-        setTimeout(() => {
-          if (mm._flashTok !== token) return;      // a newer flash owns it now
-          if (mm._flashOrig) { mm.emissive.copy(mm._flashOrig); mm.emissiveIntensity = mm._flashOrigI; }
-          mm._flashing = false;
-        }, 90);
-      }
-    });
+    const frac = rec.data && rec.data.maxHp ? m.dmg / rec.data.maxHp : 0.1;
+    flinch(rec, Math.min(1, 0.25 + frac * 3 + (res === 'crit' ? 0.4 : 0)), dir);
+    flashWhite(rec);
+    if (onMe && (res === 'crit' || frac > 0.12)) camShake = Math.max(camShake, res === 'crit' ? 0.18 : 0.1);
+    else if (mine && res === 'crit') camShake = Math.max(camShake, 0.07);
   }
+}
+// The impact itself, chosen by what struck: a blade opens a wound, a hammer
+// throws sparks and dust off armour, a spear punches a neat hole, and magic
+// keeps the effects it already had.
+function hitImpact(rec, mp, m, res, dir) {
+  const crit = res === 'crit', kind = m.hitKind;
+  const big = crit ? 1.7 : res === 'glance' ? 0.55 : 1;
+  if (kind === 'sonic') {
+    spawnFx('ripple', mp.x, mp.y, mp.z, 0, { color: crit ? 0xd8b0ff : 0xb890e8, r: 1.8 * big, life: 0.4 }); spawnFx('notes', mp.x, mp.y, mp.z, 0, { n: crit ? 8 : 4, color: 0xc9a6ff, jag: true });
+    sfx.play('magic_cast', { x: mp.x, z: mp.z, rate: 1.9, vol: 0.4 }); sfx.play('hit_thud', { x: mp.x, z: mp.z, rate: 1.4, vol: 0.4 }); return;
+  }
+  if (kind === 'holy') {
+    spawnFx('impact', mp.x, mp.y, mp.z, 0, { color: 0xfff6d0, sparkColor: 0xffd24a, n: Math.round(10 * big), y: 1.1 }); spawnFx('flash', mp.x, mp.y, mp.z, 0, { r: 1.6 * big, color: 0xfff0b0, life: 0.3 });
+    spawnFx('pillar', mp.x, mp.y, mp.z, 0, { color: 0xffe9a0, h: 3.5, life: 0.45 });
+    sfx.play('magic_cast', { x: mp.x, z: mp.z, rate: 1.4, vol: 0.5 }); sfx.play('hit_thud', { x: mp.x, z: mp.z, rate: 1.2, vol: 0.5 }); return;
+  }
+  if (kind === 'magic') {
+    spawnFx('impact', mp.x, mp.y, mp.z, 0, { color: 0xd8c0ff, sparkColor: 0x8a6ae0, n: Math.round(9 * big), y: 1.1 });
+    spawnFx('flash', mp.x, mp.y, mp.z, 0, { r: 1.4 * big, color: 0xc9a6ff, life: 0.25 });
+    sfx.play('magic_cast', { x: mp.x, z: mp.z, rate: 1.2, vol: 0.45 }); return;
+  }
+  if (kind === 'crush') {
+    // Dull, heavy, and it throws grit: the weapon that dents armour.
+    spawnFx('impact', mp.x, mp.y, mp.z, 0, { color: 0xffe0b0, sparkColor: 0xd8a860, n: Math.round(8 * big), y: 1.05 });
+    spawnFx('dust', mp.x, groundY(mp.x, mp.z), mp.z, 0, { r: 1.2 * big, color: 0xbba882, life: 0.5 });
+    if (res === 'block') spawnFx('impact', mp.x, mp.y, mp.z, 0, { color: 0xdce6f2, sparkColor: 0x9fb0c6, n: 10, y: 1.2 });
+    sfx.play('hit_thud', { x: mp.x, z: mp.z, rate: crit ? 0.72 : 0.85, vol: crit ? 1 : 0.8, lowpass: 1400 });
+    if (crit) sfx.play('cave_rock', { x: mp.x, z: mp.z, rate: 1.1, vol: 0.55 });
+    return;
+  }
+  if (kind === 'pierce') {
+    spawnFx('impact', mp.x, mp.y, mp.z, 0, { color: 0xffd0c0, sparkColor: 0xc23a2a, n: Math.round(7 * big), y: 1.15, spread: 0.5 });
+    sfx.play('attack_slash', { x: mp.x, z: mp.z, rate: crit ? 1.35 : 1.6, vol: crit ? 0.9 : 0.6 });
+    sfx.play('hit_thud', { x: mp.x, z: mp.z, rate: 1.3, vol: 0.5 });
+    return;
+  }
+  // slash (and anything unlabelled): a spray off the edge of the blade
+  spawnFx('impact', mp.x, mp.y, mp.z, 0, { color: crit ? 0xffd27a : 0xffe0c0, sparkColor: crit ? 0xd8301c : 0xb02a1a, n: Math.round((crit ? 14 : 7) * (res === 'glance' ? 0.6 : 1)), y: 1.1 });
+  if (res === 'block') { spawnFx('impact', mp.x, mp.y, mp.z, 0, { color: 0xdce6f2, sparkColor: 0x9fb0c6, n: 9, y: 1.2 }); sfx.play('item_equip', { x: mp.x, z: mp.z, rate: 1.3, vol: 0.55 }); }
+  sfx.play('attack_slash', { x: mp.x, z: mp.z, rate: crit ? 0.85 : 1.15, vol: crit ? 0.95 : 0.6 });
+  sfx.play('hit_thud', { x: mp.x, z: mp.z, rate: crit ? 0.95 : 1.1, vol: crit ? 0.9 : 0.55 });
+}
+// Flash the model white for a moment. Overlapping hits (two mobs on one
+// target, or a fast weapon) used to capture the already-white colour as the
+// "original" and leave the model stuck white, so the true colour is stored
+// once per material and only the most recent flash restores it.
+function flashWhite(rec) {
+  const seen = new Set();
+  rec.mesh.traverse(o => {
+    if (!o.isMesh || !o.material) return;
+    for (const mm of (Array.isArray(o.material) ? o.material : [o.material])) {
+      if (!mm.emissive || seen.has(mm)) continue;
+      seen.add(mm);
+      // Flash through emissive: the fused character materials carry their
+      // colour in vertex colours, which material.color can't override.
+      if (!mm._flashing) { mm._flashOrig = mm.emissive.clone(); mm._flashOrigI = mm.emissiveIntensity; mm._flashing = true; }
+      mm.emissive.set(0xffffff); mm.emissiveIntensity = 0.9;
+      const token = (mm._flashTok = (mm._flashTok || 0) + 1);
+      setTimeout(() => {
+        if (mm._flashTok !== token) return;      // a newer flash owns it now
+        if (mm._flashOrig) { mm.emissive.copy(mm._flashOrig); mm.emissiveIntensity = mm._flashOrigI; }
+        mm._flashing = false;
+      }, 90);
+    }
+  });
 }
 
 // A hitsplat-style number over an entity (heals, absorbs).
@@ -8149,12 +8423,14 @@ function renderSkillWindow() {
 
 // ---- Action bar: six assignable slots (keys 1-6) fed from the class spellbook ----
 let abilities = [], abilityClass = null, abilityResource = 'Rage', gcdUntil = 0;
+let selfBuffs = [];   // buff ids currently on the player (drives proc highlighting)
 let selfStam = 0, selfMomentum = 0, buffList = [], castInfo = null;
-let barSlots = [null, null, null, null, null, null];   // ability ids per slot
+let barSlots = [null, null, null, null, null, null, null, null];   // ability ids per slot (keys 1-8)
+let queuedId = null;                                   // the press waiting on the global cooldown
 let assignId = null;                                   // spellbook pick waiting for a slot
 const iconFor_ab = (id) => `ui/${(abilityClass && abilityClass.clsId) || 'fighter'}/icons/${id}.png`;
 function barKey() { return 'bk.bar.' + ((abilityClass && abilityClass.clsId) || 'fighter'); }
-function loadBar() { try { const v = JSON.parse(localStorage.getItem(barKey()) || 'null'); if (Array.isArray(v) && v.length === 6) barSlots = v; } catch (e) {} }
+function loadBar() { try { const v = JSON.parse(localStorage.getItem(barKey()) || 'null'); if (Array.isArray(v)) barSlots = [...v, null, null].slice(0, 8); } catch (e) {} }
 function saveBar() { try { localStorage.setItem(barKey(), JSON.stringify(barSlots)); } catch (e) {} }
 // New unlocks fill empty slots in level order; nothing already placed moves.
 function fillBarDefaults() {
@@ -8171,12 +8447,12 @@ function abilityById(id) { return abilities.find(a => a.id === id); }
 function renderActionBar() {
   const el = document.getElementById('slots'); if (!el) return;
   let html = '';
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 8; i++) {
     const a = barSlots[i] ? abilityById(barSlots[i]) : null;
     if (!a) { html += `<div class="abslot empty" data-i="${i}"><span class="key">${i + 1}</span></div>`; continue; }
     html += `<div class="abslot${a.locked ? ' locked' : ''}" data-id="${a.id}" data-i="${i}"><span class="key">${i + 1}</span><img src="${iconFor_ab(a.id)}" alt="">` +
       (a.locked ? `<span class="lvl">Lv ${a.level}</span>` : (a.cost ? `<span class="cost">${a.cost}</span>` : '')) +
-      `<div class="cd" style="--p:0%"></div><div class="cdt"></div>` +
+      `<div class="cd" style="--p:0%"></div><div class="cdt"></div><div class="glow"></div>` +
       `<span class="tip"><b>${escapeHtml(a.name)}</b>${a.locked ? ` <span class="dim">(unlocks at level ${a.level})</span>` : ''}<br>${escapeHtml(a.desc)}<br><span class="dim">${a.cost ? a.cost + ' ' + abilityResource.toLowerCase() + ' · ' : ''}${a.cd ? 'cooldown ' + a.cd + 's · ' : ''}key ${i + 1}</span></span></div>`;
   }
   el.innerHTML = html;
@@ -8198,6 +8474,11 @@ function useAbility(id) { const a = abilityById(id); if (!a || a.locked || a.pas
 function updateActionBar() {
   const el = document.getElementById('slots'); if (!el || !abilities.length) return;
   const now = performance.now(), onGcd = now < gcdUntil;
+  // Range is measured to the current target, so a slot greys out before you
+  // press it rather than answering with "you need to be in reach".
+  const meRec = entityMeshes.get(myId), tRec = targetId != null ? entityMeshes.get(targetId) : null;
+  const dist = meRec && tRec ? Math.hypot(meRec.mesh.position.x - tRec.mesh.position.x, meRec.mesh.position.z - tRec.mesh.position.z) : null;
+  const hasTarget = !!(tRec && tRec.data && tRec.data.alive);
   el.querySelectorAll('.abslot[data-id]').forEach(d => {
     const a = abilityById(d.dataset.id); if (!a) return;
     const left = Math.max(0, (a._left0 || 0) - (now - (a._t0 || now)) / 1000);
@@ -8207,7 +8488,32 @@ function updateActionBar() {
     d.classList.toggle('gcd', onGcd && left <= 0.05);
     d.classList.toggle('nostam', (a.cost || 0) > selfStam);
     d.classList.toggle('assign', !!assignId);
+    const needsTarget = ['melee', 'execute', 'cone', 'rush', 'holy', 'sonic', 'note', 'lullaby', 'dirge'].includes(a.kind);
+    const range = a.range || (['melee', 'execute', 'cone'].includes(a.kind) ? 3.6 : 0);
+    d.classList.toggle('noreach', !!(needsTarget && (!hasTarget || (range && dist != null && dist > range))));
+    d.classList.toggle('proc', (a.requires && selfBuffs.includes(a.requires)) || procLit === a.id);
+    d.classList.toggle('queued', queuedId === a.id);
   });
+}
+// The swing timer under the bar: how far through the current swing you are,
+// so the rhythm of the weapon is something you can see and play around.
+function updateSwingBar(me) {
+  const el = document.getElementById('swingbar'); if (!el) return;
+  if (!me || !me.inCombat) { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  const sw = me.swing;
+  const p = sw && sw.d ? 1 - sw.t / sw.d : 1;
+  el.className = p >= 0.999 ? 'ready' : '';
+  el.querySelector('i').style.transform = `scaleX(${Math.max(0, Math.min(1, p))})`;
+}
+// A proc lighting up: the slot flares and says its name, so it reads as an
+// opportunity rather than another icon changing shade.
+let procLit = null, procLitT = 0;
+function procFlash(id, name) {
+  procLit = id; procLitT = performance.now();
+  flyText(name + '!', 'heal');
+  sfx.play('ui_select', { vol: 0.5, rate: 1.5 });
+  setTimeout(() => { if (procLit === id) procLit = null; }, 9000);
 }
 function renderMomentum() {
   const el = document.getElementById('momentum'); if (!el) return;
