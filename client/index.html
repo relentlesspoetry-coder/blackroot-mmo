@@ -4796,15 +4796,15 @@ function updateInstrument(rec, ent) {
 // into the bone), so the upper arm is set analytically from the wanted
 // direction; the elbow pivot then gets the rotation that turns the forearm's
 // rest direction onto the hand target, worked out from live world matrices.
-const _lv = Array.from({ length: 10 }, () => new THREE.Vector3()), _lq = [new THREE.Quaternion(), new THREE.Quaternion(), new THREE.Quaternion(), new THREE.Quaternion()];
+const _lv = Array.from({ length: 10 }, () => new THREE.Vector3()), _lq = Array.from({ length: 5 }, () => new THREE.Quaternion());
 const ARM_UPPER = 0.39, ARM_FORE = 0.31;   // the skinned human's upper arm / forearm
 function luteArms(rec, rig, strum, dt) {
   const g = rec.instrumentObj; if (!g || !rig.foreL || !rig.foreR || !rig.handL || !rig.handR) return;
   const wrap = rec.mesh, [tl, tr, S, d1, hint, u, n, E, d2, tmp] = _lv, [qw, qp, qd, qwi] = _lq;
   // hand targets on the lute (its local frame: length along +Z, board +Y, X across the strings)
   g.updateWorldMatrix(true, false);
-  tl.set(0.0, 0.05, 0.14); g.localToWorld(tl);
-  tr.set(-0.02 + strum * 0.06, 0.09, -0.34); g.localToWorld(tr);
+  tl.set(0.0, -0.035, 0.05); g.localToWorld(tl);                     // behind the neck, a hand's width up from the body
+  tr.set(-0.02 + strum * 0.06, 0.135, -0.33); g.localToWorld(tr);    // over the strings above the rose
   wrap.getWorldQuaternion(qw); qwi.copy(qw).invert();
   for (const side of ['L', 'R']) {
     const arm = side === 'L' ? rig.armL : rig.armR, fore = side === 'L' ? rig.foreL : rig.foreR, T = side === 'L' ? tl : tr, sx = side === 'L' ? 1 : -1;
@@ -4841,14 +4841,22 @@ function luteArms(rec, rig, strum, dt) {
       fingers.Middle[0].getWorldPosition(fd); fingers.Middle[1].getWorldPosition(tmp); fd.subVectors(tmp, fd).normalize();          // along the fingers
       pn.crossVectors(fd, kn).normalize();                                                                                            // palm normal (out of the palm; the same handedness both sides)
       const lutY = _lv[8].set(0, 1, 0).transformDirection(g.matrixWorld), lutZ = _lv[9].set(0, 0, 1).transformDirection(g.matrixWorld);
+      const lutX = _lv[3].set(1, 0, 0).transformDirection(g.matrixWorld);
       if (side === 'R') want.copy(lutY).negate();                                                    // palm down onto the strings
-      else want.copy(lutY).negate().addScaledVector(lutZ, 0.35).normalize();                         // wrapped round the neck from behind
+      else want.copy(lutY);                                                                          // palm against the back of the neck
       qd.setFromUnitVectors(pn, want);
+      // then twist about the palm so the fingers run the right way: down the
+      // strings for the strumming hand, across the neck for the gripping one
+      fd.applyQuaternion(qd);
+      const wantF = _lv[2].copy(side === 'R' ? lutZ : lutX).multiplyScalar(-1);
+      wantF.addScaledVector(want, -wantF.dot(want)).normalize(); fd.addScaledVector(want, -fd.dot(want)).normalize();
+      const ang = Math.atan2(_lv[8].crossVectors(fd, wantF).dot(want), fd.dot(wantF));
+      _lq[4].setFromAxisAngle(want, ang); qd.premultiply(_lq[4]);
       wrist.parent.getWorldQuaternion(qp); wrist.quaternion.copy(qp).invert().multiply(qd).multiply(qp);
       wrist.updateWorldMatrix(false, true);
       // curl: each joint turns about the knuckle line
       fingers.Index[0].getWorldPosition(kn); fingers.Pinky[0].getWorldPosition(tmp); kn.subVectors(tmp, kn).normalize();
-      const curl = side === 'L' ? [1.15, 1.0] : [0.55 + Math.max(0, strum) * 0.25, 0.5], thumb = side === 'L' ? [0.5, 0.4] : [0.25, 0.2];
+      const curl = side === 'L' ? [1.5, 1.35] : [0.55 + Math.max(0, strum) * 0.25, 0.5], thumb = side === 'L' ? [0.7, 0.5] : [0.25, 0.2];
       for (const k in fingers) for (let j = 0; j < 2; j++) {
         const jt = fingers[k][j]; if (!jt) continue;
         const amt = (k === 'Thumb' ? thumb[j] : curl[j]) * (side === 'L' ? 1 : -1) * (window.__curlSign || 1);
