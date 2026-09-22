@@ -22,6 +22,16 @@
   #login p { color: #8fa3bf; font-size: 14px; }
   #login .card { background: #121a26; border: 1px solid #24344a; border-radius: 14px; padding: 24px 28px; display: flex; flex-direction: column; gap: 12px; width: 320px; }
   #login input { background: #0c131d; border: 1px solid #2a3c54; color: #e7eef7; padding: 11px 12px; border-radius: 8px; font-size: 15px; }
+  /* A conversation as it is actually spoken: their lines, then yours. */
+  .d-script { margin-bottom: 8px; }
+  .d-line { margin: 0 0 7px; font-size: 13px; line-height: 1.5; }
+  .d-line .who { display: block; font-size: 10px; letter-spacing: .4px; text-transform: uppercase; color: #8a7a5c; margin-bottom: 1px; }
+  .d-line.you { text-align: right; color: #cfe0ff; }
+  .d-line.you .who { color: #6a7d9a; }
+  .d-line.world { font-style: italic; color: #9d917a; }
+  .d-more { display: inline-block; margin: 2px 0 6px; padding: 3px 12px; font-size: 12px; cursor: pointer;
+    background: #3a3020; border: 1px solid #6b5a3a; border-radius: 4px; color: #ffdf9e; }
+  .d-more:hover { background: #4a3d28; }
   #fixedlook { display: none; font-size: 11px; color: #8fa3bf; margin: 4px 2px 6px; }
   #login .lookrow { display: flex; gap: 10px; }
   #login .lookrow label { flex: 1; display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #8fa3bf; }
@@ -534,7 +544,7 @@
   </div>
   <div id="dialogue">
     <div class="d-head"><span id="dName">NPC</span><span class="d-close" id="dClose">✕</span></div>
-    <div class="d-body"><div class="d-say" id="dSay"></div><div id="dQuests"></div></div>
+    <div class="d-body"><div class="d-script" id="dScript"></div><div class="d-say" id="dSay"></div><div id="dQuests"></div></div>
   </div>
   <div id="npcmarks"></div>
   <div id="poilabels"></div>
@@ -1330,6 +1340,13 @@ function handle(m) {
     case 'loot':
       EDIT.loot[m.type] = m.table; if (EDIT.lootType === m.type) editBuildLootRows();
       break;
+    // Which quest objects are done (per player) and which gathering nodes are
+    // picked clean (shared) — the server owns both.
+    case 'objects': {
+      const used = new Set(m.used || []), spent = new Set(m.spent || []);
+      for (const [id, rec] of worldObjects) { rec.used = used.has(id); rec.spent = spent.has(id); applyObjectState(rec); }
+      break;
+    }
     case 'bag':
       bag = { items: m.items || [], stacks: m.stacks || (m.items || []).map(n => ({ name: n, qty: 1 })), gold: m.gold || 0,
         equipment: m.equipment || {},
@@ -1648,7 +1665,7 @@ function loadZone(zdata) {
   while (scene.children.length) scene.remove(scene.children[0]);
   entityMeshes.clear();
   poiWorld.length = 0; poiLayer.innerHTML = ''; poiEls.length = 0;
-  chestMeshes.clear(); npcMeshes.clear(); camBlockers.length = 0;
+  chestMeshes.clear(); npcMeshes.clear(); worldObjects.clear(); camBlockers.length = 0;
   fishSpots.length = 0; cookFires.length = 0; campfireFx.length = 0;
   npcMarkLayer.innerHTML = ''; npcMarkEls.clear();
   closeDialogue();
@@ -2319,6 +2336,9 @@ function buildSpoilBank(mine) {
 
   // Treasure chests (clickable)
   for (const ch of (zone.chests || [])) buildChest(ch);
+
+  // Quest objects: lanterns to light, glowcaps to gather, fires to douse.
+  buildWorldObjects();
 
   // Fishing spots + cooking campfires (clickable)
   buildFishingSpots();
@@ -4306,6 +4326,53 @@ function animateNpcs(dt) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Quest objects — the things in the world a quest asks you to put your hands
+// on. The server owns which ones are done; this draws them, marks the ones
+// that are finished (a lit lantern keeps its flame) and makes them clickable.
+// ---------------------------------------------------------------------------
+const worldObjects = new Map();   // id -> { def, group, light, used, spent }
+function buildWorldObjects() {
+  for (const o of (zone.objects || [])) {
+    const group = new THREE.Group();
+    group.position.set(o.x, groundY(o.x, o.z), o.z);
+    group.rotation.y = o.yaw || 0;
+    scene.add(group);
+    const rec = { def: o, group, used: false, spent: false, light: null };
+    worldObjects.set(o.id, rec);
+    loadModels([o.m]).then(() => {
+      const g = cloneModel(modelKey(o.m), null);
+      if (!g) return;
+      if (o.s) g.scale.setScalar(o.s);
+      g.traverse(x => { if (x.isMesh) { x.userData.pickKind = 'object'; x.userData.pickId = o.id; x.castShadow = true; } });
+      group.add(g);
+      applyObjectState(rec);
+    });
+  }
+  applyObjectStates();
+}
+// A lit lantern burns; a picked clump of glowcaps is gone until it grows back.
+function applyObjectState(rec) {
+  const o = rec.def;
+  const lit = o.tag === 'lantern' ? rec.used : false;
+  rec.group.visible = !rec.spent;
+  if (o.light || lit) {
+    if (!rec.light && (lit || o.light)) {
+      rec.light = new THREE.PointLight(lit ? 0xffb648 : o.light, 0, lit ? 7 : 3);
+      rec.light.position.y = lit ? 1.1 : 0.3; rec.group.add(rec.light);
+    }
+    if (rec.light) rec.light.intensity = rec.spent ? 0 : (lit ? 1.5 : 0.5);
+  }
+  rec.group.traverse(x => {
+    if (!x.isMesh || !x.material || !x.material.emissive) return;
+    const on = lit || (o.light && !rec.spent);
+    x.material.emissive.setHex(on ? (lit ? 0xffa030 : o.light) : 0x000000);
+    x.material.emissiveIntensity = on ? (lit ? 0.9 : 0.55) : 0;
+  });
+}
+function applyObjectStates() { for (const rec of worldObjects.values()) applyObjectState(rec); }
+function useWorldObject(id) { ws?.send(JSON.stringify({ t: 'useobject', id })); }
+
 function buildChest(ch) {
   const g = new THREE.Group(); g.position.set(ch.x, 0, ch.z);
   const body = boxPart(1.2, 0.8, 0.9, 0x6b4a2a); body.position.y = 0.4; g.add(body);
@@ -6143,6 +6210,7 @@ function pickAt(e) {
       if (rec && rec.data) return { kind: 'player', id: u.pickId, data: rec.data, point: h.point };
     }
     if (u.pickKind === 'chest' && u.pickId != null) return { kind: 'chest', id: u.pickId, point: h.point };
+    if (u.pickKind === 'object' && u.pickId != null) { const r = worldObjects.get(u.pickId); if (r && !r.spent) return { kind: 'object', id: u.pickId, def: r.def, used: r.used, point: h.point }; }
     if (u.pickKind === 'grave' && u.pickId != null) { const gr = graveMeshes.get(u.pickId); return { kind: 'grave', id: u.pickId, data: gr ? gr.data : null, point: h.point }; }
     if (u.pickKind === 'fishspot' && u.pickId != null) { const s = fishSpots.find(f => f.id === u.pickId); return { kind: 'fishspot', id: u.pickId, tier: s ? s.tier : '', point: h.point }; }
     if (u.pickKind === 'cookfire' && u.pickId != null) return { kind: 'cookfire', id: u.pickId, point: h.point };
@@ -6189,6 +6257,10 @@ function optionsFor(pk) {
   if (pk.kind === 'chest') return [
     { label: 'Open <b>Treasure Chest</b>', act: () => openChestAt(pk.id) },
     { label: 'Examine Chest', act: () => examineText('A sturdy chest. Wonder what’s inside.') },
+  ];
+  if (pk.kind === 'object') return [
+    { label: `${escapeHtml(pk.def.verb || 'Use')} <b>${escapeHtml(pk.def.name)}</b>`, act: () => useWorldObject(pk.id) },
+    { label: 'Examine', act: () => examineText(pk.def.examine || pk.def.idleText || pk.def.name) },
   ];
   if (pk.kind === 'item') return [
     { label: `Take <b>${escapeHtml(pk.qty > 1 ? pk.qty + ' ' + pk.name : pk.name)}</b>`, act: () => takeItem(pk.id) },
@@ -6469,6 +6541,7 @@ function openContextMenu(e) {
   if (pk.kind === 'monster') title = pk.data.name;
   else if (pk.kind === 'npc') title = pk.name;
   else if (pk.kind === 'chest') title = 'Treasure Chest';
+  else if (pk.kind === 'object') title = pk.def.name;
   showOptions(title, opts, e.clientX, e.clientY);
 }
 // The RuneScape-style options menu at a screen point (world picks and bag items alike).
@@ -8076,6 +8149,18 @@ function onEvent(m) {
     case 'loot':
       bag.gold = m.gold; setBagGold();
       addChat('Loot', m.text, true); break;
+    case 'used': {
+      const rec = worldObjects.get(m.id);
+      if (m.text) addChat('', m.text, true);
+      if (rec) {
+        const p = rec.group.position;
+        if (rec.def.tag === 'lantern') { rec.used = true; spawnFx('flash', p.x, p.y + 0.9, p.z, 0, { r: 1.6, color: 0xffc46a, life: 0.4 }); sfx.play('ui_open', { x: p.x, z: p.z, vol: 0.5, rate: 0.8 }); }
+        else { spawnFx('rise', p.x, p.y, p.z, 0, { n: 8, color: 0x8fe8d0 }); sfx.play('loot_item', { x: p.x, z: p.z, vol: 0.5 }); }
+        applyObjectState(rec);
+      }
+      if (m.item) flyText('+' + m.item, 'xp');
+      break;
+    }
     case 'chest': {
       bag.gold = m.gold; setBagGold();
       addChat('Treasure', m.text, true);
@@ -8888,21 +8973,59 @@ function rewardLine(r) {
   return bits.length ? 'Reward: ' + bits.join(', ') : '';
 }
 
+// A scripted conversation, revealed a line at a time. `lines` are [who, text]
+// with 'n' for the NPC, 'y' for you and 's' for the world; the rest of the
+// dialogue panel (accept, hand in, wares) stays hidden until it has played
+// out, so nobody clicks past the writing.
+let scriptState = null;
+function playScript(lines, speaker, fallback) {
+  const box = document.getElementById('dScript'), say = document.getElementById('dSay');
+  const quests = document.getElementById('dQuests');
+  box.innerHTML = ''; say.textContent = '';
+  if (!lines || !lines.length) { say.textContent = fallback || ''; quests.style.display = ''; scriptState = null; return; }
+  scriptState = { lines, i: 0, speaker, box, quests };
+  quests.style.display = 'none';
+  stepScript();
+}
+function stepScript() {
+  const st = scriptState; if (!st) return;
+  const more = st.box.querySelector('.d-more'); if (more) more.remove();
+  const [who, text] = st.lines[st.i++];
+  const el = document.createElement('div');
+  el.className = 'd-line ' + (who === 'y' ? 'you' : who === 's' ? 'world' : 'npc');
+  el.innerHTML = (who === 's' ? '' : `<span class="who">${escapeHtml(who === 'y' ? 'You' : st.speaker)}</span>`) + escapeHtml(text);
+  st.box.appendChild(el);
+  if (st.i < st.lines.length) {
+    const btn = document.createElement('button');
+    btn.className = 'd-more'; btn.textContent = '▸ Continue';
+    btn.onclick = stepScript; st.box.appendChild(btn);
+    btn.scrollIntoView({ block: 'nearest' });
+  } else {
+    st.quests.style.display = '';   // now you can take the work, or hand it in
+    scriptState = null;
+    st.quests.scrollIntoView({ block: 'nearest' });
+  }
+}
 function openDialogue(npcId) {
   const rec = npcMeshes.get(npcId);
   if (!rec) return;
   dialogueNpc = npcId;
+  ws?.send(JSON.stringify({ t: 'talk', npc: npcId }));   // some errands are finished simply by speaking to someone
   document.getElementById('dName').textContent = rec.def.name;
 
   const offers = questData.available.filter(q => q.giver === npcId);
   const mine = questData.active.filter(q => q.giver === npcId);
   const ready = mine.filter(q => q.complete);
 
-  document.getElementById('dSay').textContent =
-    ready.length ? ready[0].text
+  // The quest that has something to say gets its conversation; everything else
+  // falls back to a single line.
+  const speaker = rec.def.name;
+  const script = (ready.length && ready[0].talk) || (offers.length && offers[0].talk) || null;
+  const fallback = ready.length ? ready[0].text
     : offers.length ? offers[0].intro
     : mine.length ? mine[0].text
     : (rec.def.idle || '…');
+  playScript(script, speaker, fallback);
 
   let html = '';
   for (const q of ready) {

@@ -288,6 +288,10 @@ export const ITEMS = {
   'Spider Silk':  { value: 18 },
   'Venom Sac':    { value: 26 },
   'Goblin Ear':   { value: 4 },
+  // --- Dark Woods Outpost ---------------------------------------------------
+  'Glowcap':      { value: 3,  desc: 'A mushroom that keeps a faint blue-green light of its own. Crushed into lantern oil it burns for days.' },
+  'Minor Healing Potion': { value: 30, heal: 45, desc: 'A small vial of red. Mira makes them by the crate and still runs out.' },
+  "Hunter's Rations": { value: 12, heal: 26, desc: 'Smoked meat and hard bread, wrapped in cloth. Brann swears by it.' },
   'Stolen Pendant': { value: 35 },
   'Kebab':        { value: 8, heal: 22 },
   'Chitin Fragment': { value: 12 },

@@ -94,6 +94,7 @@ export const darkwoods = {
     { key: 'watchtower', name: 'Fallen Watchtower',    x: 50,  z: -72, kind: 'landmark', optional: true },
     { key: 'creek',      name: 'Blackroot Creek',      x: -40, z: -22, kind: 'landmark' },
     { key: 'rotfen',     name: 'Rotfen Thicket',       x: 48,  z: -30, kind: 'landmark', optional: true },
+    { key: 'outpost',    name: 'Dark Woods Outpost',   x: -10, z: -36, kind: 'safe', r: 13 },
     { key: 'shrine',     name: 'Shrine Grove',         x: 6,   z: 2,   kind: 'safe', r: 11 },
     { key: 'camp',       name: 'Abandoned Camp',       x: -50, z: 12,  kind: 'safe', r: 9, merchant: true, optional: true },
     { key: 'stones',     name: 'Ancient Stone Circle', x: 24,  z: 36,  kind: 'boss', optional: true },
@@ -129,6 +130,28 @@ export const darkwoods = {
     { id: 'bram',     name: 'Farmhand Bram',       x: -19,  z: -77, poi: 'entrance', model: 'Male', yaw: 1.4,
       look: { hair: 5, hairColor: '#8a5a2b', skin: '#d9ab86', outfit: 1, slots: { boots: 2 } },   // Fieldhand in the orchard worker's boots
       idle: 'Cows need feedin’, fences need mendin’. No rest out here.' },
+    // --- Dark Woods Outpost: the warden's camp, and the zone's story ---
+    { id: 'rowan',    name: 'Warden Rowan',        x: -10,  z: -33, poi: 'outpost', model: 'Male', yaw: 3.14,
+      look: { hair: 2, hairColor: '#4a4038', skin: '#bc8f68', outfit: 21, colors: { top: '#3d4a3a' } },   // town guard green, weathered
+      idle: 'Never walk these roads without light. The animals I understand — it is what moves when they go quiet that bothers me.' },
+    { id: 'brann',    name: 'Hunter Brann',        x: -16,  z: -38, poi: 'outpost', model: 'Male', yaw: 1.2,
+      look: { hair: 21, hairColor: '#5a3a1e', skin: '#c08a5e', outfit: 18, colors: { top: '#4a3b24' } },   // hunter's leathers
+      idle: 'Lift your boot. You are standing in a track, and a very big one.' },
+    { id: 'lysa',     name: 'Scout Lysa',          x: -5,   z: -39, poi: 'outpost', model: 'Female', yaw: 0.6,
+      look: { hair: 24, hairColor: '#2e1d12', skin: '#c99a74', outfit: 17, colors: { top: '#3a4a3c' } },   // scout, dark green
+      idle: 'The trees in the old grove are changing. Black bark, purple veins under the roots.' },
+    { id: 'mira',     name: 'Mira Thorn',          x: -14,  z: -30, poi: 'outpost', model: 'Female', yaw: 2.4,
+      look: { hair: 22, hairColor: '#6b4a24', skin: '#d0a57e', outfit: 14, colors: { top: '#4a3a5c' } },   // herbalist, plum
+      idle: 'A disease kills something. This is changing it. That is the difference, and it is the whole problem.' },
+    { id: 'tessa',    name: 'Quartermaster Tessa', x: -6,   z: -32, poi: 'outpost', model: 'Female', yaw: 3.6,
+      look: { hair: 26, hairColor: '#3a2a1a', skin: '#c9996f', outfit: 9, colors: { top: '#6b4a2a' } },    // merchant's coat
+      idle: 'Food, medicine, weapons, coffee. Ask me which one I miss most.' },
+    { id: 'alden',    name: 'Brother Alden',       x: -13,  z: -41, poi: 'outpost', model: 'Male', yaw: 0.2,
+      look: { hair: 1, hairColor: '#8a8276', skin: '#c7a081', outfit: 29, colors: { top: '#d8cfba' } },    // pilgrim, undyed
+      idle: 'Have you heard the bell? It has been abandoned twenty years, and still it rings.' },
+    { id: 'fenwick',  name: 'Old Fenwick',         x: -2,   z: -30, poi: 'outpost', model: 'Male', yaw: 4.2,
+      look: { hair: 20, hairColor: '#b9b2a4', skin: '#b98f6a', outfit: 19, colors: { top: '#5a4a32' } },   // trapper, going grey
+      idle: 'Brown ones are safe. Blue ones are safe. Red ones depend on how attached you are to your organs.' },
     { id: 'sela',     name: 'Ranger Sela',         x: 48,   z: -70, poi: 'watchtower', model: 'Female', yaw: 2.2,
       idle: 'From the old tower you can see their fires. The Wolf Den grows bolder every night.' },
     { id: 'dorn',     name: 'Prospector Dorn',     x: -34,  z: 42,  poi: 'ravine',   model: 'Male', yaw: 5.0,
@@ -175,6 +198,33 @@ export const darkwoods = {
 
   // Treasure chests reward exploring the optional landmarks. Loot scales with
   // how deep/dangerous the spot is. Positions are pre-scale like everything else.
+  // Things in the world a quest can ask you to put your hands on. `tag` groups
+  // a set (three lanterns, three signal fires); `once` means it stays done for
+  // that player; `respawn` makes it a gathering node that grows back.
+  //   m/yaw/s/c behave like props; `reach` is how close you must stand.
+  objects: [
+    // Warden Rowan's trail lanterns. Dark until someone crushes glowcaps into
+    // the oil — the first thing the outpost asks of a newcomer.
+    { id: 'lantern_east',  tag: 'lantern', name: 'Eastern Trail Lantern',  m: 'props/Camp_Lantern', x: 16,  z: -34, s: 1.6, c: 0.5, once: true,
+      quest: 'dw_lanterns', need: { item: 'Glowcap', count: 2 }, verb: 'Light',
+      text: 'You crush the Glowcaps into the lantern oil. The lantern flickers to life.',
+      idleText: 'The lantern is dark. Warden Rowan would know what it needs.' },
+    { id: 'lantern_bridge', tag: 'lantern', name: 'Old Bridge Lantern',    m: 'props/Camp_Lantern', x: -30, z: -26, s: 1.6, c: 0.5, once: true,
+      quest: 'dw_lanterns', need: { item: 'Glowcap', count: 2 }, verb: 'Light',
+      text: 'The oil catches. The dark trail becomes easier to see.',
+      idleText: 'The lantern is dark. Warden Rowan would know what it needs.' },
+    { id: 'lantern_north', tag: 'lantern', name: 'Northern Trail Lantern', m: 'props/Camp_Lantern', x: -12, z: -56, s: 1.6, c: 0.5, once: true,
+      quest: 'dw_lanterns', need: { item: 'Glowcap', count: 2 }, verb: 'Light',
+      text: 'The last lantern takes the flame. All three trail lanterns are burning.',
+      idleText: 'The lantern is dark. Warden Rowan would know what it needs.' },
+    // Glowcaps: they grow in the shade of the old trees around the outpost and
+    // come back in their own time, so the road can always be relit.
+    ...[[-18, -28], [-22, -34], [-16, -44], [-4, -44], [2, -36], [4, -26], [-26, -20], [-8, -22], [10, -42], [-20, -48]]
+      .map(([x, z], i) => ({ id: 'glowcap_' + i, tag: 'glowcap', name: 'Glowcaps', m: 'cave/Luminous_Mushrooms', x, z, s: 2.6, c: 0, reach: 3,
+        verb: 'Gather', gives: { item: 'Glowcap' }, respawn: 45, light: 0x7fe8c8,
+        text: 'The mushroom gives off a faint blue-green glow.' })),
+  ],
+
   chests: [
     { id: 'watchtower', x: 52, z: -74, gold: 70,  item: 'Leather Body' },        // old soldier's kit at the Fallen Watchtower
     { id: 'rotfen',     x: 50, z: -32, gold: 110, item: 'Battered Iron Shield' }, // bandit stash in the Rotfen Thicket
@@ -196,6 +246,7 @@ export const darkwoods = {
     { id: 'cf_farm',   x: 20,  z: -80 },  // by the Entrance Clearing (early cooking)
     { id: 'cf_camp',   x: -49, z: 7 },    // Abandoned Camp (on the bank beside the merchant, not in the river)
     { id: 'cf_shrine', x: 10,  z: 3 },    // Shrine Grove
+    { id: 'cf_outpost', x: -10, z: -36 }, // Dark Woods Outpost — the warden's fire
   ],
 
   // No aggressive mob may spawn within this radius of `spawn` — the first
@@ -235,6 +286,19 @@ export const darkwoods = {
     { model: 'Supply_Crate',   count: 2, r: 0.8, scale: [0.9, 1.1], near: 'camp', nearR: 11 },
     { model: 'Water_Barrel',   count: 1, r: 0.7, scale: [1.0, 1.0], near: 'camp', nearR: 10 },
     { model: 'Rolled_Bedroll', count: 1, r: 0, scale: [1.0, 1.0], near: 'camp', nearR: 10 },
+
+    // The Dark Woods Outpost — the warden's camp: tents around a fire, a
+    // supply pavilion, crates and barrels, lanterns on poles at the edge.
+    { model: 'Supply_Pavilion',  count: 1, r: 2.0, scale: [1.0, 1.0], near: 'outpost', nearR: 9 },
+    { model: 'Small_Canvas_Tent',count: 3, r: 1.4, scale: [1.0, 1.1], near: 'outpost', nearR: 11 },
+    { model: 'Cooking_Tripod',   count: 1, r: 0,   scale: [1.0, 1.0], near: 'outpost', nearR: 7 },
+    { model: 'Bedroll',          count: 3, r: 0,   scale: [1.0, 1.0], near: 'outpost', nearR: 11 },
+    { model: 'Camp_Stool',       count: 3, r: 0,   scale: [1.0, 1.0], near: 'outpost', nearR: 9 },
+    { model: 'Camp_Lantern',     count: 3, r: 0,   scale: [1.0, 1.0], near: 'outpost', nearR: 12 },
+    { model: 'Supply_Crate',     count: 4, r: 0.8, scale: [0.9, 1.1], near: 'outpost', nearR: 12 },
+    { model: 'Water_Barrel',     count: 2, r: 0.7, scale: [1.0, 1.0], near: 'outpost', nearR: 11 },
+    { model: 'Rough_Fence',      count: 6, r: 0.6, scale: [1.0, 1.0], near: 'outpost', nearR: 13 },
+    { model: 'Warning_Sign',     count: 1, r: 0.4, scale: [1.0, 1.0], near: 'outpost', nearR: 13 },
 
     // Goblin war-camp at the Wolf Den — tents, totem, banners, crude defenses.
     { model: 'Goblin_Hide_Tent', count: 2, r: 1.4, scale: [1.0, 1.1], near: 'wolfden', nearR: 14 },

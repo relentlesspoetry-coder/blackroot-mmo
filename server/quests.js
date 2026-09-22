@@ -8,6 +8,49 @@
 // quest definition changes.
 
 export const QUESTS = {
+  // ==========================================================================
+  // DARK WOODS OUTPOST — the zone's story, run from Warden Rowan's camp.
+  //
+  // These quests carry a `talk` script: the conversation as it is actually
+  // spoken, a line at a time, with the player's own replies. `n` is the NPC
+  // speaking, `y` is you, `s` is the world telling you something.
+  // ==========================================================================
+  dw_lanterns: {
+    id: 'dw_lanterns', name: 'A Lantern for the Road', giver: 'rowan', minLevel: 1,
+    summary: 'Gather glowcaps and relight the three trail lanterns around the outpost.',
+    intro: 'Our trail lanterns have gone dark. Glowcaps grow around the old trees nearby — crush a few into the lantern oil and they will burn for days.',
+    active: 'Six glowcaps, and the three lanterns on the east trail, the old bridge and the north trail.',
+    done: 'I can see the northern lantern from here.',
+    talk: [
+      ['n', 'You there. New arrival?'],
+      ['y', 'Just got here.'],
+      ['n', "Then here's your first lesson about the Dark Woods."],
+      ['n', 'Never walk these roads without light.'],
+      ['y', 'Because of the animals?'],
+      ['n', 'The animals I understand.'],
+      ['n', "It's what moves when the animals go quiet that bothers me."],
+      ['y', 'Comforting.'],
+      ['n', "You'll fit in."],
+      ['n', 'Our trail lanterns have gone dark. Glowcaps grow around the old trees nearby. Crush a few into the lantern oil and they will burn for days.'],
+      ['n', 'Gather six glowcaps and relight the three lanterns surrounding the outpost.'],
+    ],
+    accept: 'Good. Stay near the paths until you learn what lives beyond them.',
+    outro: [
+      ['n', 'I can see the northern lantern from here.'],
+      ['y', 'All three are lit.'],
+      ['n', 'Good.'],
+      ['n', 'Most newcomers think a sword is what keeps you alive out here.'],
+      ['n', "It isn't."],
+      ['y', 'What does?'],
+      ['n', 'Seeing trouble before it sees you.'],
+    ],
+    objectives: [
+      { type: 'gather', tag: 'glowcap', count: 6, label: 'Glowcaps gathered' },
+      { type: 'use', tag: 'lantern', count: 3, label: 'Trail lanterns lit' },
+    ],
+    reward: { xp: 150, gold: 40, items: ['Minor Healing Potion', 'Minor Healing Potion'] },
+  },
+
   // --- Warden Alric, Entrance Clearing -------------------------------------
   feathers: {
     id: 'feathers', name: 'Feathers and Hide', giver: 'alric', minLevel: 1,
@@ -182,6 +225,8 @@ export const QUEST_IDS = Object.keys(QUESTS);
 // Progress
 // ---------------------------------------------------------------------------
 function countIn(list, name) { let n = 0; for (const it of list) if (it === name) n++; return n; }
+// How many of a tagged set of world objects this player has dealt with.
+function countUsed(p, tag) { let n = 0; for (const key of p.usedObjects) if (key.startsWith(tag + ':')) n++; return n; }
 
 // How far along one objective is, for a given player.
 export function objectiveProgress(p, q, obj) {
@@ -193,6 +238,14 @@ export function objectiveProgress(p, q, obj) {
     case 'collect': have = countIn(p.inventory, obj.item); break;
     case 'reach':  have = p.questFlags.has(`reach:${obj.zone}:${obj.poi}`) ? 1 : 0; break;
     case 'chest':  have = p.openedChests.has(`${obj.zone}:${obj.chest}`) ? 1 : 0; break;
+    // Things in the world you put your hands on: lanterns lit, tracks read,
+    // signal fires doused, growths cut back. Either one named object or any
+    // `count` of a tagged set.
+    case 'use':    have = obj.object ? (p.usedObjects.has(obj.object) ? 1 : 0) : countUsed(p, obj.tag); break;
+    // Work done rather than goods held: six glowcaps picked stay picked even
+    // after the lanterns burn them.
+    case 'gather': have = (p.questKills[q.id] && p.questKills[q.id]['@' + obj.tag]) || 0; break;
+    case 'talk':   have = p.questFlags.has(`talk:${obj.npc}`) ? 1 : 0; break;
   }
   return { have: Math.min(have, need), need, label: obj.label, done: have >= need };
 }
@@ -223,13 +276,14 @@ export function questPayload(p) {
         text: pr.complete ? q.done : q.active,
         objectives: pr.objectives, complete: pr.complete,
         reward: q.reward,
+        talk: pr.complete ? (q.outro || null) : null,   // the conversation when you come back with it done
       });
       if (pr.complete) ready[q.giver] = true;
       continue;
     }
     if (canStart(p, q)) {
       available.push({ id, name: q.name, giver: q.giver, summary: q.summary, intro: q.intro,
-        minLevel: q.minLevel || 1, reward: q.reward,
+        minLevel: q.minLevel || 1, reward: q.reward, talk: q.talk || null, accept: q.accept || null,
         objectives: q.objectives.map(o => ({ label: o.label, need: o.count || 1 })) });
     }
   }
@@ -274,6 +328,36 @@ export function recordReach(p, zoneId, poiKey) {
   p.questFlags.add(flag);
   return [...p.quests.keys()].filter(id =>
     QUESTS[id].objectives.some(o => o.type === 'reach' && o.zone === zoneId && o.poi === poiKey));
+}
+
+// Called when a player uses a world object (a lantern, a signal fire, a set of
+// tracks). Returns the quest ids that advanced.
+export function recordUse(p, obj) {
+  const keys = [obj.id, obj.tag ? obj.tag + ':' + obj.id : null].filter(Boolean);
+  for (const k of keys) p.usedObjects.add(k);
+  const touched = [];
+  for (const id of p.quests.keys()) {
+    const q = QUESTS[id]; if (!q) continue;
+    for (const o of (q.objectives || [])) {
+      if (o.type === 'use' && (o.object === obj.id || (o.tag && o.tag === obj.tag))) { touched.push(id); continue; }
+      if (o.type === 'gather' && o.tag === obj.tag) {
+        const key = '@' + o.tag, need = o.count || 1;
+        p.questKills[id] = p.questKills[id] || {};
+        if ((p.questKills[id][key] || 0) >= need) continue;
+        p.questKills[id][key] = (p.questKills[id][key] || 0) + (obj.gives && obj.gives.count || 1);
+        touched.push(id);
+      }
+    }
+  }
+  return [...new Set(touched)];
+}
+// Called when a player opens a conversation with an NPC.
+export function recordTalk(p, npcId) {
+  const flag = `talk:${npcId}`;
+  const want = [...p.quests.keys()].filter(id => (QUESTS[id].objectives || []).some(o => o.type === 'talk' && o.npc === npcId));
+  if (!want.length || p.questFlags.has(flag)) return [];
+  p.questFlags.add(flag);
+  return want;
 }
 
 // Consume the items a collect objective asked for. Called on turn-in only.

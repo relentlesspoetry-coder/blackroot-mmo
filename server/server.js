@@ -79,7 +79,7 @@ function lookOf(p) { return Object.keys(p.gear || {}).length ? { ...p.look, gear
 function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
 import {
   QUESTS, questPayload, questProgress, canStart, recordKill, recordReach,
-  consumeQuestItems,
+  consumeQuestItems, recordUse, recordTalk,
 } from './quests.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -110,6 +110,7 @@ function scaleZone(zone, k) {
   (zone.rocks || []).forEach(sp);
   (zone.pools || []).forEach(sp);
   (zone.chests || []).forEach(sp);
+  (zone.objects || []).forEach(sp);   // quest objects: positions scale, model sizes stay native
   (zone.fishingSpots || []).forEach(sp);
   (zone.campfires || []).forEach(sp);
   if (zone.safeSpawnRadius) zone.safeSpawnRadius *= k;
@@ -180,7 +181,7 @@ function buildSeamlessWorld() {
   }
   const w = darkwoods, kf = killingfields;
   const cat = (k) => { w[k] = (w[k] || []).concat(kf[k] || []); };
-  ['pois', 'npcs', 'rocks', 'pools', 'chests', 'hazards', 'spawns', 'elites', '_trees', '_scatter'].forEach(cat);
+  ['pois', 'npcs', 'rocks', 'pools', 'chests', 'hazards', 'spawns', 'elites', 'objects', '_trees', '_scatter'].forEach(cat);
   // Multiple paths/rivers now — keep each so the client can draw them all.
   w.paths = [w.path, kf.path].filter(Boolean);
   w.rivers = [w.river, kf.river].filter(Boolean);
@@ -2323,6 +2324,12 @@ function stepPlayer(p) {
       if (!inRange || !los) { if (p.windup || p.channel || p.swing) p.yaw = Math.atan2(m.x - p.x, m.z - p.z); /* casting: hold here */ else if (step(m.x, m.z, los ? reach : 0.9)) moved = true; }
       else { p._nav = null; p.yaw = Math.atan2(m.x - p.x, m.z - p.z); doPlayerAttack(p, m); }
     }
+  } else if (p.pendingUse) {
+    // Walk to the thing, then put your hands on it.
+    const o = worldObject(zone, p.pendingUse);
+    if (!o) { p.pendingUse = null; }
+    else if (step(o.x, o.z, Math.max(1.2, (o.reach || 3.5) - 1.2))) { moved = true; }
+    else { p.yaw = Math.atan2(o.x - p.x, o.z - p.z); const id = p.pendingUse; p.pendingUse = null; useWorldObject(p, id); }
   } else if (p.pendingChest) {
     const ch = (zone.chests || []).find(c => c.id === p.pendingChest);
     if (!ch) { p.pendingChest = null; }
@@ -2439,9 +2446,50 @@ function transitionPlayer(p, toId, spawn) {
   p.moveTo = null; p.combatId = null; p.pendingChest = null; p.pendingPickup = null; p.pendingMine = null;
   p.portalCd = 2; // don't immediately re-trigger the return portal
   send(p.ws, { t: 'transition', zone: zoneForClient(to) });
+  sendObjects(p);
   sendQuests(p); // giver markers are per-zone
   systemChat(`${p.name} entered ${to.name}.`);
 }
+
+// ---------------------------------------------------------------------------
+// World objects: the things a quest asks you to put your hands on — a trail
+// lantern to light, tracks to read, a signal fire to douse, a growth to cut
+// back. Some are one-shot per player and stay done; the gathering ones (a
+// clump of glowcaps) give an item and grow back for everyone after a while.
+// ---------------------------------------------------------------------------
+function worldObject(zone, id) { return (zone.objects || []).find(o => o.id === id); }
+function objectReady(zone, o) { return !o._until || o._until <= Date.now(); }
+function useWorldObject(p, id) {
+  const zone = zoneOf(p), o = worldObject(zone, id);
+  const notice = (text) => send(p.ws, { t: 'event', kind: 'notice', text });
+  if (!o) return;
+  if (dist2(p.x, p.z, o.x, o.z) > (o.reach || 3.5) ** 2) return notice(`You need to be closer to the ${o.name.toLowerCase()}.`);
+  if (o.once && p.usedObjects.has(o.id)) return notice(`You have already dealt with the ${o.name.toLowerCase()}.`);
+  if (!objectReady(zone, o)) return notice(`There is nothing left to take here yet.`);
+  // Some things only make sense while you are on the errand that asked for them.
+  if (o.quest && !p.quests.has(o.quest)) return notice(o.idleText || 'You have no reason to touch that.');
+  if (o.need) {
+    const have = p.inventory.filter(n => n === o.need.item).length;
+    if (have < (o.need.count || 1)) return notice(`You need ${o.need.count || 1} × ${o.need.item}.`);
+    for (let i = 0; i < (o.need.count || 1); i++) p.inventory.splice(p.inventory.indexOf(o.need.item), 1);
+  }
+  if (o.gives) { for (let i = 0; i < (o.gives.count || 1); i++) p.inventory.push(o.gives.item); }
+  if (o.respawn) o._until = Date.now() + o.respawn * 1000;
+  if (o.once) { /* recorded below */ }
+  const moved = recordUse(p, o);
+  send(p.ws, { t: 'event', kind: 'used', id: o.id, tag: o.tag || null, text: o.text || null, item: o.gives ? o.gives.item : null });
+  if (o.gives || o.need) sendBag(p);
+  if (moved.length) notifyQuestProgress(p, moved);
+  else sendQuests(p);
+  broadcastObjects(zone);
+}
+// The world's shared view of these: which gathering nodes are picked clean.
+function sendObjects(p) {
+  const zone = zoneOf(p);
+  const spent = (zone.objects || []).filter(o => !objectReady(zone, o)).map(o => o.id);
+  send(p.ws, { t: 'objects', spent, used: [...p.usedObjects] });
+}
+function broadcastObjects(zone) { for (const q of players.values()) if (q.zoneId === zone.id) sendObjects(q); }
 
 function openChest(p, chestId) {
   const zone = zoneOf(p);
@@ -2574,7 +2622,7 @@ function zoneForClient(zone) {
     id: zone.id, name: zone.name, subtitle: zone.subtitle, spawn: zone.spawn,
     bounds: zone.bounds, boundary: zone.boundary, pois: zone.pois, path: zone.path, river: zone.river,
     paths: zone.paths || (zone.path ? [zone.path] : []), rivers: zone.rivers || (zone.river ? [zone.river] : []),
-    rocks: zone.rocks, hazards: zone.hazards, pools: zone.pools, chests: zone.chests,
+    rocks: zone.rocks, hazards: zone.hazards, pools: zone.pools, chests: zone.chests, objects: zone.objects,
     fishingSpots: zone.fishingSpots || [], campfires: zone.campfires || [],
     caves: (zone.caves || []).map(c => ({ boundary: c.boundary, rooms: c.rooms, tunnels: c.tunnels, floorY: c.floorY, ceilingY: c.ceilingY,
       scatter: c.scatter || [], hanging: c.hanging || [], env: c.env, entrance: c.entrance })),
@@ -2616,7 +2664,7 @@ wss.on('connection', (ws) => {
           id, ws, kind: 'player', name, look, zoneId: START_ZONE,
           x: start.spawn.x, z: start.spawn.z, y: 0, yaw: start.spawn.yaw, moving: false,
           // One class, one class level: `level`/`xp` ARE the class (see CLASSES).
-          cls, level: 1, xp: 0, gold: 0, openedChests: new Set(),
+          cls, level: 1, xp: 0, gold: 0, openedChests: new Set(), usedObjects: new Set(),
           known: new Set(classDef(cls).abilities.filter(a => a.level <= 1).map(a => a.id)), // learned abilities
           cooldowns: {}, buffs: {}, gcd: 0, momentum: 0, momentumT: 0, rage: 0, rageMax: classStats(cls, 1).rage, rageIdle: 0,
           mana: classStats(cls, 1).mana, manaMax: classStats(cls, 1).mana, friendId: null,
@@ -2688,6 +2736,17 @@ wss.on('connection', (ws) => {
         const b = zoneOf(player).bounds;
         player.moveTo = { x: clamp(Number(msg.x) || 0, b.minX, b.maxX), z: clamp(Number(msg.z) || 0, b.minZ, b.maxZ) };
         player.combatId = null; player.pendingChest = null; player.pendingPickup = null; player.pendingMine = null;
+        break;
+      }
+      case 'talk': {
+        if (!player) break;
+        const moved = recordTalk(player, String(msg.npc || ''));
+        if (moved.length) notifyQuestProgress(player, moved);
+        break;
+      }
+      case 'useobject': {
+        if (!player || !player.alive) break;
+        player.pendingUse = String(msg.id || ''); player.combatId = null; player.moveTo = null; player.pendingChest = null; player.pendingPickup = null; player.pendingMine = null;
         break;
       }
       case 'openchest': {
@@ -2871,7 +2930,7 @@ wss.on('connection', (ws) => {
       }
       case 'questaccept': if (player && player.alive) acceptQuest(player, String(msg.id || '')); break;
       case 'questturnin': if (player && player.alive) turnInQuest(player, String(msg.id || '')); break;
-      case 'questsync': if (player) sendQuests(player); break;
+      case 'questsync': if (player) { sendQuests(player); sendObjects(player); } break;
       case 'respawn': if (player && !player.alive && player.deathTimer <= 0) respawnPlayer(player); break;
       case 'logout': {
         if (!player) return;
