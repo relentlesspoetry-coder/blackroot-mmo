@@ -347,9 +347,11 @@ export const darkwoods = {
     // --- Goblin miners have jumped Dorn's claim in the Root-Choked Ravine ---
     { type: 'goblin_miner', count: 4, cx: -36, cz: 44, r: 6,  level: 4, expect: 5, fixed: true, hint: 'Ravine dig (core)' },
     { type: 'goblin_miner', count: 2, cx: -36, cz: 44, r: 16, level: 4, expect: 5, roam: 20, fixed: true, hint: 'Ravine dig (roamers)' },
+    { type: 'goblin_shaman', count: 1, cx: -36, cz: 44, r: 7,  level: 4, expect: 5, fixed: true, hint: 'Ravine dig (shaman)' },
     // --- The goblin war camp at the Wolf Den: warriors with archers behind them ---
     { type: 'goblin_warrior', count: 4, cx: 62, cz: 28, r: 6,  level: 4, expect: 5, fixed: true, hint: 'Wolf Den camp (core)' },
     { type: 'goblin_archer',  count: 3, cx: 66, cz: 32, r: 7,  level: 5, expect: 5, fixed: true, hint: 'Wolf Den camp (archers)' },
+    { type: 'goblin_shaman',  count: 2, cx: 64, cz: 26, r: 5,  level: 5, expect: 6, fixed: true, hint: 'Wolf Den camp (shamans: heal the camp, interrupt them)' },
     { type: 'goblin_warrior', count: 2, cx: 62, cz: 28, r: 18, level: 4, expect: 5, roam: 22, fixed: true, hint: 'Wolf Den camp (roamers)' },
     // --- Hill ogres squatting on the South Gate approach ---
     { type: 'guard',   count: 3, cx: 10,  cz: 80,  r: 8,  level: 6, expect: 7, fixed: true, hint: 'Ogre hollow (core)' },
