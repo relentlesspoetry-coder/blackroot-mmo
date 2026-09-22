@@ -2287,9 +2287,10 @@ wss.on('connection', (ws) => {
           mana: classStats(cls, 1).mana, manaMax: classStats(cls, 1).mana, friendId: null,
           meditation: { level: 1, xp: 0 }, resting: false,
           // Everyone starts able to mine and fish; better tools are earned. The
-          // pickaxe starts equipped so it shows in-hand (and swings when mining).
-          inventory: ['Fishing Rod'],
-          equipment: Object.assign(emptySlots(), { weapon: 'Bronze Pickaxe' }), gear: {},
+          // pickaxe rides in the bag (it counts for mining from there); the
+          // class's own weapon is what's in hand.
+          inventory: ['Fishing Rod', 'Bronze Pickaxe'],
+          equipment: Object.assign(emptySlots(), { weapon: classDef(cls).startWeapon || 'Bronze Dagger' }), gear: {},
           miningXp: 0, pendingMine: null, mineTimer: 0,
           fishingXp: 0, pendingFish: null, fishTimer: 0,
           cookingXp: 0, pendingCook: null, cookTimer: 0,

@@ -49,7 +49,7 @@ export const CLASSES = {
   fighter: {
     name: 'Fighter', icon: 'ui/fighter/emblem.png', background: 'ui/fighter/background.jpg',
     desc: 'A two-handed melee bruiser: heavy swings, cleaves, staggers and execute pressure, paid for with rage and exposure. Not a tank.',
-    resource: 'Rage',
+    resource: 'Rage', startWeapon: 'Rusted Training Sword',   // the drill yard's cast-off, in hand from the start
     atk: (L) => 6 + L,             // effective levels fed to the OSRS accuracy / max-hit rolls
     str: (L) => 6 + L,
     def: (L) => 4 + L,             // light armour: a little behind the hitting stats
@@ -114,7 +114,7 @@ export const CLASSES = {
   cleric: {
     name: 'Cleric', icon: 'ui/cleric/emblem.png', background: 'ui/cleric/background.jpg',
     desc: 'A holy healer: direct heals, wards, prayers, cleansing and emergency saves, with a little holy fire kept for the undead. Not a tank, not a caster.',
-    resource: 'Mana',
+    resource: 'Mana', startWeapon: 'Mace',
     atk: (L) => 3 + L,             // a mace-and-prayer-book melee: behind the Fighter on every roll
     str: (L) => 2 + L,
     def: (L) => 3 + L,             // cloth
@@ -175,7 +175,7 @@ export const CLASSES = {
   bard: {
     name: 'Bard', icon: 'ui/bard/emblem.png', background: 'ui/bard/background.jpg',
     desc: 'A support: songs that mend, restore mana, quicken and embolden the party, sonic debuffs that weaken the enemy, and a lullaby. Not a healer, not a caster.',
-    resource: 'Mana',
+    resource: 'Mana', startWeapon: 'Dagger',
     atk: (L) => 4 + L,             // dagger / rapier melee, a step behind the Fighter
     str: (L) => 3 + L,
     def: (L) => 3 + L,             // cloth and leather
