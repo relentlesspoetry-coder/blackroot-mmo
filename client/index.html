@@ -4814,11 +4814,17 @@ function fistHand(rig, side, amt, thumbAmt, flex = 0) {
   if (wrist) wrist.updateWorldMatrix(false, true);
   f.Index[0].getWorldPosition(kn); f.Pinky[0].getWorldPosition(tmp); kn.subVectors(tmp, kn).normalize();
   if (flex && wrist && f.Middle[1]) {
-    // a handle runs across the palm along the knuckle line, so to carry it
-    // point-down the wrist turns about the palm normal until that line hangs
+    // a handle runs across the palm along the knuckle line; the wrist turns
+    // about the palm normal until that line continues the forearm, so the
+    // blade (out the thumb side) points along the arm — down when it hangs,
+    // up when the guard is raised, through the cut in a swing
     f.Middle[0].getWorldPosition(fd); f.Middle[1].getWorldPosition(tmp); fd.subVectors(tmp, fd).normalize();
     pn.crossVectors(fd, kn).normalize();
-    qd.setFromAxisAngle(pn, flex * (side === 'L' ? -1 : 1) * (window.__flexSign || 1));
+    const fa = _lv[4]; wrist.getWorldPosition(fa); wrist.parent.getWorldPosition(tmp); fa.sub(tmp).normalize();   // forearm, elbow -> wrist
+    fa.addScaledVector(pn, -fa.dot(pn)).normalize(); kn.addScaledVector(pn, -kn.dot(pn)).normalize();
+    const want = fa.multiplyScalar(-1);   // blade = -kn (index -> pinky is the pommel way); bring -kn onto the forearm
+    const ang = Math.atan2(_lv[5].crossVectors(kn, want).dot(pn), kn.dot(want)) * flex;
+    qd.setFromAxisAngle(pn, ang);
     wrist.parent.getWorldQuaternion(qp); wrist.quaternion.copy(qp).invert().multiply(qd).multiply(qp);
     wrist.updateWorldMatrix(false, true);
     f.Index[0].getWorldPosition(kn); f.Pinky[0].getWorldPosition(tmp); kn.subVectors(tmp, kn).normalize();
@@ -4834,6 +4840,33 @@ function relaxHand(rig, side) {
   const f = rig['fingers' + side]; if (f) for (const k in f) for (const j of f[k]) if (j) j.quaternion.identity();
   const wrist = side === 'L' ? rig.wristL : rig.wristR; if (wrist) wrist.quaternion.identity();
   rig['fist' + side] = false;
+}
+// Two-bone solve of one arm: put the wrist at world point T with the elbow
+// pushed along `hintLocal` (model space). Sets the upper-arm Euler and the
+// elbow pivot; the hand is left for the caller.
+function solveArm(rec, rig, side, T, hintLocal) {
+  const wrap = rec.mesh, [, , S, d1, hint, u, n, E, d2, tmp] = _lv, [qw, qp, qd, qwi] = _lq;
+  const arm = side === 'L' ? rig.armL : rig.armR, fore = side === 'L' ? rig.foreL : rig.foreR, sx = side === 'L' ? 1 : -1;
+  if (!arm || !fore) return;
+  wrap.getWorldQuaternion(qw); qwi.copy(qw).invert();
+  arm.getWorldPosition(S);
+  u.subVectors(T, S); let d = u.length(); const reach = ARM_UPPER + ARM_FORE - 0.01; if (d > reach) { u.multiplyScalar(reach / d); d = reach; T.copy(S).add(u); } u.normalize();
+  hint.set(hintLocal[0], hintLocal[1], hintLocal[2]).applyQuaternion(qw); n.copy(hint).addScaledVector(u, -hint.dot(u)).normalize();
+  const cosA = Math.max(-1, Math.min(1, (ARM_UPPER * ARM_UPPER + d * d - ARM_FORE * ARM_FORE) / (2 * ARM_UPPER * d)));
+  E.copy(S).addScaledVector(u, ARM_UPPER * cosA).addScaledVector(n, ARM_UPPER * Math.sin(Math.acos(cosA)));
+  // upper arm: model-space direction -> (x, z) rotations around the baked hang
+  d1.subVectors(E, S).normalize().applyQuaternion(qwi);
+  const rx = 0.14 * sx, ry = -0.99, A = rx, B = -ry;   // d1.x = rx cos az - ry sin az
+  const az = Math.asin(Math.max(-1, Math.min(1, d1.x / Math.hypot(A, B)))) - Math.atan2(A, B);
+  const ax = Math.atan2(-d1.z, -d1.y);
+  arm.rotation.set(ax, 0, az);
+  // forearm: measure its rest direction with the elbow straight, then turn it onto the target
+  fore.rotation.set(0, 0, 0); arm.updateWorldMatrix(false, true);
+  const hand = side === 'L' ? rig.handL : rig.handR;
+  fore.getWorldPosition(E); hand.getWorldPosition(tmp);
+  d2.subVectors(tmp, E).normalize(); tmp.subVectors(T, E).normalize();
+  qd.setFromUnitVectors(d2, tmp);
+  fore.parent.getWorldQuaternion(qp); fore.quaternion.copy(qp).invert().multiply(qd).multiply(qp);
 }
 // Two-bone arm solve onto the lute. Shoulder pivots are "model-aligned"
 // (rotation.x swings fore/aft, .z out to the side, with the A-pose hang baked
@@ -4852,28 +4885,7 @@ function luteArms(rec, rig, strum, dt) {
   wrap.getWorldQuaternion(qw); qwi.copy(qw).invert();
   for (const side of ['L', 'R']) {
     const arm = side === 'L' ? rig.armL : rig.armR, fore = side === 'L' ? rig.foreL : rig.foreR, T = side === 'L' ? tl : tr, sx = side === 'L' ? 1 : -1;
-    const upperBone = arm.children.find(c => c.isBone) || arm.children[0];
-    arm.getWorldPosition(S);
-    // elbow: the classic triangle, elbow pushed down and out
-    u.subVectors(T, S); let d = u.length(); const reach = ARM_UPPER + ARM_FORE - 0.01; if (d > reach) { u.multiplyScalar(reach / d); d = reach; T.copy(S).add(u); } u.normalize();
-    hint.set(sx * 1.0, side === 'L' ? -0.6 : -0.25, side === 'L' ? -0.3 : -0.55).applyQuaternion(qw); n.copy(hint).addScaledVector(u, -hint.dot(u)).normalize();   // elbows out to the sides, the strumming one swung back
-    const cosA = Math.max(-1, Math.min(1, (ARM_UPPER * ARM_UPPER + d * d - ARM_FORE * ARM_FORE) / (2 * ARM_UPPER * d)));
-    E.copy(S).addScaledVector(u, ARM_UPPER * cosA).addScaledVector(n, ARM_UPPER * Math.sin(Math.acos(cosA)));
-    // upper arm: model-space direction -> (x, z) rotations around the baked hang
-    d1.subVectors(E, S).normalize().applyQuaternion(qwi);
-    const rx = 0.14 * sx, ry = -0.99, A = rx, B = -ry;   // d1.x = rx cos az - ry sin az
-    const az = Math.asin(Math.max(-1, Math.min(1, d1.x / Math.hypot(A, B)))) - Math.atan2(A, B);
-    const ax = Math.atan2(-d1.z, -d1.y);
-    arm.rotation.set(ax, 0, az);
-    // forearm: measure its rest direction with the elbow straight, then turn it onto the target
-    fore.rotation.set(0, 0, 0); arm.updateWorldMatrix(false, true);
-    const hand = side === 'L' ? rig.handL : rig.handR, elbow = fore;
-    elbow.getWorldPosition(E); hand.getWorldPosition(tmp);
-    d2.subVectors(tmp, E).normalize();                  // rest forearm direction
-    tmp.subVectors(T, E).normalize();                   // wanted
-    qd.setFromUnitVectors(d2, tmp);
-    fore.parent.getWorldQuaternion(qp);                 // express the world turn in the elbow pivot's parent frame
-    fore.quaternion.copy(qp).invert().multiply(qd).multiply(qp);
+    solveArm(rec, rig, side, T, [sx * 1.0, side === 'L' ? -0.6 : -0.25, side === 'L' ? -0.3 : -0.55]);   // elbows out to the sides, the strumming one swung back
     // the hand: palm turned onto the lute (left: round the back of the neck;
     // right: flat over the strings), then the fingers curled
     const wrist = side === 'L' ? rig.wristL : rig.wristR, fingers = rig['fingers' + side];
@@ -5257,6 +5269,14 @@ function animateEntity(rec, e, kind, dt) {
     // A Bard carries the lute: left hand up on the neck, right forearm resting
     // over the body, whether standing or walking — only a swing lets go.
     rec.holdLute = !!(rec.instrument && punch <= 0);   // arms solved onto the lute below (luteArms); a swing lets go
+    // On guard with a weapon: in a fight (recent swing, or the local player has
+    // a target) the sword is carried up — elbow bent, fist at the shoulder,
+    // blade continuing the forearm — with the off hand raised; otherwise it
+    // hangs at the side. The two blend so the guard comes up smoothly.
+    rig.readyT = Math.max(0, (rig.readyT || 0) - dt);
+    const wantReady = !!(rig.weapon && !rec.instrument && (rig.readyT > 0 || (isLocal && targetId != null)));
+    rig.readyK = Math.max(0, Math.min(1, (rig.readyK || 0) + (wantReady ? dt / 0.3 : -dt / 0.4)));
+    rec.guardK = (punch <= 0 && !rig.anim) ? smooth(rig.readyK) : 0;   // solved onto fist targets below, after the walk pose
     if (rec.holdLute) rig.luteStrum = Math.sin(rig.breath * 0.6) * 0.15;   // idle: the hand drifts over the strings
     if (rec.instrument && rig.weapon && !rig.anim) rig.weapon.visible = punch > 0;   // the weapon only comes out to swing
     if (isLocal && window.__poseOv) { const o = window.__poseOv; if (o.lArm != null) lArm = o.lArm; if (o.lArmZ != null) lArmZ = o.lArmZ; if (o.rArm != null) rArm = o.rArm; if (o.rArmZ != null) rArmZ = o.rArmZ; if (o.lFore) lFore = o.lFore; if (o.rFore) rFore = o.rFore; }   // ?debug pose tuning
@@ -5290,10 +5310,21 @@ function animateEntity(rec, e, kind, dt) {
     if (rig.armR) rig.armR.rotation.set(rArm, 0, rArmZ);
     if (rig.foreL) { if (lFore) rig.foreL.rotation.set(lFore[0], lFore[1], lFore[2]); else rig.foreL.rotation.set(0, 0, 0); }
     if (rig.foreR) { if (rFore) rig.foreR.rotation.set(rFore[0], rFore[1], rFore[2]); else rig.foreR.rotation.set(0, 0, 0); }
+    if (rec.guardK > 0 && rig.foreR) {
+      // the guard: sword fist beside the shoulder (blade continues the forearm,
+      // so it points up and forward), off hand up in front; blended in by
+      // pulling the fist targets from where the walk pose left the hands
+      const k = rec.guardK, [gr, gl] = _lv;
+      rig.handR.getWorldPosition(gr); rig.handL.getWorldPosition(gl);
+      const tR = rec.mesh.localToWorld(new THREE.Vector3(-0.34, 1.52, 0.2)), tL = rec.mesh.localToWorld(new THREE.Vector3(0.22, 1.32, 0.42));
+      gr.lerp(tR, k); gl.lerp(tL, k);
+      solveArm(rec, rig, 'R', gr, [-0.7, -1.0, -0.5]); solveArm(rec, rig, 'L', gl, [1.0, -0.6, -0.2]);   // sword elbow down and back so the forearm (and blade) rise
+      b.rotation.y += -0.2 * k; b.rotation.x += 0.05 * k;
+    }
     if (rec.instrumentObj && rec.holdLute) luteArms(rec, rig, rig.luteStrum || 0, dt);
     else if (rig.fingersR) {   // a held weapon closes the fist; otherwise the hands relax
       const grip = !!(rig.weapon && rig.weapon.visible);
-      if (grip) fistHand(rig, 'R', 1.6, 1.1, Math.PI / 2); else if (rig.fistR) { relaxHand(rig, 'R'); }
+      if (grip) fistHand(rig, 'R', 1.6, 1.1, 1); else if (rig.fistR) { relaxHand(rig, 'R'); }
       if (rig.fistL) relaxHand(rig, 'L');
       rig.fistR = grip;
     }
@@ -5374,7 +5405,7 @@ function triggerAttackAnim(id) {
   const rig = rec && rec.mesh.userData.rig;
   // Pick the striking hand at random each swing (the player alternates
   // punch/kick instead — that branch reads atkKind the same way).
-  if (rig) { rig.atk = 1; rig.atkKind = Math.random() < 0.5 ? 0 : 1; }
+  if (rig) { rig.atk = 1; rig.atkKind = Math.random() < 0.5 ? 0 : 1; rig.readyT = 6; }   // and stay on guard a while after
 }
 
 function lerpAngle(a, b, t) {
