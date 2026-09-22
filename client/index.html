@@ -968,11 +968,13 @@ function lookItems(look) {
   const slots = look.slots || {}, gear = look.gear || {}, items = [];
   for (const slot of OUTFIT_SLOT_NAMES) {
     if (gear[slot] && armorById[gear[slot]]) { items.push({ ...armorById[gear[slot]], slot }); continue; }   // armour replaces the outfit piece
-    const num = slots[slot] != null ? slots[slot] : (look.outfit || 0);
+    const pick = slots[slot];
+    if (typeof pick === 'string') { if (armorById[pick]) items.push({ ...armorById[pick], slot }); continue; }   // a wardrobe-armour piece worn as clothing (class base looks)
+    const num = pick != null ? pick : (look.outfit || 0);
     const o = outfitManifest.outfits[num - 1]; if (!o) continue;
     const it = o.items.find(i => i.slot.toLowerCase() === slot); if (it) items.push({ ...it, slot });
   }
-  for (const slot of ARMOR_SLOT_NAMES) if (gear[slot] && armorById[gear[slot]]) items.push({ ...armorById[gear[slot]], slot });
+  for (const slot of ARMOR_SLOT_NAMES) { const id = gear[slot] || (typeof slots[slot] === 'string' ? slots[slot] : null); if (id && armorById[id]) items.push({ ...armorById[id], slot }); }
   return items;
 }
 // One clothing item's skinned pieces, loaded once: [{ geo, color, matName }].
@@ -4781,7 +4783,7 @@ function updateInstrument(rec, ent) {
   const a = 0.62, zAxis = new THREE.Vector3(Math.cos(a), Math.sin(a), 0.12).normalize(), yAxis0 = new THREE.Vector3(0, 0.25, 1).normalize();
   const xAxis = new THREE.Vector3().crossVectors(yAxis0, zAxis).normalize(), yAxis = new THREE.Vector3().crossVectors(zAxis, xAxis).normalize();
   g.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(xAxis, yAxis, zAxis));
-  g.position.set(0.04, 0.96 - rig.home.y, 0.21); g.scale.setScalar(0.88);
+  g.position.set(0.05, 1.04 - rig.home.y, 0.2); g.scale.setScalar(0.88);
   loadModels(['weapons/00_Lute']).then(() => {
     const src = LOADED['00_Lute']; if (!src || rec.instrument !== want) return;
     const model = src.clone(true);
@@ -4794,23 +4796,23 @@ function updateInstrument(rec, ent) {
 // into the bone), so the upper arm is set analytically from the wanted
 // direction; the elbow pivot then gets the rotation that turns the forearm's
 // rest direction onto the hand target, worked out from live world matrices.
-const _lv = Array.from({ length: 10 }, () => new THREE.Vector3()), _lq = [new THREE.Quaternion(), new THREE.Quaternion(), new THREE.Quaternion()];
-const ARM_UPPER = 0.29, ARM_FORE = 0.31;
+const _lv = Array.from({ length: 10 }, () => new THREE.Vector3()), _lq = [new THREE.Quaternion(), new THREE.Quaternion(), new THREE.Quaternion(), new THREE.Quaternion()];
+const ARM_UPPER = 0.39, ARM_FORE = 0.31;   // the skinned human's upper arm / forearm
 function luteArms(rec, rig, strum, dt) {
   const g = rec.instrumentObj; if (!g || !rig.foreL || !rig.foreR || !rig.handL || !rig.handR) return;
-  const wrap = rec.mesh, [tl, tr, S, d1, hint, u, n, E, d2, tmp] = _lv, [qw, qp, qd] = _lq;
+  const wrap = rec.mesh, [tl, tr, S, d1, hint, u, n, E, d2, tmp] = _lv, [qw, qp, qd, qwi] = _lq;
   // hand targets on the lute (its local frame: length along +Z, board +Y, X across the strings)
   g.updateWorldMatrix(true, false);
   tl.set(0.0, 0.05, 0.14); g.localToWorld(tl);
   tr.set(-0.02 + strum * 0.06, 0.09, -0.34); g.localToWorld(tr);
-  wrap.getWorldQuaternion(qw); const qwi = qp.copy(qw).invert();
+  wrap.getWorldQuaternion(qw); qwi.copy(qw).invert();
   for (const side of ['L', 'R']) {
     const arm = side === 'L' ? rig.armL : rig.armR, fore = side === 'L' ? rig.foreL : rig.foreR, T = side === 'L' ? tl : tr, sx = side === 'L' ? 1 : -1;
     const upperBone = arm.children.find(c => c.isBone) || arm.children[0];
     arm.getWorldPosition(S);
     // elbow: the classic triangle, elbow pushed down and out
     u.subVectors(T, S); let d = u.length(); const reach = ARM_UPPER + ARM_FORE - 0.01; if (d > reach) { u.multiplyScalar(reach / d); d = reach; T.copy(S).add(u); } u.normalize();
-    hint.set(sx * 0.9, -0.8, -0.35).applyQuaternion(qw); n.copy(hint).addScaledVector(u, -hint.dot(u)).normalize();
+    hint.set(sx * 1.0, side === 'L' ? -0.6 : -0.25, side === 'L' ? -0.3 : -0.55).applyQuaternion(qw); n.copy(hint).addScaledVector(u, -hint.dot(u)).normalize();   // elbows out to the sides, the strumming one swung back
     const cosA = Math.max(-1, Math.min(1, (ARM_UPPER * ARM_UPPER + d * d - ARM_FORE * ARM_FORE) / (2 * ARM_UPPER * d)));
     E.copy(S).addScaledVector(u, ARM_UPPER * cosA).addScaledVector(n, ARM_UPPER * Math.sin(Math.acos(cosA)));
     // upper arm: model-space direction -> (x, z) rotations around the baked hang
@@ -4828,6 +4830,31 @@ function luteArms(rec, rig, strum, dt) {
     qd.setFromUnitVectors(d2, tmp);
     fore.parent.getWorldQuaternion(qp);                 // express the world turn in the elbow pivot's parent frame
     fore.quaternion.copy(qp).invert().multiply(qd).multiply(qp);
+    // the hand: palm turned onto the lute (left: round the back of the neck;
+    // right: flat over the strings), then the fingers curled
+    const wrist = side === 'L' ? rig.wristL : rig.wristR, fingers = rig['fingers' + side];
+    if (wrist && fingers && fingers.Index[0] && fingers.Pinky[0] && fingers.Middle[1]) {
+      wrist.quaternion.identity(); for (const k in fingers) for (const j of fingers[k]) if (j) j.quaternion.identity();
+      fore.updateWorldMatrix(false, true);
+      const kn = _lv[4], fd = _lv[5], pn = _lv[6], want = _lv[7];
+      fingers.Index[0].getWorldPosition(kn); fingers.Pinky[0].getWorldPosition(tmp); kn.subVectors(tmp, kn).normalize();            // across the knuckles
+      fingers.Middle[0].getWorldPosition(fd); fingers.Middle[1].getWorldPosition(tmp); fd.subVectors(tmp, fd).normalize();          // along the fingers
+      pn.crossVectors(fd, kn).normalize();                                                                                            // palm normal (out of the palm; the same handedness both sides)
+      const lutY = _lv[8].set(0, 1, 0).transformDirection(g.matrixWorld), lutZ = _lv[9].set(0, 0, 1).transformDirection(g.matrixWorld);
+      if (side === 'R') want.copy(lutY).negate();                                                    // palm down onto the strings
+      else want.copy(lutY).negate().addScaledVector(lutZ, 0.35).normalize();                         // wrapped round the neck from behind
+      qd.setFromUnitVectors(pn, want);
+      wrist.parent.getWorldQuaternion(qp); wrist.quaternion.copy(qp).invert().multiply(qd).multiply(qp);
+      wrist.updateWorldMatrix(false, true);
+      // curl: each joint turns about the knuckle line
+      fingers.Index[0].getWorldPosition(kn); fingers.Pinky[0].getWorldPosition(tmp); kn.subVectors(tmp, kn).normalize();
+      const curl = side === 'L' ? [1.15, 1.0] : [0.55 + Math.max(0, strum) * 0.25, 0.5], thumb = side === 'L' ? [0.5, 0.4] : [0.25, 0.2];
+      for (const k in fingers) for (let j = 0; j < 2; j++) {
+        const jt = fingers[k][j]; if (!jt) continue;
+        const amt = (k === 'Thumb' ? thumb[j] : curl[j]) * (side === 'L' ? 1 : -1) * (window.__curlSign || 1);
+        qd.setFromAxisAngle(kn, amt); jt.parent.getWorldQuaternion(qp); jt.quaternion.copy(qp).invert().multiply(qd).multiply(qp);
+      }
+    }
   }
 }
 
@@ -4900,6 +4927,8 @@ function buildRig(wrap, style) {
   rig.weapon = part(/^Weapon$/); rig.shield = part(/^Shield$/);
   rig.handR = part(/^Hand_R$/); rig.handL = part(/^Hand_L$/); // skinned humans: weapon mounts on the hands
   rig.foreL = part(/^P_ForearmL$/); rig.foreR = part(/^P_ForearmR$/); // elbows (world-aligned pivots): x bends the forearm forward/up, z swings it across
+  rig.wristL = part(/^P_HandL$/); rig.wristR = part(/^P_HandR$/);     // wrists, and the fingers (three-joint hands on the skinned humans)
+  for (const side of ['L', 'R']) { const f = {}; for (const n of ['Thumb', 'Index', 'Middle', 'Ring', 'Pinky']) f[n] = [part(new RegExp(`^P_${n}_01${side}$`)), part(new RegExp(`^P_${n}_02${side}$`))]; rig['fingers' + side] = f; }
   // Which arm carries the weapon decides which one swings on an attack.
   rig.swingArm = null;
   if (rig.weapon) {
@@ -8658,6 +8687,7 @@ async function enterZone(zdata) {
   loadZone(zdata);
 }
 
+let pickedClass = 'fighter';
 // Character look pickers on the login card; the last choice is remembered.
 const hairSel = document.getElementById('hairSel'), outfitSel = document.getElementById('outfitSel');
 const hairCol = document.getElementById('hairCol'), skinCol = document.getElementById('skinCol');
@@ -8669,14 +8699,29 @@ try {
   else { hairSel.value = DEFAULT_LOOK.hair; outfitSel.value = DEFAULT_LOOK.outfit; }
 } catch (e) { hairSel.value = DEFAULT_LOOK.hair; outfitSel.value = DEFAULT_LOOK.outfit; }
 function currentLook() {
-  return { hair: +hairSel.value, hairColor: hairCol.value, skin: skinCol.value, outfit: +outfitSel.value };
+  const look = { hair: +hairSel.value, hairColor: hairCol.value, skin: skinCol.value, outfit: +outfitSel.value };
+  const kit = CLASS_LOOK[pickedClass];
+  if (kit && kit.outfit === look.outfit) { look.slots = kit.slots; look.colors = kit.colors; }   // the class kit, unless another outfit was chosen
+  return look;
 }
 // Class pick on the login card; remembered like the look.
-let pickedClass = 'fighter';
 try { const c = localStorage.getItem('bk.cls'); if (['fighter', 'cleric', 'bard'].includes(c)) pickedClass = c; } catch (e) {}
 // Each class has a base outfit from the wardrobe pack; picking a class dresses
 // the character in it (you can still change it afterwards).
-const CLASS_OUTFIT = { fighter: 31, cleric: 29, bard: 28 };   // Fighter kit, Pilgrim, Bard
+// The starting kits, after the class concept sheets, put together from the
+// wardrobe and armour packs slot by slot with recolours: the Fighter's hide
+// harness, bracers and spiked shoulders; the Cleric's white-and-gold coat
+// over an ivory robe; the Bard's dark long coat with a maroon mantle. They
+// apply while the outfit picker still shows the class's base outfit.
+const CLASS_LOOK = {
+  fighter: { outfit: 17, slots: { accessory: 18, shoulders: '10_Obsidian_Warlord__Shoulders', gloves: '02_Brigand_Studded__Gloves', boots: '01_Frontier_Hide__Boots', belt: 31, trousers: 31 },
+    colors: { top: '#4e3322', accessory: '#3a2a1c', shoulders: '#4a3a2a', trousers: '#2a2320' } },
+  cleric:  { outfit: 29, slots: { top: '09_Gilded_Paladin__Top', shoulders: '09_Gilded_Paladin__Shoulders', boots: '09_Gilded_Paladin__Boots', overlayer: '20_Astral_Archmage__Overlayer', gloves: '09_Gilded_Paladin__Gloves', belt: 1 },
+    colors: { overlayer: '#ece6d6', trousers: '#d8d2c4' } },
+  bard:    { outfit: 28, slots: { top: 27, shoulders: '12_Crimson_Duelist__Shoulders', overlayer: '16_Hedge_Mage__Overlayer', gloves: '12_Crimson_Duelist__Gloves', boots: 28, belt: 9, accessory: 29 },
+    colors: { top: '#1f2a24', shoulders: '#5a1e2c', overlayer: '#1f2a24', trousers: '#2b2622', accessory: '#5a1e2c' } },
+};
+const CLASS_OUTFIT = { fighter: 17, cleric: 29, bard: 28 };
 document.querySelectorAll('#classRow .classopt').forEach(d => {
   d.classList.toggle('sel', d.dataset.cls === pickedClass);
   d.onclick = () => { pickedClass = d.dataset.cls; document.querySelectorAll('#classRow .classopt').forEach(x => x.classList.toggle('sel', x === d)); if (CLASS_OUTFIT[pickedClass] != null) outfitSel.value = CLASS_OUTFIT[pickedClass]; try { localStorage.setItem('bk.cls', pickedClass); } catch (e) {} };

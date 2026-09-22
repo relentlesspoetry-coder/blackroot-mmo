@@ -44,7 +44,21 @@ function sanitizeLook(raw) {
   const o = raw && typeof raw === 'object' ? raw : {};
   const idx = (v, max, d) => { const n = Math.floor(Number(v)); return Number.isFinite(n) && n >= 0 && n <= max ? n : d; };
   const col = (v, d) => (typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v)) ? v.toLowerCase() : d;
-  return { hair: idx(o.hair, 30, 9), hairColor: col(o.hairColor, '#4a2e1a'), skin: col(o.skin, '#cba281'), outfit: idx(o.outfit, 31, 31) };
+  const look = { hair: idx(o.hair, 30, 9), hairColor: col(o.hairColor, '#4a2e1a'), skin: col(o.skin, '#cba281'), outfit: idx(o.outfit, 31, 31) };
+  // Per-slot overrides (the class starting kits): an outfit number or a
+  // wardrobe-armour piece id per slot, and a recolour per slot.
+  const SLOTS = ['top', 'trousers', 'boots', 'belt', 'accessory', 'gloves', 'helmet', 'shoulders', 'overlayer'];
+  if (o.slots && typeof o.slots === 'object') {
+    const slots = {};
+    for (const k of SLOTS) { const v = o.slots[k]; if (typeof v === 'string' && /^\d\d_[A-Za-z_]+__[A-Za-z]+$/.test(v)) slots[k] = v; else if (v != null) { const n = idx(v, 31, -1); if (n >= 0) slots[k] = n; } }
+    if (Object.keys(slots).length) look.slots = slots;
+  }
+  if (o.colors && typeof o.colors === 'object') {
+    const colors = {};
+    for (const k of SLOTS) { const v = col(o.colors[k], null); if (v) colors[k] = v; }
+    if (Object.keys(colors).length) look.colors = colors;
+  }
+  return look;
 }
 
 // What the character visibly wears from their equipment: pack item ids by
