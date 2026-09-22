@@ -656,11 +656,11 @@ const DETAIL_TILES = ['grass', 'dirt', 'rock', 'stone', 'wood', 'bark', 'leaf', 
 const DETAIL_INDEX = Object.fromEntries(DETAIL_TILES.map((n, i) => [n, i]));
 const DETAIL_RULES = [
   [/bark|trunk/i, 'bark'], [/leaf|leaves|canopy|foliage|needle|frond|petal|bush|fern|flower|vine|moss|grass/i, 'leaf'],
-  [/hay|straw|thatch/i, 'hay'], [/hair|beard|eye|teeth|tongue/i, null],
-  [/skin|flesh|face|body|hand|nose|ear/i, 'skin'], [/fur|pelt|feather|wool_coat|hide\b/i, 'fur'],
+  [/hay|straw|thatch/i, 'hay'], [/hair|beard|eye|iris|teeth|tongue|mouth/i, null],
+  [/skin|flesh|face|body|hand|nose|ear|scar/i, 'skin'], [/fur|pelt|feather|wool_coat|hide\b/i, 'fur'],
   [/bone|tooth|tusk|horn|skull|fang|ivory|antler/i, 'bone'], [/water/i, 'water'],
   [/leather|belt|boot|glove|strap|saddle|harness/i, 'leather'],
-  [/iron|steel|bronze|copper|gold|silver|metal|mithril|adamant|runite|blade|chain|plate|helm|armou?r|mail|buckle|coin|nail|spike|tin\b|coal/i, 'metal'],
+  [/iron|steel|bronze|brass|copper|gold|silver|metal|mithril|adamant|runite|blade|chain|plate|helm|armou?r|mail|buckle|coin|nail|spike|tin\b|coal/i, 'metal'],
   [/cloth|fabric|linen|wool|tunic|robe|shirt|trouser|pant|hood|cape|sash|tent|canvas|banner|flag|bedroll|blanket|sack|rope/i, 'cloth'],
   [/wood|plank|log|timber|oak|pine|birch|handle|shaft|stool|crate|barrel|fence|post|beam|cart|wheel|bucket|table|chair|bed|shelf|door/i, 'wood'],
   [/dirt|soil|mud|earth/i, 'dirt'], [/sand/i, 'sand'],
@@ -757,7 +757,7 @@ const LOADED_ANIM = {}; // model key -> GLTF animation clips (kept for animated 
 // Only the player model is always needed; everything else is declared by the
 // zone (server/zones/*.js) and fetched on entry. Loading all 73 models up front
 // doubled the wait on the login button for assets most players never see.
-const CORE_MODELS = ['Male', 'items/Coins', 'human/Human_Male_Modular_Base'];
+const CORE_MODELS = ['Male', 'items/Coins', 'human/Human_Male_Modular_Base', 'human/Fighter'];
 const MOB_MODEL = {
   goblin: { model: 'Goblin', h: 2.0 }, bandit: { model: 'Bandit', h: 2.3 }, guard: { model: 'Hill_Ogre', h: 3.0 },
   spider: { model: 'Cave_Spider', h: 1.6 }, cow: { model: 'Cow', h: 2.0 }, chicken: { model: 'Chicken', h: 1.1 },
@@ -923,17 +923,19 @@ let humanTemplate = null;
 // on the carved characters. The arms also get a constant "hang" rotation on
 // the bone itself so the A-pose drops to arms-at-sides at rest, while the
 // driven node above it still animates in world axes.
-function buildHumanTemplate() {
-  const src = LOADED['Human_Male_Modular_Base'];
-  if (!src) return null;
-  const root = SkeletonUtils.clone(src);
+// The world-aligning rebuild itself, shared by every skinned humanoid: the
+// modular base and the Fighter's own model are rigged differently but animate
+// through the same pivots afterwards. Returns the reusable skeleton plus the
+// skinned meshes that were found (the caller decides what to do with them).
+function worldAlignSkeleton(root, rename) {
   root.updateMatrixWorld(true);
   const skinned = []; root.traverse(o => { if (o.isSkinnedMesh) skinned.push(o); });
   if (!skinned.length) return null;
   const skeleton = skinned[0].skeleton, bones = skeleton.bones;
+  if (rename) for (const b of bones) b.name = rename(b.name);
   const byName = {}; for (const b of bones) byName[b.name] = b;
   const wp = new Map(); for (const b of bones) wp.set(b, b.getWorldPosition(new THREE.Vector3()));
-  // Arm hang: rotate each upper arm from its A-pose direction to just-off-vertical.
+  // Arm hang: rotate each upper arm from its rest direction to just-off-vertical.
   const hang = new Map();
   for (const side of ['L', 'R']) {
     const ua = byName['UpperArm' + side], fa = byName['Forearm' + side];
@@ -968,13 +970,28 @@ function buildHumanTemplate() {
     const h = hang.get(byName['UpperArm' + side]); if (h) mount.quaternion.copy(h).invert();
     hand.add(mount);
   }
+  // Arm segment lengths, measured rather than assumed: the two-bone IK has to
+  // work for any body the game dresses a player in.
+  const seg = (a, b) => (byName[a] && byName[b]) ? wp.get(byName[a]).distanceTo(wp.get(byName[b])) : 0;
+  const armUpper = seg('UpperArmR', 'ForearmR') || 0.39, armFore = seg('ForearmR', 'HandR') || 0.31;
+  root.updateMatrixWorld(true);
+  return { skeleton, boneNames, skinned, byName, armUpper, armFore };
+}
+
+function buildHumanTemplate() {
+  const src = LOADED['Human_Male_Modular_Base'];
+  if (!src) return null;
+  const root = SkeletonUtils.clone(src);
+  const T = worldAlignSkeleton(root);
+  if (!T) return null;
+  const { skeleton, boneNames, skinned, armUpper, armFore } = T;
   // Replace the body's many little skinned meshes with one fused mesh. Kept as
   // the source for per-look skin tinting (materials are named).
   const bodyParent = skinned[0].parent;
   const bodyParts = skinned.map(m => ({ name: m.name, geo: m.geometry, matName: m.material.name, color: m.material.color.clone() }));
   for (const m of skinned) m.removeFromParent();
   root.updateMatrixWorld(true);
-  humanTemplate = { root, skeleton, boneNames, bodyParts, bodyParent };
+  humanTemplate = { root, skeleton, boneNames, bodyParts, bodyParent, armUpper, armFore };
   return humanTemplate;
 }
 
@@ -1149,6 +1166,62 @@ function makeHuman(look, targetH) {
     if (!h || !wrap.parent) return;
     addSkinned(h.geo, new THREE.MeshStandardMaterial({ color: new THREE.Color(look.hairColor), map: h.detail, roughness: h.roughness != null ? h.roughness : 0.75 }), 'Hair');
   })();
+  return wrap;
+}
+
+// ---------------------------------------------------------------------------
+// The Fighter: a character of his own rather than the modular base in a kit —
+// fur mantle, spiked pauldron, bracers, tassets, the lot, modelled and rigged
+// as one piece (client/models/human/Fighter.glb). His armour is part of him,
+// so worn armour still gives its stats but doesn't change how he looks; the
+// weapon in his hand does.
+//
+// His skeleton uses the usual Blender names (UpperArm_L, Forearm_L, Hand_L,
+// Index_01_L ...) while every animation here was written against the modular
+// base's flat ones, so the bones are renamed on the way in and the walk, the
+// swings, the grip, the guard and the two-bone IK all then just work.
+// ---------------------------------------------------------------------------
+const FIGHTER_H = 2.02;           // rest-pose height of the model
+let fighterTemplate = null;
+const flatBoneName = (n) => n.replace(/_([LR])$/, '$1');
+function buildFighterTemplate() {
+  const src = LOADED['Fighter'];
+  if (!src) return null;
+  const root = SkeletonUtils.clone(src);
+  const T = worldAlignSkeleton(root, flatBoneName);
+  if (!T) return null;
+  const { skeleton, boneNames, skinned, armUpper, armFore } = T;
+  // Sixty-eight little meshes (every strap, plate and pouch) fuse into one
+  // vertex-coloured body, the same way the modular human's pieces do.
+  const parent = skinned[0].parent;
+  // Every piece is skinned to the one shared skeleton, so their skinIndex
+  // already speaks the template's bone order — no remap (and none is possible
+  // here anyway: the bones have been renamed by now).
+  const parts = skinned.map(m => {
+    const mat = Array.isArray(m.material) ? m.material[0] : m.material;
+    return { name: m.name, geo: m.geometry, matName: mat.name, color: mat.color.clone() };
+  });
+  const geo = fuseSkinned(parts, boneNames);
+  for (const m of skinned) m.removeFromParent();
+  root.updateMatrixWorld(true);
+  const box = new THREE.Box3(); for (const pt of parts) { pt.geo.computeBoundingBox(); box.union(pt.geo.boundingBox); }
+  fighterTemplate = { root, skeleton, boneNames, geo, parent, armUpper, armFore, height: box.max.y - Math.min(0, box.min.y), minY: box.min.y };
+  return fighterTemplate;
+}
+function makeFighter(targetH) {
+  const T = fighterTemplate || buildFighterTemplate();
+  if (!T || !T.geo) return null;
+  const obj = SkeletonUtils.clone(T.root);
+  const boneByName = {}; obj.traverse(o => { if (o.isBone) boneByName[o.name] = o; });
+  const skeleton = new THREE.Skeleton(T.boneNames.map(n => boneByName['B_' + n]), T.skeleton.boneInverses.map(m => m.clone()));
+  const sm = new THREE.SkinnedMesh(T.geo, detailize(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82 }), null, { attr: true, scale: 0.9, strength: 0.9 }));
+  sm.name = 'Body'; sm.castShadow = sm.receiveShadow = true; sm.frustumCulled = false;
+  sm.bind(skeleton, new THREE.Matrix4());
+  (obj.getObjectByName(T.parent.name) || obj).add(sm);
+  const s = targetH / (T.height || FIGHTER_H);
+  obj.scale.setScalar(s); obj.position.set(0, -Math.max(0, T.minY) * s, 0);
+  const wrap = new THREE.Group(); wrap.add(obj);
+  wrap.userData.armUpper = T.armUpper * s; wrap.userData.armFore = T.armFore * s;
   return wrap;
 }
 
@@ -4345,8 +4418,12 @@ const MALE_BONES = {
   legR: { a: [0.11, 0.96, 0], b: [0.11, 0.05, 0.02] },
 };
 function makePlayerMesh(isSelf, ent) {
-  // The rigged human (skinned body + outfit + hair) when its assets are in;
-  // the old carved Male model otherwise.
+  // Fighters have a body of their own; everyone else is the modular human
+  // (skinned body + outfit + hair). The old carved Male model is the fallback.
+  if (ent && ent.cls === 'fighter') {
+    const f = makeFighter(2.3);
+    if (f) { f.userData.faceOffset = 0; f.userData.rig = buildRig(f, 'hero'); return f; }
+  }
   const human = makeHuman(ent && ent.look, 2.3);
   if (human) {
     human.userData.faceOffset = 0;
@@ -4706,7 +4783,7 @@ function makeMonsterMesh(type, elite) {
   body.position.y = 0.8; fb.add(body);
   return fb;
 }
-function lookKeyOf(ent) { return ent.look ? JSON.stringify(ent.look) : ''; }
+function lookKeyOf(ent) { return ent.cls === 'fighter' ? 'fighter' : (ent.look ? JSON.stringify(ent.look) : ''); }
 function ensureMesh(ent, kind) {
   let rec = entityMeshes.get(ent.id);
   // A player who changed clothes (equipped armour) gets a fresh figure; the
@@ -4802,6 +4879,18 @@ function buildHeldWeapon(name) {
   });
   return g;
 }
+// Where a handle really sits: the middle of the closed fist, measured on the
+// body in hand. A single offset tuned by eye only ever fits the one character
+// it was tuned on, and the game now has more than one.
+function gripPoint(rig, side, mount) {
+  const f = rig['fingers' + side]; if (!f || !f.Middle || !f.Middle[0]) return null;
+  fistHand(rig, side, 1.6, 1.1, 0);           // close it for the measurement; the next frame re-poses anyway
+  mount.updateWorldMatrix(true, true);
+  const knuckle = f.Middle[0].getWorldPosition(new THREE.Vector3());
+  const curl = (f.Middle[2] || f.Middle[1]);
+  if (!curl) return null;
+  return mount.worldToLocal(knuckle.add(curl.getWorldPosition(new THREE.Vector3())).multiplyScalar(0.5));
+}
 // Attach / swap / remove the held weapon on a player record to match `name`.
 function updateHeldWeapon(rec, name) {
   if (rec.heldWeapon === name) return;
@@ -4822,7 +4911,7 @@ function updateHeldWeapon(rec, name) {
     // sits in the middle of the closed fist and runs across the palm, the way
     // a handle is actually held; the wrist then turns (fistHand's flex) so the
     // blade hangs down when the arm is at rest.
-    w.position.set(0.04, -0.09, 0.0);   // palm side is +X: the grip sits inside the curl of the fingers
+    w.position.copy(gripPoint(rig, 'R', mount) || new THREE.Vector3(0.04, -0.09, 0));   // inside the curl of the fingers
     w.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), new THREE.Vector3(0, 0, 1));   // the handle runs across the palm along the knuckle line, blade out the thumb side
     mount.add(w);
     rig.weapon = w; rig.swingArm = rig.armR;
@@ -4909,6 +4998,7 @@ function solveArm(rec, rig, side, T, hintLocal) {
   const wrap = rec.mesh, [, , S, d1, hint, u, n, E, d2, tmp] = _lv, [qw, qp, qd, qwi] = _lq;
   const arm = side === 'L' ? rig.armL : rig.armR, fore = side === 'L' ? rig.foreL : rig.foreR, sx = side === 'L' ? 1 : -1;
   if (!arm || !fore) return;
+  const ud = rec.mesh.userData, ARM_UPPER = ud.armUpper || DEF_ARM_UPPER, ARM_FORE = ud.armFore || DEF_ARM_FORE;
   wrap.getWorldQuaternion(qw); qwi.copy(qw).invert();
   arm.getWorldPosition(S);
   u.subVectors(T, S); let d = u.length(); const reach = ARM_UPPER + ARM_FORE - 0.01; if (d > reach) { u.multiplyScalar(reach / d); d = reach; T.copy(S).add(u); } u.normalize();
@@ -4935,7 +5025,7 @@ function solveArm(rec, rig, side, T, hintLocal) {
 // direction; the elbow pivot then gets the rotation that turns the forearm's
 // rest direction onto the hand target, worked out from live world matrices.
 const _lv = Array.from({ length: 10 }, () => new THREE.Vector3()), _lq = Array.from({ length: 5 }, () => new THREE.Quaternion());
-const ARM_UPPER = 0.39, ARM_FORE = 0.31;   // the skinned human's upper arm / forearm
+const DEF_ARM_UPPER = 0.39, DEF_ARM_FORE = 0.31;   // the modular human's upper arm / forearm; other bodies measure their own
 function luteArms(rec, rig, strum, dt) {
   const g = rec.instrumentObj; if (!g || !rig.foreL || !rig.foreR || !rig.handL || !rig.handR) return;
   const wrap = rec.mesh, [tl, tr, S, d1, hint, u, n, E, d2, tmp] = _lv, [qw, qp, qd, qwi] = _lq;
@@ -5054,7 +5144,7 @@ function buildRig(wrap, style) {
   rig.handR = part(/^Hand_R$/); rig.handL = part(/^Hand_L$/); // skinned humans: weapon mounts on the hands
   rig.foreL = part(/^P_ForearmL$/); rig.foreR = part(/^P_ForearmR$/); // elbows (world-aligned pivots): x bends the forearm forward/up, z swings it across
   rig.wristL = part(/^P_HandL$/); rig.wristR = part(/^P_HandR$/);     // wrists, and the fingers (three-joint hands on the skinned humans)
-  for (const side of ['L', 'R']) { const f = {}; for (const n of ['Thumb', 'Index', 'Middle', 'Ring', 'Pinky']) f[n] = [part(new RegExp(`^P_${n}_01${side}$`)), part(new RegExp(`^P_${n}_02${side}$`))]; rig['fingers' + side] = f; }
+  for (const side of ['L', 'R']) { const f = {}; for (const n of ['Thumb', 'Index', 'Middle', 'Ring', 'Pinky']) f[n] = [part(new RegExp(`^P_${n}_01${side}$`)), part(new RegExp(`^P_${n}_02${side}$`)), part(new RegExp(`^P_${n}_03${side}$`))]; rig['fingers' + side] = f; }
   // Which arm carries the weapon decides which one swings on an attack.
   rig.swingArm = null;
   if (rig.weapon) {

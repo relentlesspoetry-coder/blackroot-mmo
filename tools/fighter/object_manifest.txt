@@ -1,0 +1,129 @@
+Back Cloth               CLOTHING                        37 verts    37 faces  groups: Cloth_Back_01, Cloth_Back_02, Cloth_Back_03, Pelvis
+Back Tassets             CLOTHING                       116 verts   116 faces  groups: Cloth_Back_01, Cloth_Back_02, Cloth_Back_03, Pelvis
+Beard                    BODY                           107 verts   138 faces  groups: Head, Jaw
+Belt                     CLOTHING                       264 verts   246 faces  groups: Pelvis, Spine_01
+Belt Buckle              ACCESSORIES                     70 verts    48 faces  groups: Pelvis, Spine_01
+Body                     BODY                           813 verts   852 faces  groups: Chest, Clavicle_L, Clavicle_R, Foot_L, Foot_R, Forearm_L, Forearm_R, Forearm_Twist_L, Forearm_Twist_R, Hand_L, Hand_R, Head, Index_01_L, Index_01_R, Index_02_L, Index_02_R, Index_03_L, Index_03_R, Jaw, Middle_01_L, Middle_01_R, Middle_02_L, Middle_02_R, Middle_03_L, Middle_03_R, Neck, Pelvis, Pinky_01_L, Pinky_01_R, Pinky_02_L, Pinky_02_R, Pinky_03_L, Pinky_03_R, Ring_01_L, Ring_01_R, Ring_02_L, Ring_02_R, Ring_03_L, Ring_03_R, Shin_L, Shin_R, Spine_01, Spine_02, Spine_03, Thigh_L, Thigh_R, Thigh_Twist_L, Thigh_Twist_R, Thumb_01_L, Thumb_01_R, Thumb_02_L, Thumb_02_R, Toe_L, Toe_R, UpperArm_L, UpperArm_R, UpperArm_Twist_L, UpperArm_Twist_R
+Chest Harness            ARMOR                          640 verts   598 faces  groups: Chest, Clavicle_L, Clavicle_R, Spine_01, Spine_02, Spine_03, UpperArm_L, UpperArm_R, UpperArm_Twist_L, UpperArm_Twist_R
+Eyebrows                 BODY                            16 verts    12 faces  groups: Head
+Eyes                     BODY                            32 verts    24 faces  groups: Head
+Front Cloth              CLOTHING                        37 verts    37 faces  groups: Cloth_Front_01, Cloth_Front_02, Cloth_Front_03, Pelvis
+Front Tassets            CLOTHING                       174 verts   174 faces  groups: Cloth_Front_01, Cloth_Front_02, Cloth_Front_03, Pelvis
+Fur Mantle               CLOTHING                       195 verts   345 faces  groups: Chest, Clavicle_L, Clavicle_R, Head, Neck, Spine_02, Spine_03
+Hair                     BODY                           125 verts   209 faces  groups: Head
+Left Back Pouch          ACCESSORIES                     24 verts    18 faces  groups: Pouch_L
+Left Belt Key            ACCESSORIES                     16 verts    12 faces  groups: Pelvis, Spine_01
+Left Belt Pouch          ACCESSORIES                     24 verts    18 faces  groups: Pouch_L
+Left Boot                CLOTHING                       102 verts   110 faces  groups: Foot_L, Shin_L, Toe_L
+Left Boot Armor          ARMOR                          131 verts   105 faces  groups: Shin_L, Toe_L
+Left Boot Fur Trim       CLOTHING                        48 verts    62 faces  groups: Shin_L
+Left Boot Straps         CLOTHING                       196 verts   188 faces  groups: Foot_L, Shin_L
+Left Bracer              ARMOR                          336 verts   330 faces  groups: Forearm_Twist_L
+Left Bracer Plates       ARMOR                          160 verts    96 faces  groups: Forearm_Twist_L
+Left Ear                 BODY                             8 verts     6 faces  groups: Head
+Left Hip Bone Charm      ACCESSORIES                     26 verts    20 faces  groups: Bone_Charm
+Left Knee Guard          ARMOR                          138 verts   108 faces  groups: Knee_Guard_L
+Left Knee Guard Straps   ARMOR                           96 verts    96 faces  groups: Knee_Guard_L
+Left Pauldron            ARMOR                          510 verts   380 faces  groups: Pauldron_L
+Left Pauldron Straps     ARMOR                           96 verts    96 faces  groups: Pauldron_L
+Left Tassets             CLOTHING                       132 verts   128 faces  groups: Pelvis, Tasset_L_01, Tasset_L_02
+Mouth                    BODY                             8 verts     6 faces  groups: Head, Jaw
+Pants                    CLOTHING                       192 verts   195 faces  groups: Pelvis, Shin_L, Shin_R, Spine_01, Thigh_L, Thigh_R, Thigh_Twist_L, Thigh_Twist_R
+Right Back Skull Charm   ACCESSORIES                     36 verts    28 faces  groups: Skull_Charm
+Right Belt Chain         ACCESSORIES                     28 verts    26 faces  groups: Pelvis, Spine_01
+Right Belt Flask         ACCESSORIES                     40 verts    32 faces  groups: Pouch_R
+Right Belt Pouch         ACCESSORIES                     24 verts    18 faces  groups: Pouch_R
+Right Boot               CLOTHING                       102 verts   110 faces  groups: Foot_R, Shin_R, Toe_R
+Right Boot Armor         ARMOR                          131 verts   105 faces  groups: Shin_R, Toe_R
+Right Boot Fur Trim      CLOTHING                        48 verts    62 faces  groups: Shin_R
+Right Boot Straps        CLOTHING                       196 verts   188 faces  groups: Foot_R, Shin_R
+Right Bracer             ARMOR                          336 verts   330 faces  groups: Forearm_Twist_R
+Right Bracer Plates      ARMOR                          160 verts    96 faces  groups: Forearm_Twist_R
+Right Ear                BODY                             8 verts     6 faces  groups: Head
+Right Tassets            CLOTHING                       132 verts   128 faces  groups: Pelvis, Tasset_R_01, Tasset_R_02
+Scars                    BODY                            96 verts    72 faces  groups: Chest, Clavicle_L, Head, Spine_02, Spine_03, UpperArm_L, UpperArm_R, UpperArm_Twist_L, UpperArm_Twist_R
+
+BONES (83):
+  Root                 parent -                  deform
+  Pelvis               parent Root               deform
+  Spine_01             parent Pelvis             deform
+  Spine_02             parent Spine_01           deform
+  Spine_03             parent Spine_02           deform
+  Chest                parent Spine_03           deform
+  Neck                 parent Chest              deform
+  Head                 parent Neck               deform
+  Jaw                  parent Head               deform
+  Clavicle_L           parent Chest              deform
+  UpperArm_L           parent Clavicle_L         deform
+  UpperArm_Twist_L     parent UpperArm_L         deform
+  Forearm_L            parent UpperArm_L         deform
+  Forearm_Twist_L      parent Forearm_L          deform
+  Hand_L               parent Forearm_L          deform
+  Pinky_01_L           parent Hand_L             deform
+  Pinky_02_L           parent Pinky_01_L         deform
+  Pinky_03_L           parent Pinky_02_L         deform
+  Ring_01_L            parent Hand_L             deform
+  Ring_02_L            parent Ring_01_L          deform
+  Ring_03_L            parent Ring_02_L          deform
+  Middle_01_L          parent Hand_L             deform
+  Middle_02_L          parent Middle_01_L        deform
+  Middle_03_L          parent Middle_02_L        deform
+  Index_01_L           parent Hand_L             deform
+  Index_02_L           parent Index_01_L         deform
+  Index_03_L           parent Index_02_L         deform
+  Thumb_01_L           parent Hand_L             deform
+  Thumb_02_L           parent Thumb_01_L         deform
+  Pauldron_L           parent Clavicle_L         deform
+  Clavicle_R           parent Chest              deform
+  UpperArm_R           parent Clavicle_R         deform
+  UpperArm_Twist_R     parent UpperArm_R         deform
+  Forearm_R            parent UpperArm_R         deform
+  Forearm_Twist_R      parent Forearm_R          deform
+  Hand_R               parent Forearm_R          deform
+  Pinky_01_R           parent Hand_R             deform
+  Pinky_02_R           parent Pinky_01_R         deform
+  Pinky_03_R           parent Pinky_02_R         deform
+  Ring_01_R            parent Hand_R             deform
+  Ring_02_R            parent Ring_01_R          deform
+  Ring_03_R            parent Ring_02_R          deform
+  Middle_01_R          parent Hand_R             deform
+  Middle_02_R          parent Middle_01_R        deform
+  Middle_03_R          parent Middle_02_R        deform
+  Index_01_R           parent Hand_R             deform
+  Index_02_R           parent Index_01_R         deform
+  Index_03_R           parent Index_02_R         deform
+  Thumb_01_R           parent Hand_R             deform
+  Thumb_02_R           parent Thumb_01_R         deform
+  Thigh_L              parent Pelvis             deform
+  Thigh_Twist_L        parent Thigh_L            deform
+  Shin_L               parent Thigh_L            deform
+  Foot_L               parent Shin_L             deform
+  Toe_L                parent Foot_L             deform
+  Knee_Guard_L         parent Thigh_L            deform
+  Tasset_L_01          parent Pelvis             deform
+  Tasset_L_02          parent Tasset_L_01        deform
+  Pouch_L              parent Pelvis             deform
+  Thigh_R              parent Pelvis             deform
+  Thigh_Twist_R        parent Thigh_R            deform
+  Shin_R               parent Thigh_R            deform
+  Foot_R               parent Shin_R             deform
+  Toe_R                parent Foot_R             deform
+  Tasset_R_01          parent Pelvis             deform
+  Tasset_R_02          parent Tasset_R_01        deform
+  Pouch_R              parent Pelvis             deform
+  Cloth_Front_01       parent Pelvis             deform
+  Cloth_Front_02       parent Cloth_Front_01     deform
+  Cloth_Front_03       parent Cloth_Front_02     deform
+  Cloth_Back_01        parent Pelvis             deform
+  Cloth_Back_02        parent Cloth_Back_01      deform
+  Cloth_Back_03        parent Cloth_Back_02      deform
+  Skull_Charm          parent Pelvis             deform
+  Bone_Charm           parent Pelvis             deform
+  IK_Foot_L            parent Root               control
+  Pole_Knee_L          parent Root               control
+  IK_Hand_L            parent Root               control
+  Pole_Elbow_L         parent Root               control
+  IK_Foot_R            parent Root               control
+  Pole_Knee_R          parent Root               control
+  IK_Hand_R            parent Root               control
+  Pole_Elbow_R         parent Root               control
