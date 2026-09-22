@@ -26,6 +26,12 @@
   #login .lookrow label { flex: 1; display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #8fa3bf; }
   #login select { background: #0c131d; border: 1px solid #2a3c54; color: #e7eef7; padding: 8px; border-radius: 8px; font-size: 13px; }
   #login input[type=color] { padding: 2px; height: 36px; width: 100%; }
+  #login .classrow { display: flex; gap: 8px; }
+  #login .classopt { flex: 1; display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; border: 1px solid #2a3c54; background: #0c131d; cursor: pointer; color: #8fa3bf; font-size: 12px; }
+  #login .classopt img { width: 40px; height: 40px; flex: none; }
+  #login .classopt b { display: block; color: #e7eef7; font-size: 13px; }
+  #login .classopt.sel { border-color: #ffd24a; background: #1a2230; box-shadow: 0 0 0 1px #ffd24a44 inset; }
+  #login .classopt:hover { border-color: #4a6a94; }
   #login button { background: linear-gradient(90deg,#3b82f6,#8b5cf6); border: 0; color: #fff; padding: 12px; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; }
   #login button:hover { filter: brightness(1.1); }
   #login small { color: #61748f; line-height: 1.5; }
@@ -47,6 +53,17 @@
   .bar > i { position: absolute; inset: 0; transform-origin: left; transition: transform .15s; }
   #hpfill { background: linear-gradient(90deg,#1c6b2a,#3fbf55,#7de08c); }
   #stamfill { background: linear-gradient(90deg,#5c0c0c,#c62222,#ff6a4a); }
+  .bar.stam.mana #stamfill { background: linear-gradient(90deg,#0d2a6b,#2757c9,#6aa7ff); }
+  /* The ally the Cleric has targeted: name, health and any ward on them. Click to clear. */
+  #allyframe { display: none; margin-top: 6px; padding: 6px 10px; border-radius: 8px; background: #2e2820; border: 2px solid #1c150e; box-shadow: 0 8px 24px #000a; cursor: pointer; }
+  #allyframe .an { font-size: 13px; font-weight: 700; color: #ffdf9e; text-shadow: 0 1px 2px #000; margin-bottom: 4px; display: flex; justify-content: space-between; }
+  #allyframe .an span { font-weight: 400; color: #b9ad90; font-size: 11px; }
+  #allyframe .bar { margin-bottom: 0; height: 14px; }
+  #allyfill { background: linear-gradient(90deg,#1c6b2a,#3fbf55,#7de08c); }
+  #allyward { position: absolute; top: 0; bottom: 0; left: 0; background: linear-gradient(90deg,#c9a640aa,#ffe28aaa); transform-origin: left; }
+  .splat.healamt { background: radial-gradient(circle at 40% 35%, #7de08c, #1c6b2a); }
+  .splat.healamt.crit { background: radial-gradient(circle at 40% 35%, #fff3b0, #d8a81c); color: #2a1a00; }
+  .splat.absorb { background: radial-gradient(circle at 40% 35%, #ffe9a0, #b8901c); color: #2a1a00; }
   #momentum { display: flex; gap: 5px; justify-content: center; margin-bottom: 5px; height: 10px; }
   #momentum i { width: 10px; height: 10px; border-radius: 50%; background: #2a2038; border: 1px solid #6a4f9a; }
   #momentum i.on { background: radial-gradient(circle at 40% 35%, #ffd27a, #d8781c); border-color: #ffd27a; box-shadow: 0 0 6px #ffb347aa; }
@@ -348,6 +365,10 @@
     <input id="nameInput" maxlength="16" placeholder="Character name" autocomplete="off" />
     <div class="lookrow"><label>Hair <select id="hairSel"></select></label><label>Hair colour <input type="color" id="hairCol" value="#4a2e1a"></label></div>
     <div class="lookrow"><label>Outfit <select id="outfitSel"></select></label><label>Skin <input type="color" id="skinCol" value="#cba281"></label></div>
+    <div class="classrow" id="classRow">
+      <div class="classopt sel" data-cls="fighter"><img src="ui/fighter/emblem.png" alt=""><div><b>Fighter</b>Two-handed bruiser. Rage.</div></div>
+      <div class="classopt" data-cls="cleric"><img src="ui/cleric/emblem.png" alt=""><div><b>Cleric</b>Holy healer. Mana.</div></div>
+    </div>
     <button id="playBtn">Enter World</button>
     <small>Left-click to walk · left-click a monster to attack · right-click anything for options — mine rock veins, fish at the river, cook raw food at a campfire · arrow keys or drag to look · scroll to zoom · Enter to chat. WASD also moves. Open a second window to play together.</small>
   </div>
@@ -364,6 +385,10 @@
         <div class="bar stam"><i id="stamfill"></i><span><em id="stamlabel">Rage:</em><b id="stamtext">0/100</b></span></div>
       </div>
       <img id="cemblem" src="ui/fighter/emblem.png" alt="">
+    </div>
+    <div id="allyframe" title="Your target for friendly spells — click to clear">
+      <div class="an"><b id="allyname">—</b><span id="allysub"></span></div>
+      <div class="bar"><i id="allyfill"></i><i id="allyward"></i><span><em>HP:</em><b id="allytext"></b></span></div>
     </div>
   </div>
   <!-- Action bar: class xp above, six ability slots (keys 1-6) below -->
@@ -1126,10 +1151,10 @@ let snapPrev = null, snapCur = null, snapPrevT = 0, snapCurT = 0;
 const SNAP_INTERP = 100; // ms behind for smooth interpolation
 const ENTITY_CULL_D = 150; // mobs further than this from the camera aren't drawn
 
-function connect(name, look) {
+function connect(name, look, cls) {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(`${proto}://${location.host}`);
-  ws.onopen = () => ws.send(JSON.stringify({ t: 'join', name, look }));
+  ws.onopen = () => ws.send(JSON.stringify({ t: 'join', name, look, cls }));
   ws.onmessage = (e) => handle(JSON.parse(e.data));
   ws.onclose = () => addChat('System', 'Disconnected from server.', true);
 }
@@ -1149,6 +1174,7 @@ function handle(m) {
       if (m.gate != null) gateTarget = m.gate;
       applyDepleted(m.depleted);
       syncHazards(m.hazards);
+      syncSanctuaries(m.sanct);
       updateHudFromSnapshot(m);
       break;
     case 'transition':
@@ -1204,7 +1230,7 @@ function handle(m) {
 let renderer, scene, camera, clock;
 let fireflies = null;
 let critters = [];               // ambient flying bugs (butterflies by day, moths by night)
-let targetRing = null;
+let targetRing = null, friendRing = null;
 let hemiLight = null, sunLight = null;
 let caveMix = 0; // 0 = surface, 1 = deep underground; smoothly eased by player depth
 const _caveFog = new THREE.Color(0x161a22); // dark blue-grey, not void-black, so distance reads as dim rock
@@ -1515,6 +1541,9 @@ function loadZone(zdata) {
   targetRing = new THREE.Mesh(new THREE.RingGeometry(0.7, 0.92, 24),
     new THREE.MeshBasicMaterial({ color: 0xff5a4a, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false }));
   targetRing.rotation.x = -Math.PI / 2; targetRing.visible = false; scene.add(targetRing);
+  friendRing = new THREE.Mesh(new THREE.RingGeometry(0.7, 0.92, 24),
+    new THREE.MeshBasicMaterial({ color: 0xffd24a, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false }));
+  friendRing.rotation.x = -Math.PI / 2; friendRing.visible = false; scene.add(friendRing);
 
   _lightGroupState._init = false; // scene rebuilt: re-apply light groups next frame
   showZoneTitle();
@@ -1604,7 +1633,13 @@ function buildMountains(poly) {
   const vert = (i, j) => {
     const k = j * (nx + 1) + i; if (vid[k] >= 0) return vid[k];
     const x = mnx + i * C, z = mnz + j * C, d = dist[k];
-    const h = mountainHeight(d, x, z);
+    // Inside the outline the belt's cells tuck under the terrain (the ground
+    // there is carved for rivers — a flat sheet at 0 would float over the
+    // water and fight the grass); just outside, the foot inherits the carve
+    // so a river can run out under the range instead of into a wall.
+    let h;
+    if (d <= 0) h = terrainHeight(x, z) - 0.25;
+    else { h = mountainHeight(d, x, z); if (d < 10) h += terrainHeight(x, z) * (1 - d / 10); }
     // a touch of jitter in the plane so the grid doesn't read as a grid
     const jx = (vnoise2(x / 7 + 5, z / 7, 504) - 0.5) * 4.5 * Math.min(1, Math.max(0, d / 6)), jz = (vnoise2(x / 7, z / 7 + 5, 505) - 0.5) * 4.5 * Math.min(1, Math.max(0, d / 6));
     vid[k] = pos.length / 3; pos.push(x + jx, h, z + jz);
@@ -5067,8 +5102,11 @@ function animateEntity(rec, e, kind, dt) {
     // An ability animation overrides whatever the walk/attack logic decided.
     if (rig.anim) {
       const an = rig.anim, A = ABILITY_ANIMS[an.id];
-      an.t += dt; const u = Math.min(1, an.t / an.dur);
-      const P = {}; A.pose(u, P, rig);
+      an.t += dt; const hold = an.hold || 0, casting = hold > 0 && an.t < hold;
+      const u = casting ? 0 : Math.min(1, (an.t - hold) / an.dur);
+      const P = {};
+      if (casting) { if (A.castPose) A.castPose(an.t, P, hold); else A.pose(0, P, rig); if (!an.castFx) { an.castFx = true; beginCastFx(rec, an.id); } }
+      else { if (an.castFx) { an.castFx = false; endCastFx(rec); } A.pose(u, P, rig); }
       if (P.lArm != null) lArm = P.lArm; if (P.rArm != null) rArm = P.rArm; if (P.lArmZ != null) lArmZ = P.lArmZ; if (P.rArmZ != null) rArmZ = P.rArmZ;
       if (P.lLeg != null) lLeg = P.lLeg; if (P.rLeg != null) rLeg = P.rLeg; if (P.lShin != null) lShin = P.lShin; if (P.rShin != null) rShin = P.rShin;
       if (P.bodyX != null) b.rotation.x = P.bodyX; if (P.bodyY != null) b.rotation.y = P.bodyY; if (P.bodyZ != null) b.rotation.z = P.bodyZ;
@@ -5076,8 +5114,8 @@ function animateEntity(rec, e, kind, dt) {
       if (rig.head) rig.head.rotation.x = P.head || 0;
       // Effects keyed to the animation's beats, at the character's feet, facing its yaw.
       const mp = rec.mesh.position, yaw = rec.mesh.rotation.y;
-      for (let i = 0; i < (A.fx || []).length; i++) { const f = A.fx[i]; if (u >= f.at && !an.fired.has(i)) { an.fired.add(i); spawnFx(f.kind, mp.x, mp.y, mp.z, yaw, f); } }
-      if (an.t >= an.dur) rig.anim = null;
+      if (!casting) for (let i = 0; i < (A.fx || []).length; i++) { const f = A.fx[i]; if (u >= f.at && !an.fired.has(i)) { an.fired.add(i); spawnFx(f.kind, mp.x, mp.y, mp.z, yaw, f); } }
+      if (an.t >= hold + an.dur) rig.anim = null;
     }
     updateWeaponTrail(rec, !!(rig.anim && ABILITY_ANIMS[rig.anim.id].trail !== false), dt);
     if (rig.armL) rig.armL.rotation.set(lArm, 0, lArmZ);
@@ -5476,6 +5514,11 @@ function updateControls(dt) {
       const s = 1 + Math.sin(t) * 0.06; targetRing.scale.set(s, s, s);
     } else targetRing.visible = false;
   }
+  if (friendRing) {
+    const frec = friendId != null ? entityMeshes.get(friendId) : null;
+    if (frec && frec.data) { friendRing.visible = true; friendRing.position.set(frec.mesh.position.x, 0.12, frec.mesh.position.z); const s = 1 + Math.sin(performance.now() / 500) * 0.05; friendRing.scale.set(s, s, s); }
+    else friendRing.visible = false;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -5579,6 +5622,7 @@ function addEventListeners() {
     if (e.key === 'Enter') { chatInput.focus(); e.preventDefault(); return; }
     if (e.key === 'F3') { e.preventDefault(); toggleEditor(); return; }
     if (e.key === 'Tab') { e.preventDefault(); tabTarget(); return; }
+    if (e.key.toLowerCase() === 'f') { targetNearestAlly(); return; }   // nearest ally as the friendly target
     if (e.key.toLowerCase() === 'i') { toggleBag(); return; }
     if (e.key.toLowerCase() === 'q') { toggleQuests(); return; }
     if (e.key.toLowerCase() === 'e') { toggleEquip(); return; }
@@ -5629,6 +5673,10 @@ function pickAt(e) {
       const rec = entityMeshes.get(u.pickId);
       if (rec && rec.data && rec.data.alive) return { kind: 'monster', id: u.pickId, data: rec.data, point: h.point };
     }
+    if (u.pickKind === 'player' && u.pickId != null) {
+      const rec = entityMeshes.get(u.pickId);
+      if (rec && rec.data) return { kind: 'player', id: u.pickId, data: rec.data, point: h.point };
+    }
     if (u.pickKind === 'chest' && u.pickId != null) return { kind: 'chest', id: u.pickId, point: h.point };
     if (u.pickKind === 'fishspot' && u.pickId != null) { const s = fishSpots.find(f => f.id === u.pickId); return { kind: 'fishspot', id: u.pickId, tier: s ? s.tier : '', point: h.point }; }
     if (u.pickKind === 'cookfire' && u.pickId != null) return { kind: 'cookfire', id: u.pickId, point: h.point };
@@ -5658,6 +5706,13 @@ function optionsFor(pk) {
     { label: `Attack <b>${escapeHtml(pk.data.name)}</b> <span class="lvl">(level ${pk.data.level})</span>`, act: () => attackMonster(pk.id) },
     { label: `Examine ${escapeHtml(pk.data.name)}`, act: () => examineText(monsterExamine(pk.data)) },
   ];
+  if (pk.kind === 'player') {
+    const self = pk.id === myId;
+    return [
+      { label: self ? 'Target <b>yourself</b>' : `Target <b>${escapeHtml(pk.data.name)}</b> <span class="lvl">(level ${pk.data.level}${pk.data.alive ? '' : ', dead'})</span>`, act: () => setFriend(self ? null : pk.id) },
+      { label: `Examine ${escapeHtml(self ? 'yourself' : pk.data.name)}`, act: () => examineText(self ? 'That would be you.' : `${pk.data.name}, a level ${pk.data.level} ${pk.data.cls === 'cleric' ? 'Cleric' : 'Fighter'}.`) },
+    ];
+  }
   if (pk.kind === 'chest') return [
     { label: 'Open <b>Treasure Chest</b>', act: () => openChestAt(pk.id) },
     { label: 'Examine Chest', act: () => examineText('A sturdy chest. Wonder what’s inside.') },
@@ -5724,6 +5779,33 @@ function monsterExamine(d) {
   return (d.elite ? 'An elite foe — ' : '') + (t[d.type] || 'A dangerous creature.');
 }
 
+// The Cleric's friendly target: a player picked with a click (or F for the
+// nearest ally). Heals and wards go to them; with none, to yourself.
+let friendId = null;
+function setFriend(id) {
+  friendId = id != null && id !== myId ? id : null;
+  ws?.send(JSON.stringify({ t: 'target', id: friendId }));
+  if (friendId != null) { const r = entityMeshes.get(friendId); if (r) { spawnMarker(r.mesh.position.x, r.mesh.position.z, 0xffd24a); sfx.play('target_select', { vol: 0.35, rate: 1.2 }); } }
+  updateAllyFrame(snapCur);
+}
+function targetNearestAlly() {
+  const me = entityMeshes.get(myId); if (!me) return;
+  let best = null, bd = 40 * 40;
+  for (const [id, rec] of entityMeshes) { if (id === myId || rec.kind !== 'player' || !rec.data) continue; const d = (rec.mesh.position.x - me.mesh.position.x) ** 2 + (rec.mesh.position.z - me.mesh.position.z) ** 2; if (d < bd) { bd = d; best = id; } }
+  if (best != null) setFriend(best === friendId ? null : best); else setFriend(null);
+}
+function updateAllyFrame(snap) {
+  const el = document.getElementById('allyframe'); if (!el) return;
+  const t = friendId != null && snap ? snap.players.find(p => p.id === friendId) : null;
+  if (!t) { el.style.display = 'none'; if (friendId != null && snap && snapCur) { /* left the zone */ friendId = null; } return; }
+  el.style.display = 'block';
+  document.getElementById('allyname').textContent = t.name;
+  document.getElementById('allysub').textContent = `Lv ${t.level} ${t.cls === 'cleric' ? 'Cleric' : 'Fighter'}${t.alive ? '' : ' · dead'}`;
+  document.getElementById('allyfill').style.transform = `scaleX(${Math.max(0, t.hp / t.maxHp)})`;
+  document.getElementById('allyward').style.transform = `scaleX(${Math.min(1, (t.ward || 0) / t.maxHp)})`;
+  document.getElementById('allytext').textContent = `${t.hp}/${t.maxHp}${t.ward ? ' +' + t.ward : ''}`;
+}
+document.getElementById('allyframe').onclick = () => setFriend(null);
 function attackMonster(id) {
   const rec = entityMeshes.get(id);
   if (!rec || !rec.data || !rec.data.alive) return;
@@ -5980,6 +6062,101 @@ const ABILITY_ANIMS = {
     P.rArmZ = kf(u, [[0, 0], [0.35, -1.3], [0.8, -1.2], [1, 0]]); P.lArmZ = kf(u, [[0, 0], [0.35, 1.3], [0.8, 1.2], [1, 0]]);
     P.bodyZ = Math.sin(u * 50) * 0.03 * kf(u, [[0.3, 0], [0.4, 1], [0.8, 1], [0.9, 0]]);
   }, fx: [{ at: 0.38, kind: 'sfx', key: 'berserkers_roar' }, { at: 0.4, kind: 'shock', r: 4.0, color: 0xff6a3c, shake: 0.1 }, { at: 0.4, kind: 'glow', color: 0xff7a1a }, { at: 0.7, kind: 'ring', r: 2.2, color: 0xff8a4a }] },
+  // ---- Cleric: casts hold a praying pose (castPose, t in seconds) then release (pose, u 0..1). No weapon trails.
+  minor_heal: { trail: false, dur: 0.6, castPose(t, P) {   // hands cupped at the chest, head bowed, a slow sway
+    P.rArm = -1.25 + Math.sin(t * 3) * 0.05; P.lArm = -1.25 + Math.sin(t * 3) * 0.05; P.rArmZ = 0.45; P.lArmZ = -0.45; P.head = 0.35; P.bodyX = 0.08;
+  }, pose(u, P) {                                          // release: the hands open and lift toward the ally
+    P.rArm = kf(u, [[0, -1.25], [0.3, -1.9], [1, 0]]); P.lArm = kf(u, [[0, -1.25], [0.3, -1.9], [1, 0]]); P.rArmZ = kf(u, [[0, 0.45], [0.3, -0.4], [1, 0]]); P.lArmZ = kf(u, [[0, -0.45], [0.3, 0.4], [1, 0]]);
+    P.head = kf(u, [[0, 0.35], [0.3, -0.25], [1, 0]]); P.bodyX = kf(u, [[0, 0.08], [0.3, -0.1], [1, 0]]);
+  }, fx: [{ at: 0.05, kind: 'sfx', key: 'heal_release' }, { at: 0.1, kind: 'glow', color: 0xffd86a }, { at: 0.1, kind: 'rise', n: 10, color: 0xfff1c8, y: 1.0 }] },
+  greater_heal: { trail: false, dur: 0.8, castPose(t, P, hold) {   // arms climb overhead over the long cast, light gathering between them
+    const k = Math.min(1, t / Math.max(0.5, hold * 0.8));
+    P.rArm = -1.1 - 1.9 * k; P.lArm = -1.1 - 1.9 * k; P.rArmZ = 0.3 - 0.5 * k; P.lArmZ = -0.3 + 0.5 * k; P.head = 0.3 - 0.7 * k; P.bodyX = -0.15 * k; P.bob = 0.02 * Math.sin(t * 4);
+  }, pose(u, P) {                                          // release: the arms sweep down and out, the light pours forward
+    P.rArm = kf(u, [[0, -3.0], [0.35, -1.5], [1, 0]]); P.lArm = kf(u, [[0, -3.0], [0.35, -1.5], [1, 0]]); P.rArmZ = kf(u, [[0, -0.2], [0.35, -0.9], [1, 0]]); P.lArmZ = kf(u, [[0, 0.2], [0.35, 0.9], [1, 0]]);
+    P.head = kf(u, [[0, -0.4], [0.4, 0.2], [1, 0]]); P.bodyX = kf(u, [[0, -0.15], [0.35, 0.2], [1, 0]]);
+  }, fx: [{ at: 0.05, kind: 'sfx', key: 'heal_big' }, { at: 0.1, kind: 'flash', r: 2.2, color: 0xfff3c0 }, { at: 0.1, kind: 'rise', n: 22, color: 0xfff1c8, y: 1.2 }, { at: 0.12, kind: 'ring', r: 2.0, color: 0xffd86a }] },
+  smite: { trail: false, dur: 0.55, castPose(t, P) {       // right hand drawn back cradling the light, left guarding
+    P.rArm = 0.9 + Math.sin(t * 5) * 0.04; P.rArmZ = -0.7; P.lArm = -1.0; P.lArmZ = 0.2; P.bodyY = -0.5; P.bodyX = -0.05;
+  }, pose(u, P) {                                          // release: the hand throws it
+    P.rArm = kf(u, [[0, 0.9], [0.25, -1.7], [1, 0]]); P.rArmZ = kf(u, [[0, -0.7], [0.25, 0.1], [1, 0]]); P.lArm = kf(u, [[0, -1.0], [0.4, 0.3], [1, 0]]); P.bodyY = kf(u, [[0, -0.5], [0.25, 0.4], [1, 0]]); P.bodyX = kf(u, [[0, -0.05], [0.25, 0.25], [1, 0]]);
+  }, fx: [{ at: 0.05, kind: 'sfx', key: 'smite' }, { at: 0.2, kind: 'streak', fwd: 1.6, y: 1.2, len: 3.0, color: 0xfff0b0 }, { at: 0.2, kind: 'flash', r: 1.0, color: 0xfff6d0, fwd: 1.2 }] },
+  renewing_prayer: { trail: false, dur: 0.75, pose(u, P) {    // palms together, a bow, then open
+    P.rArm = kf(u, [[0, 0], [0.3, -1.3], [0.6, -1.3], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.3, -1.3], [0.6, -1.3], [1, 0]]); P.rArmZ = kf(u, [[0, 0], [0.3, 0.5], [0.6, 0.5], [0.8, -0.3], [1, 0]]); P.lArmZ = kf(u, [[0, 0], [0.3, -0.5], [0.6, -0.5], [0.8, 0.3], [1, 0]]);
+    P.head = kf(u, [[0, 0], [0.35, 0.45], [0.7, 0.45], [1, 0]]); P.bodyX = kf(u, [[0, 0], [0.35, 0.15], [0.7, 0.15], [1, 0]]);
+  }, fx: [{ at: 0.3, kind: 'sfx', key: 'prayer' }, { at: 0.6, kind: 'glyph', r: 1.2, color: 0xffd86a }, { at: 0.6, kind: 'rise', n: 8, color: 0xfff1c8, y: 1.0 }] },
+  cleanse: { trail: false, dur: 0.6, pose(u, P) {           // one sweeping cut of the hand across the body
+    P.rArm = kf(u, [[0, 0], [0.3, -1.6], [0.6, -1.4], [1, 0]]); P.rArmZ = kf(u, [[0, 0], [0.3, 0.9], [0.6, -1.0], [1, 0]]); P.bodyY = kf(u, [[0, 0], [0.3, 0.35], [0.6, -0.35], [1, 0]]);
+  }, fx: [{ at: 0.35, kind: 'sfx', key: 'cleanse' }, { at: 0.45, kind: 'flash', r: 1.5, color: 0xffffff }, { at: 0.45, kind: 'arc', r: 1.6, spread: 2.4, color: 0xfff6d0 }] },
+  holy_ward: { trail: false, dur: 0.7, pose(u, P) {         // arms flung out then crossed over the chest as the ward closes
+    P.rArm = kf(u, [[0, 0], [0.3, -1.5], [0.6, -1.2], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.3, -1.5], [0.6, -1.2], [1, 0]]); P.rArmZ = kf(u, [[0, 0], [0.3, -1.2], [0.6, 0.9], [1, 0]]); P.lArmZ = kf(u, [[0, 0], [0.3, 1.2], [0.6, -0.9], [1, 0]]);
+    P.bodyX = kf(u, [[0, 0], [0.3, -0.15], [0.6, 0.1], [1, 0]]);
+  }, fx: [{ at: 0.3, kind: 'sfx', key: 'ward' }, { at: 0.55, kind: 'ring', r: 1.6, color: 0xffe28a }, { at: 0.55, kind: 'glow', color: 0xffe28a }] },
+  radiant_touch: { trail: false, dur: 0.5, pose(u, P) {     // a quick reach, the palm out
+    P.rArm = kf(u, [[0, 0], [0.25, -1.7], [0.6, -1.6], [1, 0]]); P.rArmZ = kf(u, [[0, 0], [0.25, 0.1], [1, 0]]); P.bodyX = kf(u, [[0, 0], [0.25, 0.25], [1, 0]]); P.lLeg = kf(u, [[0, 0], [0.25, -0.5], [1, 0]]);
+  }, fx: [{ at: 0.2, kind: 'sfx', key: 'heal_release' }, { at: 0.25, kind: 'flash', r: 1.6, color: 0xfff6d0, fwd: 0.9 }, { at: 0.25, kind: 'rise', n: 12, color: 0xfff1c8, y: 1.1 }] },
+  turn_undead: { trail: false, dur: 0.7, castPose(t, P) {   // the holy symbol thrust overhead
+    P.rArm = -3.0; P.rArmZ = 0.1; P.lArm = -0.6; P.lArmZ = 0.5; P.head = -0.4; P.bodyX = -0.15;
+  }, pose(u, P) {                                          // and slammed forward at them
+    P.rArm = kf(u, [[0, -3.0], [0.3, -1.6], [1, 0]]); P.lArm = kf(u, [[0, -0.6], [0.3, -1.4], [1, 0]]); P.lArmZ = kf(u, [[0, 0.5], [0.3, 0.3], [1, 0]]); P.head = kf(u, [[0, -0.4], [0.3, 0.1], [1, 0]]); P.bodyX = kf(u, [[0, -0.15], [0.3, 0.35], [1, 0]]);
+    P.rLeg = kf(u, [[0, 0], [0.3, -0.7], [1, 0]]);
+  }, fx: [{ at: 0.05, kind: 'sfx', key: 'turn' }, { at: 0.2, kind: 'flash', r: 3.0, color: 0xfff6d0, fwd: 1.0 }, { at: 0.2, kind: 'shock', r: 5.0, color: 0xffe9a0, shake: 0.08 }, { at: 0.2, kind: 'streak', fwd: 2.0, y: 1.3, len: 5.0, color: 0xfff6d0 }] },
+  prayer_of_mending: { trail: false, dur: 0.7, pose(u, P) {  // hands to the heart, then offered forward
+    P.rArm = kf(u, [[0, 0], [0.3, -1.4], [0.6, -1.7], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.3, -1.4], [0.6, -1.7], [1, 0]]); P.rArmZ = kf(u, [[0, 0], [0.3, 0.6], [0.6, 0.15], [1, 0]]); P.lArmZ = kf(u, [[0, 0], [0.3, -0.6], [0.6, -0.15], [1, 0]]);
+    P.head = kf(u, [[0, 0], [0.3, 0.4], [0.6, -0.1], [1, 0]]);
+  }, fx: [{ at: 0.3, kind: 'sfx', key: 'prayer' }, { at: 0.6, kind: 'streak', fwd: 1.4, y: 1.3, len: 2.4, color: 0xfff6d0 }, { at: 0.6, kind: 'rise', n: 8, color: 0xfff1c8, y: 1.2 }] },
+  sanctuary: { trail: false, dur: 0.8, castPose(t, P) {     // arms spread wide, drawing the circle in the air
+    P.rArm = -1.6; P.lArm = -1.6; P.rArmZ = -1.1 + Math.sin(t * 4) * 0.1; P.lArmZ = 1.1 - Math.sin(t * 4) * 0.1; P.head = -0.3; P.bodyX = -0.1;
+  }, pose(u, P) {                                          // then pressed down to the ground
+    P.rArm = kf(u, [[0, -1.6], [0.4, 0.6], [1, 0]]); P.lArm = kf(u, [[0, -1.6], [0.4, 0.6], [1, 0]]); P.rArmZ = kf(u, [[0, -1.1], [0.4, -0.5], [1, 0]]); P.lArmZ = kf(u, [[0, 1.1], [0.4, 0.5], [1, 0]]);
+    P.bob = -crouch(u, 0.3, 0.4); P.bodyX = kf(u, [[0, -0.1], [0.4, 0.4], [1, 0]]); P.lShin = kf(u, [[0, 0], [0.4, 0.8], [1, 0]]); P.rShin = kf(u, [[0, 0], [0.4, 0.8], [1, 0]]); P.lLeg = kf(u, [[0, 0], [0.4, -0.5], [1, 0]]); P.rLeg = kf(u, [[0, 0], [0.4, -0.5], [1, 0]]);
+  }, fx: [{ at: 0.3, kind: 'sfx', key: 'sanctuary' }, { at: 0.4, kind: 'flash', r: 2.5, color: 0xfff6d0 }, { at: 0.4, kind: 'shock', r: 8.0, color: 0xffe9a0, shake: 0.06 }] },
+  divine_light: { trail: false, dur: 0.8, castPose(t, P, hold) {   // arms rise overhead, the light building
+    const k = Math.min(1, t / Math.max(0.4, hold * 0.75));
+    P.rArm = -1.2 - 1.8 * k; P.lArm = -1.2 - 1.8 * k; P.rArmZ = 0.2 - 0.3 * k; P.lArmZ = -0.2 + 0.3 * k; P.head = -0.5 * k; P.bodyX = -0.12 * k;
+  }, pose(u, P) {                                          // and thrown wide
+    P.rArm = kf(u, [[0, -3.0], [0.3, -1.7], [1, 0]]); P.lArm = kf(u, [[0, -3.0], [0.3, -1.7], [1, 0]]); P.rArmZ = kf(u, [[0, -0.1], [0.3, -1.3], [1, 0]]); P.lArmZ = kf(u, [[0, 0.1], [0.3, 1.3], [1, 0]]);
+    P.head = kf(u, [[0, -0.5], [0.3, -0.3], [1, 0]]); P.bodyX = kf(u, [[0, -0.12], [0.3, -0.25], [1, 0]]); P.bob = kf(u, [[0, 0], [0.3, 0.12], [1, 0]]);
+  }, fx: [{ at: 0.05, kind: 'sfx', key: 'heal_big' }, { at: 0.1, kind: 'flash', r: 4.0, color: 0xfff6d0 }, { at: 0.1, kind: 'shock', r: 12.0, color: 0xffe9a0, shake: 0.05 }, { at: 0.15, kind: 'shock', r: 8.0, color: 0xfff1c8 }, { at: 0.1, kind: 'rise', n: 40, color: 0xfff1c8, y: 1.0, spread: 3 }] },
+  blessed_barrier: { trail: false, dur: 0.8, pose(u, P) {   // a wide gathering sweep of both arms, closed at the chest
+    P.rArm = kf(u, [[0, 0], [0.3, -1.6], [0.65, -1.3], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.3, -1.6], [0.65, -1.3], [1, 0]]); P.rArmZ = kf(u, [[0, 0], [0.3, -1.4], [0.65, 0.7], [1, 0]]); P.lArmZ = kf(u, [[0, 0], [0.3, 1.4], [0.65, -0.7], [1, 0]]);
+    P.bodyX = kf(u, [[0, 0], [0.3, -0.2], [0.65, 0.1], [1, 0]]); P.head = kf(u, [[0, 0], [0.3, -0.3], [1, 0]]);
+  }, fx: [{ at: 0.3, kind: 'sfx', key: 'ward' }, { at: 0.6, kind: 'shock', r: 6.0, color: 0xffe28a }, { at: 0.6, kind: 'ring', r: 2.0, color: 0xffe28a }] },
+  judgment_light: { trail: false, dur: 0.7, pose(u, P) {    // arm raised to the sky, then pointed at the enemy
+    P.rArm = kf(u, [[0, 0], [0.3, -3.0], [0.55, -1.6], [1, 0]]); P.rArmZ = kf(u, [[0, 0], [0.3, 0.2], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.55, 0.6], [1, 0]]); P.head = kf(u, [[0, 0], [0.3, -0.5], [0.55, 0.1], [1, 0]]); P.bodyX = kf(u, [[0, 0], [0.3, -0.15], [0.55, 0.3], [1, 0]]);
+  }, fx: [{ at: 0.3, kind: 'sfx', key: 'smite' }, { at: 0.5, kind: 'streak', fwd: 1.8, y: 1.3, len: 4.0, color: 0xfff0b0 }, { at: 0.5, kind: 'flash', r: 1.4, color: 0xfff6d0, fwd: 1.2 }] },
+  purify_soul: { trail: false, dur: 0.8, pose(u, P) {       // both hands sweep across, a bigger purge
+    P.rArm = kf(u, [[0, 0], [0.3, -1.6], [0.6, -1.4], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.3, -1.6], [0.6, -1.4], [1, 0]]); P.rArmZ = kf(u, [[0, 0], [0.3, 1.0], [0.6, -1.2], [1, 0]]); P.lArmZ = kf(u, [[0, 0], [0.3, -1.0], [0.6, 1.2], [1, 0]]);
+    P.head = kf(u, [[0, 0], [0.3, -0.3], [1, 0]]); P.bob = kf(u, [[0, 0], [0.6, 0.1], [1, 0]]);
+  }, fx: [{ at: 0.35, kind: 'sfx', key: 'cleanse' }, { at: 0.5, kind: 'flash', r: 2.4, color: 0xffffff }, { at: 0.5, kind: 'shock', r: 3.0, color: 0xf4f0ff }, { at: 0.5, kind: 'rise', n: 16, color: 0xffffff, y: 1.0 }] },
+  divine_intervention: { trail: false, dur: 1.0, pose(u, P) {  // both arms to heaven, head back, a moment held
+    P.rArm = kf(u, [[0, 0], [0.3, -3.0], [0.7, -3.0], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.3, -3.0], [0.7, -3.0], [1, 0]]); P.rArmZ = kf(u, [[0, 0], [0.3, -0.5], [0.7, -0.5], [1, 0]]); P.lArmZ = kf(u, [[0, 0], [0.3, 0.5], [0.7, 0.5], [1, 0]]);
+    P.head = kf(u, [[0, 0], [0.3, -0.7], [0.7, -0.7], [1, 0]]); P.bodyX = kf(u, [[0, 0], [0.3, -0.3], [0.7, -0.3], [1, 0]]); P.bob = kf(u, [[0, 0], [0.5, 0.15], [1, 0]]);
+  }, fx: [{ at: 0.3, kind: 'sfx', key: 'intervention' }, { at: 0.35, kind: 'pillar', color: 0xffffff, h: 7, life: 1.0 }, { at: 0.35, kind: 'flash', r: 3.0, color: 0xffffff }, { at: 0.4, kind: 'wings', color: 0xfff6d0 }] },
+  hymn_of_renewal: { trail: false, dur: 4.0, loop: true, pose(u, P) {   // the channel: arms half raised, swaying with the song
+    const w = Math.sin(u * Math.PI * 6);
+    P.rArm = -1.7 + w * 0.15; P.lArm = -1.7 - w * 0.15; P.rArmZ = -0.7; P.lArmZ = 0.7; P.head = -0.35; P.bodyZ = w * 0.06; P.bodyX = -0.1; P.bob = 0.03 + Math.abs(w) * 0.03;
+  }, fx: [{ at: 0.02, kind: 'sfx', key: 'hymn' }, { at: 0.02, kind: 'glyph', r: 2.2, color: 0xffd86a, life: 4.0, spin: 0.6 }] },
+  exorcise_evil: { trail: false, dur: 0.7, castPose(t, P) {  // both hands forward gathering a searing light
+    P.rArm = -1.2; P.lArm = -1.2; P.rArmZ = 0.25 + Math.sin(t * 7) * 0.05; P.lArmZ = -0.25 - Math.sin(t * 7) * 0.05; P.bodyX = 0.1; P.head = 0.15; P.bodyZ = Math.sin(t * 30) * 0.015;
+  }, pose(u, P) {                                          // and hurled
+    P.rArm = kf(u, [[0, -1.2], [0.25, -1.9], [1, 0]]); P.lArm = kf(u, [[0, -1.2], [0.25, -1.9], [1, 0]]); P.bodyX = kf(u, [[0, 0.1], [0.25, 0.45], [1, 0]]); P.lLeg = kf(u, [[0, 0], [0.25, -0.7], [1, 0]]); P.rLeg = kf(u, [[0, 0], [0.25, 0.4], [1, 0]]);
+  }, fx: [{ at: 0.05, kind: 'sfx', key: 'exorcise' }, { at: 0.15, kind: 'streak', fwd: 2.2, y: 1.2, len: 6.0, color: 0xfff0b0 }, { at: 0.15, kind: 'flash', r: 2.6, color: 0xffffff, fwd: 1.4, shake: 0.08 }, { at: 0.15, kind: 'sparks', n: 16, color: 0xffe28a, fwd: 1.2 }] },
+  guardian_prayer: { trail: false, dur: 0.8, pose(u, P) {   // a hand to the heart, then held out to the ally
+    P.rArm = kf(u, [[0, 0], [0.3, -1.5], [0.6, -1.5], [0.75, -1.8], [1, 0]]); P.rArmZ = kf(u, [[0, 0], [0.3, 0.9], [0.6, 0.9], [0.75, 0], [1, 0]]); P.head = kf(u, [[0, 0], [0.3, 0.35], [0.7, 0], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.75, 0.4], [1, 0]]);
+  }, fx: [{ at: 0.3, kind: 'sfx', key: 'ward' }, { at: 0.7, kind: 'streak', fwd: 1.4, y: 1.3, len: 2.6, color: 0xffe28a }, { at: 0.7, kind: 'ring', r: 1.4, color: 0xffe28a }] },
+  radiant_revival: { trail: false, dur: 1.2, castPose(t, P) {   // kneeling over the fallen, hands to the ground
+    P.bob = -0.55; P.lLeg = -1.3; P.lShin = 1.9; P.rLeg = 0.3; P.rShin = 1.3; P.bodyX = 0.5; P.head = 0.4;
+    P.rArm = 0.4 + Math.sin(t * 2.5) * 0.06; P.lArm = 0.4 + Math.sin(t * 2.5) * 0.06; P.rArmZ = 0.25; P.lArmZ = -0.25;
+  }, pose(u, P) {                                          // rising, arms drawing the soul back up with them
+    P.bob = kf(u, [[0, -0.55], [0.5, 0.1], [1, 0]]); P.lLeg = kf(u, [[0, -1.3], [0.5, 0], [1, 0]]); P.lShin = kf(u, [[0, 1.9], [0.5, 0], [1, 0]]); P.rLeg = kf(u, [[0, 0.3], [0.5, 0], [1, 0]]); P.rShin = kf(u, [[0, 1.3], [0.5, 0], [1, 0]]);
+    P.bodyX = kf(u, [[0, 0.5], [0.5, -0.25], [1, 0]]); P.head = kf(u, [[0, 0.4], [0.5, -0.6], [1, 0]]); P.rArm = kf(u, [[0, 0.4], [0.5, -3.0], [1, 0]]); P.lArm = kf(u, [[0, 0.4], [0.5, -3.0], [1, 0]]);
+  }, fx: [{ at: 0.05, kind: 'sfx', key: 'revive' }, { at: 0.3, kind: 'pillar', color: 0xfff6d0, h: 6, life: 1.4 }, { at: 0.4, kind: 'flash', r: 3.0, color: 0xffffff }, { at: 0.5, kind: 'rise', n: 30, color: 0xfff1c8, y: 0.3, spread: 1.4 }] },
+  avatar_of_mercy: { trail: false, dur: 1.2, pose(u, P) {   // lifted off the ground, arms opening wide, head thrown back
+    P.bob = kf(u, [[0, 0], [0.4, 0.35], [0.8, 0.35], [1, 0]]); P.rArm = kf(u, [[0, 0], [0.4, -1.8], [0.8, -1.8], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.4, -1.8], [0.8, -1.8], [1, 0]]);
+    P.rArmZ = kf(u, [[0, 0], [0.4, -1.2], [0.8, -1.2], [1, 0]]); P.lArmZ = kf(u, [[0, 0], [0.4, 1.2], [0.8, 1.2], [1, 0]]); P.head = kf(u, [[0, 0], [0.4, -0.7], [0.8, -0.7], [1, 0]]); P.bodyX = kf(u, [[0, 0], [0.4, -0.3], [0.8, -0.3], [1, 0]]);
+    P.lLeg = kf(u, [[0, 0], [0.4, 0.3], [0.8, 0.3], [1, 0]]); P.rLeg = kf(u, [[0, 0], [0.4, 0.3], [0.8, 0.3], [1, 0]]);
+  }, fx: [{ at: 0.05, kind: 'sfx', key: 'avatar' }, { at: 0.4, kind: 'pillar', color: 0xffffff, h: 8, life: 1.2 }, { at: 0.4, kind: 'flash', r: 4.0, color: 0xfff6d0, shake: 0.1 }, { at: 0.45, kind: 'shock', r: 6.0, color: 0xffe9a0 }, { at: 0.45, kind: 'wings', color: 0xfff6d0 }, { at: 0.5, kind: 'rise', n: 40, color: 0xfff1c8, y: 0.5, spread: 2 }] },
   perfect_masterstroke: { dur: 1.15, pose(u, P) {   // planted stance, weapon drawn far back, a beat, one clean cut
     P.bob = -crouch(u, 0.18, 0.5);
     P.rArm = kf(u, [[0, 0], [0.35, 1.4], [0.58, 1.5], [0.7, -1.6], [1, 0]]); P.rArmZ = kf(u, [[0, 0], [0.35, -0.9], [0.58, -1.0], [0.7, 0.8], [1, 0]]);
@@ -5988,10 +6165,12 @@ const ABILITY_ANIMS = {
     P.lLeg = kf(u, [[0, 0], [0.4, -0.6], [1, 0]]); P.lShin = kf(u, [[0, 0], [0.4, 0.8], [1, 0]]); P.rLeg = kf(u, [[0, 0], [0.4, 0.5], [1, 0]]);
   }, fx: [{ at: 0.3, kind: 'sfx', key: 'perfect_masterstroke_plant' }, { at: 0.68, kind: 'sfx', key: 'perfect_masterstroke' }, { at: 0.6, kind: 'ring', r: 1.0, color: 0xfff1c8 }, { at: 0.6, kind: 'glow', color: 0xfff1c8 }, { at: 0.7, kind: 'arc', r: 2.8, spread: 2.6, color: 0xfff1c8 }, { at: 0.7, kind: 'flash', r: 1.8, color: 0xffffff, fwd: 1.5, shake: 0.2 }, { at: 0.7, kind: 'streak', fwd: 1.8, y: 1.0, len: 4.5 }] },
 };
-function startAbilityAnim(rec, id) {
+function startAbilityAnim(rec, id, windup) {
   const A = ABILITY_ANIMS[id], rig = rec.mesh.userData.rig;
   if (!A || !rig) return;
-  rig.anim = { id, t: 0, dur: A.dur, fired: new Set() };
+  if (rig.anim && rig.anim.castFx) endCastFx(rec);
+  // A cast: hold the casting pose for the wind-up, then the release plays.
+  rig.anim = { id, t: 0, dur: A.dur, fired: new Set(), hold: A.castPose && windup ? windup : 0 };
 }
 
 
@@ -6074,6 +6253,21 @@ function musicDirector() {
 // Ability sound layers: [clip, options] lists fired at the beat given by `at`
 // in each animation's fx list (kind 'sfx').
 const ABILITY_SFX = {
+  // Cleric: chimes and cast tones over the same WAV set.
+  heal_release:     [['heal_chime', { rate: 1.1, vol: 0.5 }], ['magic_cast', { rate: 1.3, vol: 0.25 }]],
+  heal_big:         [['heal_chime', { rate: 0.85, vol: 0.7 }], ['heal_chime', { rate: 1.2, delay: 0.1, vol: 0.4 }], ['magic_cast', { rate: 0.9, vol: 0.4 }]],
+  smite:            [['magic_cast', { rate: 1.5, vol: 0.6 }], ['attack_slash', { rate: 1.6, delay: 0.05, vol: 0.25 }]],
+  prayer:           [['heal_chime', { rate: 1.3, vol: 0.35 }], ['ui_select', { rate: 0.8, vol: 0.3 }]],
+  cleanse:          [['magic_cast', { rate: 1.8, vol: 0.5 }], ['heal_chime', { rate: 1.6, delay: 0.06, vol: 0.3 }]],
+  ward:             [['item_equip', { rate: 0.8, vol: 0.6 }], ['heal_chime', { rate: 0.95, delay: 0.05, vol: 0.4 }]],
+  turn:             [['thunder_roll', { rate: 1.6, vol: 0.6, lowpass: 1800 }], ['magic_cast', { rate: 0.7, vol: 0.7 }]],
+  sanctuary:        [['thunder_roll', { rate: 1.2, vol: 0.5, lowpass: 900 }], ['heal_chime', { rate: 0.7, delay: 0.1, vol: 0.6 }]],
+  intervention:     [['heal_chime', { rate: 0.6, vol: 0.8 }], ['thunder_roll', { rate: 1.8, delay: 0.05, vol: 0.4, lowpass: 2500 }], ['level_up', { rate: 1.3, delay: 0.1, vol: 0.3 }]],
+  hymn:             [['heal_chime', { rate: 0.75, vol: 0.5 }], ['heal_chime', { rate: 0.95, delay: 0.5, vol: 0.45 }], ['heal_chime', { rate: 1.1, delay: 1.0, vol: 0.4 }]],
+  exorcise:         [['thunder_roll', { rate: 1.5, vol: 0.7, lowpass: 2200 }], ['magic_cast', { rate: 0.6, vol: 0.8 }], ['hit_thud', { rate: 0.9, delay: 0.1, vol: 0.5 }]],
+  revive:           [['level_up', { rate: 0.7, vol: 0.7 }], ['heal_chime', { rate: 0.6, delay: 0.3, vol: 0.6 }]],
+  avatar:           [['level_up', { rate: 0.8, vol: 0.9 }], ['thunder_roll', { rate: 1.3, delay: 0.1, vol: 0.5, lowpass: 1500 }]],
+  cast_loop:        [['magic_cast', { rate: 0.5, vol: 0.2, lowpass: 1200 }]],
   heavy_swing:      [['attack_slash', { rate: 0.7, vol: 0.9 }], ['hit_thud', { rate: 0.8, delay: 0.12, vol: 0.9 }]],
   cleave:           [['attack_slash', { rate: 0.85, vol: 1 }], ['attack_slash', { rate: 0.75, delay: 0.09, vol: 0.7 }]],
   battle_rush:      [['footstep_dirt', { rate: 1.3, vol: 0.9 }], ['footstep_dirt', { rate: 1.4, delay: 0.12, vol: 0.9 }], ['attack_claw', { rate: 0.6, delay: 0.05, vol: 0.5, lowpass: 900 }]],
@@ -6199,6 +6393,169 @@ function meditationTickFx() {
   spawnFx('impact', mp.x, mp.y, mp.z, 0, { y: 0.65, n: 14, color: 0xffffff, sparkColor: 0xffb050 });
   spawnFx('glow', mp.x, mp.y - 0.45, mp.z, 0, { color: 0xff5a2a });
   sfx.play('heal_chime', { x: mp.x, z: mp.z, rate: 0.7, vol: 0.3 }); sfx.play('hit_thud', { x: mp.x, z: mp.z, rate: 0.5, vol: 0.3, lowpass: 600 });
+}
+
+// ---- Cleric VFX: prayer circles, light pillars, casting hands, wards and sanctuaries ----
+// Textures are drawn once on a canvas (a rune circle, a soft light column, a
+// wing) — glow art, not models.
+let runeTex = null, pillarTex = null, wingTex = null;
+function runeTexture() {
+  if (runeTex) return runeTex;
+  const S = 256, cv = document.createElement('canvas'); cv.width = cv.height = S; const c = cv.getContext('2d'); c.translate(S / 2, S / 2);
+  c.strokeStyle = '#fff'; c.fillStyle = '#fff'; c.lineWidth = 3;
+  const ring = (r, w) => { c.lineWidth = w; c.beginPath(); c.arc(0, 0, r, 0, 6.283); c.stroke(); };
+  ring(120, 4); ring(108, 2); ring(60, 2.5); ring(38, 1.5);
+  for (let i = 0; i < 24; i++) { const a = i / 24 * 6.283; c.lineWidth = i % 6 === 0 ? 3 : 1.5; c.beginPath(); c.moveTo(Math.cos(a) * 108, Math.sin(a) * 108); c.lineTo(Math.cos(a) * (i % 6 === 0 ? 92 : 100), Math.sin(a) * (i % 6 === 0 ? 92 : 100)); c.stroke(); }
+  for (let i = 0; i < 8; i++) {   // small crosses and glyph marks between the rings
+    const a = i / 8 * 6.283 + 0.39, r = 84; c.save(); c.translate(Math.cos(a) * r, Math.sin(a) * r); c.rotate(a); c.lineWidth = 2.5;
+    c.beginPath(); c.moveTo(-6, 0); c.lineTo(6, 0); c.moveTo(0, -8); c.lineTo(0, 6); c.stroke(); c.restore();
+  }
+  for (let i = 0; i < 4; i++) { const a = i / 4 * 6.283; c.save(); c.rotate(a); c.lineWidth = 2; c.beginPath(); c.moveTo(0, -60); c.lineTo(0, -38); c.stroke(); c.beginPath(); c.arc(0, -70, 6, 0, 6.283); c.stroke(); c.restore(); }
+  c.lineWidth = 2.5; c.beginPath(); c.moveTo(-26, 0); c.lineTo(26, 0); c.moveTo(0, -30); c.lineTo(0, 26); c.stroke(); c.beginPath(); c.arc(0, -18, 9, 0, 6.283); c.stroke();   // an ankh at the heart
+  runeTex = new THREE.CanvasTexture(cv); return runeTex;
+}
+function pillarTexture() {
+  if (pillarTex) return pillarTex;
+  const cv = document.createElement('canvas'); cv.width = 64; cv.height = 256; const c = cv.getContext('2d');
+  const g = c.createLinearGradient(0, 0, 0, 256); g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(0.25, 'rgba(255,255,255,0.35)'); g.addColorStop(0.85, 'rgba(255,255,255,0.9)'); g.addColorStop(1, 'rgba(255,255,255,0.2)');
+  c.fillStyle = g; c.fillRect(0, 0, 64, 256);
+  const h = c.createLinearGradient(0, 0, 64, 0); h.addColorStop(0, 'rgba(0,0,0,1)'); h.addColorStop(0.3, 'rgba(0,0,0,0)'); h.addColorStop(0.7, 'rgba(0,0,0,0)'); h.addColorStop(1, 'rgba(0,0,0,1)');
+  c.globalCompositeOperation = 'destination-out'; c.fillStyle = h; c.fillRect(0, 0, 64, 256);
+  pillarTex = new THREE.CanvasTexture(cv); pillarTex.wrapS = THREE.RepeatWrapping; return pillarTex;
+}
+function wingTexture() {
+  if (wingTex) return wingTex;
+  const S = 128, cv = document.createElement('canvas'); cv.width = cv.height = S; const c = cv.getContext('2d');
+  c.fillStyle = '#fff';
+  for (let i = 0; i < 7; i++) {   // feathers fanning out from the lower-left root
+    c.save(); c.translate(14, S - 14); c.rotate(-0.15 - i * 0.16); c.globalAlpha = 0.35 + i * 0.06;
+    c.beginPath(); c.ellipse(46 + i * 4, 0, 46 + i * 4, 7 + i * 1.2, 0, 0, 6.283); c.fill(); c.restore();
+  }
+  c.globalAlpha = 0.5; const g = c.createRadialGradient(20, S - 20, 0, 20, S - 20, 90); g.addColorStop(0, 'rgba(255,255,255,0.8)'); g.addColorStop(1, 'rgba(255,255,255,0)'); c.fillStyle = g; c.fillRect(0, 0, S, S);
+  wingTex = new THREE.CanvasTexture(cv); return wingTex;
+}
+// While a spell is being cast the hands hold the light: two glowing sprites
+// on the palms and motes drifting up between them.
+const castFxMap = new Map();
+function beginCastFx(rec, id) {
+  if (castFxMap.has(rec)) endCastFx(rec);
+  const mk = () => { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: fxDot(), color: 0xffe9a0, transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending })); sp.frustumCulled = false; scene.add(sp); return sp; };
+  const N = 14, pos = new Float32Array(N * 3), g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const motes = new THREE.Points(g, new THREE.PointsMaterial({ color: 0xfff1c8, size: 0.1, map: fxDot(), transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending })); motes.frustumCulled = false; scene.add(motes);
+  castFxMap.set(rec, { l: mk(), r: mk(), motes, life: new Float32Array(N).map(() => Math.random()), t: 0, id });
+  const mp = rec.mesh.position; sfx.play('magic_cast', { x: mp.x, z: mp.z, rate: 0.55, vol: 0.25, lowpass: 1400 });
+}
+function endCastFx(recOrId) {
+  const rec = typeof recOrId === 'object' ? recOrId : entityMeshes.get(recOrId); if (!rec) return;
+  const cf = castFxMap.get(rec); if (!cf) return;
+  scene.remove(cf.l); scene.remove(cf.r); scene.remove(cf.motes); cf.motes.geometry.dispose(); castFxMap.delete(rec);
+}
+const _hv = new THREE.Vector3();
+function updateCastFx(dt) {
+  for (const [rec, cf] of castFxMap) {
+    const rig = rec.mesh.userData.rig; if (!rig || !rig.anim || !rig.anim.castFx || !rec.mesh.parent) { endCastFx(rec); continue; }
+    cf.t += dt; const pulse = 0.8 + 0.2 * Math.sin(cf.t * 9), grow = Math.min(1, cf.t / 0.5);
+    const hands = [[rig.handL || rig.armL, cf.l], [rig.handR || rig.armR, cf.r]];
+    let cx = 0, cy = 0, cz = 0;
+    for (const [bone, spr] of hands) {
+      if (bone) bone.getWorldPosition(_hv); else _hv.copy(rec.mesh.position).add(new THREE.Vector3(0, 1.2, 0));
+      spr.position.copy(_hv); const ss = (0.35 + 0.25 * grow) * pulse; spr.scale.set(ss, ss, 1); spr.material.opacity = 0.75 * grow; cx += _hv.x / 2; cy += _hv.y / 2; cz += _hv.z / 2;
+    }
+    const pos = cf.motes.geometry.attributes.position;
+    for (let i = 0; i < pos.count; i++) { cf.life[i] += dt * 0.9; if (cf.life[i] > 1) cf.life[i] = 0; const l = cf.life[i], a = i * 2.4 + cf.t * 2; pos.setXYZ(i, cx + Math.cos(a) * 0.25 * (1 - l), cy - 0.1 + l * 0.9, cz + Math.sin(a) * 0.25 * (1 - l)); }
+    pos.needsUpdate = true; cf.motes.material.opacity = 0.9 * grow;
+  }
+}
+// A spell landing: its own effect on the caster, the target or the ground.
+function spellFx(m) {
+  const B = entityMeshes.get(m.by), T = m.target != null ? entityMeshes.get(m.target) : null;
+  const tp = T ? T.mesh.position : null, bp = B ? B.mesh.position : null;
+  const beam = (col) => { if (B && T && B !== T) { const a = bp.clone(); a.y += 1.3; const b = tp.clone(); b.y += 1.1; spawnFx('beam', 0, 0, 0, 0, { from: a, to: b, color: col || 0xfff1c8 }); } };
+  switch (m.fx) {
+    case 'holy': break;   // the hit splat carries the impact
+    case 'hot': if (tp) { beam(0xffd86a); spawnFx('glyph', tp.x, tp.y, tp.z, 0, { r: 1.1, color: 0xffd86a, life: 1.2 }); spawnFx('rise', tp.x, tp.y, tp.z, 0, { n: 10, color: 0xfff1c8 }); } break;
+    case 'cleanse': if (tp) { beam(0xffffff); spawnFx('flash', tp.x, tp.y, tp.z, 0, { r: 2.2, color: 0xffffff, life: 0.3 }); spawnFx('shock', tp.x, tp.y, tp.z, 0, { r: 2.2, color: 0xf4f0ff }); spawnFx('sparks', tp.x, tp.y, tp.z, 0, { n: 14, fwd: 0, color: 0x9ad07a }); spawnFx('sparks', tp.x, tp.y, tp.z, Math.PI, { n: 14, fwd: 0, color: 0xffffff }); if (m.target === myId) hurtFlash('#ffffff'); } break;
+    case 'ward': if (tp) { beam(0xffe28a); spawnFx('flash', tp.x, tp.y, tp.z, 0, { r: 2.0, color: 0xffe9a0, life: 0.3 }); spawnFx('glyph', tp.x, tp.y, tp.z, 0, { r: 1.2, color: 0xffe28a, life: 0.8 }); if (T) { const h = holyFx.get(m.target); if (h && h.shield) { h.shield.pop = 0.6; } } sfx.play('item_equip', { x: tp.x, z: tp.z, rate: 0.8, vol: 0.4 }); } break;
+    case 'turn': if (tp) { spawnFx('flash', tp.x, tp.y, tp.z, 0, { r: 5.0, color: 0xffffff, life: 0.4 }); spawnFx('pillar', tp.x, tp.y, tp.z, 0, { color: 0xfff6d0, h: 6, life: 0.7 }); spawnFx('shock', tp.x, tp.y, tp.z, 0, { r: m.r || 8, color: 0xffe9a0 }); spawnFx('glyph', tp.x, tp.y, tp.z, 0, { r: m.r || 8, color: 0xffd86a, life: 1.6, spin: 0.8 }); } break;
+    case 'mending': if (tp) { beam(0xfff6d0); spawnFx('glow', tp.x, tp.y, tp.z, 0, { color: 0xfff6d0 }); spawnFx('rise', tp.x, tp.y, tp.z, 0, { n: 8, color: 0xfff6d0 }); } break;
+    case 'mend': if (tp) { spawnFx('flash', tp.x, tp.y, tp.z, 0, { r: 1.6, color: 0xfff6d0, life: 0.25 }); } break;
+    case 'mend_jump': { const F = m.from != null ? entityMeshes.get(m.from) : null; if (F && tp) { const a = F.mesh.position.clone(); a.y += 1.3; const b = tp.clone(); b.y += 1.3; spawnFx('beam', 0, 0, 0, 0, { from: a, to: b, color: 0xfff6d0, life: 0.45 }); spawnFx('glow', tp.x, tp.y, tp.z, 0, { color: 0xfff6d0 }); } break; }
+    case 'sanctuary': break;   // the zone itself arrives with the snapshot
+    case 'aoeheal': break;     // the caster's release plays it
+    case 'intervention': if (tp) { beam(0xffffff); spawnFx('pillar', tp.x, tp.y, tp.z, 0, { color: 0xffffff, h: 5, life: 0.8 }); spawnFx('wings', tp.x, tp.y, tp.z, T.mesh.rotation.y, { color: 0xfff6d0 }); spawnFx('glyph', tp.x, tp.y, tp.z, 0, { r: 1.4, color: 0xffffff, life: 1.2 }); } break;
+    case 'saved': if (tp) { spawnFx('pillar', tp.x, tp.y, tp.z, 0, { color: 0xffffff, h: 9, life: 1.3 }); spawnFx('flash', tp.x, tp.y, tp.z, 0, { r: 4.5, color: 0xffffff, life: 0.5, shake: 0.12 }); spawnFx('wings', tp.x, tp.y, tp.z, T.mesh.rotation.y, { color: 0xffffff, life: 1.3 }); spawnFx('shock', tp.x, tp.y, tp.z, 0, { r: 5, color: 0xfff6d0 }); spawnFx('rise', tp.x, tp.y, tp.z, 0, { n: 30, color: 0xffffff, spread: 1.2 }); sfx.play('level_up', { x: tp.x, z: tp.z, rate: 1.1, vol: 0.8 }); sfx.play('thunder_roll', { x: tp.x, z: tp.z, rate: 1.7, vol: 0.5, lowpass: 2500 }); if (m.target === myId) { hurtFlash('#ffffff'); flyText('Divine Intervention!', 'heal'); } } break;
+    case 'hymn': break;
+    case 'hymn_wave': if (m.x != null) { const y = groundY(m.x, m.z); spawnFx('shock', m.x, y, m.z, 0, { r: m.r || 14, color: 0xffe9a0, life: 0.9 }); spawnFx('ring', m.x, y, m.z, 0, { r: (m.r || 14) * 0.5, color: 0xfff1c8, life: 0.7 }); sfx.play('heal_chime', { x: m.x, z: m.z, rate: 0.9 + Math.random() * 0.4, vol: 0.35 }); } break;
+    case 'revive': if (tp) { spawnFx('pillar', tp.x, tp.y, tp.z, 0, { color: 0xfff6d0, h: 7, life: 1.6 }); spawnFx('glyph', tp.x, tp.y, tp.z, 0, { r: 1.8, color: 0xffd86a, life: 2.0, spin: 0.5 }); spawnFx('rise', tp.x, tp.y, tp.z, 0, { n: 36, color: 0xfff1c8, spread: 1.0, life: 1.8 }); spawnFx('wings', tp.x, tp.y, tp.z, T.mesh.rotation.y, { color: 0xfff6d0, life: 1.4 }); beam(0xfff6d0); } break;
+    case 'avatar': break;   // the caster's release plays it; the aura persists from the snapshot
+  }
+}
+// Long-lived holy effects read straight off the snapshot: wards (a golden
+// shell that thins as it is spent), Renewing Prayer (a slow prayer circle
+// over the head), Prayer of Mending (a hovering star), Divine Intervention
+// (a halo), Guardian Prayer (a rune ring at the feet), Avatar of Mercy (a
+// bright aura, motes and a wide turning circle) — and Sanctuary circles on
+// the ground.
+const holyFx = new Map(), sanctFx = new Map();
+function mkSprite(tex, color, op) { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, color, transparent: true, opacity: op, depthWrite: false, blending: THREE.AdditiveBlending })); sp.frustumCulled = false; scene.add(sp); return sp; }
+function mkGlyph(color, r, op) { const m = new THREE.Mesh(new THREE.PlaneGeometry(r * 2, r * 2), new THREE.MeshBasicMaterial({ map: runeTexture(), color, transparent: true, opacity: op, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending })); m.rotation.x = -Math.PI / 2; m.frustumCulled = false; scene.add(m); return m; }
+function mkMotes(n, color, size) { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3)); const pts = new THREE.Points(g, new THREE.PointsMaterial({ color, size, map: fxDot(), transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending })); pts.frustumCulled = false; pts.userData.life = new Float32Array(n).map(() => Math.random()); pts.userData.seed = new Float32Array(n).map(() => Math.random() * 6.28); scene.add(pts); return pts; }
+function dropObj(o) { if (!o) return; scene.remove(o); if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }
+function updateHolyFx(dt) {
+  const tt = performance.now() / 1000;
+  for (const [id, rec] of entityMeshes) {
+    if (rec.kind !== 'player' || !rec.data) continue;
+    const d = rec.data, want = new Set(d.fx || []); if (d.ward > 0) want.add('ward');
+    let h = holyFx.get(id);
+    if (!want.size) { if (h) { for (const k of Object.keys(h)) if (h[k] && h[k].isObject3D) dropObj(h[k]); holyFx.delete(id); } continue; }
+    if (!h) { h = {}; holyFx.set(id, h); }
+    const mp = rec.mesh.position, alive = d.alive;
+    // ward: a translucent golden shell, brighter the more it still holds
+    if (want.has('ward')) {
+      if (!h.shield) { const sh = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), new THREE.MeshBasicMaterial({ color: 0xffe28a, transparent: true, opacity: 0.12, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.FrontSide })); sh.frustumCulled = false; scene.add(sh); h.shield = sh; h.shieldGlyph = mkGlyph(0xffe28a, 0.9, 0.35); h.shieldGlyph.rotation.x = 0; }
+      const k = Math.min(1, d.ward / (d.maxHp * 0.3)), pop = h.shield.pop > 0 ? h.shield.pop : 0; if (h.shield.pop > 0) h.shield.pop -= dt;
+      h.shield.position.set(mp.x, mp.y + 1.05, mp.z); const ss = 1.05 + 0.03 * Math.sin(tt * 3) + pop * 0.4; h.shield.scale.set(ss, ss * 1.25, ss); h.shield.material.opacity = (0.07 + 0.13 * k + pop * 0.3) * (alive ? 1 : 0);
+      h.shieldGlyph.position.set(mp.x, mp.y + 1.05, mp.z); h.shieldGlyph.rotation.y = tt * 0.7; h.shieldGlyph.material.opacity = (0.18 + 0.25 * k) * (alive ? 1 : 0);
+    } else if (h.shield) { dropObj(h.shield); dropObj(h.shieldGlyph); h.shield = h.shieldGlyph = null; }
+    // Renewing Prayer: a small prayer circle turning above the head
+    if (want.has('renewing_prayer')) { if (!h.rp) h.rp = mkGlyph(0xffd86a, 0.45, 0.6); h.rp.position.set(mp.x, mp.y + 2.55 + Math.sin(tt * 2) * 0.05, mp.z); h.rp.rotation.z = tt * 0.9; }
+    else if (h.rp) { dropObj(h.rp); h.rp = null; }
+    // Prayer of Mending: a hovering white-gold star
+    if (want.has('prayer_of_mending')) { if (!h.pm) h.pm = mkSprite(fxStar(), 0xfff6d0, 0.9); h.pm.position.set(mp.x, mp.y + 2.7 + Math.sin(tt * 3) * 0.08, mp.z); const ps = 0.5 + 0.1 * Math.sin(tt * 5); h.pm.scale.set(ps, ps, 1); h.pm.material.rotation = tt * 1.2; }
+    else if (h.pm) { dropObj(h.pm); h.pm = null; }
+    // Divine Intervention: a halo
+    if (want.has('divine_intervention')) { if (!h.di) { h.di = new THREE.Mesh(new THREE.TorusGeometry(0.32, 0.035, 8, 32), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, depthWrite: false, blending: THREE.AdditiveBlending })); h.di.rotation.x = Math.PI / 2; h.di.frustumCulled = false; scene.add(h.di); } h.di.position.set(mp.x, mp.y + 2.35 + Math.sin(tt * 1.5) * 0.03, mp.z); h.di.rotation.z = tt * 0.5; }
+    else if (h.di) { dropObj(h.di); h.di = null; }
+    // Guardian Prayer: a rune ring at the feet
+    if (want.has('guardian_prayer')) { if (!h.gp) h.gp = mkGlyph(0xffe28a, 1.15, 0.5); h.gp.position.set(mp.x, groundY(mp.x, mp.z) + 0.07, mp.z); h.gp.rotation.z = -tt * 0.4; h.gp.material.opacity = 0.4 + 0.12 * Math.sin(tt * 2.5); }
+    else if (h.gp) { dropObj(h.gp); h.gp = null; }
+    // Avatar of Mercy: a bright aura, motes and a wide turning circle
+    if (want.has('avatar_of_mercy')) {
+      if (!h.av) { h.av = mkSprite(fxDot(), 0xffe9a0, 0.4); h.avG = mkGlyph(0xffd86a, 1.6, 0.55); h.avM = mkMotes(40, 0xfff1c8, 0.12); }
+      h.av.position.set(mp.x, mp.y + 1.1, mp.z); const as = 3.2 + 0.3 * Math.sin(tt * 2.2); h.av.scale.set(as, as, 1); h.av.material.opacity = 0.32 + 0.08 * Math.sin(tt * 2.2);
+      h.avG.position.set(mp.x, groundY(mp.x, mp.z) + 0.07, mp.z); h.avG.rotation.z = tt * 0.5;
+      const pos = h.avM.geometry.attributes.position, life = h.avM.userData.life, seed = h.avM.userData.seed;
+      for (let i = 0; i < pos.count; i++) { life[i] += dt * (0.35 + (i % 5) * 0.08); if (life[i] > 1) { life[i] = 0; seed[i] = Math.random() * 6.28; } const l = life[i], a = seed[i] + l * 2.5, r = 0.5 + l * 1.1; pos.setXYZ(i, mp.x + Math.cos(a) * r, mp.y + 0.1 + l * 2.8, mp.z + Math.sin(a) * r); }
+      pos.needsUpdate = true;
+    } else if (h.av) { dropObj(h.av); dropObj(h.avG); dropObj(h.avM); h.av = h.avG = h.avM = null; }
+  }
+  for (const [id, h] of holyFx) if (!entityMeshes.has(id)) { for (const k of Object.keys(h)) if (h[k] && h[k].isObject3D) dropObj(h[k]); holyFx.delete(id); }
+  for (const [, sf] of sanctFx) { sf.t += dt; sf.g1.rotation.z = sf.t * 0.25; sf.g2.rotation.z = -sf.t * 0.45; sf.ring.material.opacity = 0.35 + 0.15 * Math.sin(sf.t * 2); sf.g1.material.opacity = 0.45 + 0.1 * Math.sin(sf.t * 1.7); const pos = sf.motes.geometry.attributes.position, life = sf.motes.userData.life, seed = sf.motes.userData.seed; for (let i = 0; i < pos.count; i++) { life[i] += dt * 0.25; if (life[i] > 1) { life[i] = 0; seed[i] = Math.random() * 6.28; } const l = life[i], a = seed[i], r = Math.sqrt((i % 17) / 17) * sf.r; pos.setXYZ(i, sf.x + Math.cos(a) * r, sf.y + l * 2.4, sf.z + Math.sin(a) * r); } pos.needsUpdate = true; sf.motes.material.opacity = 0.7; }
+}
+function syncSanctuaries(list) {
+  const seen = new Set();
+  for (const sct of (list || [])) {
+    seen.add(sct.id);
+    if (sanctFx.has(sct.id)) continue;
+    const y = groundY(sct.x, sct.z) + 0.06;
+    const g1 = mkGlyph(0xffd86a, sct.r, 0.5), g2 = mkGlyph(0xfff1c8, sct.r * 0.55, 0.35);
+    const ring = new THREE.Mesh(new THREE.RingGeometry(sct.r * 0.96, sct.r, 64), new THREE.MeshBasicMaterial({ color: 0xffe9a0, transparent: true, opacity: 0.4, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending })); ring.rotation.x = -Math.PI / 2; ring.frustumCulled = false; scene.add(ring);
+    const disc = new THREE.Mesh(new THREE.CircleGeometry(sct.r, 48), new THREE.MeshBasicMaterial({ color: 0xffd86a, transparent: true, opacity: 0.07, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending })); disc.rotation.x = -Math.PI / 2; disc.frustumCulled = false; scene.add(disc);
+    for (const o of [g1, g2, ring, disc]) o.position.set(sct.x, y, sct.z);
+    sanctFx.set(sct.id, { g1, g2, ring, disc, motes: mkMotes(50, 0xfff1c8, 0.11), t: 0, x: sct.x, y, z: sct.z, r: sct.r });
+    spawnFx('flash', sct.x, y, sct.z, 0, { r: 3, color: 0xfff6d0, life: 0.4 }); spawnFx('pillar', sct.x, y, sct.z, 0, { color: 0xfff1c8, h: 5, life: 0.9 });
+  }
+  for (const [id, sf] of sanctFx) if (!seen.has(id)) { for (const k of ['g1', 'g2', 'ring', 'disc', 'motes']) dropObj(sf[k]); sanctFx.delete(id); }
 }
 
 // ---- Cluckifer: boss animation, telegraphs, hazards and mechanic VFX ----
@@ -6575,7 +6932,8 @@ function updateWeaponTrail(rec, active, dt) {
 }
 // ---- Auras: motes orbiting the local player while a visible buff is up, plus
 // golden Momentum motes close to the body, one per stack ----
-const AURA_COLORS = { bloodrush: 0xff2a1a, berserkers_roar: 0xff7a1a, weapon_flow: 0xffd24a, savage: 0x7dff5a, savage_watcher: 0x3fbf3f, footwork: 0x5ad8ff, rushing_force: 0xffffff, riposte_ready: 0xc0d8ff };
+const AURA_COLORS = { bloodrush: 0xff2a1a, berserkers_roar: 0xff7a1a, weapon_flow: 0xffd24a, savage: 0x7dff5a, savage_watcher: 0x3fbf3f, footwork: 0x5ad8ff, rushing_force: 0xffffff, riposte_ready: 0xc0d8ff,
+  purified_soul: 0xf4f0ff, undead_ward: 0xffe9a0 };
 let auraObj = null, momentumObj = null;
 function updateAuras(dt) {
   const me = entityMeshes.get(myId); if (!me) return;
@@ -6636,7 +6994,7 @@ function crackTexture() {
 }
 function spawnFx(kind, x, y, z, yaw, o = {}) {
   if (kind === 'sfx') { playAbilitySfx(o.key, x, z); return; }
-  const life = o.life || { dust: 0.55, ring: 0.5, shock: 0.6, flash: 0.22, sparks: 0.6, arc: 0.35, cracks: 4.0, impact: 0.25, streak: 0.3, glow: 0.5 }[kind] || 0.5;
+  const life = o.life || { dust: 0.55, ring: 0.5, shock: 0.6, flash: 0.22, sparks: 0.6, arc: 0.35, cracks: 4.0, impact: 0.25, streak: 0.3, glow: 0.5, pillar: 0.6, rise: 1.0, glyph: 0.9, wings: 0.9, beam: 0.35 }[kind] || 0.5;
   let obj;
   if (kind === 'dust' || kind === 'ring' || kind === 'shock') {
     const col = o.color || (kind === 'dust' ? 0xb9a77c : 0xffffff);
@@ -6679,6 +7037,30 @@ function spawnFx(kind, x, y, z, yaw, o = {}) {
   } else if (kind === 'glow') {    // a soft pulse around the body (buff activations)
     obj = new THREE.Sprite(new THREE.SpriteMaterial({ map: fxDot(), color: o.color || 0xffffff, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending }));
     obj.position.set(x, y + 1.1, z); obj.scale.set(0.5, 0.5, 1);
+  } else if (kind === 'pillar') {  // a column of light standing on the spot (holy: heals, saves, revival)
+    const h = o.h || 4;
+    obj = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.85, h, 18, 1, true), new THREE.MeshBasicMaterial({ map: pillarTexture(), color: o.color || 0xfff1c8, transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
+    obj.position.set(x, y + h / 2, z); obj.userData.h = h; obj.userData.y0 = y;
+  } else if (kind === 'rise') {    // motes drifting up around the body
+    const n = o.n || 12, pos = new Float32Array(n * 3), vel = [], sp = o.spread || 0.9;
+    for (let i = 0; i < n; i++) { const a = Math.random() * 6.28, r = Math.random() * sp; vel.push([Math.cos(a) * 0.3, 1.2 + Math.random() * 1.6, Math.sin(a) * 0.3]); pos[i * 3] = x + Math.cos(a) * r; pos[i * 3 + 1] = y + (o.y != null ? o.y : 0.6) * Math.random(); pos[i * 3 + 2] = z + Math.sin(a) * r; }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    obj = new THREE.Points(g, new THREE.PointsMaterial({ color: o.color || 0xfff1c8, size: 0.14, map: fxDot(), transparent: true, opacity: 1, depthWrite: false, blending: THREE.AdditiveBlending }));
+    obj.userData.vel = vel;
+  } else if (kind === 'glyph') {   // a prayer circle at the feet that turns and fades
+    obj = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: runeTexture(), color: o.color || 0xffd86a, transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
+    obj.rotation.x = -Math.PI / 2; obj.position.set(x, y + 0.08, z); const gs = (o.r || 1.2) * 2; obj.scale.set(gs, gs, 1); obj.userData.spin = o.spin || 1.5;
+  } else if (kind === 'wings') {   // a pair of wing-shaped bursts of light behind the shoulders
+    obj = new THREE.Group();
+    for (const side of [-1, 1]) {
+      const w = new THREE.Sprite(new THREE.SpriteMaterial({ map: wingTexture(), color: o.color || 0xfff6d0, transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending }));
+      w.scale.set(side * 2.2, 2.2, 1); w.position.set(side * 0.9, 1.4, -0.2); obj.add(w);
+    }
+    obj.position.set(x, y, z); obj.rotation.y = yaw;
+  } else if (kind === 'beam') {    // a thread of light from the caster to the ally
+    const a = o.from, b = o.to, len = a.distanceTo(b);
+    obj = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, len, 6, 1, true), new THREE.MeshBasicMaterial({ color: o.color || 0xfff1c8, transparent: true, opacity: 0.85, depthWrite: false, blending: THREE.AdditiveBlending }));
+    obj.position.copy(a).lerp(b, 0.5); obj.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
   }
   if (!obj) return;
   obj.frustumCulled = false; obj.traverse(c => { c.frustumCulled = false; }); scene.add(obj);
@@ -6708,6 +7090,11 @@ function updateFx(dt) {
     }
     else if (f.kind === 'streak') { f.obj.material.opacity = 0.8 * (1 - u); const sx = f.obj.scale.x * (1 + dt * 3); f.obj.scale.x = sx; }
     else if (f.kind === 'glow') { const gs = 0.5 + 3.5 * u; f.obj.scale.set(gs, gs, 1); f.obj.material.opacity = 0.55 * (1 - u); }
+    else if (f.kind === 'pillar') { const k = u < 0.2 ? u / 0.2 : 1, w = 0.4 + 0.6 * k + u * 0.5; f.obj.scale.set(w, Math.max(0.01, k), w); f.obj.position.y = f.obj.userData.y0 + f.obj.userData.h / 2 * k; f.obj.material.opacity = 0.85 * (u < 0.6 ? 1 : 1 - (u - 0.6) / 0.4); f.obj.rotation.y += dt * 0.8; }
+    else if (f.kind === 'rise') { const pos = f.obj.geometry.attributes.position, v = f.obj.userData.vel; for (let k = 0; k < v.length; k++) pos.setXYZ(k, pos.getX(k) + v[k][0] * dt, pos.getY(k) + v[k][1] * dt, pos.getZ(k) + v[k][2] * dt); pos.needsUpdate = true; f.obj.material.opacity = u < 0.5 ? 1 : 1 - (u - 0.5) / 0.5; }
+    else if (f.kind === 'glyph') { f.obj.rotation.z += dt * (f.obj.userData.spin || 1.5); f.obj.material.opacity = 0.9 * (u < 0.15 ? u / 0.15 : u < 0.7 ? 1 : 1 - (u - 0.7) / 0.3); }
+    else if (f.kind === 'wings') { const k = u < 0.25 ? u / 0.25 : 1; f.obj.children.forEach((w, i) => { const sd = i ? 1 : -1; w.scale.set(sd * 2.2 * (0.3 + 0.7 * k) * (1 + u * 0.6), 2.2 * (0.3 + 0.7 * k) * (1 + u * 0.6), 1); w.material.opacity = 0.9 * (1 - u); w.position.y = 1.4 + u * 0.8; }); }
+    else if (f.kind === 'beam') { f.obj.material.opacity = 0.85 * (1 - u); f.obj.scale.x = f.obj.scale.z = 1 + u * 2; }
     else if (f.kind === 'tele') {   // warning shape: outline pulses, the fill sweeps up as the blow lands
       const pulse = 0.7 + 0.3 * Math.sin(f.t * 18);
       if (f.outline) f.outline.material.opacity = (f.outline.material.opacity > 0.6 ? 0.9 : 0.55) * pulse * (u > 0.9 ? (1 - u) * 10 : 1);
@@ -6719,7 +7106,7 @@ function updateFx(dt) {
       f.spr.material.opacity = u > 0.85 ? (1 - u) / 0.15 : 1;
       if (f.trail) { const pos = f.trail.geometry.attributes.position, N = pos.count; for (let i = N - 1; i > 0; i--) pos.setXYZ(i, pos.getX(i - 1), pos.getY(i - 1), pos.getZ(i - 1)); pos.setXYZ(0, f.obj.position.x, f.obj.position.y, f.obj.position.z); pos.needsUpdate = true; }
     }
-    if (u >= 1) { scene.remove(f.obj); f.obj.geometry && f.obj.geometry.dispose(); if (f.kind === 'tele') f.obj.traverse(o => { if (o.geometry) o.geometry.dispose(); }); if (f.trail) { scene.remove(f.trail); f.trail.geometry.dispose(); } fxList.splice(i, 1); }
+    if (u >= 1) { scene.remove(f.obj); f.obj.geometry && f.obj.geometry.dispose(); if (f.kind === 'tele' || f.kind === 'wings') f.obj.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material && o.isSprite) o.material.dispose(); }); if (f.trail) { scene.remove(f.trail); f.trail.geometry.dispose(); } fxList.splice(i, 1); }
   }
 }
 
@@ -6824,18 +7211,21 @@ function updateHudFromSnapshot(snap) {
   document.getElementById('clevel').textContent = me.level;
   document.getElementById('hpfill').style.transform = `scaleX(${Math.max(0, me.hp / me.maxHp)})`;
   document.getElementById('hptext').textContent = `${me.hp}/${me.maxHp}`;
-  if (me.rageMax) {
-    document.getElementById('stamfill').style.transform = `scaleX(${Math.max(0, Math.min(1, me.rage / me.rageMax))})`;
+  const resMax = me.manaMax || me.rageMax, res = me.manaMax ? me.mana : me.rage;
+  if (resMax) {
+    document.getElementById('stamfill').style.transform = `scaleX(${Math.max(0, Math.min(1, res / resMax))})`;
     document.getElementById('stamlabel').textContent = `${abilityResource}:`;
-    document.getElementById('stamtext').textContent = `${me.rage}/${me.rageMax}`;
-    selfStam = me.rage;
+    document.getElementById('stamtext').textContent = `${res}/${resMax}`;
+    document.getElementById('stamfill').parentElement.classList.toggle('mana', !!me.manaMax);
+    selfStam = res;
   }
+  updateAllyFrame(snap);
   if (abilityClass) { document.getElementById('ccls').textContent = abilityClass.cls || 'Fighter'; if (abilityClass.icon) document.getElementById('cemblem').src = abilityClass.icon; }
   if (me.momentum !== selfMomentum) { selfMomentum = me.momentum || 0; renderMomentum(); }
   const cb = document.getElementById('castbar'), castId = me.windup || me.channel;
   if (castId) {
     const a = abilities.find(x => x.id === castId);
-    if (!castInfo || castInfo.id !== castId) castInfo = { id: castId, start: performance.now(), dur: me.windup ? 1 : 3 };
+    if (!castInfo || castInfo.id !== castId) castInfo = { id: castId, start: performance.now(), dur: me.castT || (me.windup ? 1 : 3) };
     cb.style.display = 'block'; cb.querySelector('span').textContent = a ? a.name : '';
     cb.querySelector('i').style.transform = `scaleX(${Math.min(1, (performance.now() - castInfo.start) / 1000 / castInfo.dur)})`;
   } else { cb.style.display = 'none'; castInfo = null; }
@@ -6860,9 +7250,13 @@ function onEvent(m) {
       flyText(`${m.cls || 'Level'} ${m.level}!`, 'heal');
       addChat('Class', `You are now a level ${m.level} ${m.cls || ''}.`, true); addCombat(`You reach level ${m.level}.`, 'kill'); break;
     case 'ability': {
-      const arec = entityMeshes.get(m.by); if (arec) startAbilityAnim(arec, m.id);
-      if (m.by === myId) { flyText(m.name, 'xp'); addCombat(`You use ${m.name}.`, 'me'); gcdUntil = performance.now() + ((abilityClass && abilityClass.gcd) || 1.5) * 1000; } break;
+      const arec = entityMeshes.get(m.by);
+      if (m.cancel) { if (arec && arec.mesh.userData.rig) arec.mesh.userData.rig.anim = null; endCastFx(m.by); break; }
+      if (arec) startAbilityAnim(arec, m.id, m.windup);
+      if (m.by === myId) { flyText(m.name, 'xp'); addCombat(`You ${m.windup ? 'begin casting' : 'use'} ${m.name}.`, 'me'); gcdUntil = performance.now() + ((abilityClass && abilityClass.gcd) || 1.5) * 1000; } break;
     }
+    case 'heal': showHeal(m); break;
+    case 'spell': spellFx(m); break;
     case 'learned':
       { const lrec = entityMeshes.get(myId); if (lrec && m.id === 'momentum') startAbilityAnim(lrec, 'momentum'); sfx.play('quest_complete', { rate: 1.1, vol: 0.7 }); }
       flyText(`Learned ${m.name}!`, 'heal'); addChat('Trainer', `You learn ${m.name} for ${m.price} gp. It's in your spellbook (B).`, true); break;
@@ -6906,7 +7300,7 @@ function onEvent(m) {
       // The server's own words over the character; ability nags ("not ready",
       // "not enough stamina", "need a target") stay out of the chat log and
       // don't repeat while you hammer the key.
-      const nag = /not ready|Not enough|need a target|in reach|already under attack|You are busy|haven't learned|unlocks at/.test(m.text);
+      const nag = /not ready|Not enough|need a target|in reach|already under attack|You are busy|haven't learned|unlocks at|too far|Too far|nothing to cleanse|already stronger/.test(m.text);
       const now = performance.now();
       if (nag && m.text === lastNotice.text && now - lastNotice.t < 1500) break;
       lastNotice = { text: m.text, t: now };
@@ -6993,12 +7387,14 @@ function showHit(m) {
     }
   }
   if (m.target === myId && m.dmg > 0) hurtFlash(m.hitKind === 'poison' ? '#3faa4a' : m.hitKind === 'burn' ? '#ff6a1a' : '#c0392b');
+  if (m.absorbed) { const rr = entityMeshes.get(m.target); if (rr) { spawnFx('glow', rr.mesh.position.x, rr.mesh.position.y, rr.mesh.position.z, 0, { color: 0xffe28a, life: 0.35 }); splatAt(rr, m.absorbed, 'absorb'); if (m.target === myId) addCombat(`Your ward absorbs ${m.absorbed}.`, 'kill'); } }
   if (m.targetKind === 'player' && m.dmg > 0) markStatus(m.target, m.hitKind);
   const rec = entityMeshes.get(m.target);
   if (!rec) return;
   // Something struck: a burst on the target, bigger and gold on a crit.
   const mp = rec.mesh.position;
-  if (m.dmg > 0) { spawnFx('impact', mp.x, mp.y, mp.z, 0, { color: m.crit ? 0xffd27a : 0xffe0c0, sparkColor: m.crit ? 0xffb020 : 0xff6a4a, n: m.crit ? 12 : 6, y: 1.1 }); sfx.play('hit_thud', { x: mp.x, z: mp.z, rate: m.crit ? 1.15 : 0.95, vol: m.crit ? 1 : 0.7 }); if (m.crit) sfx.play('attack_slash', { x: mp.x, z: mp.z, rate: 1.3, vol: 0.5 }); }
+  if (m.dmg > 0 && m.hitKind === 'holy') { spawnFx('impact', mp.x, mp.y, mp.z, 0, { color: 0xfff6d0, sparkColor: 0xffd24a, n: m.crit ? 18 : 10, y: 1.1 }); spawnFx('flash', mp.x, mp.y, mp.z, 0, { r: m.crit ? 2.4 : 1.6, color: 0xfff0b0, life: 0.3 }); spawnFx('pillar', mp.x, mp.y, mp.z, 0, { color: 0xffe9a0, h: 3.5, life: 0.45 }); sfx.play('magic_cast', { x: mp.x, z: mp.z, rate: 1.4, vol: 0.5 }); sfx.play('hit_thud', { x: mp.x, z: mp.z, rate: 1.2, vol: 0.5 }); }
+  else if (m.dmg > 0) { spawnFx('impact', mp.x, mp.y, mp.z, 0, { color: m.crit ? 0xffd27a : 0xffe0c0, sparkColor: m.crit ? 0xffb020 : 0xff6a4a, n: m.crit ? 12 : 6, y: 1.1 }); sfx.play('hit_thud', { x: mp.x, z: mp.z, rate: m.crit ? 1.15 : 0.95, vol: m.crit ? 1 : 0.7 }); if (m.crit) sfx.play('attack_slash', { x: mp.x, z: mp.z, rate: 1.3, vol: 0.5 }); }
   else sfx.play('attack_claw', { x: mp.x, z: mp.z, rate: 1.4, vol: 0.35, lowpass: 2500 }); // a whiff
   tmpV.copy(rec.mesh.position); tmpV.y += 2.0; tmpV.project(camera);
   // Old School RuneScape hitsplat: blue "0" on a miss, red on a hit. (Skipped if
@@ -7039,6 +7435,35 @@ function showHit(m) {
   }
 }
 
+// A hitsplat-style number over an entity (heals, absorbs).
+function splatAt(rec, text, cls) {
+  if (!showSplats) return;
+  tmpV.copy(rec.mesh.position); tmpV.y += 2.0; tmpV.project(camera); if (tmpV.z > 1) return;
+  const el = document.createElement('div');
+  el.className = 'splat ' + cls; el.textContent = text;
+  el.style.left = (tmpV.x * 0.5 + 0.5) * innerWidth + 'px'; el.style.top = (-tmpV.y * 0.5 + 0.5) * innerHeight + 'px';
+  document.getElementById('nameplates').appendChild(el); setTimeout(() => el.remove(), 800);
+}
+const SPELL_NAME = { minor_heal: 'Minor Heal', greater_heal: 'Greater Heal', radiant_touch: 'Radiant Touch', renewing_prayer: 'Renewing Prayer', prayer_of_mending: 'Prayer of Mending', divine_light: 'Divine Light', hymn_of_renewal: 'Hymn of Renewal', judgment_light: 'Judgment Light', di_mend: 'Divine Intervention' };
+function showHeal(m) {
+  const T = entityMeshes.get(m.target), B = entityMeshes.get(m.by);
+  const mine = m.by === myId, onMe = m.target === myId;
+  const tn = onMe ? 'you' : (T && T.data ? T.data.name : 'someone'), bn = mine ? 'You' : (B && B.data ? B.data.name : 'Someone');
+  const what = SPELL_NAME[m.spell] || 'a prayer';
+  if (mine || onMe) addCombat(`${bn === 'You' ? 'Your' : bn + "'s"} ${what} heals ${tn} for ${m.amount}${m.crit ? ' (crit)' : ''}${m.over ? ` (${m.over} over)` : ''}.`, mine ? 'me' : 'kill');
+  if (onMe) flyText(`+${m.amount}`, 'heal');
+  if (!T) return;
+  splatAt(T, `+${m.amount}`, m.crit ? 'healamt crit' : 'healamt');
+  const mp = T.mesh.position;
+  if (m.tick) { spawnFx('glow', mp.x, mp.y, mp.z, 0, { color: 0xffe9a0, life: 0.45 }); spawnFx('rise', mp.x, mp.y, mp.z, 0, { n: 6, color: 0xfff1c8, life: 0.7 }); sfx.play('heal_chime', { x: mp.x, z: mp.z, rate: 1.6, vol: 0.12 }); return; }
+  const big = m.crit || m.amount >= 60;
+  spawnFx('flash', mp.x, mp.y, mp.z, 0, { r: big ? 2.6 : 1.8, color: 0xfff3c0, life: 0.3 });
+  spawnFx('glow', mp.x, mp.y, mp.z, 0, { color: 0xffd86a, life: 0.6 });
+  spawnFx('rise', mp.x, mp.y, mp.z, 0, { n: big ? 26 : 14, color: 0xfff1c8, life: 1.1 });
+  spawnFx('pillar', mp.x, mp.y, mp.z, 0, { color: 0xffe9a0, h: big ? 4.5 : 3, life: 0.55 });
+  spawnFx('glyph', mp.x, mp.y, mp.z, 0, { color: 0xffd86a, life: 0.9, r: 1.3 });
+  sfx.play('heal_chime', { x: mp.x, z: mp.z, rate: big ? 0.9 : 1.1, vol: big ? 0.55 : 0.4 });
+}
 function flyText(text, cls) {
   const el = document.createElement('div');
   el.className = 'fly ' + cls; el.textContent = text;
@@ -7237,8 +7662,10 @@ function renderMomentum() {
   el.innerHTML = [0, 1, 2, 3, 4].map(i => `<i class="${i < selfMomentum ? 'on' : ''}" title="Momentum ${selfMomentum}/5"></i>`).join('');
 }
 const BUFF_LABEL = { rushing_force: 'Rushing Force', weapon_flow: 'Weapon Flow', savage_watcher: 'Savage Watch', savage: 'Savage Momentum', bloodrush: 'Bloodrush',
-  footwork: 'Footwork', berserkers_roar: "Berserker's Roar", reckless_exposure: 'Exposed', riposte_ready: 'Riposte Ready' };
-const BAD_BUFF = new Set(['reckless_exposure']);
+  footwork: 'Footwork', berserkers_roar: "Berserker's Roar", reckless_exposure: 'Exposed', riposte_ready: 'Riposte Ready',
+  renewing_prayer: 'Renewing Prayer', holy_ward: 'Holy Ward', blessed_barrier: 'Blessed Barrier', prayer_of_mending: 'Prayer of Mending', undead_ward: 'Undead Ward',
+  purified_soul: 'Purified Soul', divine_intervention: 'Divine Intervention', di_mend: 'Intervention Mend', guardian_prayer: 'Guardian Prayer', revival_sickness: 'Revival Sickness', avatar_of_mercy: 'Avatar of Mercy' };
+const BAD_BUFF = new Set(['reckless_exposure', 'revival_sickness']);
 function renderBuffs() {
   const el = document.getElementById('buffrow'); if (!el) return;
   el.innerHTML = buffList.map(b => `<span class="bf${BAD_BUFF.has(b.id) ? ' bad' : ''}" title="${b.t}s left">${BUFF_LABEL[b.id] || b.id}${b.charges ? ' ×' + b.charges : ''}</span>`).join('');
@@ -7672,6 +8099,8 @@ if (location.search.includes('debug')) {
     get entities() { return entityMeshes; },
     get npcs() { return npcMeshes; },
     get self() { return entityMeshes.get(myId); },
+    send(o) { ws?.send(JSON.stringify(o)); },   // raw message to the server (editor / test hooks)
+    get friendId() { return friendId; }, target(id) { setFriend(id); },
     get camYaw() { return camYaw; },
     get camDist() { return camDist; },
     get frames() { return frameCount; },
@@ -7874,7 +8303,7 @@ function animate() {
   _pf('npcmk', () => updateNpcMarkers());
   _pf('npcidle', () => animateNpcs(dt));
   _pf('veins', () => updateVeinFade(dt));
-  _pf('boss', () => { updateHazardFx(dt); updateBossFx(dt); updateStatusFx(dt); });
+  _pf('boss', () => { updateHazardFx(dt); updateBossFx(dt); updateStatusFx(dt); updateHolyFx(dt); updateCastFx(dt); });
   _pf('region', () => updateRegionTitle());
   _pf('abilities', () => updateActionBar());
   _pf('fx', () => { updateFx(dt); updateAuras(dt); });
@@ -7988,6 +8417,13 @@ try {
 function currentLook() {
   return { hair: +hairSel.value, hairColor: hairCol.value, skin: skinCol.value, outfit: +outfitSel.value };
 }
+// Class pick on the login card; remembered like the look.
+let pickedClass = 'fighter';
+try { const c = localStorage.getItem('bk.cls'); if (c === 'fighter' || c === 'cleric') pickedClass = c; } catch (e) {}
+document.querySelectorAll('#classRow .classopt').forEach(d => {
+  d.classList.toggle('sel', d.dataset.cls === pickedClass);
+  d.onclick = () => { pickedClass = d.dataset.cls; document.querySelectorAll('#classRow .classopt').forEach(x => x.classList.toggle('sel', x === d)); try { localStorage.setItem('bk.cls', pickedClass); } catch (e) {} };
+});
 setInterval(() => { if (!zone) music.update(0.1); }, 100); // fades tick on the login screen too (the render loop isn't running yet)
 async function play() {
   const name = nameInput.value.trim() || 'Adventurer';
@@ -7995,7 +8431,7 @@ async function play() {
   try { localStorage.setItem('bk.look', JSON.stringify(look)); } catch (e) {}
   playBtn.disabled = true;
   if (!modelsDone) { playBtn.textContent = 'Loading models…'; await modelsReady; }
-  connect(name, look);
+  connect(name, look, pickedClass);
 }
 playBtn.onclick = play;
 nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') play(); });

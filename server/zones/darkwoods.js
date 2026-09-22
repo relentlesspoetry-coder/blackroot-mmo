@@ -118,6 +118,9 @@ export const darkwoods = {
     { id: 'garrick',  name: 'Drillmaster Garrick',  x: 4,    z: -65, poi: 'entrance', model: 'Male', yaw: 3.1, trainer: 'fighter',
       look: { hair: 15, hairColor: '#3a2a1a', skin: '#b58a66', outfit: 25 },   // Sellsword
       idle: 'Swinging a stick is free. Swinging it properly costs coin. Come learn.' },
+    { id: 'aldis',    name: 'Mother Aldis',         x: -8,   z: -60, poi: 'entrance', model: 'Female', yaw: 3.0, trainer: 'cleric',
+      look: { hair: 3, hairColor: '#d9d2c4', skin: '#d4b394', outfit: 29, colors: { top: '#e8e0cc' } },   // a pilgrim in undyed linen
+      idle: 'The Light asks little of us: mend what is broken, and stand between the dark and those who cannot.' },
     { id: 'maggie',   name: 'Old Maggie',          x: 18,   z: -79, poi: 'entrance', model: 'Female', yaw: 3.0,
       idle: 'Mind the hens, love — and shut the gate on your way out.' },
     { id: 'bram',     name: 'Farmhand Bram',       x: -19,  z: -77, poi: 'entrance', model: 'Male', yaw: 1.4,

@@ -14,12 +14,12 @@ export const CLUCKIFER_CHANCE = 300;   // 1 in N chicken kills
 
 export const BOSS_TEMPLATES = {
   // (templates are level-scaled like every monster: at level 10 this is ~1600 hp, ~2900 xp)
-  cluckifer: { name: 'Cluckifer', hp: 430, dmg: [8, 16], speed: 6.0, aggro: 26, xp: 700, respawn: 999999, boss: 'cluckifer',
+  cluckifer: { name: 'Cluckifer', hp: 430, dmg: [8, 16], speed: 6.0, aggro: 26, xp: 700, respawn: 999999, boss: 'cluckifer', evil: 'demon',
     attackSpeed: 4, rolls: 4,
     loot: [ { item: 'Coins', min: 300, max: 900, w: 40 }, { item: 'Hellfeather', min: 2, max: 6, w: 40 }, { item: 'Infernal Egg', min: 1, max: 3, w: 30 },
             { item: 'Cluckifer’s Talon', w: 6 }, { item: 'Brimstone Comb', w: 4 } ] },
-  hell_chick:  { name: 'Hellspawn Chick', hp: 12, dmg: [3, 6], speed: 7.5, aggro: 30, xp: 14, respawn: 999999, minion: 'chick', attackSpeed: 3 },
-  brood_chick: { name: 'Sacrificial Chick', hp: 14, dmg: [1, 1], speed: 3.2, aggro: 0, xp: 12, respawn: 999999, minion: 'brood', passive: true },
+  hell_chick:  { name: 'Hellspawn Chick', hp: 12, dmg: [3, 6], speed: 7.5, aggro: 30, xp: 14, respawn: 999999, minion: 'chick', attackSpeed: 3, evil: 'demon' },
+  brood_chick: { name: 'Sacrificial Chick', hp: 14, dmg: [1, 1], speed: 3.2, aggro: 0, xp: 12, respawn: 999999, minion: 'brood', passive: true, evil: 'demon' },
   ruin_egg:    { name: 'Egg of Ruin', hp: 18, dmg: [1, 1], speed: 0, aggro: 0, xp: 10, respawn: 999999, minion: 'ruin_egg', passive: true },
   rotten_egg:  { name: 'Rotten Egg', hp: 36, dmg: [1, 1], speed: 0, aggro: 0, xp: 30, respawn: 999999, minion: 'rotten_egg', passive: true },
 };
@@ -112,7 +112,7 @@ function knockback(ctx, zone, p, fromX, fromZ, dist) {
 function target(ctx, m) {
   let t = m.targetId ? ctx.players.get(m.targetId) : null;
   if (t && (!t.alive || t.zoneId !== m.zoneId)) t = null;
-  if (!t) { let best = null, bd = 1e9; for (const p of ctx.players.values()) { if (!p.alive || p.zoneId !== m.zoneId) continue; const d = ctx.dist2(p.x, p.z, m.x, m.z); if (d < bd) { bd = d; best = p; } } t = best; m.targetId = t ? t.id : null; }
+  if (!t) { let best = null, bd = 45 * 45; for (const p of ctx.players.values()) { if (!p.alive || p.zoneId !== m.zoneId) continue; const d = ctx.dist2(p.x, p.z, m.x, m.z); if (d < bd) { bd = d; best = p; } } t = best; m.targetId = t ? t.id : null; }   // someone else nearby (a healer standing off) inherits the fight; nobody within 45 m and the event ends
   return t;
 }
 function face(m, p) { if (p) m.yaw = Math.atan2(p.x - m.x, p.z - m.z); }

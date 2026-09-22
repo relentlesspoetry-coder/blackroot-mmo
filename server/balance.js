@@ -111,6 +111,67 @@ export const CLASSES = {
         desc: 'The capstone: spends all Momentum for +30 damage and +35% weapon damage per stack. +15% vs Split Guard. Refunds 50 rage on a kill.' },
     ],
   },
+  cleric: {
+    name: 'Cleric', icon: 'ui/cleric/emblem.png', background: 'ui/cleric/background.jpg',
+    desc: 'A holy healer: direct heals, wards, prayers, cleansing and emergency saves, with a little holy fire kept for the undead. Not a tank, not a caster.',
+    resource: 'Mana',
+    atk: (L) => 3 + L,             // a mace-and-prayer-book melee: behind the Fighter on every roll
+    str: (L) => 2 + L,
+    def: (L) => 3 + L,             // cloth
+    hp:  (L) => 70 + (L - 1) * 8,
+    // Mana: ~125 at level 1, ~750 at 20; regenerates a share of the pool every
+    // 5 s — a trickle in a fight, a flood out of one.
+    mana: { max: (L) => 125 + (L - 1) * 33, combatRegen: 0.026, idleRegen: 0.08, period: 5 },
+    gcd: 1.5,
+    critBase: 0.05, critMult: 1.5, // heals crit too
+    // Spell numbers are the spec's level-1 values × spellScale(level) (1.0 at
+    // level 1, ~4.7 at 20 — the spec's level-20 targets). `cast` is the
+    // wind-up in seconds (moving breaks it); `range` is metres to the target.
+    // Friendly spells go to the targeted player (click one) or, with no
+    // target, to the caster.
+    abilities: [
+      { id: 'minor_heal', name: 'Minor Heal', level: 1, cost: 14, cd: 0, cast: 1.25, range: 30, kind: 'heal', heal: 32,
+        desc: 'Restore a little health to an ally (or yourself). 1.25s cast. Can critically heal.' },
+      { id: 'smite', name: 'Smite', level: 2, cost: 12, cd: 0, cast: 1.25, range: 30, kind: 'holy', dmg: 20, evil: 0.2,
+        desc: 'Strike an enemy with holy light from up to 30m. +20% against undead and demons.' },
+      { id: 'renewing_prayer', name: 'Renewing Prayer', level: 3, cost: 24, cd: 8, range: 30, kind: 'hot', heal: 10, tick: 3, capPct: 0.35, dur: 300,
+        desc: 'A gentle prayer heals an ally every 3s for 5 min, or until it has healed 35% of their health. Recasting refreshes it.' },
+      { id: 'cleanse', name: 'Cleanse', level: 4, cost: 28, cd: 8, range: 30, kind: 'cleanse', n: 1, refund: 0.5,
+        desc: 'Remove one poison, burn, bleed or snare from an ally. Half the mana is refunded if there was nothing to remove.' },
+      { id: 'greater_heal', name: 'Greater Heal', level: 5, cost: 42, cd: 0, cast: 2.5, range: 30, kind: 'heal', heal: 90,
+        desc: 'A large heal with a long 2.5s cast. Best on someone who will still be standing when it lands.' },
+      { id: 'holy_ward', name: 'Holy Ward', level: 6, cost: 45, cd: 18, range: 30, kind: 'ward', absorb: 75, absorbPct: 0.12, dur: 300,
+        desc: 'Shield an ally: absorbs 75 (+12% of their max health) damage for 5 min. They take +5% healing from you while it holds. Only a stronger ward replaces it.' },
+      { id: 'radiant_touch', name: 'Radiant Touch', level: 7, cost: 50, cd: 20, range: 30, kind: 'heal', heal: 70, woundedBonus: 0.2,
+        desc: 'An instant heal for an ally. +20% if they are below 40% health.' },
+      { id: 'turn_undead', name: 'Turn Undead', level: 8, cost: 48, cd: 60, cast: 0.5, range: 25, kind: 'turn', radius: 8, fear: 8, dur: 300, charges: 4,
+        desc: 'Undead and demons within 8m of your target flee for 8s (bosses instead deal 5% less for 6s). Allies nearby take 10% less from undead for 4 hits.' },
+      { id: 'prayer_of_mending', name: 'Prayer of Mending', level: 9, cost: 58, cd: 25, range: 30, kind: 'mending', heal: 48, charges: 5, jump: 25, dur: 300,
+        desc: 'Place a prayer on an ally: when they are struck it heals them, then leaps to a hurt ally within 25m. 5 jumps or 5 min.' },
+      { id: 'sanctuary', name: 'Sanctuary', level: 10, cost: 85, cd: 120, cast: 1, kind: 'sanctuary', radius: 8, dr: 0.12, healIn: 0.08, charges: 12, dur: 300,
+        desc: 'Consecrate the ground where you stand (8m): allies inside take 12% less damage and +8% healing from you. 12 protected hits or 5 min.' },
+      { id: 'divine_light', name: 'Divine Light', level: 11, cost: 95, cd: 20, cast: 1.5, kind: 'aoeheal', radius: 12, heal: 75, cap: 6, woundedBonus: 0.15,
+        desc: 'A burst of light heals up to 6 allies within 12m of you. +15% on anyone below 40% health.' },
+      { id: 'blessed_barrier', name: 'Blessed Barrier', level: 12, cost: 110, cd: 90, range: 30, kind: 'barrier', radius: 12, absorb: 60, absorbPct: 0.08, cap: 5, dur: 300,
+        desc: 'Shield up to 5 allies within 12m of your target for 60 (+8% max health) each, for 5 min. The most hurt come first.' },
+      { id: 'judgment_light', name: 'Judgment Light', level: 13, cost: 68, cd: 12, range: 30, kind: 'holy', dmg: 70, evil: 0.25, leech: 0.6, leechR: 25,
+        desc: 'Instant holy damage to an enemy; the most hurt ally within 25m is healed for 60% of it. +25% against undead and demons.' },
+      { id: 'purify_soul', name: 'Purify Soul', level: 14, cost: 90, cd: 45, range: 30, kind: 'cleanse', n: 2, resist: 0.35, dur: 300, charges: 2,
+        desc: 'Remove up to two poisons, burns, bleeds or snares from an ally, and leave them 35% likely to shrug off the next two.' },
+      { id: 'divine_intervention', name: 'Divine Intervention', level: 15, cost: 140, cd: 300, range: 30, kind: 'intervention', mendPct: 0.2, mendDur: 6, dr: 0.2, charges: 3, dur: 300,
+        desc: 'For 5 min, a blow that would kill the ally leaves them at 1 health instead, heals 20% of their health over 6s and softens the next 3 hits by 20%. One ally at a time.' },
+      { id: 'hymn_of_renewal', name: 'Hymn of Renewal', level: 16, cost: 155, cd: 120, kind: 'hymn', radius: 14, heal: 52, ticks: 5, period: 0.8, cap: 6, rpBonus: 0.1,
+        desc: 'Channel for 4s: five waves of healing to up to 6 allies within 14m. +10% on allies under Renewing Prayer. Moving breaks the hymn.' },
+      { id: 'exorcise_evil', name: 'Exorcise Evil', level: 17, cost: 120, cd: 30, cast: 1.5, range: 30, kind: 'holy', dmg: 150, evil: 0.4, weaken: 0.08, weakenDur: 8,
+        desc: 'Heavy holy damage. +40% against undead and demons, who also deal 8% less for 8s afterwards.' },
+      { id: 'guardian_prayer', name: 'Guardian Prayer', level: 18, cost: 135, cd: 120, range: 30, kind: 'guardian', dr: 0.15, healIn: 0.18, charges: 8, dur: 300,
+        desc: 'One ally takes 15% less damage for 8 hits or 5 min, and +18% healing from you. Recasting moves it.' },
+      { id: 'radiant_revival', name: 'Radiant Revival', level: 19, cost: 220, cd: 600, cast: 5, range: 30, kind: 'revive', hpPct: 0.35, resPct: 0.25, sickness: 300,
+        desc: 'Out of combat, raise a fallen ally where they lie with 35% health and 25% of their resource. They deal and heal 15% less for 5 min.' },
+      { id: 'avatar_of_mercy', name: 'Avatar of Mercy', level: 20, cost: 260, cd: 1200, kind: 'avatar', healBonus: 0.25, absorbBonus: 0.25, holyBonus: 0.2, manaOff: 0.15, charges: 20, dur: 300,
+        desc: 'The capstone: for 20 healing, ward or cleanse casts (or 5 min) your heals and wards are 25% stronger, holy damage 20% stronger, and healing spells cost 15% less.' },
+    ],
+  },
 };
 // Learning: only the level-1 ability is known from the start; everything
 // else is bought from the class trainer once the level is reached.
@@ -119,8 +180,11 @@ export const DEFAULT_CLASS = 'fighter';
 export function classDef(id) { return CLASSES[id] || CLASSES[DEFAULT_CLASS]; }
 export function classStats(id, level) {
   const c = classDef(id);
-  return { atk: c.atk(level), str: c.str(level), def: c.def(level), hp: c.hp(level), rage: c.rage ? c.rage.max : 0 };
+  return { atk: c.atk(level), str: c.str(level), def: c.def(level), hp: c.hp(level), rage: c.rage ? c.rage.max : 0, mana: c.mana ? c.mana.max(level) : 0 };
 }
+// Spell power: 1.0 at level 1 rising to ~4.7 at 20, so a level-1 heal of 32
+// reaches ~150 at level 20 (the Cleric spec's scaling targets).
+export function spellScale(level) { return 1 + 0.195 * (Math.min(20, level) - 1) + Math.max(0, level - 20) * 0.1; }
 // Max hit from strength. The divisor is tuned (vs OSRS's 640) so this game's
 // HP pools die at a similar pace to the old damage model.
 export function maxHit(strLevel, strBonus, styleStr = 0) {
