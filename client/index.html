@@ -4710,7 +4710,9 @@ function buildHeldWeapon(name) {
       const sc = (info.len || 1) / (Math.max(box.max.x - box.min.x, box.max.y - box.min.y, box.max.z - box.min.z) || 1);
       model.scale.setScalar(sc);
       model.rotation.x = Math.PI / 2;            // +Z (the blade) -> down from the fist
-      model.position.y = Math.max(0, -box.min.z) * sc * 0.5;
+      // the pack's grip runs from the origin back to box.min.z (the pommel); slide
+      // the weapon so the middle of that grip, not the guard, sits in the fist
+      model.position.y = -Math.max(0, -box.min.z) * sc * 0.45;
       g.add(model);
     });
     return g;
@@ -4810,7 +4812,7 @@ function fistHand(rig, side, amt, thumbAmt) {
   f.Index[0].getWorldPosition(kn); f.Pinky[0].getWorldPosition(tmp); kn.subVectors(tmp, kn).normalize();
   for (const k in f) for (let j = 0; j < 2; j++) {
     const jt = f[k][j]; if (!jt) continue;
-    const a = (k === 'Thumb' ? thumbAmt * (j ? 0.7 : 1) : amt * (j ? 0.85 : 1)) * (side === 'L' ? 1 : -1);   // toward the palm (checked on screen)
+    const a = (k === 'Thumb' ? thumbAmt * (j ? 0.7 : 1) : amt * (j ? 0.9 : 1)) * (side === 'L' ? 1 : -1);   // toward the palm (checked on screen)
     qd.setFromAxisAngle(kn, a); jt.parent.getWorldQuaternion(qp); jt.quaternion.copy(qp).invert().multiply(qd).multiply(qp);
   }
   rig['fist' + side] = true;
@@ -5278,7 +5280,7 @@ function animateEntity(rec, e, kind, dt) {
     if (rec.instrumentObj && rec.holdLute) luteArms(rec, rig, rig.luteStrum || 0, dt);
     else if (rig.fingersR) {   // a held weapon closes the fist; otherwise the hands relax
       const grip = !!(rig.weapon && rig.weapon.visible);
-      if (grip) fistHand(rig, 'R', 1.35, 0.7); else if (rig.fistR) { relaxHand(rig, 'R'); }
+      if (grip) fistHand(rig, 'R', 1.6, 1.1); else if (rig.fistR) { relaxHand(rig, 'R'); }
       if (rig.fistL) relaxHand(rig, 'L');
       rig.fistR = grip;
     }
