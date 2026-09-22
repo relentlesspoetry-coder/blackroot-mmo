@@ -4655,7 +4655,7 @@ function ensureMesh(ent, kind) {
   // old one's place, facing and held weapon carry over.
   if (rec && kind === 'player' && rec.lookKey !== lookKeyOf(ent)) {
     const old = rec.mesh;
-    scene.remove(old); if (rec.medFx) endMeditationFx(rec);
+    scene.remove(old); if (rec.medFx) endMeditationFx(rec); if (rec.medFx2) endMeditationFx2(rec);
     entityMeshes.delete(ent.id);
     rec = ensureMesh(ent, kind);
     rec.mesh.position.copy(old.position); rec.mesh.rotation.copy(old.rotation);
@@ -5112,10 +5112,12 @@ function animateEntity(rec, e, kind, dt) {
     if (rig.armL) rig.armL.rotation.set(-0.52 - heave * 0.03, 0, 0.13);   // straight arms, hands resting on the knees
     if (rig.armR) rig.armR.rotation.set(-0.52 - heave * 0.03, 0, -0.13);
     if (rig.head) rig.head.rotation.x = 0.06 - heave * 0.04 - roar * 0.3;  // level, tipping back on the flare
-    updateMeditationFx(rec, dt);
+    const cls = rec.data && rec.data.cls;
+    if (cls === 'cleric') updateClericMeditationFx(rec, dt); else if (cls === 'bard') updateBardMeditationFx(rec, dt); else updateMeditationFx(rec, dt);
     return;
   }
   if (rec.medFx) endMeditationFx(rec);
+  if (rec.medFx2) endMeditationFx2(rec);
 
   // --- speed, measured from the interpolated mesh rather than trusted input
   const px = rec.mesh.position.x, pz = rec.mesh.position.z;
@@ -6734,11 +6736,98 @@ function endMeditationFx(rec) {
   fx.embers.geometry.dispose();
   rec.medFx = null; rec.medT0 = undefined;
 }
-// A heal tick while meditating: a white-hot flare from the chest and a
-// shower of sparks — a snap of heat, not a ground ring.
+// ---- Cleric meditation: prayer. A soft white-gold glow at the heart, a
+// slow prayer circle turning under the seated body, a halo settling over the
+// head, motes of light drifting up, and every few breaths a hush — the glow
+// swells and a column of light stands briefly over them. Ticks are a chime
+// and a wash of light.
+function updateClericMeditationFx(rec, dt) {
+  const mp = rec.mesh.position, t = performance.now() / 1000, isMe = rec.data.id === myId;
+  let fx = rec.medFx2;
+  if (!fx || fx.kind !== 'cleric') {
+    if (fx) endMeditationFx2(rec);
+    const core = mkSprite(fxDot(), 0xfff3d0, 0.6), aura = mkSprite(fxDot(), 0xffd98a, 0.25), halo = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.03, 8, 32), new THREE.MeshBasicMaterial({ color: 0xfff0c0, transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending }));
+    halo.rotation.x = Math.PI / 2; halo.frustumCulled = false; scene.add(halo);
+    const circle = mkGlyph(0xffd86a, 1.5, 0.55), inner = mkGlyph(0xfff1c8, 0.8, 0.4);
+    const motes = mkMotes(48, 0xfff1c8, 0.1);
+    const light = new THREE.PointLight(0xffd88a, 1.2, 8); scene.add(light);
+    const wings = []; for (const side of [-1, 1]) { const w = new THREE.Sprite(new THREE.SpriteMaterial({ map: wingTexture(), color: 0xfff6d0, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending })); w.scale.set(side * 2.0, 2.0, 1); w.frustumCulled = false; scene.add(w); wings.push(w); }
+    fx = rec.medFx2 = { kind: 'cleric', core, aura, halo, circle, inner, motes, light, wings, t0: t, lastHush: 0 };
+    spawnFx('pillar', mp.x, mp.y - 0.45, mp.z, 0, { color: 0xfff6d0, h: 4, life: 1.2 }); spawnFx('rise', mp.x, mp.y - 0.4, mp.z, 0, { n: 18, color: 0xfff1c8 });
+    if (isMe) { sfx.play('heal_chime', { x: mp.x, z: mp.z, rate: 0.8, vol: 0.5 }); sfx.play('heal_chime', { x: mp.x, z: mp.z, rate: 1.2, delay: 0.3, vol: 0.35 }); }
+  }
+  const breath = Math.sin(t * 0.9) * 0.5 + 0.5;
+  const cyc = (t - fx.t0) % 6.5, hush = cyc > 5.2 ? Math.sin((cyc - 5.2) / 1.3 * Math.PI) : 0;   // the hush every 6.5 s
+  const cx = mp.x, cy = mp.y + 0.62, cz = mp.z;
+  fx.core.position.set(cx, cy, cz); const cs = 0.5 + breath * 0.2 + hush * 0.8; fx.core.scale.set(cs, cs, 1); fx.core.material.opacity = 0.45 + breath * 0.2 + hush * 0.35;
+  fx.aura.position.set(cx, cy, cz); const as = 2.2 + breath * 0.6 + hush * 1.8; fx.aura.scale.set(as, as, 1); fx.aura.material.opacity = 0.16 + breath * 0.1 + hush * 0.2;
+  fx.halo.position.set(cx, mp.y + 1.32 + Math.sin(t * 1.3) * 0.03, cz); fx.halo.rotation.z = t * 0.4; fx.halo.material.opacity = 0.55 + breath * 0.25 + hush * 0.2; const hsz = 1 + hush * 0.3; fx.halo.scale.set(hsz, hsz, hsz);
+  const gy = groundY(mp.x, mp.z) + 0.06;
+  fx.circle.position.set(cx, gy, cz); fx.circle.rotation.z = t * 0.25; fx.circle.material.opacity = 0.4 + breath * 0.15 + hush * 0.3;
+  fx.inner.position.set(cx, gy + 0.005, cz); fx.inner.rotation.z = -t * 0.45; fx.inner.material.opacity = 0.3 + hush * 0.4;
+  fx.light.position.set(cx, cy + 0.3, cz); fx.light.intensity = 0.8 + breath * 0.6 + hush * 2.5;
+  const pos = fx.motes.geometry.attributes.position, life = fx.motes.userData.life, seed = fx.motes.userData.seed;
+  for (let i = 0; i < pos.count; i++) { life[i] += dt * (0.18 + (i % 5) * 0.04) * (1 + hush); if (life[i] > 1) { life[i] = 0; seed[i] = Math.random() * 6.28; } const l = life[i], a = seed[i] + l * 1.5, r = 0.35 + l * 0.9; pos.setXYZ(i, cx + Math.cos(a) * r, mp.y - 0.4 + l * 2.6, cz + Math.sin(a) * r); }
+  pos.needsUpdate = true; fx.motes.material.opacity = 0.55 + hush * 0.4;
+  fx.wings.forEach((w, i) => { w.position.set(cx + (i ? 0.55 : -0.55) * (1 + hush * 0.4), cy + 0.25 + hush * 0.3, cz - 0.15); w.material.opacity = hush * 0.55; const ws = (1.2 + hush * 1.2); w.scale.set((i ? 1 : -1) * ws, ws, 1); });
+  if (hush > 0 && fx.lastHush === 0) { spawnFx('pillar', mp.x, mp.y - 0.45, mp.z, 0, { color: 0xfff6d0, h: 5, life: 1.3 }); spawnFx('shock', mp.x, gy, mp.z, 0, { r: 3.2, color: 0xffe9a0, life: 1.0 }); if (isMe) sfx.play('heal_chime', { x: mp.x, z: mp.z, rate: 0.6, vol: 0.4 }); }
+  fx.lastHush = hush;
+}
+// ---- Bard meditation: a quiet tune. Notes drift up around the seated body in
+// a slow spiral, a staff of music turns underneath, a blue-violet glow keeps
+// time with the breathing, and every few bars a chord — a ripple of sound
+// spreads out and the notes brighten. Ticks are a chime and a flurry of notes.
+function updateBardMeditationFx(rec, dt) {
+  const mp = rec.mesh.position, t = performance.now() / 1000, isMe = rec.data.id === myId;
+  let fx = rec.medFx2;
+  if (!fx || fx.kind !== 'bard') {
+    if (fx) endMeditationFx2(rec);
+    const core = mkSprite(fxDot(), 0xc9b6ff, 0.5), aura = mkSprite(fxDot(), 0x8a7aff, 0.22);
+    const notes = []; for (let i = 0; i < 9; i++) { const n = mkSprite(noteTexture(i % 3), i % 3 === 0 ? 0xffd27a : 0xc9b6ff, 0.9); n.scale.set(0.3, 0.3, 1); n.userData = { ph: i / 9, spin: (Math.random() - 0.5) * 2 }; notes.push(n); }
+    const staff = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 3.2), new THREE.MeshBasicMaterial({ map: staffTexture(), color: 0xc9b6ff, transparent: true, opacity: 0.5, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
+    staff.rotation.x = -Math.PI / 2; staff.frustumCulled = false; scene.add(staff);
+    const ripples = []; for (let i = 0; i < 3; i++) { const r = mkSprite(ringTexture(), 0xc9b6ff, 0); r.userData = { ph: i / 3 }; ripples.push(r); }
+    const light = new THREE.PointLight(0x9a8aff, 1.0, 7); scene.add(light);
+    fx = rec.medFx2 = { kind: 'bard', core, aura, notes, staff, ripples, light, t0: t, lastChord: 0 };
+    spawnFx('notes', mp.x, mp.y - 0.4, mp.z, 0, { n: 10, color: 0xc9b6ff, y: 0.6 }); spawnFx('ripple', mp.x, mp.y - 0.45, mp.z, 0, { r: 3.0, color: 0xc9b6ff, life: 1.0 });
+    if (isMe) { sfx.play('heal_chime', { x: mp.x, z: mp.z, rate: 1.3, vol: 0.4 }); sfx.play('heal_chime', { x: mp.x, z: mp.z, rate: 1.6, delay: 0.25, vol: 0.35 }); sfx.play('heal_chime', { x: mp.x, z: mp.z, rate: 2.0, delay: 0.5, vol: 0.3 }); }
+  }
+  const breath = Math.sin(t * 1.0) * 0.5 + 0.5;
+  const cyc = (t - fx.t0) % 5.0, chord = cyc > 4.1 ? Math.sin((cyc - 4.1) / 0.9 * Math.PI) : 0;   // a chord every five seconds
+  const cx = mp.x, cy = mp.y + 0.62, cz = mp.z;
+  fx.core.position.set(cx, cy, cz); const cs = 0.45 + breath * 0.2 + chord * 0.6; fx.core.scale.set(cs, cs, 1); fx.core.material.opacity = 0.35 + breath * 0.2 + chord * 0.35;
+  fx.aura.position.set(cx, cy, cz); const as = 2.0 + breath * 0.6 + chord * 1.4; fx.aura.scale.set(as, as, 1); fx.aura.material.opacity = 0.14 + breath * 0.08 + chord * 0.2;
+  const gy = groundY(mp.x, mp.z) + 0.06;
+  fx.staff.position.set(cx, gy, cz); fx.staff.rotation.z = t * 0.3; fx.staff.material.opacity = 0.35 + breath * 0.15 + chord * 0.3;
+  fx.light.position.set(cx, cy + 0.3, cz); fx.light.intensity = 0.6 + breath * 0.5 + chord * 2.0;
+  fx.notes.forEach((n, i) => {   // a slow spiral up around the body, each note wobbling as it climbs
+    const u = (t * 0.16 + n.userData.ph) % 1, a = u * 4.5 + i * 0.7, r = 0.55 + Math.sin(u * 3.1) * 0.15;
+    n.position.set(cx + Math.cos(a) * r, mp.y - 0.35 + u * 2.4, cz + Math.sin(a) * r);
+    n.material.opacity = Math.sin(u * Math.PI) * (0.7 + chord * 0.3); n.material.rotation = Math.sin(t * 2 + i) * 0.35; const ns = 0.26 + Math.sin(u * Math.PI) * 0.1 + chord * 0.12; n.scale.set(ns, ns, 1);
+  });
+  fx.ripples.forEach((r, i) => { const u = (t * 0.5 + r.userData.ph) % 1; r.position.set(cx, cy - 0.1, cz); const rs = 0.4 + u * 3.2 * (1 + chord * 0.5); r.scale.set(rs, rs, 1); r.material.opacity = (1 - u) * (0.28 + chord * 0.3); });
+  if (chord > 0 && fx.lastChord === 0) { spawnFx('notes', mp.x, mp.y - 0.4, mp.z, 0, { n: 8, color: 0xffd27a, y: 0.8 }); spawnFx('ripple', mp.x, mp.y - 0.45, mp.z, 0, { r: 3.6, color: 0xc9b6ff, life: 1.1 }); if (isMe) { sfx.play('heal_chime', { x: mp.x, z: mp.z, rate: 1.1, vol: 0.3 }); sfx.play('heal_chime', { x: mp.x, z: mp.z, rate: 1.4, delay: 0.15, vol: 0.25 }); } }
+  fx.lastChord = chord;
+}
+function endMeditationFx2(rec) {
+  const fx = rec.medFx2; if (!fx) return;
+  for (const k of Object.keys(fx)) { const v = fx[k]; if (Array.isArray(v)) v.forEach(o => o && o.isObject3D && dropObj(o)); else if (v && v.isObject3D) dropObj(v); }
+  rec.medFx2 = null;
+}
+// A heal tick while meditating: the Fighter's is a white-hot flare from the
+// chest and a shower of sparks; the Cleric's a wash of light and a chime;
+// the Bard's a flurry of notes.
 function meditationTickFx() {
   const me = entityMeshes.get(myId); if (!me) return;
-  const mp = me.mesh.position;
+  const mp = me.mesh.position, cls = me.data && me.data.cls;
+  if (cls === 'cleric') {
+    spawnFx('flash', mp.x, mp.y - 0.45, mp.z, 0, { r: 2.4, color: 0xfff6d0, life: 0.35 }); spawnFx('rise', mp.x, mp.y - 0.4, mp.z, 0, { n: 16, color: 0xfff1c8 }); spawnFx('glyph', mp.x, mp.y - 0.45, mp.z, 0, { r: 1.2, color: 0xffd86a, life: 1.0 });
+    sfx.play('heal_chime', { x: mp.x, z: mp.z, rate: 1.0, vol: 0.4 }); return;
+  }
+  if (cls === 'bard') {
+    spawnFx('notes', mp.x, mp.y - 0.4, mp.z, 0, { n: 9, color: 0xc9b6ff, y: 0.7 }); spawnFx('ripple', mp.x, mp.y - 0.45, mp.z, 0, { r: 2.4, color: 0xffd27a, life: 0.8 }); spawnFx('glow', mp.x, mp.y - 0.45, mp.z, 0, { color: 0x9a8aff });
+    sfx.play('heal_chime', { x: mp.x, z: mp.z, rate: 1.5, vol: 0.35 }); sfx.play('heal_chime', { x: mp.x, z: mp.z, rate: 1.9, delay: 0.12, vol: 0.25 }); return;
+  }
   spawnFx('flash', mp.x, mp.y - 0.45, mp.z, 0, { r: 2.2, color: 0xfff0c0, life: 0.28 });
   spawnFx('impact', mp.x, mp.y, mp.z, 0, { y: 0.65, n: 14, color: 0xffffff, sparkColor: 0xffb050 });
   spawnFx('glow', mp.x, mp.y - 0.45, mp.z, 0, { color: 0xff5a2a });
