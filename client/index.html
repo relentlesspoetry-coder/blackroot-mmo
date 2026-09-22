@@ -4803,8 +4803,8 @@ function luteArms(rec, rig, strum, dt) {
   const wrap = rec.mesh, [tl, tr, S, d1, hint, u, n, E, d2, tmp] = _lv, [qw, qp, qd, qwi] = _lq;
   // hand targets on the lute (its local frame: length along +Z, board +Y, X across the strings)
   g.updateWorldMatrix(true, false);
-  tl.set(0.0, -0.035, 0.05); g.localToWorld(tl);                     // behind the neck, a hand's width up from the body
-  tr.set(-0.02 + strum * 0.06, 0.135, -0.33); g.localToWorld(tr);    // over the strings above the rose
+  tl.set(-0.03, -0.02, 0.12); g.localToWorld(tl);                     // left wrist just below the back of the neck, a third of the way up it: the palm lands on the neck, fingers over the top
+  tr.set(-0.02 + strum * 0.06, 0.12, -0.19); g.localToWorld(tr);      // right wrist over the strings so the hand lies across the rose
   wrap.getWorldQuaternion(qw); qwi.copy(qw).invert();
   for (const side of ['L', 'R']) {
     const arm = side === 'L' ? rig.armL : rig.armR, fore = side === 'L' ? rig.foreL : rig.foreR, T = side === 'L' ? tl : tr, sx = side === 'L' ? 1 : -1;
@@ -4848,7 +4848,7 @@ function luteArms(rec, rig, strum, dt) {
       // then twist about the palm so the fingers run the right way: down the
       // strings for the strumming hand, across the neck for the gripping one
       fd.applyQuaternion(qd);
-      const wantF = _lv[2].copy(side === 'R' ? lutZ : lutX).multiplyScalar(-1);
+      const wantF = _lv[2].copy(side === 'R' ? lutZ : lutX).multiplyScalar(side === 'R' ? -1 : (window.__gripSign || 1));   // strumming fingers down the strings; gripping fingers up over the neck
       wantF.addScaledVector(want, -wantF.dot(want)).normalize(); fd.addScaledVector(want, -fd.dot(want)).normalize();
       const ang = Math.atan2(_lv[8].crossVectors(fd, wantF).dot(want), fd.dot(wantF));
       _lq[4].setFromAxisAngle(want, ang); qd.premultiply(_lq[4]);
@@ -4856,10 +4856,10 @@ function luteArms(rec, rig, strum, dt) {
       wrist.updateWorldMatrix(false, true);
       // curl: each joint turns about the knuckle line
       fingers.Index[0].getWorldPosition(kn); fingers.Pinky[0].getWorldPosition(tmp); kn.subVectors(tmp, kn).normalize();
-      const curl = side === 'L' ? [1.5, 1.35] : [0.55 + Math.max(0, strum) * 0.25, 0.5], thumb = side === 'L' ? [0.7, 0.5] : [0.25, 0.2];
+      const curl = side === 'L' ? [1.35, 1.0] : [0.55 + Math.max(0, strum) * 0.25, 0.5], thumb = side === 'L' ? [0.7, 0.5] : [0.25, 0.2];
       for (const k in fingers) for (let j = 0; j < 2; j++) {
         const jt = fingers[k][j]; if (!jt) continue;
-        const amt = (k === 'Thumb' ? thumb[j] : curl[j]) * (side === 'L' ? 1 : -1) * (window.__curlSign || 1);
+        const amt = (k === 'Thumb' ? thumb[j] : curl[j]) * (side === 'L' ? -1 : 1);   // toward the palm on either hand
         qd.setFromAxisAngle(kn, amt); jt.parent.getWorldQuaternion(qp); jt.quaternion.copy(qp).invert().multiply(qd).multiply(qp);
       }
     }
