@@ -4754,7 +4754,15 @@ function updateHeldWeapon(rec, name) {
   const w = buildHeldWeapon(name);
   w.name = 'Weapon';
   if (rig.handR) {
-    w.position.set(0, -0.02, 0.04);
+    // In the mount's frame (measured) the fingers run -Y from the wrist, the
+    // knuckle line is Z with the thumb on +Z, and the palm faces -X. The grip
+    // sits in the middle of the closed fist and the blade hangs straight down
+    // past the fingers (the classic carry), pommel just above the fist.
+    w.position.set(-0.045, -0.09, 0.0);
+    w.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), new THREE.Vector3(0.12, -1, 0.1).normalize());   // point down past the little finger, pommel above the fist
+    mount.add(w);
+    rig.weapon = w; rig.swingArm = rig.armR;
+    return;
   } else {
     // The hand sits at the far end of the arm; in Arm_R-local space that is
     // (armR.b - armR.a). Grip the weapon there, tilted slightly forward.
@@ -4791,6 +4799,26 @@ function updateInstrument(rec, ent) {
     model.traverse(o => { if (o.isMesh) { o.material = Array.isArray(o.material) ? o.material.map(m => m.clone()) : o.material.clone(); o.castShadow = true; o.userData.pickKind = 'player'; for (const m of (Array.isArray(o.material) ? o.material : [o.material])) detailize(m, 'wood', { scale: 0.5, strength: 0.5 }); } });
     g.add(model);
   });
+}
+// Close a hand round something: every finger joint turns about the knuckle
+// line, toward the palm (world-space, so it holds whatever the arm is doing).
+function fistHand(rig, side, amt, thumbAmt) {
+  const f = rig['fingers' + side]; if (!f || !f.Index[0] || !f.Pinky[0]) return;
+  const [kn, tmp] = _lv, [qp, qd] = _lq;
+  for (const k in f) for (const j of f[k]) if (j) j.quaternion.identity();
+  const wrist = side === 'L' ? rig.wristL : rig.wristR; if (wrist) wrist.updateWorldMatrix(false, true);
+  f.Index[0].getWorldPosition(kn); f.Pinky[0].getWorldPosition(tmp); kn.subVectors(tmp, kn).normalize();
+  for (const k in f) for (let j = 0; j < 2; j++) {
+    const jt = f[k][j]; if (!jt) continue;
+    const a = (k === 'Thumb' ? thumbAmt * (j ? 0.7 : 1) : amt * (j ? 0.85 : 1)) * (side === 'L' ? 1 : -1);   // toward the palm (checked on screen)
+    qd.setFromAxisAngle(kn, a); jt.parent.getWorldQuaternion(qp); jt.quaternion.copy(qp).invert().multiply(qd).multiply(qp);
+  }
+  rig['fist' + side] = true;
+}
+function relaxHand(rig, side) {
+  const f = rig['fingers' + side]; if (f) for (const k in f) for (const j of f[k]) if (j) j.quaternion.identity();
+  const wrist = side === 'L' ? rig.wristL : rig.wristR; if (wrist) wrist.quaternion.identity();
+  rig['fist' + side] = false;
 }
 // Two-bone arm solve onto the lute. Shoulder pivots are "model-aligned"
 // (rotation.x swings fore/aft, .z out to the side, with the A-pose hang baked
@@ -4865,6 +4893,7 @@ function luteArms(rec, rig, strum, dt) {
       }
     }
   }
+  rig.fistL = rig.fistR = true;   // so the hands relax once the lute is put down
 }
 
 // ---------------------------------------------------------------------------
@@ -5072,7 +5101,7 @@ function animateEntity(rec, e, kind, dt) {
   else rig.gait += dt * 1.5; // idle breathing keeps the same phase running
 
   // --- attack lunge (triggered by the server's hit event)
-  if (rig.atk > 0) rig.atk = Math.max(0, rig.atk - dt / 0.36);
+  if (rig.atk > 0) rig.atk = Math.max(0, rig.atk - dt / (rig.style === 'hero' ? 0.5 : 0.36));   // the player's weapon swing gets a beat longer
   const u = rig.atk > 0 ? 1 - rig.atk : 0;
   const punch = rig.atk > 0 ? Math.sin(Math.PI * u) : 0;
 
@@ -5191,12 +5220,14 @@ function animateEntity(rec, e, kind, dt) {
     // overhead and chops down — the same motion reads as a mining swing on a
     // vein and a weapon strike in combat. Unarmed, alternate a punch and a kick.
     if (punch > 0) {
-      if (rig.weapon) {                                // overhead chop: wind up, drive down
+      if (rig.weapon) {                                // overhead chop: wind up with the elbow folded, then drive down and through
         const wind = Math.sin(Math.PI * u);
-        rArm = -2.3 * wind; rArmZ = 0.25 * wind;       // right arm hauls the head up and over
-        lArm = 0.4 * wind;                             // off hand steadies
-        b.rotation.x = 0.10 * a + 0.22 * wind;         // bend into the swing
-        b.rotation.y = -0.14 * wind;
+        const raise = u < 0.4 ? smooth(u / 0.4) : 1 - smooth(Math.min(1, (u - 0.4) / 0.45));   // up fast, hold a beat, down
+        rArm = -2.4 * raise; rArmZ = 0.3 * raise;      // right arm hauls the weapon up and over
+        rFore = [-1.5 * (u < 0.4 ? raise : Math.max(0, 1 - (u - 0.4) / 0.25)), 0, 0.2 * raise];   // forearm folds behind the head, snaps straight into the cut
+        lArm = 0.45 * wind; lArmZ = -0.1 * wind;       // off hand steadies
+        b.rotation.x = 0.10 * a - 0.12 * raise + 0.32 * (u > 0.4 ? 1 - raise : 0);   // lean back, then into the swing
+        b.rotation.y = -0.18 * raise + 0.1 * (u > 0.4 ? 1 - raise : 0);
       } else if ((rig.atkKind || 0) === 0) {           // punch: right jab, left guards
         rArm = -1.7 * punch; rArmZ = -0.08;
         lArm = 0.5 * punch;
@@ -5225,6 +5256,10 @@ function animateEntity(rec, e, kind, dt) {
       if (rig.weapon) rig.weapon.visible = !A.hideWeapon;   // a Bard puts the weapon away to play
       if (P.lArm != null) lArm = P.lArm; if (P.rArm != null) rArm = P.rArm; if (P.lArmZ != null) lArmZ = P.lArmZ; if (P.rArmZ != null) rArmZ = P.rArmZ;
       if (P.lFore !== undefined) lFore = P.lFore; if (P.rFore !== undefined) rFore = P.rFore;
+      // Poses that only place the upper arm get an elbow for free: the higher
+      // the arm is hauled, the more the forearm folds (a raised arm bends).
+      if (P.rFore === undefined && P.rArm != null) rFore = [-Math.min(1.3, Math.max(0, -P.rArm - 0.4) * 0.5), 0, 0];
+      if (P.lFore === undefined && P.lArm != null) lFore = [-Math.min(1.3, Math.max(0, -P.lArm - 0.4) * 0.5), 0, 0];
       if (P.strum != null) rig.luteStrum = P.strum; else rec.holdLute = false;   // horn / drum / harp poses (and a swing) take the arms off the lute
       if (P.lLeg != null) lLeg = P.lLeg; if (P.rLeg != null) rLeg = P.rLeg; if (P.lShin != null) lShin = P.lShin; if (P.rShin != null) rShin = P.rShin;
       if (P.bodyX != null) b.rotation.x = P.bodyX; if (P.bodyY != null) b.rotation.y = P.bodyY; if (P.bodyZ != null) b.rotation.z = P.bodyZ;
@@ -5241,6 +5276,12 @@ function animateEntity(rec, e, kind, dt) {
     if (rig.foreL) { if (lFore) rig.foreL.rotation.set(lFore[0], lFore[1], lFore[2]); else rig.foreL.rotation.set(0, 0, 0); }
     if (rig.foreR) { if (rFore) rig.foreR.rotation.set(rFore[0], rFore[1], rFore[2]); else rig.foreR.rotation.set(0, 0, 0); }
     if (rec.instrumentObj && rec.holdLute) luteArms(rec, rig, rig.luteStrum || 0, dt);
+    else if (rig.fingersR) {   // a held weapon closes the fist; otherwise the hands relax
+      const grip = !!(rig.weapon && rig.weapon.visible);
+      if (grip) fistHand(rig, 'R', 1.35, 0.7); else if (rig.fistR) { relaxHand(rig, 'R'); }
+      if (rig.fistL) relaxHand(rig, 'L');
+      rig.fistR = grip;
+    }
     if (rig.legL) rig.legL.rotation.set(lLeg, 0, 0);
     if (rig.legR) rig.legR.rotation.set(rLeg, 0, 0);
     if (rig.shinL) rig.shinL.rotation.set(lShin, 0, 0);
