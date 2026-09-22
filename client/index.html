@@ -293,7 +293,7 @@
   #dialogue .d-head { background: #5a4a34; color: #ffdf9e; padding: 7px 12px; font-weight: 700; font-size: 13px;
     display: flex; justify-content: space-between; align-items: center; }
   #dialogue .d-close { cursor: pointer; color: #e8d7ac; font-size: 15px; line-height: 1; }
-  #dialogue .d-body { padding: 12px 14px; }
+  #dialogue .d-body { padding: 12px 14px; max-height: min(60vh, 520px); overflow-y: auto; }   /* long trainer lists scroll; the header and its close stay put */
   #dialogue .d-say { color: #e6dcc4; font-size: 13px; line-height: 1.55; font-style: italic; margin-bottom: 10px; }
   #dialogue .d-quest { background: #1d1913; border: 1px solid #4a3d2a; border-radius: 6px; padding: 9px 10px; margin-bottom: 8px; }
   #dialogue .d-quest .q-name { color: #ffe9a8; font-size: 12px; font-weight: 700; margin-bottom: 4px; }
@@ -6123,6 +6123,11 @@ function talkNpc(pk) {
   walkTo({ x: pk.x + 1.6, z: pk.z + 1.6 });
 }
 function updatePendingTalk() {
+  // Walking off from whoever you're talking to ends the conversation.
+  if (dialogueNpc) {
+    const rec = npcMeshes.get(dialogueNpc), selfRec = entityMeshes.get(myId);
+    if (rec && selfRec && Math.hypot(selfRec.mesh.position.x - rec.def.x, selfRec.mesh.position.z - rec.def.z) > 9) closeDialogue();
+  }
   if (!pendingTalk) return;
   const rec = npcMeshes.get(pendingTalk), selfRec = entityMeshes.get(myId);
   if (!rec || !selfRec) { pendingTalk = null; return; }
@@ -8351,12 +8356,14 @@ function openDialogue(npcId) {
   // Class trainers teach abilities for gold.
   if (rec.def.trainer && abilityClass && rec.def.trainer === abilityClass.clsId) {
     const me = selfEnt(), lvl = me ? me.level : 1;
-    const teach = abilities.filter(a => !a.known).sort((a, b) => a.level - b.level);
+    const teach = abilities.filter(a => !a.known && a.level <= lvl).sort((a, b) => a.level - b.level);   // only what you're the level for
+    const next = abilities.filter(a => !a.known && a.level > lvl).sort((a, b) => a.level - b.level)[0];
     html += `<div class="d-quest"><div class="q-name">${escapeHtml(abilityClass.cls)} training · ${bag.gold.toLocaleString()} gp</div>` +
       (teach.length ? teach.map(a => { const far = a.level > lvl, poor = bag.gold < a.price;
         return `<div class="d-learn${far ? ' far' : ''}"><img src="${iconFor_ab(a.id)}" alt=""><div><div class="rn">${escapeHtml(a.name)} <span style="color:#b9ad90;font-weight:400">· level ${a.level}${a.passive ? ' · passive' : ''}</span></div><div class="rb">${escapeHtml(a.desc)}</div></div>` +
           `<span class="price">${a.price.toLocaleString()} gp</span><button data-learn="${a.id}" ${far ? 'disabled title="Level ' + a.level + ' required"' : poor ? 'disabled title="Not enough gold"' : ''}>${far ? 'Lv ' + a.level : 'Learn'}</button></div>`; }).join('')
-      : '<div class="q-obj"><span>You know everything I can teach.</span><span></span></div>') + '</div>';
+      : `<div class="q-obj"><span>${next ? `Nothing more at your level. Come back at level ${next.level} for ${escapeHtml(next.name)}.` : 'You know everything I can teach.'}</span><span></span></div>`) +
+      (teach.length && next ? `<div class="q-obj"><span class="dim">Next at level ${next.level}: ${escapeHtml(next.name)}</span><span></span></div>` : '') + '</div>';
   }
   document.getElementById('dQuests').innerHTML = html;
   dialogueEl.querySelectorAll('[data-learn]').forEach(b => { b.onclick = () => ws?.send(JSON.stringify({ t: 'learn', id: b.dataset.learn })); });
