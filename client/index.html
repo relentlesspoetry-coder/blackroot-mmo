@@ -1331,7 +1331,7 @@ function handle(m) {
       EDIT.loot[m.type] = m.table; if (EDIT.lootType === m.type) editBuildLootRows();
       break;
     case 'bag':
-      bag = { items: m.items || [], gold: m.gold || 0,
+      bag = { items: m.items || [], stacks: m.stacks || (m.items || []).map(n => ({ name: n, qty: 1 })), gold: m.gold || 0,
         equipment: m.equipment || {},
         stats: m.stats || { atk: 0, def: 0 }, swing: m.swing || null };
       if (m.slots) slotInfo = m.slots;
@@ -8740,20 +8740,19 @@ function renderEquipment() {
 function setBagGold() { document.getElementById('bagGold').textContent = (bag.gold || 0).toLocaleString() + ' gp'; }
 function renderBag() {
   setBagGold();
-  document.getElementById('bagCnt').textContent = bag.items.length || '';
+  const stacks = bag.stacks || [];
+  document.getElementById('bagCnt').textContent = stacks.length || '';   // slots used, not loose items
   renderSkills();
   renderEquipment();
 
-  const counts = {};
-  for (const it of bag.items) counts[it] = (counts[it] || 0) + 1;
-  const names = Object.keys(counts);
   const grid = document.getElementById('bagGrid');
   const BAG_SLOTS = 30;
-  const total = Math.max(BAG_SLOTS, names.length); // always show at least 30 slots
+  const total = Math.max(BAG_SLOTS, stacks.length); // always show at least 30 slots
   let html = '';
   for (let i = 0; i < total; i++) {
-    const n = names[i];
-    if (!n) { html += '<div class="slot"></div>'; continue; } // empty slot
+    const stack = stacks[i];
+    if (!stack) { html += '<div class="slot"></div>'; continue; } // empty slot
+    const n = stack.name, counts = { [n]: stack.qty };
     const m = metaFor(n), info = itemInfo(n);
     const lines = [`<b${info && info.rarity ? ` style="color:${RARITY_COLOR[info.rarity] || '#fff'}"` : ''}>${escapeHtml(n)}</b>${counts[n] > 1 ? ` <span class="dim">×${counts[n]}</span>` : ''}`];
     if (info && info.rarity) lines.push(`<span style="color:${RARITY_COLOR[info.rarity]}">${info.rarity}</span>`);
@@ -8925,13 +8924,13 @@ function openDialogue(npcId) {
   }
   // Traders buy whatever you're carrying (worn gear isn't in the bag list).
   if (rec.def.trade) {
-    const counts = {};
-    for (const it of bag.items) counts[it] = (counts[it] || 0) + 1;
-    const names = Object.keys(counts);
+    const stacks = bag.stacks || [];
     html += '<div class="d-quest"><div class="q-name">Sell</div>';
-    html += names.length
-      ? names.map(n => `<div class="q-obj"><span>${iconFor(n)} ${escapeHtml(n)}${counts[n] > 1 ? ' ×' + counts[n] : ''}</span>` +
-          `<button data-sell="${escapeHtml(n)}" style="padding:1px 8px;font-size:11px">Sell</button></div>`).join('')
+    html += stacks.length
+      ? stacks.map(({ name: n, qty }) => `<div class="q-obj"><span>${iconFor(n)} ${escapeHtml(n)}${qty > 1 ? ' ×' + qty : ''}</span><span>` +
+          `<button data-sell="${escapeHtml(n)}" style="padding:1px 8px;font-size:11px">Sell</button>` +
+          (qty > 1 ? ` <button data-sell="${escapeHtml(n)}" data-all="1" style="padding:1px 8px;font-size:11px">All ×${qty}</button>` : '') +
+          `</span></div>`).join('')
       : '<div class="q-obj"><span>Nothing to sell.</span><span></span></div>';
     html += '</div>';
   }
@@ -8950,7 +8949,7 @@ function openDialogue(npcId) {
   document.getElementById('dQuests').innerHTML = html;
   dialogueEl.querySelectorAll('[data-learn]').forEach(b => { b.onclick = () => ws?.send(JSON.stringify({ t: 'learn', id: b.dataset.learn })); });
   dialogueEl.querySelectorAll('[data-sell]').forEach(b => {
-    b.onclick = () => ws?.send(JSON.stringify({ t: 'sell', item: b.dataset.sell }));
+    b.onclick = () => ws?.send(JSON.stringify({ t: 'sell', item: b.dataset.sell, all: b.dataset.all === '1' }));
   });
   dialogueEl.querySelectorAll('[data-accept]').forEach(b => {
     b.onclick = () => { ws?.send(JSON.stringify({ t: 'questaccept', id: b.dataset.accept })); b.disabled = true; b.textContent = 'Accepted'; };

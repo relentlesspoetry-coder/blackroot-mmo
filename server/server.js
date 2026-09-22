@@ -16,7 +16,7 @@ import {
   xpForLevel, xpTotalForLevel, levelForXp, MAX_LEVEL, attackRoll, defenceRoll, hitChance, scaledMonster, rollLoot, REGEN,
   TICK, CLASSES, DEFAULT_CLASS, classDef, classStats, abilityCost,
   maxHit, MEDITATION, meditationHealPerTick, rollGear } from './balance.js';
-import { ITEMS, SLOTS, SLOT_INFO, DOLL, itemDef, slotOf, valueOf, equipStats, slotsFor, emptySlots } from './items.js';
+import { ITEMS, SLOTS, SLOT_INFO, DOLL, itemDef, slotOf, valueOf, equipStats, slotsFor, emptySlots, stackable, bagStacks } from './items.js';
 import { weaponProfile, swingSeconds, weaponRange, swingBand, resolveAttack, facing,
          MOB_ARCH, MOB_DEF, archOf, addThreat, threatOf, dropThreat, clearThreat, taunt, topThreat, decayThreat } from './combat.js';
 import { BOSS_TEMPLATES, BOSS_ITEMS, maybeSpawnCluckifer, stepCluckifer, stepMinion, stepHazards, hazardList, onMinionKilled, onBossKilled } from './cluckifer.js';
@@ -1028,7 +1028,7 @@ const ITEM_CATALOG = Object.fromEntries(Object.entries(ITEMS).map(([n, d]) => {
 function sendBag(p) {
   const w = weaponOf(p), cs = classStats(p.cls, p.level), eq = equipStats(p.equipment);
   const [lo, hi] = swingBand(w, cs.str, eq.atk || 0);
-  send(p.ws, { t: 'bag', items: p.inventory, gold: p.gold,
+  send(p.ws, { t: 'bag', items: p.inventory, stacks: bagStacks(p.inventory), gold: p.gold,
     equipment: p.equipment, stats: eq, slots: SLOT_INFO, doll: DOLL,
     swing: { sec: +swingSeconds(w).toFixed(1), type: w.type, lo, hi, reach: +reachOf(p).toFixed(1), hands: w.hands } });
   // A 'collect' objective reads straight off the inventory, so any bag change
@@ -1073,16 +1073,21 @@ function unequipItem(p, slot) {
 }
 
 // Sell to a merchant NPC you're standing next to. Equipped gear is never sold.
-function sellItem(p, name) {
+// Sell one, or the whole stack — nobody wants to click thirty times to empty
+// a mining run into a merchant's hands.
+function sellItem(p, name, all) {
   const merchant = (zoneOf(p).npcs || []).find(n => n.trade);
   if (!merchant) return;
   if (dist2(p.x, p.z, merchant.x, merchant.z) > NPC_TALK_RADIUS * NPC_TALK_RADIUS) return;
-  const idx = p.inventory.indexOf(name);
-  if (idx < 0) return;
-  p.inventory.splice(idx, 1);
-  const paid = Math.max(1, Math.round(valueOf(name) * 0.4)); // merchants buy low
-  p.gold += paid;
-  send(p.ws, { t: 'event', kind: 'sold', text: `Sold ${name} for ${paid} gold.`, gold: p.gold });
+  const each = Math.max(1, Math.round(valueOf(name) * 0.4));   // merchants buy low
+  let n = 0;
+  do {
+    const idx = p.inventory.indexOf(name);
+    if (idx < 0) break;
+    p.inventory.splice(idx, 1); p.gold += each; n++;
+  } while (all && stackable(name));
+  if (!n) return;
+  send(p.ws, { t: 'event', kind: 'sold', text: `Sold ${n > 1 ? n + ' × ' : ''}${name} for ${each * n} gold.`, gold: p.gold });
   sendBag(p);
 }
 
@@ -2840,7 +2845,7 @@ wss.on('connection', (ws) => {
       }
       case 'equip': if (player && player.alive) equipItem(player, String(msg.item || ''), msg.slot ? String(msg.slot) : null); break;
       case 'unequip': if (player && player.alive) unequipItem(player, String(msg.slot || '')); break;
-      case 'sell': if (player && player.alive) sellItem(player, String(msg.item || '')); break;
+      case 'sell': if (player && player.alive) sellItem(player, String(msg.item || ''), !!msg.all); break;
       case 'mine': {
         if (!player || !player.alive) break;
         const mz = zoneOf(player);

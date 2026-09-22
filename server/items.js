@@ -40,6 +40,27 @@ export const SLOTS = Object.keys(SLOT_INFO);
 // equipping picks the empty one. Rings and earrings come in twos.
 export const SLOT_PAIRS = { ring: ['ring_l', 'ring_r'], earring: ['earring_l', 'earring_r'] };
 export function slotsFor(slot) { return SLOT_PAIRS[slot] || [slot]; }
+// What piles up in one bag slot. Anything you wear or wield is its own thing —
+// two swords are two swords — but ore, fish, logs, food and the rest of the raw
+// material of the world stack, the way a pouch of ore should.
+export function stackable(name) {
+  const d = ITEMS[name];
+  return !!d && !d.slot;
+}
+// The bag as slots rather than loose items: identical stackables share one,
+// keeping the order things were picked up in.
+export function bagStacks(inventory) {
+  const out = [], at = new Map();
+  for (const name of inventory) {
+    if (stackable(name)) {
+      const i = at.get(name);
+      if (i != null) { out[i].qty++; continue; }
+      at.set(name, out.length);
+    }
+    out.push({ name, qty: 1 });
+  }
+  return out;
+}
 export function emptySlots() {
   const eq = {};
   for (const s of SLOTS) eq[s] = null;
