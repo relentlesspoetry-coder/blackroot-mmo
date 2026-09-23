@@ -32,7 +32,6 @@
   .d-more { display: inline-block; margin: 2px 0 6px; padding: 3px 12px; font-size: 12px; cursor: pointer;
     background: #3a3020; border: 1px solid #6b5a3a; border-radius: 4px; color: #ffdf9e; }
   .d-more:hover { background: #4a3d28; }
-  #fixedlook { display: none; font-size: 11px; color: #8fa3bf; margin: 4px 2px 6px; }
   #login .lookrow { display: flex; gap: 10px; }
   #login .lookrow label { flex: 1; display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #8fa3bf; }
   #login select { background: #0c131d; border: 1px solid #2a3c54; color: #e7eef7; padding: 8px; border-radius: 8px; font-size: 13px; }
@@ -430,7 +429,6 @@
       <div class="lookrow"><label>Hair <select id="hairSel"></select></label><label>Beard <select id="beardSel"></select></label></div>
       <div class="lookrow"><label>Skin <input type="color" id="skinCol" value="#cba281"></label><label>Hair colour <input type="color" id="hairCol" value="#4a2e1a"></label></div>
     </div>
-    <div id="fixedlook">The Fighter comes as he is — mantle, pauldron and all.</div>
     <div class="classrow" id="classRow">
       <div class="classopt sel" data-cls="fighter"><img src="ui/fighter/emblem.png" alt=""><div><b>Fighter</b>Two-handed bruiser. Rage.</div></div>
       <div class="classopt" data-cls="cleric"><img src="ui/cleric/emblem.png" alt=""><div><b>Cleric</b>Holy healer. Mana.</div></div>
@@ -772,7 +770,7 @@ const LOADED_ANIM = {}; // model key -> GLTF animation clips (kept for animated 
 // Only the player model is always needed; everything else is declared by the
 // zone (server/zones/*.js) and fetched on entry. Loading all 73 models up front
 // doubled the wait on the login button for assets most players never see.
-const CORE_MODELS = ['items/Coins', 'human/Male_Base', 'human/Female_Base', 'human/Fighter'];
+const CORE_MODELS = ['items/Coins', 'human/Male_Base', 'human/Female_Base'];
 const MOB_MODEL = {
   goblin: { model: 'Goblin', h: 2.0 }, bandit: { model: 'Bandit', h: 2.3 }, guard: { model: 'Hill_Ogre', h: 3.0 },
   spider: { model: 'Cave_Spider', h: 1.6 }, cow: { model: 'Cow', h: 2.0 }, chicken: { model: 'Chicken', h: 1.1 },
@@ -1005,7 +1003,10 @@ function worldAlignSkeleton(root, rename) {
 // world-aligning rebuild above does the rest — walk, swings, grip, guard and
 // the two-bone IK all work on any of them.
 // ---------------------------------------------------------------------------
-const BODY_MODELS = { Fighter: 'human/Fighter', Male: 'human/Male_Base', Female: 'human/Female_Base' };
+// Everyone in the world is one of these bare bodies; clothes, armour and hair
+// all come off. (Fighter.glb — the armoured barbarian — is kept for an NPC who
+// should be welded into his kit, not for a player.)
+const BODY_MODELS = { Male: 'human/Male_Base', Female: 'human/Female_Base', Fighter: 'human/Fighter' };
 const bodyTemplates = new Map();
 const flatBoneName = (n) => n.replace(/_([LR])$/, '$1');
 // Which material takes which colour from a look. The bases carry their own
@@ -4460,8 +4461,9 @@ const MALE_BONES = {
   legR: { a: [0.11, 0.96, 0], b: [0.11, 0.05, 0.02] },
 };
 function makePlayerMesh(isSelf, ent) {
-  // Fighters have a body of their own; every other class wears the base.
-  const figure = makeBody(ent && ent.cls === 'fighter' ? 'Fighter' : 'Male', 2.3, ent && ent.look);
+  // One bare body for every class: everything else is clothes and armour, and
+  // all of it comes off.
+  const figure = makeBody('Male', 2.3, ent && ent.look);
   if (figure) {
     figure.userData.faceOffset = 0;
     figure.userData.rig = buildRig(figure, 'hero');
@@ -9456,8 +9458,8 @@ try {
   const saved = JSON.parse(localStorage.getItem('bk.look') || 'null');
   if (saved) { if (saved.hairColor) hairCol.value = saved.hairColor; if (saved.skin) skinCol.value = saved.skin; }
 } catch (e) {}
-// The Fighter wears his own figure, so his outfit choice is ignored.
-const CLASS_OUTFIT = { fighter: 47, cleric: 31, bard: 19 };
+// The kit each class starts the world in — a starting outfit, not a uniform.
+const CLASS_OUTFIT = { fighter: 12, cleric: 31, bard: 19 };   // Highland Warrior · Temple Acolyte · Rose Bard
 function currentLook() {
   return { hairColor: hairCol.value, skin: skinCol.value, outfit: +outfitSel.value || CLASS_OUTFIT[pickedClass] || 1,
     hair: hairSel.value || 'Hair_Crop', beard: beardSel.value || 'None' };
@@ -9466,15 +9468,8 @@ function currentLook() {
 try { const c = localStorage.getItem('bk.cls'); if (['fighter', 'cleric', 'bard'].includes(c)) pickedClass = c; } catch (e) {}
 document.querySelectorAll('#classRow .classopt').forEach(d => {
   d.classList.toggle('sel', d.dataset.cls === pickedClass);
-  d.onclick = () => { pickedClass = d.dataset.cls; document.querySelectorAll('#classRow .classopt').forEach(x => x.classList.toggle('sel', x === d)); if (CLASS_OUTFIT[pickedClass]) outfitSel.value = CLASS_OUTFIT[pickedClass]; syncLookRows(); try { localStorage.setItem('bk.cls', pickedClass); } catch (e) {} };
+  d.onclick = () => { pickedClass = d.dataset.cls; document.querySelectorAll('#classRow .classopt').forEach(x => x.classList.toggle('sel', x === d)); if (CLASS_OUTFIT[pickedClass]) outfitSel.value = CLASS_OUTFIT[pickedClass]; try { localStorage.setItem('bk.cls', pickedClass); } catch (e) {} };
 });
-// A Fighter's figure is fixed, so the pickers that wouldn't do anything hide.
-function syncLookRows() {
-  const fixed = pickedClass === 'fighter';
-  document.getElementById('lookrows').style.display = fixed ? 'none' : 'block';
-  document.getElementById('fixedlook').style.display = fixed ? 'block' : 'none';
-}
-syncLookRows();
 setInterval(() => { if (!zone) music.update(0.1); }, 100); // fades tick on the login screen too (the render loop isn't running yet)
 async function play() {
   const name = nameInput.value.trim() || 'Adventurer';
