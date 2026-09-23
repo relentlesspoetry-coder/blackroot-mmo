@@ -1108,10 +1108,12 @@ function lookPieces(look) {
   if (!wardrobe || !look) return [];
   const out = [];
   const o = look.outfit && wardrobe.manifest ? wardrobe.manifest.outfits[look.outfit - 1] : null;
+  const gear = look.gear || {};
   for (const slot of WARDROBE_SLOTS) {
     const override = look.wear && look.wear[slot];
     if (override === 0 || override === null) continue;               // bare on purpose
-    const name = typeof override === 'string' ? override : (o && o.pieces[slot] && o.pieces[slot].object);
+    // Worn armour wins over the outfit; then an explicit override; then the kit.
+    const name = gear[slot] || (typeof override === 'string' ? override : (o && o.pieces[slot] && o.pieces[slot].object));
     if (name && wardrobe.pieces.has(name)) out.push(name);
   }
   return out;
@@ -1124,7 +1126,10 @@ function hairPieces(look) {
   if (!wardrobe || !look) return [];
   const out = [];
   const o = look.outfit && wardrobe.manifest ? wardrobe.manifest.outfits[look.outfit - 1] : null;
-  const hat = o && o.pieces.hat ? o.pieces.hat.style : null;
+  // A helmet counts whether it came from the outfit or off the character's back.
+  const worn = (look.gear && look.gear.hat) || (look.wear && typeof look.wear.hat === 'string' ? look.wear.hat : null);
+  const hat = worn ? worn.split('_')[1].replace(/([a-z])([A-Z])/g, '$1_$2').toLowerCase()
+    : (o && o.pieces.hat ? o.pieces.hat.style : null);
   const covered = !!(hat && COVERING_HATS.test(hat)) && !(look.wear && look.wear.hat === 0);
   if (look.hair && look.hair !== 'Bald' && !covered && wardrobe.pieces.has(look.hair)) out.push(look.hair);
   if (look.beard && look.beard !== 'None' && wardrobe.pieces.has(look.beard)) out.push(look.beard);
@@ -4806,7 +4811,9 @@ function makeMonsterMesh(type, elite) {
   body.position.y = 0.8; fb.add(body);
   return fb;
 }
-function lookKeyOf(ent) { return ent.cls === 'fighter' ? 'fighter' : (ent.look ? JSON.stringify(ent.look) : ''); }
+// A figure is rebuilt when anything about how they look changes — including
+// the armour they just put on.
+function lookKeyOf(ent) { return (ent.cls || '') + '|' + (ent.look ? JSON.stringify(ent.look) : ''); }
 function ensureMesh(ent, kind) {
   let rec = entityMeshes.get(ent.id);
   // A player who changed clothes (equipped armour) gets a fresh figure; the

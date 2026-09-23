@@ -67,11 +67,14 @@ function sanitizeLook(raw) {
 // What the character visibly wears from their equipment: pack item ids by
 // wardrobe slot (top/trousers/helmet/shoulders/boots/gloves/overlayer/belt),
 // drawn over the base outfit by the client. Only armour pieces carry `gear`.
+// What the player's worn armour looks like: the wardrobe piece for each slot
+// they have armour in. It overrides whatever their outfit puts there, so a
+// Steel Chevalier cuirass really does replace the shirt they walked in wearing.
 function gearOf(equipment) {
   const g = {};
   for (const name of Object.values(equipment || {})) {
-    const d = name && ITEMS[name]; if (!d || !d.gear) continue;
-    g[d.gear.split('__')[1].toLowerCase()] = d.gear;
+    const d = name && ITEMS[name]; if (!d || !d.wear) continue;
+    g[d.wear.slot] = d.wear.piece;
   }
   return g;
 }
