@@ -11,7 +11,7 @@ export const darkwoods = {
   subtitle: 'Zone I',
   // Client assets this zone needs. Fetched on entry, cached after that.
   models: [
-    'Goblin', 'Bandit', 'Hill_Ogre', 'Cow', 'Chicken', 'Male', 'Female', 'items/Egg',
+    'Goblin', 'Bandit', 'Hill_Ogre', 'Cow', 'Chicken', 'items/Egg',
     // Low-level goblin-kin variants
     'Goblin_Scavenger', 'Goblin_Warrior', 'Goblin_Archer', 'Goblin_Shaman', 'Goblin_Miner',
     // Full-canopy tree models + every bush species

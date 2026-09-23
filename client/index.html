@@ -426,8 +426,7 @@
   <div class="card">
     <input id="nameInput" maxlength="16" placeholder="Character name" autocomplete="off" />
     <div id="lookrows">
-      <div class="lookrow"><label>Hair <select id="hairSel"></select></label><label>Hair colour <input type="color" id="hairCol" value="#4a2e1a"></label></div>
-      <div class="lookrow"><label>Outfit <select id="outfitSel"></select></label><label>Skin <input type="color" id="skinCol" value="#cba281"></label></div>
+      <div class="lookrow"><label>Skin <input type="color" id="skinCol" value="#cba281"></label><label>Hair <input type="color" id="hairCol" value="#4a2e1a"></label></div>
     </div>
     <div id="fixedlook">The Fighter comes as he is — mantle, pauldron and all.</div>
     <div class="classrow" id="classRow">
@@ -771,7 +770,7 @@ const LOADED_ANIM = {}; // model key -> GLTF animation clips (kept for animated 
 // Only the player model is always needed; everything else is declared by the
 // zone (server/zones/*.js) and fetched on entry. Loading all 73 models up front
 // doubled the wait on the login button for assets most players never see.
-const CORE_MODELS = ['Male', 'items/Coins', 'human/Human_Male_Modular_Base', 'human/Fighter'];
+const CORE_MODELS = ['items/Coins', 'human/Male_Base', 'human/Female_Base', 'human/Fighter'];
 const MOB_MODEL = {
   goblin: { model: 'Goblin', h: 2.0 }, bandit: { model: 'Bandit', h: 2.3 }, guard: { model: 'Hill_Ogre', h: 3.0 },
   spider: { model: 'Cave_Spider', h: 1.6 }, cow: { model: 'Cow', h: 2.0 }, chicken: { model: 'Chicken', h: 1.1 },
@@ -894,49 +893,53 @@ function cloneModel(name, targetH, byMax) {
 // boots, ...) with an optional recolour per slot, so NPCs and players can be
 // mixed and matched from the same parts.
 // ---------------------------------------------------------------------------
-const HAIR_STYLES = ['Bald', '01_Buzz_Cut', '02_Crew_Cut', '03_Flat_Top', '04_Short_Spikes', '05_Messy_Crop',
-  '06_Side_Part_Left', '07_Side_Part_Right', '08_Slicked_Back', '09_Quiff', '10_Pompadour', '11_French_Crop',
-  '12_Caesar_Cut', '13_Curtains', '14_Bowl_Cut', '15_Undercut', '16_Faux_Hawk', '17_Mohawk', '18_Liberty_Spikes',
-  '19_Short_Curls', '20_Afro', '21_Wavy_Shag', '22_Shoulder_Length', '23_Long_Straight', '24_Low_Ponytail',
-  '25_High_Ponytail', '26_Top_Knot', '27_Double_Buns', '28_Braided_Tail', '29_Dreadlocks', '30_Cornrows'];
-// The modular wardrobe pack (client/models/human): 31 outfit presets, each a
-// set of individually skinned items (Top, Trousers, Boots, Belt, Accessory,
-// optional Gloves, the Fighter's Helmet), plus which body segments each item
-// covers. outfits.json is the pack's manifest, fetched at boot.
-const OUTFITS = ['None', '01_Fieldhand', '02_Orchard_Worker', '03_Fisherman', '04_Dockhand', '05_Miner', '06_Blacksmith',
-  '07_Baker', '08_Innkeeper', '09_Merchant', '10_Wealthy_Trader', '11_Scholar', '12_Scribe', '13_Physician', '14_Alchemist',
-  '15_Apprentice', '16_Ranger', '17_Scout', '18_Hunter', '19_Trapper', '20_Courier', '21_Town_Guard', '22_Night_Watch',
-  '23_Militia', '24_Knight', '25_Sellsword', '26_Noble', '27_Courtier', '28_Bard', '29_Pilgrim', '30_Desert_Traveller', '31_Fighter',
-  '32_Barbarian', '33_Minstrel', '34_Templar'];   // the class starting kits (tools/build_outfits.py)
-const OUTFIT_SLOT_NAMES = ['top', 'trousers', 'boots', 'belt', 'accessory', 'gloves', 'helmet'];
-// The armour wardrobe (Male_20_Armored_Outfits, client/models/human/armor):
-// worn over the base outfit slot by slot from look.gear, plus two slots the
-// civilian outfits don't have.
-const ARMOR_SLOT_NAMES = ['shoulders', 'overlayer'];
-let outfitManifest = null;   // { outfits: [{ id, items: [{ id, slot, file, hide_body }] }] }
-let armorById = {};          // pack item id -> { id, slot, file, hide_body }
-const outfitManifestReady = Promise.all([
-  fetch('models/human/outfits.json').then(r => r.json()).then(m => { outfitManifest = m; return m; }).catch(e => { console.warn('outfit manifest failed', e); return null; }),
-  fetch('models/human/armor.json').then(r => r.json()).then(m => { for (const o of m.outfits) for (const it of o.items) armorById[it.id] = { ...it, file: 'armor/' + it.id + '.glb', hide_hair: !!o.hide_hair }; return m; }).catch(e => { console.warn('armor manifest failed', e); return null; }),
-]).then(r => r[0]);
-const HUMAN_H = 1.87;            // rest-pose height of the base body (feet at y≈0.02)
-const HUMAN_MIN_Y = 0.02;
-// Bones the procedural rig drives, and the rig-node name each gets so buildRig
-// finds them exactly like the carved-mesh characters' parts.
+// Looks are skin and brow colour for now: the modular wardrobe (31 outfits,
+// 30 hairstyles, the armour sets) was skinned to the old base body's skeleton
+// and cannot dress these ones. Garments for this rig are the next job — see
+// tools/build_outfits.py, which cuts them from the base body itself.
+const DEFAULT_LOOK = { hairColor: '#4a2e1a', skin: '#cba281' };
+// Bones the procedural rig drives, and the rig-node name each gets, so
+// buildRig finds them by name after the world-aligning rebuild.
 const HUMAN_DRIVEN = { UpperArmL: 'Arm_L', UpperArmR: 'Arm_R', ThighL: 'Leg_L', ThighR: 'Leg_R', ShinL: 'Shin_L', ShinR: 'Shin_R', Head: 'Head' };
-const DEFAULT_LOOK = { hair: 9, hairColor: '#4a2e1a', skin: '#cba281', outfit: 31 }; // players start in the Fighter kit
 
-let humanTemplate = null;
-// Build the shared skeleton template once. The body's skinned pieces (skin,
-// shorts, eyes...) are fused into one vertex-coloured mesh, and the skeleton is
-// rebuilt "world-aligned": every bone gets an identity rest orientation with a
-// pivot node above it holding the rest offset, and the inverse bind matrices
-// become plain translations. That throws away Blender's per-bone axes (which
-// point Y along each bone) so a rotation.x on a thigh swings it fore/aft in
-// world terms — the same convention the procedural animation was written for
-// on the carved characters. The arms also get a constant "hang" rotation on
-// the bone itself so the A-pose drops to arms-at-sides at rest, while the
-// driven node above it still animates in world axes.
+// Fuse skinned pieces ({geo, color, remap?}) into one vertex-coloured geometry
+// whose skinIndex refers to the template's bone order.
+function fuseSkinned(parts, boneNames) {
+  const geos = [];
+  for (const pt of parts) {
+    let geo = pt.geo.clone();
+    for (const attr of Object.keys(geo.attributes)) if (!['position', 'normal', 'skinIndex', 'skinWeight'].includes(attr)) geo.deleteAttribute(attr);
+    if (!geo.attributes.normal) geo.computeVertexNormals();
+    if (!geo.attributes.skinIndex || !geo.attributes.skinWeight) continue;
+    const si = geo.attributes.skinIndex, n = si.count;
+    const idx = new Uint16Array(n * 4);
+    for (let i = 0; i < n * 4; i++) { const j = si.array[i]; idx[i] = pt.remap ? pt.remap[j] : j; }
+    geo.setAttribute('skinIndex', new THREE.BufferAttribute(idx, 4));
+    geo.setAttribute('skinWeight', new THREE.BufferAttribute(Float32Array.from(geo.attributes.skinWeight.array), 4));
+    if (geo.index) geo = geo.toNonIndexed();
+    const cnt = geo.attributes.position.count, col = new Float32Array(cnt * 3), c = pt.color;
+    for (let i = 0; i < cnt; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    const ti = pt.detail != null ? pt.detail : (d => d ? DETAIL_INDEX[d] : -1)(detailFor(pt.matName || pt.name, 'cloth'));
+    geo.setAttribute('detail', new THREE.Float32BufferAttribute(new Float32Array(cnt).fill(ti), 1));
+    geos.push(geo);
+  }
+  if (!geos.length) return null;
+  return geos.length === 1 ? geos[0] : mergeGeometries(geos, false);
+}
+// Map a foreign skin's joint order (by bone name) onto the template's.
+function boneRemap(skel, boneNames) {
+  const remap = skel.bones.map(b => Math.max(0, boneNames.indexOf(b.name)));
+  return remap.every((v, i) => v === i) ? null : remap;
+}
+// Recolour a piece: keep the garment's own light/dark variation between its
+// parts, but move the hue/saturation to the requested colour.
+function recolor(base, target, meanL) {
+  const t = new THREE.Color(target), th = {}, bh = {};
+  t.getHSL(th); base.getHSL(bh);
+  return new THREE.Color().setHSL(th.h, th.s, Math.max(0.04, Math.min(0.96, th.l + (bh.l - meanL))));
+}
+
 // The world-aligning rebuild itself, shared by every skinned humanoid: the
 // modular base and the Fighter's own model are rigged differently but animate
 // through the same pivots afterwards. Returns the reusable skeleton plus the
@@ -992,250 +995,81 @@ function worldAlignSkeleton(root, rename) {
   return { skeleton, boneNames, skinned, byName, armUpper, armFore };
 }
 
-function buildHumanTemplate() {
-  const src = LOADED['Human_Male_Modular_Base'];
-  if (!src) return null;
-  const root = SkeletonUtils.clone(src);
-  const T = worldAlignSkeleton(root);
-  if (!T) return null;
-  const { skeleton, boneNames, skinned, armUpper, armFore } = T;
-  // Replace the body's many little skinned meshes with one fused mesh. Kept as
-  // the source for per-look skin tinting (materials are named).
-  const bodyParent = skinned[0].parent;
-  const bodyParts = skinned.map(m => ({ name: m.name, geo: m.geometry, matName: m.material.name, color: m.material.color.clone() }));
-  for (const m of skinned) m.removeFromParent();
-  root.updateMatrixWorld(true);
-  humanTemplate = { root, skeleton, boneNames, bodyParts, bodyParent, armUpper, armFore };
-  return humanTemplate;
-}
-
-// Fuse skinned pieces ({geo, color, remap?}) into one vertex-coloured geometry
-// whose skinIndex refers to the template's bone order.
-function fuseSkinned(parts, boneNames) {
-  const geos = [];
-  for (const pt of parts) {
-    let geo = pt.geo.clone();
-    for (const attr of Object.keys(geo.attributes)) if (!['position', 'normal', 'skinIndex', 'skinWeight'].includes(attr)) geo.deleteAttribute(attr);
-    if (!geo.attributes.normal) geo.computeVertexNormals();
-    if (!geo.attributes.skinIndex || !geo.attributes.skinWeight) continue;
-    const si = geo.attributes.skinIndex, n = si.count;
-    const idx = new Uint16Array(n * 4);
-    for (let i = 0; i < n * 4; i++) { const j = si.array[i]; idx[i] = pt.remap ? pt.remap[j] : j; }
-    geo.setAttribute('skinIndex', new THREE.BufferAttribute(idx, 4));
-    geo.setAttribute('skinWeight', new THREE.BufferAttribute(Float32Array.from(geo.attributes.skinWeight.array), 4));
-    if (geo.index) geo = geo.toNonIndexed();
-    const cnt = geo.attributes.position.count, col = new Float32Array(cnt * 3), c = pt.color;
-    for (let i = 0; i < cnt; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
-    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-    const ti = pt.detail != null ? pt.detail : (d => d ? DETAIL_INDEX[d] : -1)(detailFor(pt.matName || pt.name, 'cloth'));
-    geo.setAttribute('detail', new THREE.Float32BufferAttribute(new Float32Array(cnt).fill(ti), 1));
-    geos.push(geo);
-  }
-  if (!geos.length) return null;
-  return geos.length === 1 ? geos[0] : mergeGeometries(geos, false);
-}
-// Map a foreign skin's joint order (by bone name) onto the template's.
-function boneRemap(skel, boneNames) {
-  const remap = skel.bones.map(b => Math.max(0, boneNames.indexOf(b.name)));
-  return remap.every((v, i) => v === i) ? null : remap;
-}
-// Recolour a piece: keep the garment's own light/dark variation between its
-// parts, but move the hue/saturation to the requested colour.
-function recolor(base, target, meanL) {
-  const t = new THREE.Color(target), th = {}, bh = {};
-  t.getHSL(th); base.getHSL(bh);
-  return new THREE.Color().setHSL(th.h, th.s, Math.max(0.04, Math.min(0.96, th.l + (bh.l - meanL))));
-}
-
-// Which outfit's pieces fill each slot for a look, with optional recolours:
-//   look.outfit          default outfit number for every slot (0 = none)
-//   look.slots.{slot}    override: outfit number for that slot (0 = bare)
-//   look.colors.{slot}   recolour that slot ('#rrggbb')
-const outfitGeoCache = new Map();
-// Which manifest items a look wears: each slot from look.outfit, or from the
-// outfit named in look.slots[slot] (0 = nothing in that slot).
-function lookItems(look) {
-  if (!outfitManifest) return [];
-  const slots = look.slots || {}, gear = look.gear || {}, items = [];
-  for (const slot of OUTFIT_SLOT_NAMES) {
-    if (gear[slot] && armorById[gear[slot]]) { items.push({ ...armorById[gear[slot]], slot }); continue; }   // armour replaces the outfit piece
-    const pick = slots[slot];
-    if (typeof pick === 'string') { if (armorById[pick]) items.push({ ...armorById[pick], slot }); continue; }   // a wardrobe-armour piece worn as clothing (class base looks)
-    const num = pick != null ? pick : (look.outfit || 0);
-    const o = outfitManifest.outfits[num - 1]; if (!o) continue;
-    const it = o.items.find(i => i.slot.toLowerCase() === slot); if (it) items.push({ ...it, slot });
-  }
-  for (const slot of ARMOR_SLOT_NAMES) { const id = gear[slot] || (typeof slots[slot] === 'string' ? slots[slot] : null); if (id && armorById[id]) items.push({ ...armorById[id], slot }); }
-  return items;
-}
-// One clothing item's skinned pieces, loaded once: [{ geo, color, matName }].
-const itemCache = {};
-function itemAsset(it) {
-  if (itemCache[it.id]) return itemCache[it.id];
-  itemCache[it.id] = gltfLoader.loadAsync('models/human/' + it.file.replace(/^Items\//, 'items/')).then(g => {
-    const parts = [];
-    g.scene.traverse(o => { if (o.isSkinnedMesh) { const mats = Array.isArray(o.material) ? o.material : [o.material]; parts.push({ geo: o.geometry, color: mats[0].color.clone(), matName: mats[0].name, remap: humanTemplate ? boneRemap(o.skeleton, humanTemplate.boneNames) : null }); } });
-    return parts;
-  }).catch(e => { console.warn('Clothing failed to load:', it.file, e); return []; });
-  return itemCache[it.id];
-}
-// Fuse the worn items into one vertex-coloured geometry (recolouring a slot
-// keeps its own light/dark variation). Resolves once every item is loaded.
-async function outfitGeometry(look) {
-  const T = humanTemplate; if (!T || !outfitManifest) return null;
-  const items = lookItems(look), colors = look.colors || {};
-  const key = JSON.stringify([items.map(i => i.id), colors]);
-  if (outfitGeoCache.has(key)) return outfitGeoCache.get(key);
-  const loaded = await Promise.all(items.map(itemAsset));
-  const parts = [];
-  items.forEach((it, i) => {
-    const list = loaded[i]; if (!list.length) return;
-    let meanL = 0; const hsl = {};
-    for (const pt of list) { pt.color.getHSL(hsl); meanL += hsl.l; } meanL /= list.length;
-    // grain by what the piece is: plate sets are metal, leather sets leather, boots/belts/gloves leather, the rest cloth
-    const fam = /Bronze_Recruit|Iron_Vanguard|Steel_Chevalier|Gilded_Paladin|Obsidian_Warlord/.test(it.id) ? 'metal'
-      : /Frontier_Hide|Brigand_Studded|Forest_Tracker|Nightstalker|Drakehide_Warden/.test(it.id) || /boots|belt|gloves/.test(it.slot) ? 'leather' : 'cloth';
-    for (const pt of list) parts.push({ geo: pt.geo, color: colors[it.slot] ? recolor(pt.color, colors[it.slot], meanL) : pt.color.clone(), remap: pt.remap, detail: DETAIL_INDEX[detailFor(pt.matName, fam) || fam] });
-  });
-  const geo = parts.length ? fuseSkinned(parts, T.boneNames) : null;
-  outfitGeoCache.set(key, geo);
-  return geo;
-}
-
-// Hair: the pack's strand texture is a flat dark chestnut. Flatten it to a
-// normalised greyscale detail map once, so material.color IS the hair colour.
-const hairCache = {};
-function hairAsset(styleIdx) {
-  const style = HAIR_STYLES[styleIdx]; if (!style || style === 'Bald') return Promise.resolve(null);
-  if (hairCache[style]) return hairCache[style];
-  hairCache[style] = gltfLoader.loadAsync('models/human/hair/Hair_' + style + '.glb').then(g => {
-    let mesh = null; g.scene.traverse(o => { if (o.isSkinnedMesh && !mesh) mesh = o; });
-    if (!mesh) return null;
-    const src = mesh.material, map = src.map;
-    let detail = null;
-    if (map && map.image && map.image.width) {
-      const img = map.image, cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height;
-      const ctx = cv.getContext('2d'); ctx.drawImage(img, 0, 0);
-      const id = ctx.getImageData(0, 0, cv.width, cv.height), d = id.data;
-      let max = 1; for (let i = 0; i < d.length; i += 4) max = Math.max(max, 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]);
-      for (let i = 0; i < d.length; i += 4) { const l = (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]) / max; const v = Math.round(255 * (0.75 + 0.25 * l)); d[i] = d[i + 1] = d[i + 2] = v; }
-      ctx.putImageData(id, 0, 0);
-      detail = new THREE.CanvasTexture(cv); detail.colorSpace = THREE.SRGBColorSpace; detail.wrapS = map.wrapS; detail.wrapT = map.wrapT; detail.flipY = map.flipY;
-    }
-    // uv must survive here (unlike the fused pieces), so build the geometry by hand.
-    const T = humanTemplate;
-    let geo = mesh.geometry.clone();
-    const remap = T ? boneRemap(mesh.skeleton, T.boneNames) : null;
-    const si = geo.attributes.skinIndex, idx = new Uint16Array(si.count * 4);
-    for (let i = 0; i < idx.length; i++) idx[i] = remap ? remap[si.array[i]] : si.array[i];
-    geo.setAttribute('skinIndex', new THREE.BufferAttribute(idx, 4));
-    return { geo, detail, roughness: src.roughness };
-  }).catch(e => { console.warn('Hair failed to load:', style, e); return null; });
-  return hairCache[style];
-}
-
-// A complete character for a look, as the same wrap → body structure the rig
-// code expects (wrap.children[0] is the animated body).
-function makeHuman(look, targetH) {
-  const T = humanTemplate || buildHumanTemplate();
-  if (!T) return null;
-  look = Object.assign({}, DEFAULT_LOOK, look || {});
-  const obj = SkeletonUtils.clone(T.root);
-  // The clone carries no meshes (the template's were removed), so rebuild the
-  // skeleton over the cloned bones in template order.
-  const boneByName = {}; obj.traverse(o => { if (o.isBone) boneByName[o.name] = o; });
-  const skeleton = new THREE.Skeleton(T.boneNames.map(n => boneByName['B_' + n]), T.skeleton.boneInverses.map(m => m.clone()));
-  const bodyParent = obj.getObjectByName(T.bodyParent.name) || obj;
-  const addSkinned = (geo, mat, name) => {
-    if (!geo) return null;
-    const sm = new THREE.SkinnedMesh(geo, mat); sm.name = name;
-    sm.castShadow = sm.receiveShadow = true; sm.frustumCulled = false;
-    sm.bind(skeleton, new THREE.Matrix4());
-    bodyParent.add(sm); sm.traverse(o => { Object.assign(o.userData, wrap.userData.pickTag || {}); }); return sm;
-  };
-  const s = targetH / HUMAN_H;
-  obj.scale.setScalar(s); obj.position.set(0, -HUMAN_MIN_Y * s, 0);
-  const wrap = new THREE.Group(); wrap.add(obj);
-  wrap.userData.look = look;
-  // Clothes and the body they cover resolve together (items load on demand);
-  // hair last, and not under a helmet.
-  (async () => {
-    await outfitManifestReady;
-    const items = lookItems(look);
-    const hide = new Set(); for (const it of items) for (const n of (it.hide_body || [])) hide.add(n);
-    const bodyKey = 'body:' + look.skin + ':' + look.hairColor + ':' + [...hide].sort().join(',');
-    if (!outfitGeoCache.has(bodyKey)) {
-      outfitGeoCache.set(bodyKey, fuseSkinned(T.bodyParts.filter(pt => !hide.has(pt.name)).map(pt => ({
-        geo: pt.geo, matName: pt.matName,
-        color: pt.matName === 'Warm_Skin' ? new THREE.Color(look.skin) : pt.matName === 'Chestnut_Hair' ? new THREE.Color(look.hairColor) : pt.color,
-        detail: pt.matName === 'Warm_Skin' ? DETAIL_INDEX.skin : pt.matName === 'Chestnut_Hair' ? -1 : DETAIL_INDEX.cloth,
-      })), T.boneNames));
-    }
-    const outfitGeo = await outfitGeometry(look);
-    if (!wrap.parent) return;
-    addSkinned(outfitGeoCache.get(bodyKey), detailize(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 }), null, { attr: true, scale: 0.9, strength: 0.9 }), 'Body');
-    addSkinned(outfitGeo, detailize(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8 }), null, { attr: true, scale: 0.9 }), 'Outfit');
-    if (items.some(it => it.slot === 'helmet')) return;
-    const h = await hairAsset(look.hair);
-    if (!h || !wrap.parent) return;
-    addSkinned(h.geo, new THREE.MeshStandardMaterial({ color: new THREE.Color(look.hairColor), map: h.detail, roughness: h.roughness != null ? h.roughness : 0.75 }), 'Hair');
-  })();
-  return wrap;
-}
-
 // ---------------------------------------------------------------------------
-// The Fighter: a character of his own rather than the modular base in a kit —
-// fur mantle, spiked pauldron, bracers, tassets, the lot, modelled and rigged
-// as one piece (client/models/human/Fighter.glb). His armour is part of him,
-// so worn armour still gives its stats but doesn't change how he looks; the
-// weapon in his hand does.
-//
-// His skeleton uses the usual Blender names (UpperArm_L, Forearm_L, Hand_L,
-// Index_01_L ...) while every animation here was written against the modular
-// base's flat ones, so the bones are renamed on the way in and the walk, the
-// swings, the grip, the guard and the two-bone IK all then just work.
+// Character bodies. Everyone in the world stands on the same rig: the male and
+// female bases that NPCs and most classes wear, and the Fighter's own figure.
+// They are all rigged the same way (Blender's usual bone names), so the bones
+// are renamed to the flat convention the animation was written against and the
+// world-aligning rebuild above does the rest — walk, swings, grip, guard and
+// the two-bone IK all work on any of them.
 // ---------------------------------------------------------------------------
-const FIGHTER_H = 2.02;           // rest-pose height of the model
-let fighterTemplate = null;
+const BODY_MODELS = { Fighter: 'human/Fighter', Male: 'human/Male_Base', Female: 'human/Female_Base' };
+const bodyTemplates = new Map();
 const flatBoneName = (n) => n.replace(/_([LR])$/, '$1');
-function buildFighterTemplate() {
-  const src = LOADED['Fighter'];
+// Which material takes which colour from a look. The bases carry their own
+// skin, brows and underclothes; a look just re-tints them.
+const LOOK_MATS = [[/skin/i, 'skin'], [/hair|brow/i, 'hairColor'], [/cloth/i, 'cloth']];
+function buildBodyTemplate(key) {
+  if (bodyTemplates.has(key)) return bodyTemplates.get(key);
+  const src = LOADED[modelKey(BODY_MODELS[key] || key)];
   if (!src) return null;
   const root = SkeletonUtils.clone(src);
   const T = worldAlignSkeleton(root, flatBoneName);
-  if (!T) return null;
+  if (!T) { bodyTemplates.set(key, null); return null; }
   const { skeleton, boneNames, skinned, armUpper, armFore } = T;
-  // Sixty-eight little meshes (every strap, plate and pouch) fuse into one
-  // vertex-coloured body, the same way the modular human's pieces do.
+  // Every little mesh — strap, plate, pouch, eyebrow — is skinned to the one
+  // shared skeleton, so their skinIndex already speaks the template's bone
+  // order and they fuse straight into one vertex-coloured body.
   const parent = skinned[0].parent;
-  // Every piece is skinned to the one shared skeleton, so their skinIndex
-  // already speaks the template's bone order — no remap (and none is possible
-  // here anyway: the bones have been renamed by now).
   const parts = skinned.map(m => {
     const mat = Array.isArray(m.material) ? m.material[0] : m.material;
     return { name: m.name, geo: m.geometry, matName: mat.name, color: mat.color.clone() };
   });
-  const geo = fuseSkinned(parts, boneNames);
   for (const m of skinned) m.removeFromParent();
   root.updateMatrixWorld(true);
   const box = new THREE.Box3(); for (const pt of parts) { pt.geo.computeBoundingBox(); box.union(pt.geo.boundingBox); }
-  fighterTemplate = { root, skeleton, boneNames, geo, parent, armUpper, armFore, height: box.max.y - Math.min(0, box.min.y), minY: box.min.y };
-  return fighterTemplate;
+  const tpl = { root, skeleton, boneNames, parts, parent, armUpper, armFore,
+    geos: new Map(), height: box.max.y - Math.min(0, box.min.y), minY: box.min.y };
+  bodyTemplates.set(key, tpl);
+  return tpl;
 }
-function makeFighter(targetH) {
-  const T = fighterTemplate || buildFighterTemplate();
-  if (!T || !T.geo) return null;
+// The fused body for one look, cached: the same few colours come round again
+// and again across a village.
+function bodyGeometry(T, look) {
+  const tint = { skin: look && look.skin, hairColor: look && look.hairColor,
+    cloth: (look && look.colors && (look.colors.top || look.colors.trousers)) || null };
+  const key = [tint.skin, tint.hairColor, tint.cloth].join('|');
+  if (T.geos.has(key)) return T.geos.get(key);
+  const parts = T.parts.map(pt => {
+    let color = pt.color;
+    for (const [re, field] of LOOK_MATS) {
+      if (!re.test(pt.matName || '')) continue;
+      if (tint[field]) color = new THREE.Color(tint[field]);
+      break;
+    }
+    return { ...pt, color };
+  });
+  const geo = fuseSkinned(parts, T.boneNames);
+  T.geos.set(key, geo);
+  return geo;
+}
+function makeBody(key, targetH, look) {
+  const T = buildBodyTemplate(key);
+  if (!T) return null;
+  const geo = bodyGeometry(T, look);
+  if (!geo) return null;
   const obj = SkeletonUtils.clone(T.root);
   const boneByName = {}; obj.traverse(o => { if (o.isBone) boneByName[o.name] = o; });
   const skeleton = new THREE.Skeleton(T.boneNames.map(n => boneByName['B_' + n]), T.skeleton.boneInverses.map(m => m.clone()));
-  const sm = new THREE.SkinnedMesh(T.geo, detailize(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82 }), null, { attr: true, scale: 0.9, strength: 0.9 }));
+  const sm = new THREE.SkinnedMesh(geo, detailize(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82 }), null, { attr: true, scale: 0.9, strength: 0.9 }));
   sm.name = 'Body'; sm.castShadow = sm.receiveShadow = true; sm.frustumCulled = false;
   sm.bind(skeleton, new THREE.Matrix4());
   (obj.getObjectByName(T.parent.name) || obj).add(sm);
-  const s = targetH / (T.height || FIGHTER_H);
+  const s = targetH / (T.height || 2.02);
   obj.scale.setScalar(s); obj.position.set(0, -Math.max(0, T.minY) * s, 0);
   const wrap = new THREE.Group(); wrap.add(obj);
   wrap.userData.armUpper = T.armUpper * s; wrap.userData.armFore = T.armFore * s;
+  wrap.userData.look = look || null;
   return wrap;
 }
 
@@ -4208,7 +4042,8 @@ function buildNpcs() {
   for (const def of (zone.npcs || [])) {
     let g = null;
     // Use a real humanoid model (Male/Female) when one is given and loaded.
-    if (def.model === 'Male' || def.look) g = makeHuman(def.look, 2.3);
+    // People are the male or female base; anything else named is a creature.
+    if (def.model === 'Male' || def.model === 'Female' || def.look) g = makeBody(def.model === 'Female' ? 'Female' : 'Male', 2.3, def.look);
     if (!g && def.model && LOADED[def.model]) {
       g = cloneModel(def.model, def.h || 2.3);   // a goblin is not the height of a guardsman
       if (g) mergeRigidParts(g);
@@ -4501,28 +4336,14 @@ const MALE_BONES = {
   legR: { a: [0.11, 0.96, 0], b: [0.11, 0.05, 0.02] },
 };
 function makePlayerMesh(isSelf, ent) {
-  // Fighters have a body of their own; everyone else is the modular human
-  // (skinned body + outfit + hair). The old carved Male model is the fallback.
-  if (ent && ent.cls === 'fighter') {
-    const f = makeFighter(2.3);
-    if (f) { f.userData.faceOffset = 0; f.userData.rig = buildRig(f, 'hero'); return f; }
+  // Fighters have a body of their own; every other class wears the base.
+  const figure = makeBody(ent && ent.cls === 'fighter' ? 'Fighter' : 'Male', 2.3, ent && ent.look);
+  if (figure) {
+    figure.userData.faceOffset = 0;
+    figure.userData.rig = buildRig(figure, 'hero');
+    return figure;
   }
-  const human = makeHuman(ent && ent.look, 2.3);
-  if (human) {
-    human.userData.faceOffset = 0;
-    human.userData.rig = buildRig(human, 'hero');
-    return human;
-  }
-  const g = cloneModel('Male', 2.3);
-  if (g) {
-    splitHumanoid(g, MALE_BONES);
-    mergeRigidParts(g);
-    // The Male model faces +Z, so no yaw flip — otherwise it walks backwards.
-    g.rotation.y = 0; g.userData.faceOffset = 0;
-    g.userData.rig = buildRig(g, 'hero');
-    return g;
-  }
-  // fallback if the model failed to load
+  // fallback if the base failed to load
   const fb = new THREE.Group();
   const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.5, 1.0, 4, 8),
     new THREE.MeshStandardMaterial({ color: isSelf ? 0x3f7fd0 : 0x8b93a3 }));
@@ -5856,32 +5677,11 @@ function makeProceduralItem(name) {
   }
   return g;
 }
-// An armour piece lying on the ground: the pack's skinned piece drawn as a
-// plain mesh in its rest pose (the bind pose is the rest pose), fitted small.
-const armorGroundCache = {};
-function armorGroundModel(gearId) {
-  const it = armorById[gearId]; if (!it) return null;
-  if (armorGroundCache[gearId] === undefined) {
-    armorGroundCache[gearId] = null;
-    itemAsset(it).then(parts => {
-      if (!parts.length) return;
-      const grp = new THREE.Group();
-      for (const pt of parts) { const m = new THREE.Mesh(pt.geo, new THREE.MeshStandardMaterial({ color: pt.color, roughness: 0.8 })); m.castShadow = true; grp.add(m); }
-      const box = new THREE.Box3().setFromObject(grp);
-      const sc = 0.5 / (Math.max(box.max.x - box.min.x, box.max.y - box.min.y, box.max.z - box.min.z) || 1);
-      grp.scale.setScalar(sc);
-      grp.position.set(-(box.min.x + box.max.x) / 2 * sc, -box.min.y * sc, -(box.min.z + box.max.z) / 2 * sc);
-      const wrap = new THREE.Group(); wrap.add(grp);
-      armorGroundCache[gearId] = wrap;
-    });
-  }
-  return armorGroundCache[gearId] ? armorGroundCache[gearId].clone(true) : null;
-}
 function makeItemMesh(it) {
   const g = new THREE.Group();
   const info = itemInfo(it.name);
   const key = info && info.model ? info.model : itemModelName(it.name);
-  let model = info && info.gear ? armorGroundModel(info.gear) : cloneModel(key, 0.5, true); // fit longest side to ~0.5m
+  let model = cloneModel(key, 0.5, true);   // fit longest side to ~0.5m
   if (model) {
     g.add(model);
     g.userData.hasModel = true;
@@ -5890,9 +5690,8 @@ function makeItemMesh(it) {
     // one exists) so updateGroundItems can swap to it. Items with no GLB keep the
     // themed mesh.
     g.add(makeProceduralItem(it.name));
-    g.userData.hasModel = false; g.userData.itemKey = key; g.userData.gearKey = info && info.gear ? info.gear : null;
-    if (info && info.gear) { /* armorGroundModel is streaming it in */ }
-    else if (LOADED[key] === undefined) loadModels([(info && info.model ? 'weapons/' : 'items/') + key]).catch(() => {});
+    g.userData.hasModel = false; g.userData.itemKey = key;
+    if (LOADED[key] === undefined) loadModels([(info && info.model ? 'weapons/' : 'items/') + key]).catch(() => {});
   }
   g.traverse(o => { if (o.isMesh) { o.userData.pickKind = 'item'; o.userData.pickId = it.id; } });
   return g;
@@ -5908,7 +5707,7 @@ function updateGroundItems(items) {
     seen.add(it.id);
     let rec = itemMeshes.get(it.id);
     if (!rec) { const mesh = makeItemMesh(it); scene.add(mesh); rec = { mesh, name: it.name, qty: it.qty }; itemMeshes.set(it.id, rec); }
-    else if (rec.mesh.userData.hasModel === false && (LOADED[rec.mesh.userData.itemKey] || (rec.mesh.userData.gearKey && armorGroundCache[rec.mesh.userData.gearKey]))) {
+    else if (rec.mesh.userData.hasModel === false && LOADED[rec.mesh.userData.itemKey]) {
       // The real model finished loading — replace the placeholder marker.
       scene.remove(rec.mesh);
       rec.mesh = makeItemMesh(it); scene.add(rec.mesh);
@@ -9507,36 +9306,19 @@ async function enterZone(zdata) {
 }
 
 let pickedClass = 'fighter';
-// Character look pickers on the login card; the last choice is remembered.
-const hairSel = document.getElementById('hairSel'), outfitSel = document.getElementById('outfitSel');
+// Character look on the login card: skin and hair colour, remembered. Clothing
+// will come back with a wardrobe cut for this body.
 const hairCol = document.getElementById('hairCol'), skinCol = document.getElementById('skinCol');
-HAIR_STYLES.forEach((h, i) => hairSel.add(new Option(h.replace(/^\d\d_/, '').replace(/_/g, ' '), i)));
-OUTFITS.forEach((o, i) => outfitSel.add(new Option(o.replace(/^\d\d_/, '').replace(/_/g, ' '), i)));
 try {
   const saved = JSON.parse(localStorage.getItem('bk.look') || 'null');
-  if (saved) { hairSel.value = saved.hair; outfitSel.value = saved.outfit; hairCol.value = saved.hairColor; skinCol.value = saved.skin; }
-  else { hairSel.value = DEFAULT_LOOK.hair; outfitSel.value = DEFAULT_LOOK.outfit; }
-} catch (e) { hairSel.value = DEFAULT_LOOK.hair; outfitSel.value = DEFAULT_LOOK.outfit; }
-function currentLook() {
-  const look = { hair: +hairSel.value, hairColor: hairCol.value, skin: skinCol.value, outfit: +outfitSel.value };
-  const kit = CLASS_LOOK[pickedClass];
-  if (kit && kit.outfit === look.outfit) { look.slots = kit.slots; look.colors = kit.colors; }   // the class kit, unless another outfit was chosen
-  return look;
-}
+  if (saved) { if (saved.hairColor) hairCol.value = saved.hairColor; if (saved.skin) skinCol.value = saved.skin; }
+} catch (e) {}
+function currentLook() { return { hairColor: hairCol.value, skin: skinCol.value }; }
 // Class pick on the login card; remembered like the look.
 try { const c = localStorage.getItem('bk.cls'); if (['fighter', 'cleric', 'bard'].includes(c)) pickedClass = c; } catch (e) {}
-// Each class has a base outfit from the wardrobe pack; picking a class dresses
-// the character in it (you can still change it afterwards).
-// The starting kits after the class concept sheets: the Barbarian (Fighter),
-// the Minstrel (Bard) and the Templar (Cleric) outfits. Picking a class
-// selects its outfit; extra per-slot overrides would go in `slots`/`colors`.
-const CLASS_LOOK = {
-  fighter: { outfit: 32 }, cleric: { outfit: 34 }, bard: { outfit: 33 },   // built from the concept sheets by tools/build_outfits.py
-};
-const CLASS_OUTFIT = { fighter: 32, cleric: 34, bard: 33 };
 document.querySelectorAll('#classRow .classopt').forEach(d => {
   d.classList.toggle('sel', d.dataset.cls === pickedClass);
-  d.onclick = () => { pickedClass = d.dataset.cls; document.querySelectorAll('#classRow .classopt').forEach(x => x.classList.toggle('sel', x === d)); syncLookRows(); if (CLASS_OUTFIT[pickedClass] != null) outfitSel.value = CLASS_OUTFIT[pickedClass]; try { localStorage.setItem('bk.cls', pickedClass); } catch (e) {} };
+  d.onclick = () => { pickedClass = d.dataset.cls; document.querySelectorAll('#classRow .classopt').forEach(x => x.classList.toggle('sel', x === d)); syncLookRows(); try { localStorage.setItem('bk.cls', pickedClass); } catch (e) {} };
 });
 // A Fighter's figure is fixed, so the pickers that wouldn't do anything hide.
 function syncLookRows() {
