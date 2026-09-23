@@ -6530,7 +6530,6 @@ function kf(u, keys) {
   return keys[keys.length - 1][1];
 }
 // Common building blocks.
-const overhead = (u, up = -2.6, down = 0.9, peak = 0.42) => kf(u, [[0, 0], [peak, up], [peak + 0.18, down], [1, 0]]);  // raise, chop, settle
 const crouch = (u, depth, peak = 0.6) => kf(u, [[0, 0], [peak, depth], [1, 0]]);
 // Bard instrument poses (mimed). t: seconds of playing; speed: strums per second-ish.
 function lutePose(P, t, speed) {     // the arms are solved onto the lute; this drives the strum and the body's sway
@@ -6549,11 +6548,34 @@ function harpPose(P, t) {            // a harp cradled at the chest, fingers pic
   P.lArm = -1.3; P.lArmZ = 0.7; P.rArm = -1.25 + Math.sin(t * 5) * 0.1; P.rArmZ = -0.2 + Math.sin(t * 7) * 0.12; P.bodyX = 0.1; P.bodyY = -0.25;
 }
 const ABILITY_ANIMS = {
-  heavy_swing: { dur: 0.75, pose(u, P) {            // slow heavy two-hander: both arms over, hard chop, body dips
-    P.rArm = overhead(u, -2.8, -0.45, 0.45); P.lArm = overhead(u, -2.3, -0.35, 0.45); P.rArmZ = 0.15; P.lArmZ = -0.15;
-    P.bodyX = kf(u, [[0, 0], [0.45, -0.18], [0.65, 0.35], [1, 0.05]]); P.bob = -crouch(u, 0.16, 0.65);
-    P.lLeg = kf(u, [[0, 0], [0.6, -0.35], [1, 0]]); P.rLeg = kf(u, [[0, 0], [0.6, 0.3], [1, 0]]); P.rShin = kf(u, [[0, 0], [0.6, 0.45], [1, 0]]);
-  }, fx: [{ at: 0.5, kind: 'sfx', key: 'heavy_swing' }, { at: 0.62, kind: 'dust', r: 1.2, shake: 0.06 }, { at: 0.62, kind: 'streak', fwd: 1.2, y: 0.9, len: 1.8 }] },
+  heavy_swing: { trailColor: 0xffc266, dur: 0.72, pose(u, P) {
+    // A flat cut, right to left. The sword arm comes up and back to the right,
+    // holds a beat, and then the hips and shoulders drive it level across the
+    // body and out past the left shoulder. The arm stays carried forward the
+    // whole way (rArm never nears 0), so the sweep is the shoulder turning and
+    // not the hand falling through the legs; nothing goes overhead, because
+    // this is a slash and not a chop.
+    // The three keys were solved against the blade tip, in metres from the feet
+    // as (forward, left, up), with the hand level at the shoulder throughout:
+    //   drawn back (-0.55, -1.71, 1.43) -> level out front (1.56, 0.15, 1.51)
+    //   -> away left (0.39, 1.29, 1.38), the torso turn carrying it further.
+    P.rArm  = kf(u, [[0, 0], [0.26, -1.05], [0.36, -1.05], [0.52, -1.30], [0.64, -1.05], [0.84, -0.55], [1, 0]]);
+    P.rArmZ = kf(u, [[0, 0], [0.26, -1.50], [0.36, -1.50], [0.52,  0.60], [0.64,  1.60], [0.84,  0.70], [1, 0]]);   // the sweep itself: right, across, out left
+    P.rFore = [kf(u, [[0, 0], [0.26, 0.80], [0.36, 0.80], [0.52, -0.30], [0.64, 0.30], [1, 0]]), 0,
+               kf(u, [[0, 0], [0.36, 0], [0.52, -0.30], [0.64, -0.30], [1, 0]])];
+    P.lArm  = kf(u, [[0, 0], [0.34, -0.75], [0.64,  0.50], [1, 0]]);                 // the off hand crosses, then trails back
+    P.lArmZ = kf(u, [[0, 0], [0.34, -0.45], [0.64,  0.65], [1, 0]]);
+    P.bodyY = kf(u, [[0, 0], [0.36, -0.60], [0.64,  0.72], [0.86, 0.22], [1, 0]]);   // coil right, uncoil left through the cut
+    P.bodyX = kf(u, [[0, 0], [0.36, -0.10], [0.56,  0.22], [1, 0]]);
+    P.bob   = kf(u, [[0, 0], [0.36,  0.04], [0.56, -0.14], [1, 0]]);                 // drop into it
+    P.lLeg  = kf(u, [[0, 0], [0.36,  0.26], [0.62, -0.40], [1, 0]]);                 // the lead foot steps through the turn
+    P.rLeg  = kf(u, [[0, 0], [0.36, -0.30], [0.62,  0.36], [1, 0]]);
+    P.rShin = kf(u, [[0, 0], [0.62, 0.45], [1, 0]]);
+  }, fx: [{ at: 0.38, kind: 'sfx', key: 'heavy_swing' },
+          { at: 0.46, kind: 'crescent', r: 1.35, spread: 1.9, y: 1.55, tilt: -0.15, fwd: 0.25, color: 0xffd08a },
+          { at: 0.52, kind: 'flash', r: 0.8, color: 0xfff3d2, fwd: 1.3 },
+          { at: 0.52, kind: 'sparks', n: 14, color: 0xffb867, fwd: 1.35 },
+          { at: 0.56, kind: 'dust', r: 1.0, shake: 0.07 }] },
   cleave: { dur: 0.7, pose(u, P) {                  // wide horizontal arc, torso winds right then sweeps left
     P.bodyY = kf(u, [[0, 0], [0.3, -0.9], [0.7, 1.1], [1, 0]]);
     P.rArm = kf(u, [[0, 0], [0.3, -1.4], [0.7, -1.5], [1, 0]]); P.rArmZ = kf(u, [[0, 0], [0.3, -1.2], [0.7, 0.9], [1, 0]]);
@@ -7791,7 +7813,7 @@ function crackTexture() {
 }
 function spawnFx(kind, x, y, z, yaw, o = {}) {
   if (kind === 'sfx') { playAbilitySfx(o.key, x, z); return; }
-  const life = o.life || { dust: 0.55, ring: 0.5, shock: 0.6, flash: 0.22, sparks: 0.6, arc: 0.35, cracks: 4.0, impact: 0.25, streak: 0.3, glow: 0.5, pillar: 0.6, rise: 1.0, glyph: 0.9, wings: 0.9, beam: 0.35, notes: 1.4, ripple: 0.7, staff: 2.0 }[kind] || 0.5;
+  const life = o.life || { dust: 0.55, ring: 0.5, shock: 0.6, flash: 0.22, sparks: 0.6, arc: 0.35, cracks: 4.0, impact: 0.25, streak: 0.3, glow: 0.5, pillar: 0.6, rise: 1.0, glyph: 0.9, wings: 0.9, beam: 0.35, notes: 1.4, ripple: 0.7, staff: 2.0, crescent: 0.4 }[kind] || 0.5;
   let obj;
   if (kind === 'dust' || kind === 'ring' || kind === 'shock') {
     const col = o.color || (kind === 'dust' ? 0xb9a77c : 0xffffff);
@@ -7827,6 +7849,28 @@ function spawnFx(kind, x, y, z, yaw, o = {}) {
     const pts = new THREE.Points(g, new THREE.PointsMaterial({ color: o.sparkColor || 0xff9a4a, size: 0.14, map: fxDot(), transparent: true, opacity: 1, depthWrite: false, blending: THREE.AdditiveBlending }));
     pts.userData.vel = vel; obj.add(pts); obj.userData.core = core; obj.userData.pts = pts;
     obj.position.set(x, y + (o.y != null ? o.y : 1.1), z);
+  } else if (kind === 'crescent') {  // the arc a blade cuts through the air: a tapered
+    // ribbon lying in the plane of the cut, revealed along the swing and burning
+    // out behind the edge. `tilt` rolls the plane (a diagonal cut), `dir` 1 sweeps
+    // toward the character's left, -1 toward the right.
+    const N = 30, spread = o.spread || 2.4, R = o.r || 2.0, dir = o.dir || 1;
+    const pos = new Float32Array(N * 2 * 3), col = new Float32Array(N * 2 * 3), idx = [];
+    for (let i = 0; i < N - 1; i++) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+    for (let i = 0; i < N; i++) {
+      const t = i / (N - 1), ang = (-spread / 2 + spread * t) * dir;
+      const taper = Math.sin(Math.PI * t);            // a point at each end, widest through the middle
+      const rIn = R * (1 - 0.18 * taper), rOut = R * (1 + 0.03 * taper);
+      pos[i * 6] = Math.sin(ang) * rIn;      pos[i * 6 + 2] = Math.cos(ang) * rIn;
+      pos[i * 6 + 3] = Math.sin(ang) * rOut; pos[i * 6 + 5] = Math.cos(ang) * rOut;
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    g.setIndex(idx);
+    obj = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 1, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }));
+    obj.rotation.order = 'YXZ'; obj.rotation.set(0, yaw, o.tilt || 0);
+    obj.position.set(x + Math.sin(yaw) * (o.fwd || 0), y + (o.y != null ? o.y : 1.2), z + Math.cos(yaw) * (o.fwd || 0));
+    obj.userData.n = N; obj.userData.col = new THREE.Color(o.color || 0xffd08a);
   } else if (kind === 'streak') {  // a stretched flash along the facing (dashes, thrusts)
     obj = new THREE.Sprite(new THREE.SpriteMaterial({ map: fxDot(), color: o.color || 0xfff4d8, transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending, rotation: 0 }));
     obj.position.set(x + Math.sin(yaw) * (o.fwd || 0), y + (o.y != null ? o.y : 1.0), z + Math.cos(yaw) * (o.fwd || 0));
@@ -7900,6 +7944,20 @@ function updateFx(dt) {
       const pos = pts.geometry.attributes.position, v = pts.userData.vel;
       for (let k = 0; k < v.length; k++) { v[k][1] -= 9 * dt; pos.setXYZ(k, pos.getX(k) + v[k][0] * dt, pos.getY(k) + v[k][1] * dt, pos.getZ(k) + v[k][2] * dt); }
       pos.needsUpdate = true; pts.material.opacity = 1 - u;
+    }
+    else if (f.kind === 'crescent') {
+      // The leading edge runs the arc in the first third of the life, bright at
+      // the edge and trailing off behind it; then the whole cut burns out.
+      const N = f.obj.userData.n, c = f.obj.userData.col, col = f.obj.geometry.attributes.color;
+      const sweep = Math.min(1, u / 0.30), fade = (1 - u) * (1 - u);
+      for (let i = 0; i < N; i++) {
+        const t = i / (N - 1);
+        const k = t <= sweep ? (0.38 + 0.52 * Math.max(0, 1 - (sweep - t) * 3)) * fade : 0;
+        col.setXYZ(i * 2, c.r * k * 0.2, c.g * k * 0.2, c.b * k * 0.2);   // the inner edge is the dimmer side
+        col.setXYZ(i * 2 + 1, c.r * k, c.g * k, c.b * k);
+      }
+      col.needsUpdate = true;
+      const s = 1 + u * 0.16; f.obj.scale.set(s, s, s);
     }
     else if (f.kind === 'streak') { f.obj.material.opacity = 0.8 * (1 - u); const sx = f.obj.scale.x * (1 + dt * 3); f.obj.scale.x = sx; }
     else if (f.kind === 'glow') { const gs = 0.5 + 3.5 * u; f.obj.scale.set(gs, gs, 1); f.obj.material.opacity = 0.55 * (1 - u); }
