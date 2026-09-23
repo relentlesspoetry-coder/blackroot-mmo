@@ -786,6 +786,14 @@ function buildFarm(zone) {
     side('north', x0, z0, x1, z0); side('south', x0, z1, x1, z1);
     side('west', x0, z0, x0, z1);  side('east', x1, z0, x1, z1);
     for (const f of (h.furn || [])) {
+      // Somewhere to sit or lie down. The stool is sat on from where it stands;
+      // a bed is lain on along its length, head at the pillow end, so you stop
+      // beside it and end up on top of it rather than standing in the frame.
+      if (f.k === 'stool' || f.k === 'bed') {
+        zone._seats = zone._seats || [];
+        zone._seats.push({ id: `${h.key}:${f.k}:${zone._seats.length}`, k: f.k,
+          x: h.x + f.dx, z: h.z + f.dz, yaw: f.yaw || 0, house: h.key });
+      }
       const r = FURN_R[f.k]; if (!r) continue;
       zone._solids.push({ x: h.x + f.dx, z: h.z + f.dz, r });
       // A hearth is a cooking station like the campfires outside.
@@ -973,6 +981,146 @@ function grantXp(p, amount) {
   if (leveled) { sendSkills(p); sendAbilities(p); }
 }
 
+// ---------------------------------------------------------------------------
+// Sitting down
+//
+// A stool is sat on, a bed is lain on. The server owns it so that everyone in
+// the room sees you in the chair, and so that the first thing you do -- move,
+// swing, cast, get hit -- puts you back on your feet.
+// ---------------------------------------------------------------------------
+const SEAT_REACH = 1.9;
+function seatById(zone, id) { return (zone._seats || []).find(s => s.id === id) || null; }
+// Where you stand to use it: on the stool itself, or beside the bed at the
+// foot end so lying down does not walk you through the headboard.
+function seatApproach(seat) {
+  if (seat.k !== 'bed') return { x: seat.x, z: seat.z };
+  return { x: seat.x + Math.sin(seat.yaw) * 1.25, z: seat.z + Math.cos(seat.yaw) * 1.25 };
+}
+function sitDown(p, seat) {
+  p.seat = { id: seat.id, k: seat.k, x: seat.x, z: seat.z, yaw: seat.yaw };
+  p.x = seat.x; p.z = seat.z;
+  // A bed is lain along its length, so the body turns a quarter across the
+  // furniture's own facing to put the head on the pillow.
+  p.yaw = seat.k === 'bed' ? seat.yaw + Math.PI / 2 : seat.yaw;
+  p.moveTo = null; p._nav = null; p.combatId = null;
+  send(p.ws, { t: 'event', kind: 'notice', text: seat.k === 'bed' ? 'You lie down.' : 'You sit down.' });
+}
+function standUp(p, quiet) {
+  if (!p.seat) return;
+  const was = p.seat; p.seat = null; p.pendingSeat = null;
+  if (was.k === 'bed') { p.x = was.x + Math.sin(was.yaw) * 1.25; p.z = was.z + Math.cos(was.yaw) * 1.25; }
+  if (!quiet) send(p.ws, { t: 'event', kind: 'notice', text: 'You get up.' });
+}
+
+// ---------------------------------------------------------------------------
+// Parties
+//
+// A party is a handful of players who share what they kill. It is deliberately
+// thin: a leader, a member list, and an invite that expires if nobody answers.
+// Everything else -- who can see whose health, who gets the xp -- reads off
+// those three facts.
+// ---------------------------------------------------------------------------
+const parties = new Map();            // id -> { id, leader, members: [playerId] }
+let nextPartyId = 1;
+const PARTY_MAX = 5;
+const PARTY_INVITE_TTL = 30;          // seconds before an unanswered invite lapses
+const PARTY_SHARE_RANGE = 80;         // how far a member can be and still share a kill
+
+function partyOf(p) { return (p && p.partyId && parties.get(p.partyId)) || null; }
+function partyMembers(party) { return (party ? party.members : []).map(id => players.get(id)).filter(Boolean); }
+// Everything a client needs to draw the party: who is in it, in what order, and
+// how each of them is doing. Sent to every member whenever any of that changes.
+function partyPayload(party) {
+  if (!party) return { t: 'party', members: [] };
+  return { t: 'party', leader: party.leader, members: partyMembers(party).map(m => ({
+    id: m.id, name: m.name, cls: m.cls, level: m.level, hp: Math.round(m.hp), maxHp: m.maxHp,
+    mana: m.manaMax ? Math.round(m.mana || 0) : undefined, manaMax: m.manaMax || undefined,
+    alive: m.alive, zoneId: m.zoneId })) };
+}
+// One payload, sent raw to each member -- send() would stringify it a second
+// time and the client would parse a string with no message type on it.
+function sendParty(party) {
+  const pay = JSON.stringify(partyPayload(party));
+  for (const m of partyMembers(party)) if (m.ws.readyState === m.ws.OPEN) m.ws.send(pay);
+}
+function partyNotice(party, text) { for (const m of partyMembers(party)) send(m.ws, { t: 'event', kind: 'notice', text }); }
+
+function partyInvite(from, toId) {
+  const to = players.get(Number(toId));
+  if (!to || to === from) return send(from.ws, { t: 'event', kind: 'notice', text: 'There is nobody there to invite.' });
+  if (to.zoneId !== from.zoneId) return send(from.ws, { t: 'event', kind: 'notice', text: `${to.name} is not in this zone.` });
+  if (partyOf(to)) return send(from.ws, { t: 'event', kind: 'notice', text: `${to.name} is already in a party.` });
+  const mine = partyOf(from);
+  if (mine && mine.leader !== from.id) return send(from.ws, { t: 'event', kind: 'notice', text: 'Only the party leader can invite.' });
+  if (mine && mine.members.length >= PARTY_MAX) return send(from.ws, { t: 'event', kind: 'notice', text: 'Your party is full.' });
+  if (to.partyInvite && to.partyInvite.t > 0) return send(from.ws, { t: 'event', kind: 'notice', text: `${to.name} already has an invitation pending.` });
+  to.partyInvite = { from: from.id, name: from.name, t: PARTY_INVITE_TTL };
+  send(to.ws, { t: 'party:invite', from: from.id, name: from.name, seconds: PARTY_INVITE_TTL });
+  send(from.ws, { t: 'event', kind: 'notice', text: `You invite ${to.name} to your party.` });
+}
+function partyAccept(p) {
+  const inv = p.partyInvite; p.partyInvite = null;
+  if (!inv || inv.t <= 0) return send(p.ws, { t: 'event', kind: 'notice', text: 'That invitation has lapsed.' });
+  const from = players.get(inv.from);
+  if (!from) return send(p.ws, { t: 'event', kind: 'notice', text: 'They are no longer here.' });
+  if (partyOf(p)) return send(p.ws, { t: 'event', kind: 'notice', text: 'You are already in a party.' });
+  let party = partyOf(from);
+  if (!party) {   // the inviter's party starts the moment someone says yes
+    party = { id: nextPartyId++, leader: from.id, members: [from.id] };
+    parties.set(party.id, party); from.partyId = party.id;
+  }
+  if (party.members.length >= PARTY_MAX) return send(p.ws, { t: 'event', kind: 'notice', text: 'That party is full.' });
+  party.members.push(p.id); p.partyId = party.id;
+  partyNotice(party, `${p.name} has joined the party.`);
+  sendParty(party);
+}
+function partyDecline(p) {
+  const inv = p.partyInvite; p.partyInvite = null;
+  if (!inv) return;
+  const from = players.get(inv.from);
+  if (from) send(from.ws, { t: 'event', kind: 'notice', text: `${p.name} declined your invitation.` });
+}
+// Leaving, being kicked and disconnecting all come through here, because they
+// all mean the same thing to everyone still in the party.
+function partyRemove(p, why) {
+  const party = partyOf(p); if (!party) return;
+  party.members = party.members.filter(id => id !== p.id);
+  p.partyId = null;
+  send(p.ws, partyPayload(null));
+  if (party.members.length < 2) {            // a party of one is just a person
+    for (const m of partyMembers(party)) { m.partyId = null; send(m.ws, partyPayload(null)); send(m.ws, { t: 'event', kind: 'notice', text: 'The party has disbanded.' }); }
+    parties.delete(party.id);
+    return;
+  }
+  if (party.leader === p.id) {               // the next one along takes over
+    party.leader = party.members[0];
+    const lead = players.get(party.leader);
+    if (lead) partyNotice(party, `${lead.name} now leads the party.`);
+  }
+  partyNotice(party, why || `${p.name} has left the party.`);
+  sendParty(party);
+}
+function partyKick(leader, id) {
+  const party = partyOf(leader);
+  if (!party || party.leader !== leader.id) return send(leader.ws, { t: 'event', kind: 'notice', text: 'Only the party leader can remove members.' });
+  const t = players.get(Number(id)); if (!t || t.partyId !== party.id || t === leader) return;
+  send(t.ws, { t: 'event', kind: 'notice', text: 'You have been removed from the party.' });
+  partyRemove(t, `${t.name} was removed from the party.`);
+}
+// Who shares a kill: everyone in the party who is alive, in the same zone and
+// near enough to have been part of it. The killer always counts.
+function killShare(killer) {
+  const party = partyOf(killer);
+  if (!party) return [killer];
+  const share = partyMembers(party).filter(m => m.alive && m.zoneId === killer.zoneId
+    && dist2(m.x, m.z, killer.x, killer.z) < PARTY_SHARE_RANGE * PARTY_SHARE_RANGE);
+  return share.length ? share : [killer];
+}
+// Splitting a kill costs the group a little, but grouping pays it back: each
+// extra pair of hands adds a tenth, so a full party of five is earning 1.4x
+// what one of them would alone, spread between them.
+function partyXpSplit(n) { return n <= 1 ? 1 : (1 + 0.1 * (n - 1)) / n; }
+
 function killMonster(m, killer) {
   m.alive = false; m.state = 'dead'; m.provoked = false; m.debuffs = null; m.stagger = 0;
   if (m.minion) onMinionKilled(bossCtx, m);
@@ -982,7 +1130,11 @@ function killMonster(m, killer) {
   m.respawnTimer = m.elite ? Math.max(90, m.respawn * 2) : m.respawn;
   m.hp = 0;
   if (killer) {
-    grantXp(killer, xpForKill(killer.level, m.level, m.xp));   // worth less the further you have outgrown it
+    // Everyone who shares the kill is paid against their own level, so the
+    // veteran carrying a friend earns what a veteran earns and the friend
+    // earns what the fight was actually worth to them.
+    const share = killShare(killer), split = partyXpSplit(share.length);
+    for (const m2 of share) grantXp(m2, Math.round(xpForKill(m2.level, m.level, m.xp) * split));
     notifyQuestProgress(killer, recordKill(killer, m));
   }
 
@@ -2393,6 +2545,18 @@ function stepPlayer(p) {
   const inp = p.input;
   // Meditating ends the moment the player wants to act (move / fight / interact)
   // or gets hit — you can't rest in the middle of a scrap.
+  // Sitting ends the same way meditating does: the first thing you want to do
+  // that is not sitting puts you back on your feet.
+  if (p.seat) {
+    const up = (inp && (inp.f !== 0 || inp.r !== 0)) || p.moveTo || p.combatId != null ||
+      p.pendingChest || p.pendingPickup != null || p.pendingMine != null || p.pendingGate ||
+      p.pendingFish != null || p.pendingCook != null || p.pendingUse || (p.combatTimer || 0) > 0 || !p.alive;
+    if (up) standUp(p, true);
+    // On a stool he swivels: the input packet carries the way the camera is
+    // looking, so he turns with it and you are always seeing his front. A bed
+    // keeps the yaw it was lain down with -- you do not pivot on a mattress.
+    else if (p.seat.k === 'stool' && inp && typeof inp.yaw === 'number') p.yaw = inp.yaw;
+  }
   if (p.resting) {
     const wantsAction = (inp && (inp.f !== 0 || inp.r !== 0)) || p.moveTo || p.combatId != null ||
       p.pendingChest || p.pendingPickup != null || p.pendingMine != null || p.pendingGate ||
@@ -2400,6 +2564,16 @@ function stepPlayer(p) {
     if (wantsAction || (p.combatTimer || 0) > 0) { p.resting = false; sendSkills(p); }
   }
   const step = (tx, tz, stopDist) => navStep(zone, p, tx, tz, stopDist, PLAYER_SPEED * moveMult(p));
+  // Heading for a chair: walk to it, then sit when you arrive.
+  if (p.pendingSeat && !p.seat) {
+    const seat = seatById(zone, p.pendingSeat);
+    if (!seat) p.pendingSeat = null;
+    else {
+      const a = seatApproach(seat);
+      if (dist2(p.x, p.z, a.x, a.z) > SEAT_REACH * SEAT_REACH) { moved = step(a.x, a.z, SEAT_REACH * 0.8) || moved; }
+      else { p.pendingSeat = null; sitDown(p, seat); }
+    }
+  }
   // A shut gate on the way swings open as you reach it.
   if (p._nav && zone._gate && zone._gate.t < 0.55 && zone._gate.target < 0.5 && dist2(p.x, p.z, zone._gate.cx, zone._gate.cz) < GATE_REACH * GATE_REACH) toggleGate(zone._gate, p);
 
@@ -2645,9 +2819,14 @@ setInterval(() => {
   for (const [id, p] of players) {   // bodies left behind by a mid-fight disconnect
     if (p.lingerT == null) continue;
     p.lingerT -= DT;
-    if (p.lingerT <= 0 || !p.alive) { players.delete(id); systemChat(`${p.name} has left the world.`); }
+    if (p.lingerT <= 0 || !p.alive) { partyRemove(p, `${p.name} has left the party.`); players.delete(id); systemChat(`${p.name} has left the world.`); }
   }
   for (const [id, it] of groundItems) { it.ttl -= DT; if (it.ttl <= 0) groundItems.delete(id); }
+  for (const p of players.values()) {
+    if (!p.partyInvite) continue;
+    p.partyInvite.t -= DT;
+    if (p.partyInvite.t <= 0) { p.partyInvite = null; send(p.ws, { t: 'party:invite', expired: true }); }
+  }
 
   const now = Date.now();
   if (now - lastSnap >= 1000 / SNAPSHOT_HZ) {
@@ -2671,6 +2850,7 @@ setInterval(() => {
           fx: (() => { const o = []; for (const [k, b] of Object.entries(p.buffs)) if (b.t > 0 && (b.vis || VIS_BUFFS.has(k))) o.push(k); return o.length ? o : undefined; })(),
           swing: p.atkTimer > 0 ? { t: +p.atkTimer.toFixed(2), d: +playerAttackSpeed(p).toFixed(2) } : undefined,
           tgt: p.combatId != null ? p.combatId : undefined,   // who they are actually fighting
+          seat: p.seat ? { k: p.seat.k, yaw: +p.seat.yaw.toFixed(2) } : undefined,
           moving: p.moving, inSafe: !!p.inSafe, resting: !!p.resting, inCombat: (p.combatTimer || 0) > 0 || p.combatId != null,
           combatWait: p.lastCombat ? Math.max(0, Math.ceil(LOGOUT_COMBAT_WAIT - (Date.now() - p.lastCombat) / 1000)) : 0,
           weapon: p.equipment.weapon || null,     // held item for the paperdoll
@@ -2708,6 +2888,9 @@ setInterval(() => {
     for (const p of players.values()) {
       if (p.ws.readyState === p.ws.OPEN) p.ws.send(zoneSnap(p.zoneId));
     }
+    // Party frames show health, so they ride along with the snapshot. One
+    // payload per party, not per member.
+    for (const party of parties.values()) sendParty(party);
   }
 }, 1000 / TICK_HZ);
 
@@ -2757,6 +2940,7 @@ function zoneForClient(zone) {
     mines: zone._minePits || [],
     gate: zone.farm && zone.farm.gate ? (g => ({ x: g.x, z: g.z, yaw: g.yaw || 0, s: g.s || 1, double: !!g.double,
       gap: g.seg ? Math.hypot(g.seg.x2 - g.seg.x1, g.seg.z2 - g.seg.z1) : 2.4 }))(zone.farm.gate) : null,
+    seats: zone._seats || [],
     editObjects: zone._editObjects || [],
     editSpawns: zone._editSpawns || [],
   };
@@ -2784,6 +2968,7 @@ wss.on('connection', (ws) => {
           known: new Set(classDef(cls).abilities.filter(a => a.level <= 1).map(a => a.id)), // learned abilities
           cooldowns: {}, buffs: {}, gcd: 0, momentum: 0, momentumT: 0, rage: 0, rageMax: classStats(cls, 1).rage, rageIdle: 0,
           mana: classStats(cls, 1).mana, manaMax: classStats(cls, 1).mana, friendId: null,
+          partyId: null, partyInvite: null,
           meditation: { level: 1, xp: 0 }, resting: false,
           // Everyone starts able to mine and fish; better tools are earned. The
           // pickaxe rides in the bag (it counts for mining from there); the
@@ -2830,6 +3015,32 @@ wss.on('connection', (ws) => {
         break;
       }
       case 'learn': { if (player && player.alive) learnAbility(player, String(msg.id || '')); break; }
+      case 'sit': {
+        if (!player || !player.alive) break;
+        const seat = seatById(zoneOf(player), String(msg.id || ''));
+        if (!seat) break;
+        // The seat you are already on gets you off it; any other one gets you
+        // up and walking over to that one instead.
+        if (player.seat) { const same = player.seat.id === seat.id; standUp(player, !same); if (same) break; }
+        player.pendingSeat = seat.id; player.moveTo = null; player.combatId = null; player._nav = null;
+        break;
+      }
+      case 'stand': { if (player) standUp(player); break; }
+      // Trade and Duel are on the menu because that is where they belong, but
+      // neither system is built yet. Say so rather than letting the click do
+      // nothing and look broken.
+      case 'trade:request': case 'duel:challenge': {
+        if (!player) break;
+        const t = players.get(Number(msg.id));
+        const what = msg.t === 'trade:request' ? 'Trading' : 'Duelling';
+        send(player.ws, { t: 'event', kind: 'notice', text: `${what} is not in the world yet${t ? ` — ${t.name} will have to wait` : ''}.` });
+        break;
+      }
+      case 'party:invite': { if (player) partyInvite(player, msg.id); break; }
+      case 'party:accept': { if (player) partyAccept(player); break; }
+      case 'party:decline': { if (player) partyDecline(player); break; }
+      case 'party:leave':  { if (player) partyRemove(player); break; }
+      case 'party:kick':   { if (player) partyKick(player, msg.id); break; }
       case 'target': {   // a friendly target for the Cleric's spells (null = yourself)
         if (!player) break;
         const t = msg.id != null ? players.get(Number(msg.id)) : null;
@@ -3052,7 +3263,7 @@ wss.on('connection', (ws) => {
         if (!player) return;
         const wait = player.lastCombat ? LOGOUT_COMBAT_WAIT - (Date.now() - player.lastCombat) / 1000 : 0;
         if (player.alive && wait > 0) { send(ws, { t: 'event', kind: 'notice', text: `You can't log out in combat. Wait ${Math.ceil(wait)}s.` }); break; }
-        send(ws, { t: 'logout' }); players.delete(player.id); systemChat(`${player.name} has left the world.`); player = null;
+        send(ws, { t: 'logout' }); partyRemove(player); players.delete(player.id); systemChat(`${player.name} has left the world.`); player = null;
         break;
       }
       case 'chat': {
@@ -3073,7 +3284,7 @@ wss.on('connection', (ws) => {
       systemChat(`${player.name} tried to flee the fight — their body lingers.`);
       return;
     }
-    players.delete(player.id); systemChat(`${player.name} has left the world.`);
+    partyRemove(player); players.delete(player.id); systemChat(`${player.name} has left the world.`);
   });
 });
 

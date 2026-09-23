@@ -74,6 +74,32 @@
   /* The enemy you have selected: everything you need to fight it without
      looking away from the fight — health, what it is casting, what it is
      angry at, and how far out of your league it is (the con colour). */
+  /* The party: one slim row per companion, health at a glance. Sits under
+     your own frame, so the whole group reads top-down in one column. */
+  #partyframe { display: none; margin-top: 6px; pointer-events: auto; }
+  #partyframe .ph { font-size: 11px; color: #b9ad90; margin: 0 2px 3px; display: flex; justify-content: space-between; }
+  #partyframe .ph a { color: #e8b45a; cursor: pointer; text-decoration: none; }
+  #partyframe .ph a:hover { text-decoration: underline; }
+  .pmem { padding: 4px 8px; border-radius: 7px; background: #241f18; border: 2px solid #1c150e; margin-bottom: 3px; cursor: pointer; }
+  .pmem.lead { border-color: #6b5320; }
+  .pmem.away { opacity: 0.45; }
+  .pmem .pn { font-size: 12px; font-weight: 700; color: #ffdf9e; display: flex; justify-content: space-between; gap: 6px; }
+  .pmem .pn span { font-weight: 400; color: #b9ad90; font-size: 10px; }
+  .pmem .bar { height: 9px; margin: 2px 0 0; }
+  .pmem .mbar { height: 5px; margin: 2px 0 0; }
+  .pmem .bar > i { background: linear-gradient(90deg,#1c6b2a,#3fbf55,#7de08c); }
+  .pmem .mbar > i { background: linear-gradient(90deg,#26407a,#4a7fd0); }
+  /* An invitation waiting on an answer. */
+  /* Inside #hud, which is pointer-events: none -- the buttons have to ask for
+     clicks back or they render perfectly and do nothing. */
+  #invite { display: none; position: absolute; left: 50%; top: 22%; transform: translateX(-50%); z-index: 60; pointer-events: auto;
+    background: #2a2018; border: 2px solid #6b5320; border-radius: 10px; padding: 14px 18px; box-shadow: 0 10px 30px #000b;
+    color: #e7dcc2; font-size: 14px; text-align: center; min-width: 260px; }
+  #invite b { color: #ffdf9e; }
+  #invite .irow { margin-top: 10px; display: flex; gap: 8px; justify-content: center; }
+  #invite button { background: #3a3020; border: 1px solid #6b5a3a; border-radius: 6px; color: #ffdf9e; padding: 6px 16px; font-size: 13px; cursor: pointer; }
+  #invite button:hover { background: #4a3d28; }
+  #invite .isub { font-size: 11px; color: #b9ad90; margin-top: 6px; }
   #targetframe { display: none; margin-top: 6px; padding: 6px 10px; border-radius: 8px; background: #2a2018; border: 2px solid #1c150e; box-shadow: 0 8px 24px #000a; min-width: 214px; }
   #targetframe.elite { border-color: #b8901c; }
   #targetframe .tn { font-size: 13px; font-weight: 700; color: #ffdf9e; text-shadow: 0 1px 2px #000; margin-bottom: 4px; display: flex; justify-content: space-between; gap: 8px; }
@@ -455,6 +481,10 @@
       <div class="an"><b id="allyname">—</b><span id="allysub"></span></div>
       <div class="bar"><i id="allyfill"></i><i id="allyward"></i><span><em>HP:</em><b id="allytext"></b></span></div>
     </div>
+    <div id="partyframe">
+      <div class="ph"><span id="partycount">Party</span><a id="partyleave">Leave</a></div>
+      <div id="partylist"></div>
+    </div>
     <div id="targetframe" title="Your target — Tab cycles, Escape clears">
       <div class="tn"><b id="tgtname">—</b><span id="tgtsub"></span></div>
       <div class="bar"><i id="tgtfill"></i><span><em>HP:</em><b id="tgttext"></b></span></div>
@@ -544,6 +574,11 @@
   <div id="dialogue">
     <div class="d-head"><span id="dName">NPC</span><span class="d-close" id="dClose">✕</span></div>
     <div class="d-body"><div class="d-script" id="dScript"></div><div class="d-say" id="dSay"></div><div id="dQuests"></div></div>
+  </div>
+  <div id="invite">
+    <div id="inviteText">—</div>
+    <div class="irow"><button id="inviteYes">Accept</button><button id="inviteNo">Decline</button></div>
+    <div class="isub" id="inviteSub"></div>
   </div>
   <div id="npcmarks"></div>
   <div id="poilabels"></div>
@@ -1287,6 +1322,13 @@ function handle(m) {
       syncGraves(window.__fakeGraves ? (m.graves || []).concat(window.__fakeGraves) : m.graves);   // (?debug: extra graves to look at)
       syncNpcs(m.npcs);
       updateHudFromSnapshot(m);
+      break;
+    case 'party':
+      partyState = { leader: m.leader != null ? m.leader : null, members: m.members || [] };
+      renderParty();
+      break;
+    case 'party:invite':
+      showInvite(m);
       break;
     case 'transition':
       enterZone(m.zone);
@@ -3495,6 +3537,13 @@ function buildHouses() {
     // Furniture
     for (const f of (h.furn || [])) {
       const fg = new THREE.Group(); fg.position.set(f.dx, 0, f.dz); fg.rotation.y = f.yaw || 0;
+      // Seats are clickable. The server named them when it built the house, in
+      // the same order, so the ids line up without sending a second list.
+      if (f.k === 'stool' || f.k === 'bed') {
+        const seat = (zone.seats || []).find(q => q.house === h.key && q.k === f.k
+          && Math.abs(q.x - (h.x + f.dx)) < 0.01 && Math.abs(q.z - (h.z + f.dz)) < 0.01);
+        if (seat) fg.userData.seat = seat;
+      }
       switch (f.k) {
         case 'bed': {
           const frame = box(2.3, 0.45, 1.5, beamMat); frame.position.y = 0.3; fg.add(frame);
@@ -3537,6 +3586,11 @@ function buildHouses() {
           for (let i = 0; i < 5; i++) { const jar = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.22, 8), flat([0x7a5a3a, 0x5a7a4a, 0x8a6a4a, 0x6a5a7a, 0x9a7a3a][i])); jar.position.set(-0.7 + i * 0.35, 0.55 + (i % 3) * 0.55, 0.05); fg.add(jar); }
           break;
         }
+      }
+      if (fg.userData.seat) {
+        const st = fg.userData.seat;
+        const tag = { pickKind: 'seat', seatId: st.id, seatKind: st.k, seatX: st.x, seatZ: st.z };
+        fg.traverse(o => { if (o.isMesh) Object.assign(o.userData, tag); });
       }
       g.add(fg);
     }
@@ -5536,6 +5590,38 @@ function animateEntity(rec, e, kind, dt) {
       if (!casting) for (let i = 0; i < (A.fx || []).length; i++) { const f = A.fx[i]; if (u >= f.at && !an.fired.has(i)) { an.fired.add(i); spawnFx(f.kind, mp.x, mp.y, mp.z, yaw, f); } }
       if (an.t >= hold + an.dur) { rig.anim = null; if (rig.weapon) rig.weapon.visible = true; }
     }
+    // Sat down. The walk and the guard are thrown away and replaced by the
+    // shape of somebody on a stool or stretched out on a bed: the stool folds
+    // the hips and knees and drops the body onto it, the bed lays the whole
+    // figure over on its back at mattress height, head to the pillow.
+    const seat = rec.data && rec.data.seat;
+    if (seat) {
+      rec.guardK = 0; rec.holdLute = false;
+      torsoX = 0; torsoY = 0; torsoZ = 0;
+      b.rotation.z = 0;
+      if (seat.k === 'bed') {
+        b.rotation.x = -Math.PI / 2;                  // over onto the back
+        // Turning the body about its own root lays it on its centre line, so
+        // half of him would be inside the mattress: the lift is the top of the
+        // bed plus half his depth, not just the top of the bed.
+        // The body turns about its own root, which sits at the feet, so laying
+        // it flat leaves it hanging off the head end and half inside the
+        // mattress. These three are measured, not guessed: with them the body
+        // box lands within 4cm of the bed's centre along its length and rests
+        // at 0.78, two centimetres proud of the mattress at 0.76.
+        b.position.set(rig.home.x + 0.10, rig.home.y + 1.02, rig.home.z + 1.18);
+        lLeg = 0.10; rLeg = -0.10; lShin = 0.06; rShin = 0.06;
+        lArm = 0.16; rArm = -0.16; lArmZ = 0.22; rArmZ = -0.22;
+        lFore = [-0.25, 0, 0]; rFore = [-0.25, 0, 0];  // hands resting on the chest
+      } else {
+        b.rotation.x = 0.12;                          // leaning forward a little
+        b.position.set(rig.home.x, rig.home.y - 0.34, rig.home.z);   // hips onto the seat, not through it
+        lLeg = -1.45; rLeg = -1.45;                   // thighs out level
+        lShin = 1.50; rShin = 1.50;                   // shins straight down
+        lArm = 0.30; rArm = 0.30; lArmZ = 0.18; rArmZ = -0.18;
+        lFore = [-0.95, 0, 0]; rFore = [-0.95, 0, 0]; // forearms onto the knees
+      }
+    }
     // Spread the bend evenly from the waist up. A model with no spine chain
     // falls back to hinging the root, the way it did before.
     if (rig.spine.length) { const w = 1 / rig.spine.length; for (const s of rig.spine) s.rotation.set(torsoX * w, torsoY * w, torsoZ * w); }
@@ -6204,6 +6290,7 @@ function pickAt(e) {
       continue; // a mined-out vein is not a target
     }
     // Read the live position: they walk, and the tag was stamped where they were placed.
+    if (u.pickKind === 'seat') return { kind: 'seat', id: u.seatId, seatKind: u.seatKind, x: u.seatX, z: u.seatZ, point: h.point };
     if (u.pickKind === 'npc') { const r = npcMeshes.get(u.npcId); return { kind: 'npc', id: u.npcId, npcId: u.npcId, name: u.npcName,
       x: r ? r.mesh.position.x : u.npcX, z: r ? r.mesh.position.z : u.npcZ, point: h.point }; }
     if (u.pickKind === 'gate') return { kind: 'gate', point: h.point };
@@ -6215,6 +6302,17 @@ function pickAt(e) {
   return null;
 }
 
+// What you learn by looking someone over: who they are, what they fight as,
+// and whether they are standing with you.
+function playerExamine(d) {
+  const bits = [`${d.name}, a level ${d.level} ${CLASS_NAME[d.cls] || 'Fighter'}.`];
+  if (inMyParty(d.id)) bits.push('In your party.');
+  if (d.alive === false) bits.push('Dead, and not enjoying it.');
+  else if (d.inCombat) bits.push('In the middle of a fight.');
+  if (d.weapon) bits.push(`Carrying a ${d.weapon}.`);
+  return bits.join(' ');
+}
+
 // Options for a right-click menu (first = the default left-click action).
 function optionsFor(pk) {
   if (!pk) return [];
@@ -6224,16 +6322,35 @@ function optionsFor(pk) {
   ];
   if (pk.kind === 'player') {
     const self = pk.id === myId;
-    return [
-      { label: self ? 'Target <b>yourself</b>' : `Target <b>${escapeHtml(pk.data.name)}</b> <span class="lvl">(level ${pk.data.level}${pk.data.alive ? '' : ', dead'})</span>`, act: () => setFriend(self ? null : pk.id) },
-      { label: `Examine ${escapeHtml(self ? 'yourself' : pk.data.name)}`, act: () => examineText(self ? 'That would be you.' : `${pk.data.name}, a level ${pk.data.level} ${CLASS_NAME[pk.data.cls] || 'Fighter'}.`) },
+    const name = escapeHtml(pk.data.name);
+    const opts = [
+      { label: self ? 'Target <b>yourself</b>' : `Target <b>${name}</b> <span class="lvl">(level ${pk.data.level}${pk.data.alive ? '' : ', dead'})</span>`, act: () => setFriend(self ? null : pk.id) },
     ];
+    if (!self) {
+      const mate = inMyParty(pk.id);
+      opts.push(mate
+        ? { label: `Remove <b>${name}</b> from party`, act: () => ws?.send(JSON.stringify({ t: 'party:kick', id: pk.id })) }
+        : { label: `Party Invite <b>${name}</b>`, act: () => ws?.send(JSON.stringify({ t: 'party:invite', id: pk.id })) });
+      opts.push({ label: `Trade with <b>${name}</b>`, act: () => ws?.send(JSON.stringify({ t: 'trade:request', id: pk.id })) });
+    }
+    opts.push({ label: `Examine ${self ? 'yourself' : name}`, act: () => examineText(self ? 'That would be you.' : playerExamine(pk.data)) });
+    if (!self) opts.push({ label: `Duel <b>${name}</b>`, act: () => ws?.send(JSON.stringify({ t: 'duel:challenge', id: pk.id })) });
+    return opts;
   }
   if (pk.kind === 'grave') {
     const mine = pk.data && (pk.data.owner === myId || (selfEnt() && pk.data.name === selfEnt().name));
     return [
       mine ? { label: 'Dig up <b>your grave</b>', act: () => digGrave(pk.id) } : { label: `Examine <b>${escapeHtml(pk.data ? pk.data.name + "'s grave" : 'grave')}</b>`, act: () => examineText(`Here lies ${pk.data ? pk.data.name : 'someone'}. Their belongings are buried with them — for now.`) },
       { label: 'Examine grave', act: () => examineText(`A rough headstone. ${pk.data ? pk.data.name : 'Someone'} fell here.`) },
+    ];
+  }
+  if (pk.kind === 'seat') {
+    const bed = pk.seatKind === 'bed', me = selfEnt();
+    const on = me && me.seat;
+    return [
+      on ? { label: 'Stand up', act: () => ws?.send(JSON.stringify({ t: 'stand' })) }
+         : { label: bed ? 'Lie on <b>the bed</b>' : 'Sit on <b>the stool</b>', act: () => ws?.send(JSON.stringify({ t: 'sit', id: pk.id })) },
+      { label: 'Examine', act: () => examineText(bed ? 'A straw mattress under a worn blanket. It has seen better nights.' : 'A three-legged stool, worn smooth on top.') },
     ];
   }
   if (pk.kind === 'chest') return [
@@ -6310,6 +6427,52 @@ function monsterExamine(d) {
 // nearest ally). Heals and wards go to them; with none, to yourself.
 let friendId = null;
 const CLASS_NAME = { fighter: 'Fighter', cleric: 'Cleric', bard: 'Bard' };
+// ---------------------------------------------------------------------------
+// Party
+//
+// The server owns who is in the party; this draws it. Members are listed under
+// your own frame with health and, for the casters, mana -- enough to heal
+// somebody without looking away from what you are fighting. Clicking a row
+// targets them, which is what a Cleric actually wants from a party list.
+// ---------------------------------------------------------------------------
+let partyState = { leader: null, members: [] };
+function inMyParty(id) { return partyState.members.some(m => m.id === id); }
+function renderParty() {
+  const wrap = document.getElementById('partyframe'), list = document.getElementById('partylist');
+  const others = partyState.members.filter(m => m.id !== myId);
+  if (!others.length) { wrap.style.display = 'none'; list.innerHTML = ''; return; }
+  wrap.style.display = 'block';
+  document.getElementById('partycount').textContent = `Party (${partyState.members.length})`;
+  list.innerHTML = others.map(m => {
+    const hp = Math.max(0, Math.min(1, m.maxHp ? m.hp / m.maxHp : 0));
+    const mana = m.manaMax ? `<div class="bar mbar"><i style="transform:scaleX(${(m.mana / m.manaMax).toFixed(3)})"></i></div>` : '';
+    return `<div class="pmem${m.id === partyState.leader ? ' lead' : ''}${m.alive ? '' : ' away'}" data-id="${m.id}" title="Click to target ${escapeHtml(m.name)}">
+      <div class="pn"><b>${escapeHtml(m.name)}</b><span>${m.alive ? 'Lv ' + m.level : 'dead'}</span></div>
+      <div class="bar"><i style="transform:scaleX(${hp.toFixed(3)})"></i></div>${mana}</div>`;
+  }).join('');
+  list.querySelectorAll('.pmem').forEach(el => { el.onclick = () => setFriend(+el.dataset.id); });
+}
+function showInvite(m) {
+  const box = document.getElementById('invite');
+  if (m.expired) { box.style.display = 'none'; return; }
+  document.getElementById('inviteText').innerHTML = `<b>${escapeHtml(m.name)}</b> invites you to join their party.`;
+  document.getElementById('inviteSub').textContent = `Expires in ${m.seconds}s`;
+  box.style.display = 'block';
+  clearInterval(showInvite._t); let left = m.seconds;
+  showInvite._t = setInterval(() => {
+    if (--left <= 0) { clearInterval(showInvite._t); box.style.display = 'none'; return; }
+    document.getElementById('inviteSub').textContent = `Expires in ${left}s`;
+  }, 1000);
+}
+function answerInvite(yes) {
+  clearInterval(showInvite._t);
+  document.getElementById('invite').style.display = 'none';
+  ws?.send(JSON.stringify({ t: yes ? 'party:accept' : 'party:decline' }));
+}
+document.getElementById('inviteYes').onclick = () => answerInvite(true);
+document.getElementById('inviteNo').onclick = () => answerInvite(false);
+document.getElementById('partyleave').onclick = () => ws?.send(JSON.stringify({ t: 'party:leave' }));
+
 function setFriend(id) {
   friendId = id != null && id !== myId ? id : null;
   ws?.send(JSON.stringify({ t: 'target', id: friendId }));
