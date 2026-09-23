@@ -50,6 +50,8 @@ function sanitizeLook(raw) {
   const look = { hairColor: col(o.hairColor, '#4a2e1a'), skin: col(o.skin, '#cba281') };
   const n = Math.floor(Number(o.outfit));
   if (Number.isFinite(n) && n >= 1 && n <= 50) look.outfit = n;
+  if (typeof o.hair === 'string' && /^(Hair_[A-Za-z]+|Bald)$/.test(o.hair)) look.hair = o.hair;
+  if (typeof o.beard === 'string' && /^(Beard_[A-Za-z]+|None)$/.test(o.beard)) look.beard = o.beard;
   if (o.wear && typeof o.wear === 'object') {
     const wear = {};
     for (const slot of ['shirt', 'pants', 'hat', 'boots', 'gloves', 'cape']) {

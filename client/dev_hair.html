@@ -1,0 +1,87 @@
+<!doctype html>
+<!-- Hair contact sheet: every style from tools/build_hair.py on the base head,
+     side by side. ?colour=%23593b1d to try a hair colour, ?body=Female_Base. -->
+<html><head><meta charset="utf-8"><title>Hair sheet</title>
+<style>body{margin:0;background:#1a1d22;color:#ddd;font:12px system-ui} #lbl{position:fixed;left:8px;top:8px;background:#0009;padding:6px 10px;border-radius:6px}</style>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+</head><body><div id="lbl">loading…</div>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+const q = new URLSearchParams(location.search);
+const COLOUR = new THREE.Color(q.get('colour') || '#5a3a1e');
+const BODY = q.get('body') || 'Male_Base';
+const renderer = new THREE.WebGLRenderer({ antialias: true }); renderer.setSize(innerWidth, innerHeight); document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x232830);
+const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.05, 100);
+const controls = new OrbitControls(camera, renderer.domElement);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x404858, 1.7));
+const key = new THREE.DirectionalLight(0xffffff, 1.5); key.position.set(2, 5, 4); scene.add(key);
+const fill = new THREE.DirectionalLight(0xbfd0ff, 0.5); fill.position.set(-3, 2, -4); scene.add(fill);
+
+// Keep only the triangles above the collar, so a sheet of heads is a sheet of
+// heads rather than a wall of shoulders.
+const NECK = 1.72;
+function headOnly(geo) {
+  const pos = geo.attributes.position, idx = geo.index;
+  const keepTri = [];
+  const n = idx ? idx.count : pos.count;
+  for (let i = 0; i < n; i += 3) {
+    const a = idx ? idx.getX(i) : i, b = idx ? idx.getX(i + 1) : i + 1, c = idx ? idx.getX(i + 2) : i + 2;
+    if (pos.getY(a) >= NECK && pos.getY(b) >= NECK && pos.getY(c) >= NECK) keepTri.push(a, b, c);
+  }
+  if (!keepTri.length) return null;
+  const out = new THREE.BufferGeometry();
+  const p = new Float32Array(keepTri.length * 3);
+  keepTri.forEach((v, k) => { p[k * 3] = pos.getX(v); p[k * 3 + 1] = pos.getY(v); p[k * 3 + 2] = pos.getZ(v); });
+  out.setAttribute('position', new THREE.BufferAttribute(p, 3));
+  out.computeVertexNormals();
+  return out;
+}
+const loader = new GLTFLoader();
+const [bodyGlb, hairGlb] = await Promise.all([
+  loader.loadAsync(`models/human/${BODY}.glb`),
+  loader.loadAsync('models/human/Hair.glb'),
+]);
+// Group the hair library's meshes by style (the loader splits multi-material
+// pieces into Name_1, Name_2...).
+const styles = new Map();
+hairGlb.scene.traverse(o => {
+  if (!o.isSkinnedMesh || !/^(Hair|Beard)_/.test(o.name)) return;
+  const base = o.name.replace(/_\d+$/, '');
+  (styles.get(base) || styles.set(base, []).get(base)).push(o);
+});
+const names = [...styles.keys()].sort((a, b) => (a.startsWith('Beard') - b.startsWith('Beard')) || a.localeCompare(b));
+const COLS = Math.ceil(Math.sqrt(names.length)), GAP = 0.34;
+const hairMat = new THREE.MeshStandardMaterial({ color: COLOUR, roughness: 0.95, flatShading: true });
+const skinMat = new THREE.MeshStandardMaterial({ color: 0xcba281, roughness: 0.85, flatShading: true });
+names.forEach((name, i) => {
+  const g = new THREE.Group();
+  // just the head: the body's triangles that sit above the collar
+  for (const src of [bodyGlb.scene]) src.traverse(o => {
+    if (!o.isSkinnedMesh) return;
+    const geo = headOnly(o.geometry);
+    if (geo) g.add(new THREE.Mesh(geo, skinMat));
+  });
+  for (const piece of styles.get(name)) g.add(new THREE.Mesh(piece.geometry.clone(), hairMat));
+  g.position.set((i % COLS) * GAP - (COLS - 1) * GAP / 2, -1.86 - Math.floor(i / COLS) * 0.42, 0);
+  const wrap = new THREE.Group(); wrap.add(g);
+  scene.add(wrap);
+  // a label under each head
+  const cv = document.createElement('canvas'); cv.width = 256; cv.height = 48;
+  const c = cv.getContext('2d'); c.fillStyle = '#dfe4ea'; c.font = 'bold 26px system-ui'; c.textAlign = 'center';
+  c.fillText(name.replace(/^(Hair|Beard)_/, m => m[0] === 'B' ? '· ' : ''), 128, 32);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cv), transparent: true }));
+  sp.scale.set(0.26, 0.05, 1);
+  sp.position.set((i % COLS) * GAP - (COLS - 1) * GAP / 2, 0.075 - Math.floor(i / COLS) * 0.42, 0.1);
+  scene.add(sp);
+});
+// frame the grid
+const rows = Math.ceil(names.length / COLS);
+const cy = 0.11 - 0.42 * (rows - 1) / 2;
+camera.position.set(0, cy, COLS * GAP * 1.35);
+controls.target.set(0, cy, 0);
+document.getElementById('lbl').textContent = `${names.length} styles · ${BODY} · drag to turn, scroll to zoom`;
+renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+</script></body></html>

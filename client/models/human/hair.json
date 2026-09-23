@@ -1,0 +1,22 @@
+{
+ "hair": [
+  "Hair_Crop",
+  "Hair_Swept",
+  "Hair_Bowl",
+  "Hair_Receding",
+  "Hair_Undercut",
+  "Hair_Curls",
+  "Hair_Afro",
+  "Hair_Mane",
+  "Hair_Ponytail",
+  "Hair_Topknot",
+  "Hair_Braids",
+  "Hair_Mohawk"
+ ],
+ "beards": [
+  "Beard_Stubble",
+  "Beard_Short",
+  "Beard_Goatee",
+  "Beard_Full"
+ ]
+}

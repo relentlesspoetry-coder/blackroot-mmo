@@ -85,10 +85,10 @@ export const killingfields = {
 
   npcs: [
     { id: 'kf_sentry',  name: 'Road Sentry Bram', x: 6,   z: -144, poi: 'entrance', model: 'Male',
-      look: { hairColor: '#1e1712', skin: '#b78b68', outfit: 47 },   // Steel Vanguard — the road sentry
+      look: { hairColor: '#1e1712', skin: '#b78b68', outfit: 47, hair: 'Hair_Crop', beard: 'Beard_Stubble' },   // Steel Vanguard — the road sentry
       idle: 'The fields eat the careless. Keep moving, keep your guard up.' },
     { id: 'kf_widow',   name: 'The Field Widow',  x: -68, z: 3,   poi: 'homestead', model: 'Female', trade: true,
-      look: { hairColor: '#3a3a38', skin: '#c9a07c', outfit: 39 },   // Grave Digger — in mourning
+      look: { hairColor: '#3a3a38', skin: '#c9a07c', outfit: 39, hair: 'Hair_Mane' },   // Grave Digger — in mourning
       idle: 'Raiders took everything but my wares. Buy something, aye?' },
   ],
 

@@ -427,7 +427,8 @@
     <input id="nameInput" maxlength="16" placeholder="Character name" autocomplete="off" />
     <div id="lookrows">
       <div class="lookrow"><label>Outfit <select id="outfitSel"></select></label></div>
-      <div class="lookrow"><label>Skin <input type="color" id="skinCol" value="#cba281"></label><label>Hair <input type="color" id="hairCol" value="#4a2e1a"></label></div>
+      <div class="lookrow"><label>Hair <select id="hairSel"></select></label><label>Beard <select id="beardSel"></select></label></div>
+      <div class="lookrow"><label>Skin <input type="color" id="skinCol" value="#cba281"></label><label>Hair colour <input type="color" id="hairCol" value="#4a2e1a"></label></div>
     </div>
     <div id="fixedlook">The Fighter comes as he is — mantle, pauldron and all.</div>
     <div class="classrow" id="classRow">
@@ -1061,6 +1062,8 @@ function bodyGeometry(T, look) {
 // on top of the body, and any piece goes with any other.
 // ---------------------------------------------------------------------------
 const WARDROBE_SLOTS = ['shirt', 'pants', 'hat', 'boots', 'gloves', 'cape'];
+// Helms and hoods that enclose the head — hair doesn't show through them.
+const COVERING_HATS = /great_helm|kettle|nasal_helm|morion|barbute|sallet|coif|skull_mask|veil_helm|spiked_helm|horned_helm|hood|cowl|turban|wizard/;
 let wardrobe = null, wardrobeLoading = null;
 function loadWardrobe() {
   if (wardrobe) return Promise.resolve(wardrobe);
@@ -1068,7 +1071,8 @@ function loadWardrobe() {
   wardrobeLoading = Promise.all([
     gltfLoader.loadAsync('models/human/Wardrobe.glb'),
     fetch('models/human/wardrobe.json').then(r => r.json()).catch(() => null),
-  ]).then(([g, manifest]) => {
+    gltfLoader.loadAsync('models/human/Hair.glb').catch(() => null),
+  ]).then(([g, manifest, hairGlb]) => {
     // A garment with trim or metal is several materials, and the loader splits
     // those into Name_1, Name_2..., so parts are collected under the piece's
     // own name — otherwise every trimmed shirt in the wardrobe goes missing.
@@ -1081,6 +1085,15 @@ function loadWardrobe() {
       const base = o.name.replace(/_\d+$/, '');
       const mat = Array.isArray(o.material) ? o.material[0] : o.material;
       const part = { geo: o.geometry, color: mat.color.clone(), matName: mat.name, name: o.name };
+      if (pieces.has(base)) pieces.get(base).push(part); else pieces.set(base, [part]);
+    });
+    // Hair comes out of its own library (tools/build_hair.py) and is indexed
+    // the same way, but it is tinted to the wearer's hair colour rather than
+    // carrying its own.
+    if (hairGlb) hairGlb.scene.traverse(o => {
+      if (!o.isSkinnedMesh || !/^(Hair|Beard)_/.test(o.name)) return;
+      const base = o.name.replace(/_\d+$/, '');
+      const part = { geo: o.geometry, color: new THREE.Color(0xffffff), matName: 'hair', name: o.name };
       if (pieces.has(base)) pieces.get(base).push(part); else pieces.set(base, [part]);
     });
     wardrobe = { pieces, manifest, boneNames, geos: new Map() };
@@ -1105,6 +1118,31 @@ function lookPieces(look) {
 }
 // The fused garments for one look, cached by the pieces themselves so two
 // villagers in the same outfit share the geometry.
+// What grows on their head: a style and a beard, tinted to the hair colour.
+// A closed helm hides the hair but never the beard.
+function hairPieces(look) {
+  if (!wardrobe || !look) return [];
+  const out = [];
+  const o = look.outfit && wardrobe.manifest ? wardrobe.manifest.outfits[look.outfit - 1] : null;
+  const hat = o && o.pieces.hat ? o.pieces.hat.style : null;
+  const covered = !!(hat && COVERING_HATS.test(hat)) && !(look.wear && look.wear.hat === 0);
+  if (look.hair && look.hair !== 'Bald' && !covered && wardrobe.pieces.has(look.hair)) out.push(look.hair);
+  if (look.beard && look.beard !== 'None' && wardrobe.pieces.has(look.beard)) out.push(look.beard);
+  return out;
+}
+function hairGeometry(T, look) {
+  const names = hairPieces(look);
+  if (!names.length) return null;
+  const colour = look.hairColor || '#4a2e1a';
+  const key = T.key + '|hair|' + names.join(',') + '|' + colour;
+  if (wardrobe.geos.has(key)) return wardrobe.geos.get(key);
+  const remap = wardrobe.boneNames ? wardrobe.boneNames.map(n => Math.max(0, T.boneNames.indexOf(n))) : null;
+  const col = new THREE.Color(colour);
+  const parts = names.flatMap(n => wardrobe.pieces.get(n).map(pt => ({ ...pt, color: col, detail: -1, remap })));
+  const geo = fuseSkinned(parts, T.boneNames);
+  wardrobe.geos.set(key, geo);
+  return geo;
+}
 function wardrobeGeometry(T, look) {
   const names = lookPieces(look);
   if (!names.length) return null;
@@ -1137,15 +1175,19 @@ function makeBody(key, targetH, look) {
   wrap.userData.armUpper = T.armUpper * s; wrap.userData.armFore = T.armFore * s;
   wrap.userData.look = look || null;
   // Clothes arrive when the wardrobe does, bound to the same skeleton.
-  if (look && (look.outfit || look.wear)) loadWardrobe().then(() => {
+  if (look && (look.outfit || look.wear || look.hair || look.beard)) loadWardrobe().then(() => {
     if (!wrap.parent) return;
-    const wg = wardrobeGeometry(T, look);
-    if (!wg) return;
-    const cm = new THREE.SkinnedMesh(wg, detailize(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8 }), null, { attr: true, scale: 0.9 }));
-    cm.name = 'Outfit'; cm.castShadow = cm.receiveShadow = true; cm.frustumCulled = false;
-    cm.bind(skeleton, new THREE.Matrix4());
-    (obj.getObjectByName(T.parent.name) || obj).add(cm);
-    cm.traverse(o2 => Object.assign(o2.userData, wrap.userData.pickTag || {}));
+    const parent = obj.getObjectByName(T.parent.name) || obj;
+    const layer = (geo, name, rough) => {
+      if (!geo) return;
+      const m = new THREE.SkinnedMesh(geo, detailize(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: rough }), null, { attr: true, scale: 0.9 }));
+      m.name = name; m.castShadow = m.receiveShadow = true; m.frustumCulled = false;
+      m.bind(skeleton, new THREE.Matrix4());
+      parent.add(m);
+      m.traverse(o2 => Object.assign(o2.userData, wrap.userData.pickTag || {}));
+    };
+    layer(wardrobeGeometry(T, look), 'Outfit', 0.8);
+    layer(hairGeometry(T, look), 'Hair', 0.95);
   });
   return wrap;
 }
@@ -9388,10 +9430,20 @@ let pickedClass = 'fighter';
 // hair colour. Remembered between visits.
 const hairCol = document.getElementById('hairCol'), skinCol = document.getElementById('skinCol');
 const outfitSel = document.getElementById('outfitSel');
+const hairSel = document.getElementById('hairSel'), beardSel = document.getElementById('beardSel');
+const pretty = (n) => n.replace(/^(Hair|Beard)_/, '').replace(/([a-z])([A-Z])/g, '$1 $2');
 fetch('models/human/wardrobe.json').then(r => r.json()).then(m => {
   for (const o of m.outfits) outfitSel.add(new Option(o.title, o.index));
   try { const saved = JSON.parse(localStorage.getItem('bk.look') || 'null'); if (saved && saved.outfit) outfitSel.value = saved.outfit; } catch (e) {}
   if (!outfitSel.value) outfitSel.value = CLASS_OUTFIT[pickedClass] || 1;
+}).catch(() => {});
+fetch('models/human/hair.json').then(r => r.json()).then(h => {
+  hairSel.add(new Option('Bald', 'Bald'));
+  for (const n of h.hair) hairSel.add(new Option(pretty(n), n));
+  beardSel.add(new Option('Clean shaven', 'None'));
+  for (const n of h.beards) beardSel.add(new Option(pretty(n), n));
+  try { const saved = JSON.parse(localStorage.getItem('bk.look') || 'null'); if (saved) { if (saved.hair) hairSel.value = saved.hair; if (saved.beard) beardSel.value = saved.beard; } } catch (e) {}
+  if (!hairSel.value) hairSel.value = 'Hair_Crop';
 }).catch(() => {});
 try {
   const saved = JSON.parse(localStorage.getItem('bk.look') || 'null');
@@ -9399,7 +9451,10 @@ try {
 } catch (e) {}
 // The Fighter wears his own figure, so his outfit choice is ignored.
 const CLASS_OUTFIT = { fighter: 47, cleric: 31, bard: 19 };
-function currentLook() { return { hairColor: hairCol.value, skin: skinCol.value, outfit: +outfitSel.value || CLASS_OUTFIT[pickedClass] || 1 }; }
+function currentLook() {
+  return { hairColor: hairCol.value, skin: skinCol.value, outfit: +outfitSel.value || CLASS_OUTFIT[pickedClass] || 1,
+    hair: hairSel.value || 'Hair_Crop', beard: beardSel.value || 'None' };
+}
 // Class pick on the login card; remembered like the look.
 try { const c = localStorage.getItem('bk.cls'); if (['fighter', 'cleric', 'bard'].includes(c)) pickedClass = c; } catch (e) {}
 document.querySelectorAll('#classRow .classopt').forEach(d => {

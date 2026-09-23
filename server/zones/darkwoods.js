@@ -113,60 +113,60 @@ export const darkwoods = {
   npcs: [
     { id: 'alric',    name: 'Warden Alric',        x: -20,  z: -66, poi: 'entrance', model: 'Male', yaw: 3.1,
       // Looks mix the modular outfit pack by slot (outfit numbers; see client OUTFITS) with per-slot recolours.
-      look: { hairColor: '#2b1d14', skin: '#c49a76', outfit: 4 },   // Royal Knight — the warden of the clearing in plate
+      look: { hairColor: '#2b1d14', skin: '#c49a76', outfit: 4, hair: 'Hair_Crop', beard: 'Beard_Short' },   // Royal Knight — the warden of the clearing in plate
       idle: 'Keep to the path, and keep your blade where you can reach it.' },
     // Farmstead folk at the Entrance Clearing.
     { id: 'garrick',  name: 'Drillmaster Garrick',  x: 4,    z: -65, poi: 'entrance', model: 'Male', yaw: 3.1, trainer: 'fighter',
-      look: { hairColor: '#3a2a1a', skin: '#b58a66', outfit: 6 },   // Sellsword — the drillmaster in a mercenary's brigandine
+      look: { hairColor: '#3a2a1a', skin: '#b58a66', outfit: 6, hair: 'Hair_Undercut', beard: 'Beard_Full' },   // Sellsword — the drillmaster in a mercenary's brigandine
       idle: 'Swinging a stick is free. Swinging it properly costs coin. Come learn.' },
     { id: 'aldis',    name: 'Mother Aldis',         x: -8,   z: -60, poi: 'entrance', model: 'Female', yaw: 3.0, trainer: 'cleric',
-      look: { hairColor: '#d9d2c4', skin: '#d4b394', outfit: 31 },   // Temple Acolyte — undyed long tunic and circlet
+      look: { hairColor: '#d9d2c4', skin: '#d4b394', outfit: 31, hair: 'Hair_Bowl' },   // Temple Acolyte — undyed long tunic and circlet
       idle: 'The Light asks little of us: mend what is broken, and stand between the dark and those who cannot.' },
     { id: 'lark',     name: 'Lark the Minstrel',    x: 14,   z: -58, poi: 'entrance', model: 'Male', yaw: 3.4, trainer: 'bard',
-      look: { hairColor: '#7a4a22', skin: '#d2a67f', outfit: 19 },   // Rose Bard — doublet and feathered cape
+      look: { hairColor: '#7a4a22', skin: '#d2a67f', outfit: 19, hair: 'Hair_Swept', beard: 'Beard_Goatee' },   // Rose Bard — doublet and feathered cape
       idle: 'Every fight has a rhythm, friend. Learn to hear it and the whole party keeps time.' },
     { id: 'maggie',   name: 'Old Maggie',          x: 18,   z: -79, poi: 'entrance', model: 'Female', yaw: 3.0,
-      look: { hairColor: '#b9b2a4', skin: '#d4b394', outfit: 1 },   // Village Farmhand
+      look: { hairColor: '#b9b2a4', skin: '#d4b394', outfit: 1, hair: 'Hair_Topknot' },   // Village Farmhand
       idle: 'Mind the hens, love — and shut the gate on your way out.' },
     { id: 'bram',     name: 'Farmhand Bram',       x: -19,  z: -77, poi: 'entrance', model: 'Male', yaw: 1.4,
-      look: { hairColor: '#8a5a2b', skin: '#d9ab86', outfit: 1 },   // Village Farmhand
+      look: { hairColor: '#8a5a2b', skin: '#d9ab86', outfit: 1, hair: 'Hair_Bowl' },   // Village Farmhand
       idle: 'Cows need feedin’, fences need mendin’. No rest out here.' },
     // --- Dark Woods Outpost: the warden's camp, and the zone's story ---
     { id: 'rowan',    name: 'Warden Rowan',        x: -10,  z: -33, poi: 'outpost', model: 'Male', yaw: 3.14,
-      look: { hairColor: '#4a4038', skin: '#bc8f68', outfit: 47 },   // Steel Vanguard — the outpost's warden
+      look: { hairColor: '#4a4038', skin: '#bc8f68', outfit: 47, hair: 'Hair_Receding', beard: 'Beard_Short' },   // Steel Vanguard — the outpost's warden
       idle: 'Never walk these roads without light. The animals I understand — it is what moves when they go quiet that bothers me.' },
     { id: 'brann',    name: 'Hunter Brann',        x: -16,  z: -38, poi: 'outpost', model: 'Male', yaw: 1.2,
-      look: { hairColor: '#5a3a1e', skin: '#c08a5e', outfit: 3 },   // Forest Ranger — jerkin, hood and cloak
+      look: { hairColor: '#5a3a1e', skin: '#c08a5e', outfit: 3, hair: 'Hair_Ponytail', beard: 'Beard_Stubble' },   // Forest Ranger — jerkin, hood and cloak
       idle: 'Lift your boot. You are standing in a track, and a very big one.' },
     { id: 'lysa',     name: 'Scout Lysa',          x: -5,   z: -39, poi: 'outpost', model: 'Female', yaw: 0.6,
-      look: { hairColor: '#2e1d12', skin: '#c99a74', outfit: 36 },   // Snow Scout — fur vest and hood
+      look: { hairColor: '#2e1d12', skin: '#c99a74', outfit: 36, hair: 'Hair_Ponytail' },   // Snow Scout — fur vest and hood
       idle: 'The trees in the old grove are changing. Black bark, purple veins under the roots.' },
     { id: 'mira',     name: 'Mira Thorn',          x: -14,  z: -30, poi: 'outpost', model: 'Female', yaw: 2.4,
-      look: { hairColor: '#6b4a24', skin: '#d0a57e', outfit: 9 },   // Grey Wanderer — a herbalist's robe
+      look: { hairColor: '#6b4a24', skin: '#d0a57e', outfit: 9, hair: 'Hair_Mane' },   // Grey Wanderer — a herbalist's robe
       idle: 'A disease kills something. This is changing it. That is the difference, and it is the whole problem.' },
     { id: 'tessa',    name: 'Quartermaster Tessa', x: -6,   z: -32, poi: 'outpost', model: 'Female', yaw: 3.6,
-      look: { hairColor: '#3a2a1a', skin: '#c9996f', outfit: 29 },   // Wine Merchant — a quartermaster's surcoat
+      look: { hairColor: '#3a2a1a', skin: '#c9996f', outfit: 29, hair: 'Hair_Braids' },   // Wine Merchant — a quartermaster's surcoat
       idle: 'Food, medicine, weapons, coffee. Ask me which one I miss most.' },
     { id: 'alden',    name: 'Brother Alden',       x: -13,  z: -41, poi: 'outpost', model: 'Male', yaw: 0.2,
-      look: { hairColor: '#8a8276', skin: '#c7a081', outfit: 42 },   // Crimson Cardinal — the priest
+      look: { hairColor: '#8a8276', skin: '#c7a081', outfit: 42, hair: 'Hair_Receding', beard: 'Beard_Full' },   // Crimson Cardinal — the priest
       idle: 'Have you heard the bell? It has been abandoned twenty years, and still it rings.' },
     { id: 'fenwick',  name: 'Old Fenwick',         x: -2,   z: -30, poi: 'outpost', model: 'Male', yaw: 4.2,
-      look: { hairColor: '#b9b2a4', skin: '#b98f6a', outfit: 28 },   // Bog Hermit — the old woodsman
+      look: { hairColor: '#b9b2a4', skin: '#b98f6a', outfit: 28, hair: 'Hair_Mane', beard: 'Beard_Full' },   // Bog Hermit — the old woodsman
       idle: 'Brown ones are safe. Blue ones are safe. Red ones depend on how attached you are to your organs.' },
     // Far enough from his own camp's roamers that a level-3 errand isn't a fight.
     { id: 'pib',      name: 'Pib',                 x: -26,  z: -24, poi: 'creek', model: 'Goblin_Scavenger', yaw: 1.0, h: 1.5,
       idle: 'Pib not fighting. Pib waving. Keep doing nothing, is good.' },
     { id: 'sela',     name: 'Ranger Sela',         x: 48,   z: -70, poi: 'watchtower', model: 'Female', yaw: 2.2,
-      look: { hairColor: '#2e1d12', skin: '#c99a74', outfit: 3 },   // Forest Ranger
+      look: { hairColor: '#2e1d12', skin: '#c99a74', outfit: 3, hair: 'Hair_Braids' },   // Forest Ranger
       idle: 'From the old tower you can see their fires. The Wolf Den grows bolder every night.' },
     { id: 'dorn',     name: 'Prospector Dorn',     x: -34,  z: 42,  poi: 'ravine',   model: 'Male', yaw: 5.0,
-      look: { hairColor: '#b9b2a4', skin: '#b98f6a', outfit: 32 },   // Blacksmith — apron and headband
+      look: { hairColor: '#b9b2a4', skin: '#b98f6a', outfit: 32, hair: 'Hair_Crop', beard: 'Beard_Full' },   // Blacksmith — apron and headband
       idle: 'That iron seam is mine by right — but the goblins dig it faster than I can chase them off.' },
     { id: 'hermit',   name: 'Hermit of the Grove', x: 9,    z: 4,   poi: 'shrine',   model: 'Male',
       look: { hairColor: '#9a9a90', skin: '#c9a07c', outfit: 28, wear: { boots: 0 } },   // Bog Hermit, barefoot
       idle: 'The shrine holds. Not much else out here does.' },
     { id: 'merchant', name: 'Wandering Merchant',  x: -51.5, z: 9,  poi: 'camp',     model: 'Female', trade: true,
-      look: { hairColor: '#4a2e1a', skin: '#d0a57e', outfit: 29 },   // Wine Merchant
+      look: { hairColor: '#4a2e1a', skin: '#d0a57e', outfit: 29, hair: 'Hair_Topknot' },   // Wine Merchant
       idle: 'Wares? Aye, soon enough, traveller. Mind the woods.' },
   ],
 
