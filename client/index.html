@@ -80,7 +80,13 @@
   #partyframe .ph { font-size: 11px; color: #b9ad90; margin: 0 2px 3px; display: flex; justify-content: space-between; }
   #partyframe .ph a { color: #e8b45a; cursor: pointer; text-decoration: none; }
   #partyframe .ph a:hover { text-decoration: underline; }
-  .pmem { padding: 4px 8px; border-radius: 7px; background: #241f18; border: 2px solid #1c150e; margin-bottom: 3px; cursor: pointer; }
+  .pmem { padding: 4px 8px; border-radius: 7px; background: #241f18; border: 2px solid #1c150e; margin-bottom: 3px; cursor: pointer;
+    display: flex; align-items: center; gap: 7px; }
+  /* The emblem fills its slot edge to edge -- padding letterboxed it and left
+     the tile looking half empty. */
+  .pmem > img { width: 32px; height: 32px; flex: none; border: 1px solid #4a3d2a; border-radius: 6px;
+    box-sizing: border-box; object-fit: cover; display: block; }
+  .pmem .pbody { flex: 1; min-width: 0; }
   .pmem.lead { border-color: #6b5320; }
   .pmem.away { opacity: 0.45; }
   .pmem .pn { font-size: 12px; font-weight: 700; color: #ffdf9e; display: flex; justify-content: space-between; gap: 6px; }
@@ -6435,6 +6441,9 @@ const CLASS_NAME = { fighter: 'Fighter', cleric: 'Cleric', bard: 'Bard' };
 // somebody without looking away from what you are fighting. Clicking a row
 // targets them, which is what a Cleric actually wants from a party list.
 // ---------------------------------------------------------------------------
+// Which classes have an emblem on disk; anything else falls back to the
+// Fighter's rather than showing a broken image in the party list.
+const CLASS_EMBLEM = { fighter: 1, cleric: 1, bard: 1 };
 let partyState = { leader: null, members: [] };
 function inMyParty(id) { return partyState.members.some(m => m.id === id); }
 function renderParty() {
@@ -6446,9 +6455,13 @@ function renderParty() {
   list.innerHTML = others.map(m => {
     const hp = Math.max(0, Math.min(1, m.maxHp ? m.hp / m.maxHp : 0));
     const mana = m.manaMax ? `<div class="bar mbar"><i style="transform:scaleX(${(m.mana / m.manaMax).toFixed(3)})"></i></div>` : '';
+    const cls = CLASS_EMBLEM[m.cls] ? m.cls : 'fighter';
     return `<div class="pmem${m.id === partyState.leader ? ' lead' : ''}${m.alive ? '' : ' away'}" data-id="${m.id}" title="Click to target ${escapeHtml(m.name)}">
-      <div class="pn"><b>${escapeHtml(m.name)}</b><span>${m.alive ? 'Lv ' + m.level : 'dead'}</span></div>
-      <div class="bar"><i style="transform:scaleX(${hp.toFixed(3)})"></i></div>${mana}</div>`;
+      <img src="ui/${cls}/emblem.png" alt="${escapeHtml(CLASS_NAME[cls] || 'Fighter')}">
+      <div class="pbody">
+        <div class="pn"><b>${escapeHtml(m.name)}</b><span>${m.alive ? 'Lv ' + m.level : 'dead'}</span></div>
+        <div class="bar"><i style="transform:scaleX(${hp.toFixed(3)})"></i></div>${mana}
+      </div></div>`;
   }).join('');
   list.querySelectorAll('.pmem').forEach(el => { el.onclick = () => setFriend(+el.dataset.id); });
 }
