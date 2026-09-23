@@ -6576,11 +6576,33 @@ const ABILITY_ANIMS = {
           { at: 0.52, kind: 'flash', r: 0.8, color: 0xfff3d2, fwd: 1.3 },
           { at: 0.52, kind: 'sparks', n: 14, color: 0xffb867, fwd: 1.35 },
           { at: 0.56, kind: 'dust', r: 1.0, shake: 0.07 }] },
-  cleave: { dur: 0.7, pose(u, P) {                  // wide horizontal arc, torso winds right then sweeps left
-    P.bodyY = kf(u, [[0, 0], [0.3, -0.9], [0.7, 1.1], [1, 0]]);
-    P.rArm = kf(u, [[0, 0], [0.3, -1.4], [0.7, -1.5], [1, 0]]); P.rArmZ = kf(u, [[0, 0], [0.3, -1.2], [0.7, 0.9], [1, 0]]);
-    P.lArm = kf(u, [[0, 0], [0.5, -0.8], [1, 0]]); P.lArmZ = 0.35; P.bob = -crouch(u, 0.08, 0.6);
-  }, fx: [{ at: 0.38, kind: 'sfx', key: 'cleave' }, { at: 0.45, kind: 'arc', r: 2.2, spread: 2.0 }, { at: 0.5, kind: 'streak', fwd: 1.6, y: 1.0, len: 3.2 }] },
+  cleave: { trailColor: 0xfff0c4, dur: 0.75, pose(u, P) {
+    // The wide one. Where Heavy Swing cuts a single man at chest height, Cleave
+    // is a committed two-handed pivot through everything in front: wound right
+    // round to the right, then carried flat across a half-circle while the
+    // whole body turns with it. The turn does most of the work and the arm
+    // rides it, which is what makes it read as heavier than Heavy Swing rather
+    // than merely faster.
+    // Keys solved against the blade tip with that turn accounted for, giving
+    // (forward, left, up):  wound back (-0.9, -1.75, 1.25) -> out front
+    // (1.95, 0.05, 1.20) -> round to the left (-0.5, 1.85, 1.15).
+    P.rArm  = kf(u, [[0, 0], [0.32, -1.30], [0.40, -1.30], [0.50, -1.20], [0.66, -1.40], [0.86, -0.60], [1, 0]]);
+    P.rArmZ = kf(u, [[0, 0], [0.32, -0.60], [0.40, -0.60], [0.50, -0.10], [0.66,  1.10], [0.86,  0.50], [1, 0]]);
+    P.rFore = [kf(u, [[0, 0], [0.32, 0.50], [0.50, -0.15], [0.66, 0.40], [1, 0]]), 0,
+               kf(u, [[0, 0], [0.32, -0.30], [0.50, 0.30], [0.66, 0], [1, 0]])];
+    P.lArm  = kf(u, [[0, 0], [0.32, -1.00], [0.50, -1.15], [0.66, -0.55], [1, 0]]);   // the off hand stays on the grip and drives with it
+    P.lArmZ = kf(u, [[0, 0], [0.32, -0.90], [0.50,  0.25], [0.66,  0.95], [1, 0]]);
+    P.bodyY = kf(u, [[0, 0], [0.32, -0.90], [0.66,  1.05], [0.88, 0.28], [1, 0]]);    // the turn itself, hips leading
+    P.bodyX = kf(u, [[0, 0], [0.32, -0.08], [0.54,  0.24], [1, 0]]);
+    P.bob   = kf(u, [[0, 0], [0.32,  0.05], [0.54, -0.14], [1, 0]]);                  // drops into the pivot
+    P.lLeg  = kf(u, [[0, 0], [0.32,  0.35], [0.62, -0.50], [1, 0]]);                  // steps round with the turn
+    P.rLeg  = kf(u, [[0, 0], [0.32, -0.38], [0.62,  0.45], [1, 0]]);
+    P.lShin = kf(u, [[0, 0], [0.54, 0.55], [1, 0]]); P.rShin = kf(u, [[0, 0], [0.62, 0.40], [1, 0]]);
+  }, fx: [{ at: 0.34, kind: 'sfx', key: 'cleave' },
+          { at: 0.44, kind: 'crescent', r: 2.1, spread: 2.9, y: 1.25, tilt: -0.06, fwd: 0.1, color: 0xfff0c4 },
+          { at: 0.50, kind: 'crescent', r: 1.45, spread: 2.6, y: 1.10, tilt: -0.04, fwd: 0.1, color: 0xffcf86, life: 0.3 },
+          { at: 0.50, kind: 'sparks', n: 18, color: 0xffd79a, fwd: 1.5 },
+          { at: 0.54, kind: 'dust', r: 1.5, shake: 0.09 }] },
   battle_rush: { dur: 0.6, pose(u, P) {             // charge: hard forward lean, arms pumping back, long stride
     P.bodyX = kf(u, [[0, 0.1], [0.3, 0.55], [1, 0.1]]); P.rArm = kf(u, [[0, 0], [0.3, 1.1], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.3, 1.1], [1, 0]]);
     P.lLeg = kf(u, [[0, 0], [0.35, -1.0], [0.7, 0.6], [1, 0]]); P.rLeg = kf(u, [[0, 0], [0.35, 0.8], [0.7, -0.9], [1, 0]]); P.lShin = kf(u, [[0, 0], [0.5, 0.9], [1, 0]]);
@@ -9214,6 +9236,82 @@ if (location.search.includes('debug')) {
       camera.updateMatrixWorld(true);
     },
     releaseCamera() { camFrozen = false; },
+    // --- Ability animation bench -------------------------------------------
+    // Working on an ability pose means asking two questions over and over:
+    // where does the blade actually go, and what arm angles put it there.
+    // Doing that by eye is guesswork, so the bench answers both numerically.
+    // Every measurement is in the character's own frame, in metres from the
+    // feet: +forward, +left, +up.
+    abilityFrame() {
+      const rec = entityMeshes.get(myId), m = rec.mesh, rig = m.userData.rig;
+      const y = m.rotation.y;
+      return { rec, m, rig,
+        F: new THREE.Vector3(Math.sin(y), 0, Math.cos(y)),
+        L: new THREE.Vector3(Math.cos(y), 0, -Math.sin(y)) };
+    },
+    // Where the blade tip and the sword hand are right now.
+    bladeAt() {
+      const { m, rig, F, L } = this.abilityFrame();
+      m.updateMatrixWorld(true);
+      const p = (v) => [+v.dot(F).toFixed(2), +v.dot(L).toFixed(2), +v.y.toFixed(2)];
+      return { tip: p(rig.weapon.localToWorld(new THREE.Vector3(0, -0.85, 0)).sub(m.position)),
+               hand: p(rig.handR.getWorldPosition(new THREE.Vector3()).sub(m.position)) };
+    },
+    // Play an ability slowly and sample the blade through it, so a pose can be
+    // checked for the things that read badly: the blade dipping through the
+    // legs, a wind-up that goes overhead when it should stay level, a
+    // follow-through that never comes back.
+    async trackAbility(id, samples = 12, dur = 9) {
+      const { rig } = this.abilityFrame();
+      rig.anim = { id, t: 0, dur, fired: new Set() };
+      const out = [];
+      for (let i = 0; i < samples && rig.anim; i++) {
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+        await new Promise(r => setTimeout(r, (dur * 1000) / samples - 34));
+        if (!rig.anim) break;
+        out.push({ u: +(rig.anim.t / dur).toFixed(2), ...this.bladeAt() });
+      }
+      rig.anim = null;
+      return out;
+    },
+    // Search arm angles for the ones that put the blade tip on a target point.
+    // Returns the best [rArm, rArmZ, foreX, foreZ] and where it actually lands.
+    // `g.bodyY` is the torso turn the pose will have at that instant: the spine
+    // carries the arm round with it, so a key solved with the torso square lands
+    // somewhere else entirely once the body is turning. Pass it and the target
+    // is counter-rotated, so the answer is the arm angles that put the blade on
+    // the target once the turn is added back.
+    async solvePose(target, g = {}) {
+      const { m, rig, F, L } = this.abilityFrame();
+      if (g.bodyY) {
+        const c = Math.cos(-g.bodyY), s = Math.sin(-g.bodyY);
+        target = [target[0] * c - target[1] * s, target[0] * s + target[1] * c, target[2]];
+      }
+      const arms = g.arms || [-1.5, -1.2, -0.9, -0.6, -0.3, 0, 0.4, 0.8];
+      const armZs = g.armZs || [-1.5, -1.1, -0.7, -0.3, 0.1, 0.5, 0.9, 1.3];
+      const fxs = g.fxs || [-0.6, -0.3, 0, 0.3, 0.6];
+      const fzs = g.fzs || [-0.3, 0, 0.3];
+      let best = null;
+      for (const rArm of arms) for (const rArmZ of armZs) for (const fx of fxs) for (const fz of fzs) {
+        window.__poseOv = { rArm, rArmZ, rFore: [fx, 0, fz] };
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+        m.updateMatrixWorld(true);
+        const w = rig.weapon.localToWorld(new THREE.Vector3(0, -0.85, 0)).sub(m.position);
+        const t = [w.dot(F), w.dot(L), w.y];
+        const d = Math.hypot(t[0] - target[0], t[1] - target[1], (t[2] - target[2]) * 1.3);
+        if (!best || d < best.d) best = { d: +d.toFixed(3), p: [rArm, rArmZ, fx, fz], tip: t.map(v => +v.toFixed(2)) };
+      }
+      window.__poseOv = null;
+      return best;
+    },
+    // Park the camera off the character's front quarter, reading the yaw now
+    // rather than whenever the shot was set up -- he turns to face what he is
+    // fighting, and a stale yaw frames the back of his head.
+    frameHero(dist = 4.0, side = 1.0, height = 1.8, at = 1.45) {
+      const { m } = this.abilityFrame(), p = m.position, y = m.rotation.y;
+      this.parkCamera([p.x + Math.sin(y) * dist + Math.cos(y) * side, height,
+                       p.z + Math.cos(y) * dist - Math.sin(y) * side], [p.x, at, p.z]);
+    },
     // A posable stand-in: a human (or any mob type) at a spot, driven each
     // frame by animateEntity with whatever fake entity state is handed in, so
     // a walk cycle / swing / rest pose can be screenshotted without the
