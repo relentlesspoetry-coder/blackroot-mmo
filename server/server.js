@@ -1571,6 +1571,83 @@ function navStep(zone, ent, tx, tz, stopDist, speed) {
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// NPC routes -- the village walks about.
+//
+// An NPC without a hand-written route gets a small one built on first tick: a
+// ring of points around wherever it was placed, keeping only those that are
+// walkable and that it can reach from its post in a straight line, so nobody
+// strolls into the river or through a wall. The stops are walked in order with
+// a dwell at each, which reads as a beat rather than a wander, and the post
+// itself is one of them and the longest -- a merchant is never far from the
+// stall and a quest giver is where the map says.
+//
+// They move by the same navStep the monsters use, so n.x/n.z stay live and
+// every proximity check in the game (talk, trade, train) keeps working.
+// ---------------------------------------------------------------------------
+const NPC_SPEED = PLAYER_SPEED * 0.4;      // unhurried: they are not going anywhere
+function npcStrollRadius(n) {
+  if (n.stroll != null) return n.stroll;
+  if (n.trade || n.trainer) return 3.0;    // they have a post to keep
+  return 6.5;
+}
+function buildNpcRoute(zone, n) {
+  n._yaw0 = n.yaw || 0;
+  // Somebody placed inside a crate or half through a tent wall can go nowhere,
+  // because every direction out of a solid cell is solid. Step them to the
+  // nearest clear ground first -- it is a nudge of a metre or two, and without
+  // it they stand frozen while the rest of the village walks about.
+  if (navBlocked(zone, n.x, n.z)) {
+    outer: for (let r = 0.6; r <= 3.0; r += 0.6) {
+      for (let i = 0; i < 12; i++) {
+        const a = i * Math.PI / 6, x = n.x + Math.sin(a) * r, z = n.z + Math.cos(a) * r;
+        if (!navBlocked(zone, x, z)) { n.x = x; n.z = z; break outer; }
+      }
+    }
+  }
+  const home = { x: n.x, z: n.z, wait: [8, 16] };
+  const stops = [home];
+  if (!n.static) {
+    if (Array.isArray(n.route) && n.route.length) {
+      for (const w of n.route) stops.push({ x: w.x, z: w.z, wait: w.wait || [3, 9] });
+    } else {
+      // Try the full radius first, then draw in: someone posted in a doorway or
+      // penned between a cart and a fence should still shift their feet rather
+      // than stand frozen while the rest of the village walks about.
+      const R0 = npcStrollRadius(n), turn = Math.PI * 2 / 12, start = Math.random() * Math.PI * 2;
+      for (const scale of [1, 0.55, 0.3]) {
+        for (let i = 0; i < 12 && stops.length < 4; i++) {
+          const a = start + i * turn, r = R0 * scale * (0.55 + Math.random() * 0.45);
+          const x = home.x + Math.sin(a) * r, z = home.z + Math.cos(a) * r;
+          if (navBlocked(zone, x, z)) continue;                      // a wall, a tree, the water
+          if (!lineClear(zone, home.x, home.z, x, z)) continue;      // and it has to be able to get back
+          stops.push({ x, z, wait: [3, 9] });
+        }
+        if (stops.length > 1) break;
+      }
+    }
+  }
+  return { stops, i: 0, wait: Math.random() * 8, speed: NPC_SPEED * (0.85 + Math.random() * 0.3) };
+}
+function stepNpc(zone, n, dt) {
+  const r = n._route || (n._route = buildNpcRoute(zone, n));
+  if (r.stops.length < 2) { n.moving = false; return; }            // nowhere safe to go: stay put
+  if (r.wait > 0) {
+    r.wait -= dt; n.moving = false;
+    // Standing about, they settle back to the way they were facing.
+    const d = Math.atan2(Math.sin(n._yaw0 - n.yaw), Math.cos(n._yaw0 - n.yaw));
+    n.yaw += d * Math.min(1, dt * 1.5);
+    return;
+  }
+  const s = r.stops[r.i];
+  n.moving = navStep(zone, n, s.x, s.z, 0.4, r.speed);
+  if (!n.moving) {                                                  // arrived: dwell, then on to the next
+    r.i = (r.i + 1) % r.stops.length;
+    r.wait = s.wait[0] + Math.random() * (s.wait[1] - s.wait[0]);
+    n._nav = null;
+  }
+}
+
 // A swing is two moments, not one: the wind-up the client animates, and the
 // impact where the damage actually happens. Splitting them is what stops the
 // game showing a number before the axe has reached anybody. IMPACT_AT is how
@@ -2552,6 +2629,10 @@ setInterval(() => {
   stepGates();
   for (const m of monsters.values()) stepMonster(m);
   for (const zone of Object.values(ZONES)) { stepHazards(bossCtx, zone, DT); stepSanctuaries(zone, DT); }
+  for (const zone of Object.values(ZONES)) {          // only where somebody is around to see it
+    let watched = false; for (const p of players.values()) if (p.zoneId === zone.id) { watched = true; break; }
+    if (watched) for (const n of (zone.npcs || [])) stepNpc(zone, n, DT);
+  }
   stepGraves();
   for (const p of players.values()) stepPlayer(p);
   for (const [id, p] of players) {   // bodies left behind by a mid-fight disconnect
@@ -2604,7 +2685,12 @@ setInterval(() => {
         items.push({ id: it.id, name: it.name, qty: it.qty, x: +it.x.toFixed(2), z: +it.z.toFixed(2) });
       }
       const gate = ZONES[zid]._gate;
-      return (byZone[zid] = JSON.stringify({ t: 'snapshot', now, players: ps, monsters: ms, items,
+      const npcs = [];   // only the ones with somewhere to be; the rest never left their mark
+      for (const n of (ZONES[zid].npcs || [])) {
+        if (!n._route || n._route.stops.length < 2) continue;
+        npcs.push({ id: n.id, x: +n.x.toFixed(2), z: +n.z.toFixed(2), yaw: +(n.yaw || 0).toFixed(2), m: n.moving ? 1 : undefined });
+      }
+      return (byZone[zid] = JSON.stringify({ t: 'snapshot', now, players: ps, monsters: ms, items, npcs,
         depleted: depletedIds(ZONES[zid]),
         hazards: hazardList(ZONES[zid]),
         sanct: sanctuaryList(ZONES[zid]),
@@ -2650,7 +2736,9 @@ function zoneForClient(zone) {
     tunnel: zone.tunnel || null,
     regions: zone.regions || null,
     env: zone.env, enclosed: !!zone.enclosed, ceilingY: zone.ceilingY,
-    npcs: zone.npcs || [],
+    // Without the walk state: the route, its cached path and the live moving
+    // flag are the server's business, and snapshots carry the positions.
+    npcs: (zone.npcs || []).map(({ _route, _nav, _yaw0, moving, ...n }) => n),
     trees: zone._trees || [],
     scatter: zone._scatter || [],
     hanging: zone._hanging || [],

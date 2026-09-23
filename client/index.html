@@ -1285,6 +1285,7 @@ function handle(m) {
       syncHazards(m.hazards);
       syncSanctuaries(m.sanct);
       syncGraves(window.__fakeGraves ? (m.graves || []).concat(window.__fakeGraves) : m.graves);   // (?debug: extra graves to look at)
+      syncNpcs(m.npcs);
       updateHudFromSnapshot(m);
       break;
     case 'transition':
@@ -4240,13 +4241,37 @@ function startNpcTick(idle, name) {
   const T = NPC_TICKS[name]; if (!T) return;
   idle.tick = T; idle.tickT = 0; idle.tickDur = T.dur[0] + Math.random() * (T.dur[1] - T.dur[0]); idle.pose = T.pose();
 }
+// The server walks the NPCs that have routes; each snapshot says where they
+// got to. The mesh chases that rather than teleporting onto it, and the gait
+// below is driven by how far it actually moved, so the feet keep up with the
+// ground however the chase happens to land.
+function syncNpcs(list) {
+  for (const n of (list || [])) { const rec = npcMeshes.get(n.id); if (rec) rec.to = n; }
+}
 function animateNpcs(dt) {
   const selfRec = entityMeshes.get(myId);
   const sx = selfRec ? selfRec.mesh.position.x : 0, sz = selfRec ? selfRec.mesh.position.z : 0;
   for (const [id, rec] of npcMeshes) {
     const rig = rec.mesh.userData.rig, idle = rec.idle; if (!rig || !rig.body || !idle) continue;
     const mp = rec.mesh.position, dist = Math.hypot(mp.x - sx, mp.z - sz);
-    if (dist > 70) continue;
+    // --- follow the server, and measure the gait off the ground covered.
+    // This happens before the distance cull: someone across the zone still has
+    // to be where the server put them by the time you walk over to them.
+    let moved = 0;
+    if (rec.to) {
+      const far = dist > 70, k = far ? 1 : Math.min(1, dt * 8), px = mp.x, pz = mp.z;
+      mp.x += (rec.to.x - mp.x) * k; mp.z += (rec.to.z - mp.z) * k;
+      mp.y = groundY(mp.x, mp.z);
+      moved = far ? 0 : Math.hypot(mp.x - px, mp.z - pz);
+      const dy = Math.atan2(Math.sin(rec.to.yaw - idle.yaw), Math.cos(rec.to.yaw - idle.yaw));
+      idle.yaw += dy * (far ? 1 : Math.min(1, dt * 6));
+      rec.mesh.rotation.y = idle.yaw;
+    }
+    if (dist > 70) continue;   // too far to read a breath, let alone a stride
+    idle.walk = Math.max(0, Math.min(1, (idle.walk || 0) + ((rec.to && rec.to.m ? 1 : 0) - (idle.walk || 0)) * Math.min(1, dt * 6)));
+    const wlk = idle.walk * idle.walk * (3 - 2 * idle.walk);
+    idle.gait = (idle.gait || Math.random() * 6.28) + (moved / Math.max(dt, 1e-4)) / 1.15 * Math.PI * dt;
+    const stride = Math.sin(idle.gait);
     idle.t += dt; idle.breath += dt * 1.25; idle.waveCd = Math.max(0, idle.waveCd - dt);
     const b = rig.body, ease = (v) => v * v * (3 - 2 * v);
     // Someone walking up in front of them gets a look; a greeter gets a wave.
@@ -4256,10 +4281,11 @@ function animateNpcs(dt) {
       let rel = want - idle.yaw; rel = Math.atan2(Math.sin(rel), Math.cos(rel));
       if (Math.abs(rel) < 1.25) { faceRel = rel; near = true; }
     }
+    if (wlk > 0.25) near = false, faceRel = 0;   // walking, not receiving
     if (near && NPC_GREETERS.has(id) && idle.waveCd === 0 && !idle.tick && rig.armR) { startNpcTick(idle, 'wave'); idle.waveCd = 25 + Math.random() * 15; }
     // Pick the next tick when the last one has faded out.
     if (idle.tick) { idle.tickT += dt; if (idle.tickT >= idle.tickDur) { idle.tick = null; idle.pose = null; idle.next = 2.5 + Math.random() * 6; } }
-    else { idle.next -= dt; if (idle.next <= 0) startNpcTick(idle, idle.rep[Math.floor(Math.random() * idle.rep.length)]); }
+    else { idle.next -= dt; if (idle.next <= 0 && wlk < 0.1) startNpcTick(idle, idle.rep[Math.floor(Math.random() * idle.rep.length)]); }
     // Envelope of the active tick: fade in, hold, fade out.
     let k = 0, P = idle.pose;
     if (idle.tick) { const f = 0.4; k = ease(Math.min(1, idle.tickT / f)) * ease(Math.min(1, (idle.tickDur - idle.tickT) / f)); }
@@ -4270,8 +4296,8 @@ function animateNpcs(dt) {
     idle.headY += (faceRel * 0.85 - idle.headY) * Math.min(1, dt * 5);
     idle.bodyTurn += ((near && rig.head ? faceRel * 0.3 : 0) - idle.bodyTurn) * Math.min(1, dt * 3);  // rigid models face wherever they were placed
     const g = (key, def_) => (P && P[key] != null ? P[key] * k : 0) + def_;
-    b.position.set(rig.home.x + g('bodyX', 0), rig.home.y + br * 0.006 + g('bodyLift', 0), rig.home.z);
-    b.rotation.set(g('bodyPitch', 0) + br * 0.004, drift + idle.bodyTurn + g('bodyY', 0), Math.sin(idle.t * 0.37) * 0.012 + g('bodyZ', 0));
+    b.position.set(rig.home.x + g('bodyX', 0), rig.home.y + br * 0.006 + g('bodyLift', 0) + Math.abs(stride) * 0.035 * wlk, rig.home.z);
+    b.rotation.set(g('bodyPitch', 0) + br * 0.004 + 0.09 * wlk, drift * (1 - wlk) + idle.bodyTurn + g('bodyY', 0), Math.sin(idle.t * 0.37) * 0.012 + g('bodyZ', 0));
     const limb = (node, key, restX, restZ) => {
       if (!node) return;
       const p = P && P[key];
@@ -4279,9 +4305,10 @@ function animateNpcs(dt) {
       const z = (p ? p[2] * k : 0) + restZ + (W && W.key === key && W.i === 2 ? wob : 0);
       node.rotation.set(x, 0, z);
     };
-    limb(rig.armL, 'armL', Math.sin(idle.t * 0.9) * 0.025, br * 0.012);
-    limb(rig.armR, 'armR', Math.sin(idle.t * 0.9 + 1.7) * 0.025, -br * 0.012);
-    limb(rig.legL, 'legL', 0, 0); limb(rig.legR, 'legR', 0, 0); limb(rig.shinL, 'shinL', 0, 0); limb(rig.shinR, 'shinR', 0, 0);
+    limb(rig.armL, 'armL', Math.sin(idle.t * 0.9) * 0.025 * (1 - wlk) - stride * 0.42 * wlk, br * 0.012 + 0.09 * wlk);
+    limb(rig.armR, 'armR', Math.sin(idle.t * 0.9 + 1.7) * 0.025 * (1 - wlk) + stride * 0.42 * wlk, -br * 0.012 - 0.09 * wlk);
+    limb(rig.legL, 'legL', stride * 0.55 * wlk, 0); limb(rig.legR, 'legR', -stride * 0.55 * wlk, 0);
+    limb(rig.shinL, 'shinL', Math.max(0, -stride) * 0.7 * wlk, 0); limb(rig.shinR, 'shinR', Math.max(0, stride) * 0.7 * wlk, 0);
     if (rig.head) rig.head.rotation.set(g('headX', 0) + (W && W.key === 'headX' ? wob : 0) + br * 0.01, g('headY', 0) + idle.headY + Math.sin(idle.t * 0.5) * 0.04, g('headZ', 0));
   }
 }
@@ -6176,7 +6203,9 @@ function pickAt(e) {
       }
       continue; // a mined-out vein is not a target
     }
-    if (u.pickKind === 'npc') return { kind: 'npc', id: u.npcId, npcId: u.npcId, name: u.npcName, x: u.npcX, z: u.npcZ, point: h.point };
+    // Read the live position: they walk, and the tag was stamped where they were placed.
+    if (u.pickKind === 'npc') { const r = npcMeshes.get(u.npcId); return { kind: 'npc', id: u.npcId, npcId: u.npcId, name: u.npcName,
+      x: r ? r.mesh.position.x : u.npcX, z: r ? r.mesh.position.z : u.npcZ, point: h.point }; }
     if (u.pickKind === 'gate') return { kind: 'gate', point: h.point };
     if (u.pickKind === 'editobj') return { kind: 'editobj', id: u.editId, point: h.point };
     if (u.pickKind === 'spawn') return { kind: 'spawn', id: u.spawnId, point: h.point };
