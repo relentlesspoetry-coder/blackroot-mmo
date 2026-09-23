@@ -6653,10 +6653,20 @@ const ABILITY_ANIMS = {
           { at: 0.66, kind: 'cracks', r: 1.2, fwd: 1.0 },
           { at: 0.67, kind: 'dust', r: 1.7, shake: 0.14 },
           { at: 0.68, kind: 'shock', r: 2.4, color: 0xdbe6f0 }] },
-  momentum: { dur: 0.6, pose(u, P) {                // learned / flex: chest up, arms flare out
-    P.rArm = kf(u, [[0, 0], [0.4, -0.9], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.4, -0.9], [1, 0]]); P.rArmZ = kf(u, [[0, 0], [0.4, -0.8], [1, 0]]); P.lArmZ = kf(u, [[0, 0], [0.4, 0.8], [1, 0]]);
-    P.bodyX = kf(u, [[0, 0], [0.4, -0.15], [1, 0]]);
-  }, fx: [{ at: 0.35, kind: 'sfx', key: 'momentum' }, { at: 0.35, kind: 'ring', r: 1.4, color: 0xffd27a }, { at: 0.35, kind: 'glow', color: 0xffd27a }] },
+  momentum: { dur: 0.5, pose(u, P) {
+    // A stack landing, which happens several times a fight, so this one is
+    // deliberately the smallest thing in the book: a shoulder roll and a fist
+    // closing, and a ring of gold at his feet. Anything bigger would be noise.
+    P.rArm  = kf(u, [[0, 0], [0.34, -0.55], [0.62, -0.15], [1, 0]]);
+    P.lArm  = kf(u, [[0, 0], [0.34, -0.50], [0.62, -0.12], [1, 0]]);
+    P.rArmZ = kf(u, [[0, 0], [0.34, -0.45], [1, 0]]); P.lArmZ = kf(u, [[0, 0], [0.34, 0.45], [1, 0]]);
+    P.rFore = [kf(u, [[0, 0], [0.34, -0.95], [0.62, -0.55], [1, 0]]), 0, 0];   // elbows drawn in, fists closed
+    P.lFore = [kf(u, [[0, 0], [0.34, -0.95], [0.62, -0.55], [1, 0]]), 0, 0];
+    P.bodyX = kf(u, [[0, 0], [0.34, -0.14], [1, 0]]);
+    P.bob   = kf(u, [[0, 0], [0.34, 0.04], [1, 0]]);
+  }, fx: [{ at: 0.28, kind: 'sfx', key: 'momentum' },
+          { at: 0.30, kind: 'ring', r: 1.1, color: 0xffd27a },
+          { at: 0.30, kind: 'rise', n: 7, color: 0xffd27a, y: 0.9, spread: 0.55 }] },
   groundbreaker: { trailColor: 0xc9b48a, dur: 0.98, pose(u, P) {
     // He leaves the ground for this one. Both knees come up as he jumps, the
     // weapon goes over, and all of it comes down at once into the dirt -- the
@@ -6725,10 +6735,25 @@ const ABILITY_ANIMS = {
           { at: 0.54, kind: 'flash', r: 0.7, color: 0xeaf2ff, fwd: 1.7 },
           { at: 0.54, kind: 'sparks', n: 10, color: 0xdfe8ff, fwd: 1.7 },
           { at: 0.56, kind: 'dust', r: 0.9, shake: 0.07 }] },
-  weapon_flow: { dur: 0.9, pose(u, P) {             // weapon twirl: the arm circles twice, body sways with it
-    P.rArm = -1.3 + Math.sin(u * Math.PI * 4) * 1.3; P.rArmZ = Math.cos(u * Math.PI * 4) * 0.9;
-    P.lArm = kf(u, [[0, 0], [0.5, -0.5], [1, 0]]); P.bodyZ = Math.sin(u * Math.PI * 4) * 0.08; P.bodyY = Math.sin(u * Math.PI * 2) * 0.25;
-  }, fx: [{ at: 0.25, kind: 'sfx', key: 'weapon_flow' }, { at: 0.3, kind: 'ring', r: 1.2, color: 0xffd27a }, { at: 0.5, kind: 'glow', color: 0xffd24a }, { at: 0.7, kind: 'ring', r: 1.2, color: 0xffd27a }] },
+  weapon_flow: { trailColor: 0xffd24a, dur: 0.9, pose(u, P) {
+    // Two flourishes of the weapon. The old version drove the shoulder through
+    // a sine that crossed zero twice, which swept the blade down through his
+    // own legs on each pass; the arm is carried forward at a steady height now
+    // and the circle is made at the elbow and the shoulder's roll instead.
+    const a = u * Math.PI * 4;
+    P.rArm  = -1.30 + Math.sin(a) * 0.22;      // stays well clear of the hanging pose
+    P.rArmZ = Math.cos(a) * 0.95;
+    P.rFore = [-0.25 + Math.sin(a) * 0.55, 0, Math.cos(a) * 0.55];   // the blade coming round the wrist
+    P.lArm  = kf(u, [[0, 0], [0.5, -0.55], [1, 0]]); P.lArmZ = kf(u, [[0, 0], [0.5, 0.35], [1, 0]]);
+    P.bodyY = Math.sin(u * Math.PI * 2) * 0.22;
+    P.bodyZ = Math.sin(a) * 0.06;
+    P.bob   = -0.04 + Math.abs(Math.sin(a)) * 0.03;
+  }, fx: [{ at: 0.20, kind: 'sfx', key: 'weapon_flow' },
+          // one closed ring per flourish, at the height the blade actually goes
+          { at: 0.22, kind: 'crescent', r: 1.5, spread: 6.28, y: 1.35, color: 0xffd24a, life: 0.45 },
+          { at: 0.72, kind: 'crescent', r: 1.5, spread: 6.28, y: 1.35, color: 0xffd24a, life: 0.45 },
+          { at: 0.50, kind: 'rise', n: 10, color: 0xffd27a, y: 1.2, spread: 0.7 },
+          { at: 0.86, kind: 'glow', color: 0xffd24a }] },
   armor_splitter: { trailColor: 0xdfe8ff, dur: 0.78, pose(u, P) {
     // Narrower and faster than Crushing Blow, which it would otherwise be a
     // copy of: no held beat at the top, the weapon goes up and comes straight
@@ -6749,10 +6774,24 @@ const ABILITY_ANIMS = {
           { at: 0.58, kind: 'sparks', n: 24, color: 0xd8dde8, fwd: 1.3 },
           { at: 0.59, kind: 'impact', color: 0xffffff, sparkColor: 0xd8dde8, y: 1.1 },
           { at: 0.60, kind: 'dust', r: 1.0, shake: 0.09 }] },
-  savage_momentum: { dur: 0.7, pose(u, P) {         // roar: chest thrown back, arms back, head up
-    P.bodyX = kf(u, [[0, 0], [0.4, -0.35], [1, 0]]); P.rArm = kf(u, [[0, 0], [0.4, 1.2], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.4, 1.2], [1, 0]]);
-    P.rArmZ = kf(u, [[0, 0], [0.4, -0.6], [1, 0]]); P.lArmZ = kf(u, [[0, 0], [0.4, 0.6], [1, 0]]); P.head = kf(u, [[0, 0], [0.4, -0.5], [1, 0]]);
-  }, fx: [{ at: 0.35, kind: 'sfx', key: 'savage_momentum' }, { at: 0.35, kind: 'ring', r: 1.8, color: 0xff8a4a }, { at: 0.35, kind: 'glow', color: 0x7dff5a }] },
+  savage_momentum: { dur: 0.75, pose(u, P) {
+    // A hunting call rather than a battle cry -- this is the one that sets a
+    // watcher on the field for half an hour. He draws in, then opens the chest
+    // and throws the head back, and holds it.
+    P.bodyX = kf(u, [[0, 0], [0.18, 0.20], [0.42, -0.40], [0.72, -0.34], [1, 0]]);
+    P.head  = kf(u, [[0, 0], [0.18, 0.25], [0.42, -0.55], [0.72, -0.50], [1, 0]]);
+    P.rArm  = kf(u, [[0, 0], [0.18, -0.60], [0.42, 1.10], [0.72, 1.00], [1, 0]]);
+    P.lArm  = kf(u, [[0, 0], [0.18, -0.60], [0.42, 1.10], [0.72, 1.00], [1, 0]]);
+    P.rArmZ = kf(u, [[0, 0], [0.18, -0.25], [0.42, -0.70], [1, 0]]);
+    P.lArmZ = kf(u, [[0, 0], [0.18,  0.25], [0.42,  0.70], [1, 0]]);
+    P.bob   = kf(u, [[0, 0], [0.18, -0.12], [0.42, 0.06], [1, 0]]);
+    P.bodyZ = Math.sin(u * 38) * 0.018 * kf(u, [[0.40, 0], [0.46, 1], [0.70, 1], [0.76, 0]]);
+  }, fx: [{ at: 0.34, kind: 'sfx', key: 'savage_momentum' },
+          { at: 0.38, kind: 'shock', r: 3.2, color: 0x9bf07a },
+          { at: 0.46, kind: 'shock', r: 4.6, color: 0x7dff5a },
+          { at: 0.40, kind: 'rise', n: 14, color: 0x9bf07a, y: 1.5, spread: 1.0 },
+          { at: 0.44, kind: 'glow', color: 0x7dff5a },
+          { at: 0.50, kind: 'glyph', r: 1.5, color: 0x7dff5a, spin: -1.0 }] },
   bonebreaker: { trailColor: 0xe8e0c8, dur: 0.82, pose(u, P) {
     // The low one. He drops into a deep crouch and sweeps the edge through at
     // shin height -- it is the ability that breaks legs, so it has to visibly
@@ -6818,11 +6857,30 @@ const ABILITY_ANIMS = {
           { at: 0.70, kind: 'cracks', r: 1.0, fwd: 1.0 },
           { at: 0.71, kind: 'dust', r: 1.4, shake: 0.16 },
           { at: 0.72, kind: 'shock', r: 2.8, color: 0xffb060 }] },
-  bloodrush: { trailColor: 0xff2a1a, dur: 0.75, pose(u, P) {              // fists to the chest, then flung wide
-    P.rArm = kf(u, [[0, 0], [0.3, -1.6], [0.6, -0.9], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.3, -1.6], [0.6, -0.9], [1, 0]]);
-    P.rArmZ = kf(u, [[0, 0], [0.3, 0.9], [0.6, -1.1], [1, 0]]); P.lArmZ = kf(u, [[0, 0], [0.3, -0.9], [0.6, 1.1], [1, 0]]);
-    P.bodyX = kf(u, [[0, 0], [0.3, 0.2], [0.6, -0.25], [1, 0]]);
-  }, fx: [{ at: 0.5, kind: 'sfx', key: 'bloodrush' }, { at: 0.55, kind: 'ring', r: 1.6, color: 0xd8302a }, { at: 0.55, kind: 'sparks', n: 12, color: 0xff3a2a }, { at: 0.55, kind: 'glow', color: 0xff2a1a }] },
+  bloodrush: { trailColor: 0xff2a1a, dur: 0.78, pose(u, P) {
+    // He takes the brakes off: fists dragged in to the chest against a crouch,
+    // held while it builds, then flung wide as the whole thing lets go. It
+    // costs him ten percent extra damage taken, so it should look like
+    // something breaking open rather than a salute.
+    P.rArm  = kf(u, [[0, 0], [0.30, -1.55], [0.46, -1.60], [0.62, -0.85], [1, 0]]);
+    P.lArm  = kf(u, [[0, 0], [0.30, -1.55], [0.46, -1.60], [0.62, -0.85], [1, 0]]);
+    P.rArmZ = kf(u, [[0, 0], [0.30,  0.85], [0.46,  0.90], [0.62, -1.15], [1, 0]]);
+    P.lArmZ = kf(u, [[0, 0], [0.30, -0.85], [0.46, -0.90], [0.62,  1.15], [1, 0]]);
+    P.rFore = [kf(u, [[0, 0], [0.30, -1.20], [0.46, -1.25], [0.62, -0.15], [1, 0]]), 0, 0];
+    P.lFore = [kf(u, [[0, 0], [0.30, -1.20], [0.46, -1.25], [0.62, -0.15], [1, 0]]), 0, 0];
+    P.bodyX = kf(u, [[0, 0], [0.30, 0.26], [0.46, 0.28], [0.62, -0.30], [1, 0]]);   // curled in, then thrown open
+    P.head  = kf(u, [[0, 0], [0.30, 0.30], [0.62, -0.40], [1, 0]]);
+    P.bob   = kf(u, [[0, 0], [0.30, -0.16], [0.46, -0.18], [0.62, 0.05], [1, 0]]);
+    P.bodyZ = Math.sin(u * 42) * 0.02 * kf(u, [[0.28, 0], [0.34, 1], [0.46, 1], [0.54, 0]]);
+    P.lLeg  = kf(u, [[0, 0], [0.30, -0.30], [0.62, -0.10], [1, 0]]); P.rLeg = kf(u, [[0, 0], [0.30, -0.28], [0.62, 0.10], [1, 0]]);
+    P.lShin = kf(u, [[0, 0], [0.30, 0.55], [0.62, 0.15], [1, 0]]); P.rShin = kf(u, [[0, 0], [0.30, 0.50], [0.62, 0.15], [1, 0]]);
+  }, fx: [{ at: 0.32, kind: 'rise', n: 10, color: 0xd8302a, y: 0.8, spread: 0.5 },
+          { at: 0.52, kind: 'sfx', key: 'bloodrush' },
+          { at: 0.56, kind: 'shock', r: 2.6, color: 0xff3a2a, shake: 0.09 },
+          { at: 0.56, kind: 'sparks', n: 18, color: 0xff3a2a },
+          { at: 0.58, kind: 'glow', color: 0xff2a1a },
+          { at: 0.62, kind: 'shock', r: 4.0, color: 0xd8302a },
+          { at: 0.60, kind: 'rise', n: 16, color: 0xff5a3a, y: 1.6, spread: 1.1 }] },
   shatter_guard: { trailColor: 0xdfe8ff, dur: 0.8, pose(u, P) {
     // Heavy Riposte's cousin, but it goes through the shield rather than round
     // it: the shoulder turns right in behind the point and the whole mass of
@@ -6870,16 +6928,51 @@ const ABILITY_ANIMS = {
           { at: 0.81, kind: 'shock', r: 3.5 },
           { at: 0.81, kind: 'cracks', r: 1.8, fwd: 1.0 },
           { at: 0.84, kind: 'shock', r: 5.5, color: 0xc48bff }] },
-  unstoppable_footwork: { dur: 0.7, pose(u, P) {    // fast footwork: quick alternating steps, arms pumping
-    const f = Math.sin(u * Math.PI * 8);
-    P.lLeg = f * 0.8; P.rLeg = -f * 0.8; P.lShin = Math.max(0, -f) * 1.2; P.rShin = Math.max(0, f) * 1.2; P.rArm = f * 0.7; P.lArm = -f * 0.7; P.bob = Math.abs(f) * 0.1;
-  }, fx: [{ at: 0.08, kind: 'sfx', key: 'unstoppable_footwork' }, { at: 0.1, kind: 'dust', r: 0.8 }, { at: 0.3, kind: 'glow', color: 0x5ad8ff }, { at: 0.4, kind: 'dust', r: 0.8 }, { at: 0.7, kind: 'dust', r: 0.8 }] },
-  berserkers_roar: { dur: 0.9, pose(u, P) {         // head thrown back, arms wide, the whole body shaking with it
-    P.bodyX = kf(u, [[0, 0], [0.35, -0.4], [0.8, -0.35], [1, 0]]); P.head = kf(u, [[0, 0], [0.35, -0.6], [0.8, -0.6], [1, 0]]);
-    P.rArm = kf(u, [[0, 0], [0.35, -1.9], [0.8, -1.8], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.35, -1.9], [0.8, -1.8], [1, 0]]);
-    P.rArmZ = kf(u, [[0, 0], [0.35, -1.3], [0.8, -1.2], [1, 0]]); P.lArmZ = kf(u, [[0, 0], [0.35, 1.3], [0.8, 1.2], [1, 0]]);
-    P.bodyZ = Math.sin(u * 50) * 0.03 * kf(u, [[0.3, 0], [0.4, 1], [0.8, 1], [0.9, 0]]);
-  }, fx: [{ at: 0.38, kind: 'sfx', key: 'berserkers_roar' }, { at: 0.4, kind: 'shock', r: 4.0, color: 0xff6a3c, shake: 0.1 }, { at: 0.4, kind: 'glow', color: 0xff7a1a }, { at: 0.7, kind: 'ring', r: 2.2, color: 0xff8a4a }] },
+  unstoppable_footwork: { dur: 0.72, pose(u, P) {
+    // Four quick steps on the spot, weight rolling from foot to foot and the
+    // shoulders counter-turning with them. It buys movement speed for half an
+    // hour, so what it has to read as is footwork, not a dance.
+    const f = Math.sin(u * Math.PI * 8), g = Math.cos(u * Math.PI * 8);
+    const fade = kf(u, [[0, 0], [0.12, 1], [0.82, 1], [1, 0]]);   // eases in and out of the idle instead of snapping
+    P.lLeg  = f * 0.85 * fade;  P.rLeg = -f * 0.85 * fade;
+    P.lShin = Math.max(0, -f) * 1.25 * fade; P.rShin = Math.max(0, f) * 1.25 * fade;
+    P.rArm  = f * 0.55 * fade;  P.lArm = -f * 0.55 * fade;
+    P.rArmZ = -0.18 * fade;     P.lArmZ = 0.18 * fade;
+    P.bodyY = -g * 0.14 * fade;                       // shoulders answering the steps
+    P.bodyX = 0.10 * fade;
+    P.bob   = (Math.abs(f) * 0.09 - 0.03) * fade;
+  }, fx: [{ at: 0.06, kind: 'sfx', key: 'unstoppable_footwork' },
+          { at: 0.08, kind: 'dust', r: 0.7, color: 0x8fd8f0 },
+          { at: 0.26, kind: 'dust', r: 0.7, color: 0x8fd8f0 },
+          { at: 0.44, kind: 'dust', r: 0.7, color: 0x8fd8f0 },
+          { at: 0.62, kind: 'dust', r: 0.7, color: 0x8fd8f0 },
+          { at: 0.30, kind: 'glyph', r: 1.2, color: 0x5ad8ff, spin: 2.4 },
+          { at: 0.68, kind: 'glow', color: 0x5ad8ff }] },
+  berserkers_roar: { dur: 0.95, pose(u, P) {
+    // The taunt. Everything in a fourteen-metre circle is going to look at him,
+    // so he makes himself as big as a man can: dropped, gathered, then head
+    // thrown back and arms flung wide, shaking, and held there.
+    P.bodyX = kf(u, [[0, 0], [0.16, 0.26], [0.38, -0.46], [0.80, -0.40], [1, 0]]);
+    P.head  = kf(u, [[0, 0], [0.16, 0.30], [0.38, -0.62], [0.80, -0.60], [1, 0]]);
+    P.rArm  = kf(u, [[0, 0], [0.16, -0.70], [0.38, -2.00], [0.80, -1.85], [1, 0]]);
+    P.lArm  = kf(u, [[0, 0], [0.16, -0.70], [0.38, -2.00], [0.80, -1.85], [1, 0]]);
+    P.rArmZ = kf(u, [[0, 0], [0.16, -0.30], [0.38, -1.35], [0.80, -1.25], [1, 0]]);
+    P.lArmZ = kf(u, [[0, 0], [0.16,  0.30], [0.38,  1.35], [0.80,  1.25], [1, 0]]);
+    P.rFore = [kf(u, [[0, 0], [0.16, -0.80], [0.38, -0.25], [1, 0]]), 0, 0];
+    P.lFore = [kf(u, [[0, 0], [0.16, -0.80], [0.38, -0.25], [1, 0]]), 0, 0];
+    P.bob   = kf(u, [[0, 0], [0.16, -0.20], [0.38, 0.10], [0.80, 0.08], [1, 0]]);   // sinks, then comes up off the ground with it
+    P.lLeg  = kf(u, [[0, 0], [0.16, -0.35], [0.38, -0.12], [1, 0]]); P.rLeg = kf(u, [[0, 0], [0.16, -0.32], [0.38, 0.12], [1, 0]]);
+    P.lShin = kf(u, [[0, 0], [0.16, 0.65], [0.38, 0.12], [1, 0]]); P.rShin = kf(u, [[0, 0], [0.16, 0.60], [0.38, 0.12], [1, 0]]);
+    P.bodyZ = Math.sin(u * 54) * 0.032 * kf(u, [[0.34, 0], [0.42, 1], [0.80, 1], [0.90, 0]]);
+  }, fx: [{ at: 0.18, kind: 'dust', r: 0.9 },
+          { at: 0.36, kind: 'sfx', key: 'berserkers_roar' },
+          { at: 0.38, kind: 'shock', r: 4.0, color: 0xff6a3c, shake: 0.14 },
+          { at: 0.44, kind: 'shock', r: 7.0, color: 0xff8a4a },
+          { at: 0.52, kind: 'shock', r: 10.0, color: 0xffb070 },
+          { at: 0.40, kind: 'glow', color: 0xff7a1a },
+          { at: 0.42, kind: 'rise', n: 20, color: 0xff7a1a, y: 1.8, spread: 1.3 },
+          { at: 0.46, kind: 'glyph', r: 2.0, color: 0xff6a3c, spin: -1.4 },
+          { at: 0.70, kind: 'rise', n: 12, color: 0xffb070, y: 2.0, spread: 1.5 }] },
   // ---- Cleric: casts hold a praying pose (castPose, t in seconds) then release (pose, u 0..1). No weapon trails.
   minor_heal: { trail: false, dur: 0.6, castPose(t, P) {   // hands cupped at the chest, head bowed, a slow sway
     P.rArm = -1.25 + Math.sin(t * 3) * 0.05; P.lArm = -1.25 + Math.sin(t * 3) * 0.05; P.rArmZ = 0.45; P.lArmZ = -0.45; P.head = 0.35; P.bodyX = 0.08;
