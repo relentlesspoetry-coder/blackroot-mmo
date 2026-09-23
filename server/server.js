@@ -13,7 +13,7 @@ import { hiddencave } from './zones/hiddencave.js';
 import { killingfields } from './zones/killingfields.js';
 import {
   PLAYER, ELITE, MONSTER_TEMPLATES,
-  xpForLevel, xpTotalForLevel, levelForXp, MAX_LEVEL, attackRoll, defenceRoll, hitChance, scaledMonster, rollLoot, REGEN,
+  xpForLevel, xpTotalForLevel, levelForXp, xpForKill, MAX_LEVEL, attackRoll, defenceRoll, hitChance, scaledMonster, rollLoot, REGEN,
   TICK, CLASSES, DEFAULT_CLASS, classDef, classStats, abilityCost,
   maxHit, MEDITATION, meditationHealPerTick, rollGear } from './balance.js';
 import { ITEMS, SLOTS, SLOT_INFO, DOLL, itemDef, slotOf, valueOf, equipStats, slotsFor, emptySlots, stackable, bagStacks } from './items.js';
@@ -25,7 +25,7 @@ import { isBardSpell, checkBardCast, castBard, spendSongCharges, songAmp, atkSpe
   bardMonsterDmgMult, bardMonsterDefMult, bardMonsterTakenMult, bardMonsterSpeedMult, bardMonsterAtkSpeedMult, stepSongs } from './bard.js';
 import {
   dist2, closestOnPolyline, mulberry32, pointInPoly, polyCentroid, generateTrees, generateScatter, generateHanging,
-  mergeOutlines, roughenOutline, generateEdgeForest,
+  mergeOutlines, roughenOutline, generateEdgeForest, inHouse,
   caveOutline,
 } from './worldgen.js';
 import {
@@ -764,7 +764,13 @@ function buildFarm(zone) {
   for (const p of (F.props || [])) scat.push({ i: scat.length, m: p.m, x: p.x, z: p.z, s: p.s || 1, r: p.yaw || 0, c: p.c || 0 });
   // Hand-placed nature inside the fence (worldgen keeps the wild forest out).
   zone._trees = zone._trees || [];
-  for (const tr of (F.trees || [])) zone._trees.push({ x: tr.x, z: tr.z, s: tr.s || 1, r: tr.r != null ? tr.r : +(Math.random() * 6).toFixed(2) });
+  // Hand-placed trees skip the generators, so they skip the generators' rules
+  // too -- which is how one ended up standing in the guard hut. Same keep-out
+  // here, and it says so rather than quietly dropping authored scenery.
+  for (const tr of (F.trees || [])) {
+    if (inHouse(zone, tr.x, tr.z, 2.5)) { console.warn(`[worldgen] ${zone.id}: tree at ${tr.x},${tr.z} stands inside a house — skipped`); continue; }
+    zone._trees.push({ x: tr.x, z: tr.z, s: tr.s || 1, r: tr.r != null ? tr.r : +(Math.random() * 6).toFixed(2) });
+  }
   for (const pl of (F.plants || [])) scat.push({ i: scat.length, m: pl.m, x: pl.x, z: pl.z, s: pl.s || 1, r: pl.r != null ? pl.r : +(Math.random() * 6).toFixed(2), c: 0 });
   // Enterable houses: each wall is a solid segment; the door side is split in
   // two around a DOOR_W gap so you can walk in. Furniture is a round solid.
@@ -954,6 +960,7 @@ function systemChat(msg) { broadcast({ t: 'chat', from: 'System', msg, sys: true
 // Combat & progression
 // ---------------------------------------------------------------------------
 function grantXp(p, amount) {
+  if (!(amount > 0)) return;   // a creature you have long outgrown: no xp, and no "+0" to explain
   p.xp += amount; // running total; the level is read off the shared 1..99 table
   send(p.ws, { t: 'event', kind: 'xp', amount });
   let leveled = false;
@@ -975,7 +982,7 @@ function killMonster(m, killer) {
   m.respawnTimer = m.elite ? Math.max(90, m.respawn * 2) : m.respawn;
   m.hp = 0;
   if (killer) {
-    grantXp(killer, m.xp);
+    grantXp(killer, xpForKill(killer.level, m.level, m.xp));   // worth less the further you have outgrown it
     notifyQuestProgress(killer, recordKill(killer, m));
   }
 

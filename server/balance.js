@@ -33,6 +33,29 @@ export function xpForLevel(level) { return level >= MAX_LEVEL ? Infinity : XP_TA
 export function levelForXp(total) { let l = 1; while (l < MAX_LEVEL && total >= XP_TABLE[l + 1]) l++; return l; }
 export function progressForXp(total) { const level = levelForXp(total); return { level, into: total - XP_TABLE[level], next: xpForLevel(level) }; }
 
+// What a kill is worth once you have outgrown it. A creature at your level --
+// or within a couple beneath it, since a fight you can still lose should still
+// pay -- is worth all of its xp; past that the value slides off, and far
+// enough down it is worth nothing but the loot.
+//
+// The window widens as you climb, because a level is a smaller share of what
+// you are at 30 than it was at 5: six levels at the bottom, twelve by level 20,
+// sixteen by 30. That is what keeps the slide slow rather than a cliff, and it
+// is deliberately generous here -- the world's creatures top out at level 9,
+// so a tighter window would grey the whole game out by the early teens.
+export const XP_FULL_UNDER = 2;                                     // levels beneath you that still pay in full
+export function xpWindow(playerLevel) { return 6 + Math.floor(playerLevel / 3); }
+export function xpLevelMult(playerLevel, monLevel) {
+  const under = playerLevel - (monLevel || 1);
+  if (under <= XP_FULL_UNDER) return 1;                             // its level or near it: full value
+  return Math.max(0, 1 - (under - XP_FULL_UNDER) / xpWindow(playerLevel));
+}
+// The xp a kill actually hands over. Quest rewards do not go through here:
+// finishing an errand is worth what it says whatever you outrank.
+export function xpForKill(playerLevel, monLevel, baseXp) {
+  return Math.round((baseXp || 0) * xpLevelMult(playerLevel, monLevel));
+}
+
 // ---------------------------------------------------------------------------
 // OSRS-style combat maths
 // ---------------------------------------------------------------------------
