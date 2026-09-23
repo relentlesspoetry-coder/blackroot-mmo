@@ -106,6 +106,14 @@
   #invite button { background: #3a3020; border: 1px solid #6b5a3a; border-radius: 6px; color: #ffdf9e; padding: 6px 16px; font-size: 13px; cursor: pointer; }
   #invite button:hover { background: #4a3d28; }
   #invite .isub { font-size: 11px; color: #b9ad90; margin-top: 6px; }
+  /* The duel: who you are up against, and how long until it starts. */
+  #duelbar { display: none; position: absolute; left: 50%; top: 14%; transform: translateX(-50%); z-index: 55; pointer-events: auto;
+    background: #2a1818; border: 2px solid #7a3030; border-radius: 9px; padding: 7px 16px; box-shadow: 0 8px 24px #000a;
+    color: #f0d8d0; font-size: 13px; text-align: center; white-space: nowrap; }
+  #duelbar b { color: #ff9a80; }
+  #duelbar .dcount { font-size: 22px; font-weight: 800; color: #ffd0a0; }
+  #duelbar a { display: inline-block; margin-left: 12px; color: #e8a45a; cursor: pointer; text-decoration: none; font-size: 11px; }
+  #duelbar a:hover { text-decoration: underline; }
   #targetframe { display: none; margin-top: 6px; padding: 6px 10px; border-radius: 8px; background: #2a2018; border: 2px solid #1c150e; box-shadow: 0 8px 24px #000a; min-width: 214px; }
   #targetframe.elite { border-color: #b8901c; }
   #targetframe .tn { font-size: 13px; font-weight: 700; color: #ffdf9e; text-shadow: 0 1px 2px #000; margin-bottom: 4px; display: flex; justify-content: space-between; gap: 8px; }
@@ -581,6 +589,7 @@
     <div class="d-head"><span id="dName">NPC</span><span class="d-close" id="dClose">✕</span></div>
     <div class="d-body"><div class="d-script" id="dScript"></div><div class="d-say" id="dSay"></div><div id="dQuests"></div></div>
   </div>
+  <div id="duelbar"><span id="duelText">—</span><a id="duelYield">Yield</a></div>
   <div id="invite">
     <div id="inviteText">—</div>
     <div class="irow"><button id="inviteYes">Accept</button><button id="inviteNo">Decline</button></div>
@@ -1328,13 +1337,17 @@ function handle(m) {
       syncGraves(window.__fakeGraves ? (m.graves || []).concat(window.__fakeGraves) : m.graves);   // (?debug: extra graves to look at)
       syncNpcs(m.npcs);
       updateHudFromSnapshot(m);
+      renderDuel(m.players.find(q => q.id === myId));
       break;
     case 'party':
       partyState = { leader: m.leader != null ? m.leader : null, members: m.members || [] };
       renderParty();
       break;
     case 'party:invite':
-      showInvite(m);
+      showInvite(m, false);
+      break;
+    case 'duel:challenge':
+      showInvite(m, true);
       break;
     case 'transition':
       enterZone(m.zone);
@@ -6332,6 +6345,9 @@ function optionsFor(pk) {
     const opts = [
       { label: self ? 'Target <b>yourself</b>' : `Target <b>${name}</b> <span class="lvl">(level ${pk.data.level}${pk.data.alive ? '' : ', dead'})</span>`, act: () => setFriend(self ? null : pk.id) },
     ];
+    const me0 = selfEnt();
+    const duelFoe = me0 && me0.duel && me0.duel.ready && me0.duel.foe === pk.id;
+    if (duelFoe) opts.unshift({ label: `Attack <b>${name}</b>`, act: () => attackMonster(pk.id) });
     if (!self) {
       const mate = inMyParty(pk.id);
       opts.push(mate
@@ -6465,10 +6481,13 @@ function renderParty() {
   }).join('');
   list.querySelectorAll('.pmem').forEach(el => { el.onclick = () => setFriend(+el.dataset.id); });
 }
-function showInvite(m) {
+function showInvite(m, duel) {
   const box = document.getElementById('invite');
   if (m.expired) { box.style.display = 'none'; return; }
-  document.getElementById('inviteText').innerHTML = `<b>${escapeHtml(m.name)}</b> invites you to join their party.`;
+  inviteIsDuel = !!duel;
+  document.getElementById('inviteText').innerHTML = duel
+    ? `<b>${escapeHtml(m.name)}</b> challenges you to a duel.`
+    : `<b>${escapeHtml(m.name)}</b> invites you to join their party.`;
   document.getElementById('inviteSub').textContent = `Expires in ${m.seconds}s`;
   box.style.display = 'block';
   clearInterval(showInvite._t); let left = m.seconds;
@@ -6477,11 +6496,28 @@ function showInvite(m) {
     document.getElementById('inviteSub').textContent = `Expires in ${left}s`;
   }, 1000);
 }
+let inviteIsDuel = false;
 function answerInvite(yes) {
   clearInterval(showInvite._t);
   document.getElementById('invite').style.display = 'none';
-  ws?.send(JSON.stringify({ t: yes ? 'party:accept' : 'party:decline' }));
+  const kind = inviteIsDuel ? 'duel' : 'party';
+  ws?.send(JSON.stringify({ t: `${kind}:${yes ? 'accept' : 'decline'}` }));
 }
+// The banner runs off the snapshot, so it survives a reload mid-duel and
+// clears itself the moment the duel is over however that happened.
+let duelCount = 0;
+function renderDuel(me) {
+  const bar = document.getElementById('duelbar');
+  const d = me && me.duel;
+  if (!d) { bar.style.display = 'none'; return; }
+  const foe = (snapCur && snapCur.players.find(q => q.id === d.foe)) || null;
+  const name = foe ? escapeHtml(foe.name) : 'your opponent';
+  document.getElementById('duelText').innerHTML = d.ready
+    ? `Duel — <b>${name}</b>`
+    : `Duel with <b>${name}</b> <span class="dcount">${Math.max(1, Math.ceil(duelCount))}</span>`;
+  bar.style.display = 'block';
+}
+document.getElementById('duelYield').onclick = () => ws?.send(JSON.stringify({ t: 'duel:yield' }));
 document.getElementById('inviteYes').onclick = () => answerInvite(true);
 document.getElementById('inviteNo').onclick = () => answerInvite(false);
 document.getElementById('partyleave').onclick = () => ws?.send(JSON.stringify({ t: 'party:leave' }));
@@ -8675,6 +8711,20 @@ function onEvent(m) {
   const at = rec ? rec.mesh.position : null;
   switch (m.kind) {
     case 'xp': flyText(`+${m.amount} XP`, 'xp'); addCombat(`You gain ${m.amount} xp.`, 'kill'); break;
+    case 'duelstart':
+      duelCount = m.seconds || 3;
+      clearInterval(renderDuel._t); renderDuel._t = setInterval(() => { duelCount = Math.max(0, duelCount - 1); }, 1000);
+      if (m.a === myId || m.b === myId) sfx.play('target_select', { vol: 0.5, rate: 0.8 });   // the server already says who is duelling whom
+      break;
+    case 'duelgo':
+      clearInterval(renderDuel._t); duelCount = 0;
+      if (m.a === myId || m.b === myId) { flyText('Fight!', 'heal'); sfx.play('level_up', { vol: 0.5, rate: 1.4 }); }
+      break;
+    case 'duelend':
+      clearInterval(renderDuel._t); duelCount = 0;
+      document.getElementById('duelbar').style.display = 'none';
+      if (m.a === myId || m.b === myId) { targetId = null; addCombat(m.winner === myId ? 'You win the duel.' : m.winner != null ? 'You lose the duel.' : 'The duel ends.', 'kill'); }
+      break;
     case 'levelup':
       sfx.play('level_up', { vol: 0.9 });
       flyText(`${m.cls || 'Level'} ${m.level}!`, 'heal');
@@ -8883,18 +8933,23 @@ function showHit(m) {
   const nameOf = (r, id) => id === myId ? 'You' : (r && r.data && r.data.name)
     || (m.hitKind === 'poison' ? 'poison' : m.hitKind === 'burn' ? 'fire' : m.hitKind === 'bleed' ? 'bleeding' : 'Something');
   const an = nameOf(A, m.by), tn = nameOf(T, m.target);
+  // "The Goblin" but never "the Hero142": a person gets their name plain.
+  const isPerson = (r, id) => id === myId || (r && r.kind === 'player') || (r && r.data && r.data.cls != null);
+  const The = (n, r, id) => (isPerson(r, id) || n === 'You' ? n : `The ${n}`);
+  const the = (n, r, id) => (isPerson(r, id) || n === 'You' ? n : `the ${n}`);
+  const AN = The(an, A, m.by), TN = the(tn, T, m.target), ANl = the(an, A, m.by);
 
   // ---- combat log
   if (mine || onMe) {
     if (m.dmg > 0) {
       const killed = T && T.data && m.targetKind === 'monster' && T.data.hp - m.dmg <= 0;
       const how = res === 'glance' ? ' (glancing)' : res === 'block' ? ` (${m.blocked} blocked)` : '';   // "crit" is already in the verb
-      const src = m.by == null ? (m.hitKind === 'poison' ? 'The poison' : m.hitKind === 'bleed' ? 'Your wounds bleed' : 'The fire') : `The ${an}`;
-      if (mine) addCombat(`You ${res === 'crit' ? 'crit' : 'hit'} the ${tn} for ${m.dmg}${how}.`, 'me');
+      const src = m.by == null ? (m.hitKind === 'poison' ? 'The poison' : m.hitKind === 'bleed' ? 'Your wounds bleed' : 'The fire') : AN;
+      if (mine) addCombat(`You ${res === 'crit' ? 'crit' : 'hit'} ${TN} for ${m.dmg}${how}.`, 'me');
       else addCombat(`${src} ${m.by == null && m.hitKind === 'bleed' ? 'for' : (res === 'crit' ? 'crits you for' : 'hits you for')} ${m.dmg}${how}.`, '');
-      if (killed && mine) addCombat(`You have slain the ${tn}!`, 'kill');
-    } else if (mine) addCombat(res === 'miss' ? `You miss the ${tn}.` : `The ${tn} ${res === 'dodge' ? 'dodges' : res === 'parry' ? 'parries' : 'resists'} your attack.`, 'miss');
-    else addCombat(res === 'miss' ? `The ${an} misses you.` : `You ${res === 'dodge' ? 'dodge' : res === 'parry' ? 'parry' : 'resist'} the ${an}'s attack.`, 'miss');
+      if (killed && mine) addCombat(`You have slain ${TN}!`, 'kill');
+    } else if (mine) addCombat(res === 'miss' ? `You miss ${TN}.` : `${The(tn, T, m.target)} ${res === 'dodge' ? 'dodges' : res === 'parry' ? 'parries' : 'resists'} your attack.`, 'miss');
+    else addCombat(res === 'miss' ? `${AN} misses you.` : `You ${res === 'dodge' ? 'dodge' : res === 'parry' ? 'parry' : 'resist'} ${ANl}'s attack.`, 'miss');
   }
   if (m.target === myId && m.dmg > 0) hurtFlash(m.hitKind === 'poison' ? '#3faa4a' : m.hitKind === 'burn' ? '#ff6a1a' : '#c0392b');
   if (m.absorbed) {

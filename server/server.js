@@ -982,6 +982,146 @@ function grantXp(p, amount) {
 }
 
 // ---------------------------------------------------------------------------
+// Duels
+//
+// A duel is a fight between two players that nobody dies in. It borrows the
+// whole of the existing combat path -- weapon speed, the attack table, the
+// swing and its impact frame, every single-target ability -- by letting an
+// opponent stand in wherever that code expects a monster. The two places that
+// had to know the difference are applyHit, which is the one door all player
+// damage goes through, and the target lookup, which used to read straight out
+// of the monsters map.
+//
+// Nobody dies: at a tenth of their health the loser yields, both are put back
+// to full, and neither drops so much as a copper.
+// ---------------------------------------------------------------------------
+const duels = new Map();               // id -> { id, a, b, state, t, zoneId }
+let nextDuelId = 1;
+const DUEL_YIELD = 0.10;               // yield at a tenth of your health
+const DUEL_COUNTDOWN = 3;              // seconds of salute before it starts
+const DUEL_CHALLENGE_TTL = 30;
+const DUEL_START_RANGE = 20;           // how close you must be to challenge
+const DUEL_BREAK_RANGE = 50;           // how far apart ends it
+
+function duelOf(p) { return (p && p.duelId && duels.get(p.duelId)) || null; }
+function duelFoe(p) {
+  const d = duelOf(p); if (!d || d.state !== 'fighting') return null;
+  return players.get(d.a === p.id ? d.b : d.a) || null;
+}
+// The thing this player is fighting, whether it breathes fire or pays tax.
+function combatTargetOf(p) {
+  if (p.combatId == null) return null;
+  const m = monsters.get(p.combatId);
+  if (m) return m;
+  const foe = duelFoe(p);
+  return foe && foe.id === p.combatId ? foe : null;
+}
+function duelPair(d) { return [players.get(d.a), players.get(d.b)]; }
+function duelSay(d, text) { for (const q of duelPair(d)) if (q) send(q.ws, { t: 'event', kind: 'notice', text }); }
+
+function duelChallenge(from, toId) {
+  const to = players.get(Number(toId));
+  const no = (text) => send(from.ws, { t: 'event', kind: 'notice', text });
+  if (!to || to === from) return no('There is nobody there to challenge.');
+  if (to.zoneId !== from.zoneId) return no(`${to.name} is not in this zone.`);
+  if (!from.alive || !to.alive) return no('Not while one of you is dead.');
+  if (duelOf(from) || duelOf(to)) return no('One of you is already in a duel.');
+  if (from.combatId != null || to.combatId != null) return no('Not in the middle of a fight.');
+  if (dist2(from.x, from.z, to.x, to.z) > DUEL_START_RANGE * DUEL_START_RANGE) return no(`${to.name} is too far away.`);
+  if (to.duelChallenge && to.duelChallenge.t > 0) return no(`${to.name} has already been challenged.`);
+  to.duelChallenge = { from: from.id, name: from.name, t: DUEL_CHALLENGE_TTL };
+  send(to.ws, { t: 'duel:challenge', from: from.id, name: from.name, seconds: DUEL_CHALLENGE_TTL });
+  no(`You challenge ${to.name} to a duel.`);
+}
+function duelAccept(p) {
+  const ch = p.duelChallenge; p.duelChallenge = null;
+  if (!ch || ch.t <= 0) return send(p.ws, { t: 'event', kind: 'notice', text: 'That challenge has lapsed.' });
+  const from = players.get(ch.from);
+  if (!from || !from.alive || !p.alive) return send(p.ws, { t: 'event', kind: 'notice', text: 'They are in no state to duel.' });
+  if (duelOf(from) || duelOf(p)) return send(p.ws, { t: 'event', kind: 'notice', text: 'One of you is already in a duel.' });
+  const d = { id: nextDuelId++, a: from.id, b: p.id, state: 'countdown', t: DUEL_COUNTDOWN, zoneId: p.zoneId };
+  duels.set(d.id, d); from.duelId = d.id; p.duelId = d.id;
+  for (const q of duelPair(d)) if (q) { q.combatId = null; q.swing = null; q.queued = null; }
+  broadcast({ t: 'event', kind: 'duelstart', a: d.a, b: d.b, names: [from.name, p.name], seconds: DUEL_COUNTDOWN });
+  duelSay(d, `${from.name} and ${p.name} step up to duel.`);
+}
+function duelDecline(p) {
+  const ch = p.duelChallenge; p.duelChallenge = null;
+  if (!ch) return;
+  const from = players.get(ch.from);
+  if (from) send(from.ws, { t: 'event', kind: 'notice', text: `${p.name} declined your challenge.` });
+}
+// However it ends -- yielded, walked away, logged out -- it ends the same way:
+// both of them whole, and nothing changed hands.
+function duelEnd(d, winnerId, how) {
+  if (!duels.has(d.id)) return;
+  duels.delete(d.id);
+  const [a, b] = duelPair(d);
+  for (const q of [a, b]) {
+    if (!q) continue;
+    q.duelId = null; q.swing = null; q.queued = null;
+    if (q.combatId != null && (q.combatId === d.a || q.combatId === d.b)) q.combatId = null;
+    if (q.alive) { q.hp = q.maxHp; if (q.manaMax) q.mana = q.manaMax; q.rage = 0; q.combatTimer = 0; sendStatus(q); }
+  }
+  const win = winnerId != null ? players.get(winnerId) : null;
+  const lose = win ? (win.id === d.a ? b : a) : null;
+  if (win && lose) systemChat(`${win.name} wins the duel against ${lose.name}.`);
+  else systemChat(how || 'The duel is over.');
+  broadcast({ t: 'event', kind: 'duelend', a: d.a, b: d.b, winner: winnerId != null ? winnerId : undefined });
+}
+function duelForfeit(p, how) {
+  const d = duelOf(p); if (!d) return;
+  const other = d.a === p.id ? d.b : d.a;
+  duelEnd(d, d.state === 'fighting' ? other : null, how || `${p.name} withdraws from the duel.`);
+}
+// A duelling opponent's defensive sheet: their own kit and class, not a
+// monster archetype. A shield in the off hand is a shield in a duel too.
+function playerDefence(t, from) {
+  const eq = equipStats(t.equipment), cs = classStats(t.cls, t.level);
+  const shield = !!(t.equipment && t.equipment.offhand);
+  return {
+    level: cs.def || t.level,
+    dodge: 0.05, parry: 0.06, block: shield ? 0.22 : 0,
+    blockAmt: shield ? Math.round(3 + t.level * 1.4) : 0,
+    armour: eq.def || 0,
+    facing: from ? facing(t.x, t.z, t.yaw, from.x, from.z) : true,
+  };
+}
+// A blow landed on a duelling opponent. Never lethal: the moment it would take
+// them under the yield line the duel is over and they are put back together.
+function duelHit(p, t, dmg, crit, kind, res) {
+  const d = duelOf(p);
+  if (!d || d.state !== 'fighting') return;
+  p.lastCombat = Date.now(); p.combatTimer = REGEN.combatLockout;
+  const floor = Math.max(1, Math.round(t.maxHp * DUEL_YIELD));
+  let done = false;
+  if (dmg > 0) {
+    if (t.hp - dmg <= floor) { dmg = Math.max(0, t.hp - floor); done = true; }
+    t.hp -= dmg;
+    t.combatTimer = REGEN.combatLockout; t.lastCombat = Date.now();
+    if (classDef(t.cls).rage) addRage(t, dmg * classDef(t.cls).rage.damageTaken);
+    if (classDef(p.cls).rage) addRage(p, (classDef(p.cls).rage || {}).autoHit || 0);
+  }
+  broadcast({ t: 'event', kind: 'hit', by: p.id, target: t.id, dmg, crit: !!crit, targetKind: 'player',
+              hitKind: kind || null, res: res ? res.outcome : (dmg > 0 ? 'hit' : 'miss'), blocked: (res && res.blocked) || 0, duel: 1 });
+  if (crit) { savageTrigger(p); procOnCrit(p); }
+  if (done) duelEnd(d, p.id);
+}
+function stepDuels(dt) {
+  for (const d of [...duels.values()]) {
+    const [a, b] = duelPair(d);
+    if (!a || !b) { duelEnd(d, null, 'The duel is called off.'); continue; }
+    if (!a.alive || !b.alive) { duelEnd(d, a.alive ? a.id : b.id, null); continue; }
+    if (a.zoneId !== b.zoneId) { duelEnd(d, null, `${a.name} and ${b.name} part without a winner.`); continue; }
+    if (dist2(a.x, a.z, b.x, b.z) > DUEL_BREAK_RANGE * DUEL_BREAK_RANGE) { duelEnd(d, null, `${a.name} and ${b.name} lose each other, and the duel with it.`); continue; }
+    if (d.state === 'countdown') {
+      d.t -= dt;
+      if (d.t <= 0) { d.state = 'fighting'; duelSay(d, 'Fight!'); broadcast({ t: 'event', kind: 'duelgo', a: d.a, b: d.b }); }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Sitting down
 //
 // A stool is sat on, a bed is lain on. The server owns it so that everyone in
@@ -1816,6 +1956,13 @@ function impactDelay(p) { return Math.max(0.2, Math.min(0.75, playerAttackSpeed(
 function doPlayerAttack(p, m) {
   if (p.atkTimer > 0 || p.swing) return;
   if (m.untargetable) return;   // out of reach mid-leap
+  if (m.kind === 'player') {    // a duel: no threat table, nothing to provoke
+    const w2 = weaponOf(p), delay2 = impactDelay(p);
+    p.atkTimer = playerAttackSpeed(p);
+    p.swing = { id: m.id, t: delay2 };
+    broadcast({ t: 'event', kind: 'swing', by: p.id, target: m.id, dur: delay2, arch: w2.arch, type: w2.type, ranged: !!w2.range });
+    return;
+  }
   if (engagedElsewhere(p, m)) {
     const other = monsters.get(p.engagedWith);
     if (other && other.alive) {
@@ -1835,7 +1982,8 @@ function doPlayerAttack(p, m) {
 // The impact frame: resolve the attack table and land the blow.
 function landPlayerSwing(p) {
   const sw = p.swing; p.swing = null;
-  const m = monsters.get(sw.id);
+  const foe = duelFoe(p);
+  const m = monsters.get(sw.id) || (foe && foe.id === sw.id ? foe : null);
   if (!p.alive || !m || !m.alive || m.zoneId !== p.zoneId) return;
   const w = weaponOf(p);
   if (dist2(p.x, p.z, m.x, m.z) > (weaponRange(w, ATTACK_RANGE) + 1.5) ** 2) return;   // they broke away mid-swing
@@ -1857,6 +2005,7 @@ function playerSwing(p, m, dmgMult) {
 // A monster's defensive sheet. Archetypes decide which lines it gets: a
 // shielded defender blocks, a scuttling spider dodges, a beast does neither.
 function monsterDefence(m, from) {
+  if (m.kind === 'player') return playerDefence(m, from);
   const a = MOB_DEF[m.arch] || MOB_DEF.beast;
   // A defender that has just raised its shield is much harder to get through.
   const wall = (m.debuffs && m.debuffs.mob_shield_wall > 0) ? 0.25 : 0;
@@ -1876,7 +2025,7 @@ function spendRes(p, n) { if (classDef(p.cls).mana) p.mana = Math.max(0, (p.mana
 function refundRes(p, n) { if (classDef(p.cls).mana) p.mana = Math.min(p.manaMax || 0, (p.mana || 0) + n); else p.rage = Math.min(p.rageMax || 0, (p.rage || 0) + n); }
 // Monster effective defence, with Crushed Armour.
 function monsterDef(m) { return (m.defLevel || 1) * ((m.debuffs && m.debuffs.crushed_armor > 0) ? 0.92 : 1) * bardMonsterDefMult(m); }
-function takenMult(m) { return ((m.debuffs && m.debuffs.split_guard > 0) ? 1.08 : 1) * bardMonsterTakenMult(m); }
+function takenMult(m) { if (m.kind === 'player') return 1; return ((m.debuffs && m.debuffs.split_guard > 0) ? 1.08 : 1) * bardMonsterTakenMult(m); }
 // Damage bonus from the player's active buffs (heavy: the ability spends
 // Weapon Flow; spell: a cast, which weapon-only songs don't help).
 function dmgBuff(p, heavy, spell) {
@@ -1899,6 +2048,7 @@ function moveMult(p) {
 function addBuff(p, spec) { p.buffs[spec.id] = { ...spec, t: spec.dur, charges: spec.charges || 0, since: 0 }; if (p.ws) sendStatus(p); }
 // A landed hit: damage, xp, splat, kill; momentum / savage triggers.
 function applyHit(p, m, dmg, crit, kind, res) {
+  if (m.kind === 'player') return duelHit(p, m, dmg, crit, kind, res);   // a duel: same blow, nobody dies
   p.lastCombat = Date.now(); p.combatTimer = REGEN.combatLockout;
   if (m.vulnerable > 0 && dmg > 0) dmg = Math.round(dmg * 1.5);   // a stunned boss takes it hard
   if (dmg > 0) {
@@ -2077,7 +2227,7 @@ function useAbility(p, id, fromQueue) {
   if (resOf(p) < cost) return notice(`Not enough ${(c.resource || 'rage').toLowerCase()}.`);
   if (isSpell(a)) { const err = checkCast(clericCtx, p, a); if (err) return notice(err); }
   if (isBardSpell(a)) { const err = checkBardCast(clericCtx, p, a); if (err) return notice(err); }
-  const target = p.combatId != null ? monsters.get(p.combatId) : null;
+  const target = combatTargetOf(p);
   const inReach = target && target.alive && dist2(p.x, p.z, target.x, target.z) <= reachOf(p) ** 2;
   const needTarget = ['melee', 'execute', 'cone', 'rush'].includes(a.kind);
   if (needTarget && !(target && target.alive)) return notice('You need a target.');
@@ -2090,7 +2240,7 @@ function useAbility(p, id, fromQueue) {
   const fire = () => {
     if (isSpell(a)) { castSpell(clericCtx, p, a); sendStatus(p); return; }
     if (isBardSpell(a)) { castBard(clericCtx, p, a); sendStatus(p); return; }
-    const t = p.combatId != null ? monsters.get(p.combatId) : null;
+    const t = combatTargetOf(p);
     if (['melee', 'execute'].includes(a.kind) && !(t && t.alive && dist2(p.x, p.z, t.x, t.z) <= reachOf(p) ** 2)) return;
     switch (a.kind) {
       case 'melee': {
@@ -2591,7 +2741,7 @@ function stepPlayer(p) {
       p.yaw = Math.atan2(mx, mz); moved = true;
     }
   } else if (p.combatId != null) {
-    const m = monsters.get(p.combatId);
+    const m = combatTargetOf(p);
     if (!m || !m.alive || m.zoneId !== p.zoneId) { p.combatId = null; }
     else {
       // Walk into range AND into line of sight — no swinging through a fence;
@@ -2819,14 +2969,20 @@ setInterval(() => {
   for (const [id, p] of players) {   // bodies left behind by a mid-fight disconnect
     if (p.lingerT == null) continue;
     p.lingerT -= DT;
-    if (p.lingerT <= 0 || !p.alive) { partyRemove(p, `${p.name} has left the party.`); players.delete(id); systemChat(`${p.name} has left the world.`); }
+    if (p.lingerT <= 0 || !p.alive) { duelForfeit(p, `${p.name} leaves the duel.`); partyRemove(p, `${p.name} has left the party.`); players.delete(id); systemChat(`${p.name} has left the world.`); }
   }
   for (const [id, it] of groundItems) { it.ttl -= DT; if (it.ttl <= 0) groundItems.delete(id); }
   for (const p of players.values()) {
-    if (!p.partyInvite) continue;
-    p.partyInvite.t -= DT;
-    if (p.partyInvite.t <= 0) { p.partyInvite = null; send(p.ws, { t: 'party:invite', expired: true }); }
+    if (p.partyInvite) {
+      p.partyInvite.t -= DT;
+      if (p.partyInvite.t <= 0) { p.partyInvite = null; send(p.ws, { t: 'party:invite', expired: true }); }
+    }
+    if (p.duelChallenge) {
+      p.duelChallenge.t -= DT;
+      if (p.duelChallenge.t <= 0) { p.duelChallenge = null; send(p.ws, { t: 'duel:challenge', expired: true }); }
+    }
   }
+  stepDuels(DT);
 
   const now = Date.now();
   if (now - lastSnap >= 1000 / SNAPSHOT_HZ) {
@@ -2851,6 +3007,7 @@ setInterval(() => {
           swing: p.atkTimer > 0 ? { t: +p.atkTimer.toFixed(2), d: +playerAttackSpeed(p).toFixed(2) } : undefined,
           tgt: p.combatId != null ? p.combatId : undefined,   // who they are actually fighting
           seat: p.seat ? { k: p.seat.k, yaw: +p.seat.yaw.toFixed(2) } : undefined,
+          duel: (() => { const d = duelOf(p); return d ? { foe: d.a === p.id ? d.b : d.a, ready: d.state === 'fighting' } : undefined; })(),
           moving: p.moving, inSafe: !!p.inSafe, resting: !!p.resting, inCombat: (p.combatTimer || 0) > 0 || p.combatId != null,
           combatWait: p.lastCombat ? Math.max(0, Math.ceil(LOGOUT_COMBAT_WAIT - (Date.now() - p.lastCombat) / 1000)) : 0,
           weapon: p.equipment.weapon || null,     // held item for the paperdoll
@@ -2968,7 +3125,7 @@ wss.on('connection', (ws) => {
           known: new Set(classDef(cls).abilities.filter(a => a.level <= 1).map(a => a.id)), // learned abilities
           cooldowns: {}, buffs: {}, gcd: 0, momentum: 0, momentumT: 0, rage: 0, rageMax: classStats(cls, 1).rage, rageIdle: 0,
           mana: classStats(cls, 1).mana, manaMax: classStats(cls, 1).mana, friendId: null,
-          partyId: null, partyInvite: null,
+          partyId: null, partyInvite: null, duelId: null, duelChallenge: null,
           meditation: { level: 1, xp: 0 }, resting: false,
           // Everyone starts able to mine and fish; better tools are earned. The
           // pickaxe rides in the bag (it counts for mining from there); the
@@ -3003,7 +3160,10 @@ wss.on('connection', (ws) => {
       }
       case 'attack': {
         if (!player || !player.alive) break;
-        const m = monsters.get(Number(msg.target));
+        // A person can be a target, but only the one you are duelling -- this
+        // is the whole of the game's PvP and it stays inside the ropes.
+        const foe = duelFoe(player);
+        const m = monsters.get(Number(msg.target)) || (foe && foe.id === Number(msg.target) ? foe : null);
         if (m && m.alive && m.zoneId === player.zoneId) {
           player.combatId = m.id; player.moveTo = null; player.pendingChest = null; player.pendingPickup = null; player.pendingMine = null;
         }
@@ -3026,16 +3186,18 @@ wss.on('connection', (ws) => {
         break;
       }
       case 'stand': { if (player) standUp(player); break; }
-      // Trade and Duel are on the menu because that is where they belong, but
-      // neither system is built yet. Say so rather than letting the click do
+      // Trading is still not built; say so rather than letting the click do
       // nothing and look broken.
-      case 'trade:request': case 'duel:challenge': {
+      case 'trade:request': {
         if (!player) break;
         const t = players.get(Number(msg.id));
-        const what = msg.t === 'trade:request' ? 'Trading' : 'Duelling';
-        send(player.ws, { t: 'event', kind: 'notice', text: `${what} is not in the world yet${t ? ` — ${t.name} will have to wait` : ''}.` });
+        send(player.ws, { t: 'event', kind: 'notice', text: `Trading is not in the world yet${t ? ` — ${t.name} will have to wait` : ''}.` });
         break;
       }
+      case 'duel:challenge': { if (player) duelChallenge(player, msg.id); break; }
+      case 'duel:accept':    { if (player) duelAccept(player); break; }
+      case 'duel:decline':   { if (player) duelDecline(player); break; }
+      case 'duel:yield':     { if (player) duelForfeit(player, `${player.name} yields.`); break; }
       case 'party:invite': { if (player) partyInvite(player, msg.id); break; }
       case 'party:accept': { if (player) partyAccept(player); break; }
       case 'party:decline': { if (player) partyDecline(player); break; }
@@ -3263,7 +3425,7 @@ wss.on('connection', (ws) => {
         if (!player) return;
         const wait = player.lastCombat ? LOGOUT_COMBAT_WAIT - (Date.now() - player.lastCombat) / 1000 : 0;
         if (player.alive && wait > 0) { send(ws, { t: 'event', kind: 'notice', text: `You can't log out in combat. Wait ${Math.ceil(wait)}s.` }); break; }
-        send(ws, { t: 'logout' }); partyRemove(player); players.delete(player.id); systemChat(`${player.name} has left the world.`); player = null;
+        send(ws, { t: 'logout' }); duelForfeit(player, `${player.name} leaves the duel.`); partyRemove(player); players.delete(player.id); systemChat(`${player.name} has left the world.`); player = null;
         break;
       }
       case 'chat': {
@@ -3284,7 +3446,7 @@ wss.on('connection', (ws) => {
       systemChat(`${player.name} tried to flee the fight — their body lingers.`);
       return;
     }
-    partyRemove(player); players.delete(player.id); systemChat(`${player.name} has left the world.`);
+    duelForfeit(player, `${player.name} leaves the duel.`); partyRemove(player); players.delete(player.id); systemChat(`${player.name} has left the world.`);
   });
 });
 
