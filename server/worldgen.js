@@ -23,6 +23,17 @@ export function mineAreas(zone) {
   return zone._mineAreas;
 }
 function inMine(zone, x, z, m = 0) { return mineAreas(zone).some(a => dist2(x, z, a.x, a.z) < (a.r + m) ** 2); }
+// Inside one of the enterable houses (axis-aligned, w x d about its centre)?
+// The farm keep-out box is built from the fence line alone, so a cottage set
+// outside the fences was protected by nothing and the forest grew through its
+// roof. Canopy over a roof is fine and looks well; a trunk in the bedroom is
+// not, so the margin only has to keep trunks off the walls.
+export function houseAreas(zone) {
+  return ((zone.farm && zone.farm.houses) || []);
+}
+export function inHouse(zone, x, z, m = 0) {
+  return houseAreas(zone).some(h => Math.abs(x - h.x) < h.w / 2 + m && Math.abs(z - h.z) < h.d / 2 + m);
+}
 
 export function closestOnSeg(px, pz, ax, az, bx, bz) {
   const abx = bx - ax, abz = bz - az;
@@ -84,6 +95,7 @@ export function generateTrees(zone) {
     if (zone.river && closestOnPolyline(x, z, zone.river.points).dist < zone.river.width / 2 + RIVER_BANK + 3) continue;
     if (zone.river && zone.river.bridge && dist2(x, z, zone.river.bridge.x, zone.river.bridge.z) < 15 * 15) continue;
     if (inFarm(zone, x, z, 3)) continue;
+    if (inHouse(zone, x, z, 2.5)) continue;
     if (inMine(zone, x, z, 4)) continue;
     if (zone.pois.some(p => dist2(x, z, p.x, p.z) < clearRadiusS(p) ** 2)) continue;
     if ((zone.rocks || []).some(o => dist2(x, z, o.x, o.z) < (o.r + 2) ** 2)) continue;
@@ -126,6 +138,7 @@ export function generateScatter(zone) {
       // thing the player cannot walk through.
       if (zone.river && closestOnPolyline(x, z, zone.river.points).dist < zone.river.width / 2 + RIVER_BANK + 2.5) continue;
       if (inFarm(zone, x, z, 2)) continue;
+      if (inHouse(zone, x, z, 1.5)) continue;
       // a pit's own dressing (crates, barricades at the ravine dig) may sit in it; nothing else may
       if (inMine(zone, x, z, 3) && !(spec.near && (zone.mines || []).some(m => m.key === spec.near))) continue;
       if ((zone.rocks || []).some(o => dist2(x, z, o.x, o.z) < (o.r + 1.5) ** 2)) continue;
@@ -452,7 +465,7 @@ export function generateEdgeForest(zone, innerPolys, seed, band = 32) {
     if (dEdge < 2.5) continue;                              // not in the rock
     if ((zone.paths || []).some(p => closestOnPolyline(x, z, p).dist < 6)) continue;
     if ((zone.rivers || []).some(r => closestOnPolyline(x, z, r.points).dist < r.width / 2 + RIVER_BANK + 3)) continue;
-    if (inFarm(zone, x, z, 3) || inMine(zone, x, z, 4)) continue;
+    if (inFarm(zone, x, z, 3) || inMine(zone, x, z, 4) || inHouse(zone, x, z, 2.5)) continue;
     if ((zone.pois || []).some(p => dist2(x, z, p.x, p.z) < clearRadiusS(p) ** 2)) continue;
     const near = (t) => dist2(x, z, t.x, t.z) < minSpace * minSpace;
     if (trees.some(near) || out.some(near)) continue;
