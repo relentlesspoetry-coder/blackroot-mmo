@@ -900,7 +900,7 @@ function cloneModel(name, targetH, byMax) {
 const DEFAULT_LOOK = { hairColor: '#4a2e1a', skin: '#cba281' };
 // Bones the procedural rig drives, and the rig-node name each gets, so
 // buildRig finds them by name after the world-aligning rebuild.
-const HUMAN_DRIVEN = { UpperArmL: 'Arm_L', UpperArmR: 'Arm_R', ThighL: 'Leg_L', ThighR: 'Leg_R', ShinL: 'Shin_L', ShinR: 'Shin_R', Head: 'Head' };
+const HUMAN_DRIVEN = { Spine_01: 'Spine_A', Spine_02: 'Spine_B', Spine_03: 'Spine_C', UpperArmL: 'Arm_L', UpperArmR: 'Arm_R', ThighL: 'Leg_L', ThighR: 'Leg_R', ShinL: 'Shin_L', ShinR: 'Shin_R', Head: 'Head' };
 
 // Fuse skinned pieces ({geo, color, remap?}) into one vertex-coloured geometry
 // whose skinIndex refers to the template's bone order.
@@ -5172,6 +5172,10 @@ function buildRig(wrap, style) {
   rig.legL  = part(/^Leg_L$/);  rig.legR  = part(/^Leg_R$/);
   rig.shinL = part(/^Shin_L$/); rig.shinR = part(/^Shin_R$/); // knee joints (player)
   rig.head  = part(/^Head$/);   // chicken: neck-pivoted head for pecking/nodding
+  // The spine, low to high. Every lean and twist is spread across these so
+  // the upper body bends over planted feet, instead of the whole figure
+  // hinging at the ankles like a board.
+  rig.spine = [part(/^Spine_A$/), part(/^Spine_B$/), part(/^Spine_C$/)].filter(Boolean);
   rig.weapon = part(/^Weapon$/); rig.shield = part(/^Shield$/);
   rig.handR = part(/^Hand_R$/); rig.handL = part(/^Hand_L$/); // skinned humans: weapon mounts on the hands
   rig.foreL = part(/^P_ForearmL$/); rig.foreR = part(/^P_ForearmR$/); // elbows (world-aligned pivots): x bends the forearm forward/up, z swings it across
@@ -5235,7 +5239,7 @@ function animateEntity(rec, e, kind, dt) {
       const lift = Number.isFinite(box.min.y) ? rec.mesh.position.y - box.min.y : 0;
       b.rotation.set(keepX, keepYaw, keepZ); b.position.y = keepY;
       const limbs = [];
-      for (const n of [rig.armL, rig.armR, rig.legL, rig.legR, rig.shinL, rig.shinR, rig.head, rig.wingL, rig.wingR, ...(rig.qlegs || []).map(q => q.node)]) {
+      for (const n of [rig.armL, rig.armR, rig.legL, rig.legR, rig.shinL, rig.shinR, rig.head, rig.wingL, rig.wingR, ...(rig.spine || []), ...(rig.qlegs || []).map(q => q.node)]) {
         if (!n) continue;
         limbs.push({ n, ax: n.rotation.x, az: n.rotation.z, vx: (Math.random() - 0.5) * 9, vz: (Math.random() - 0.5) * 6, k: 0.6 + Math.random() * 0.5 });
       }
@@ -5416,10 +5420,12 @@ function animateEntity(rec, e, kind, dt) {
     // Body: step-bob, forward lean into a walk (+Z), gentle roll, breathing swell.
     const br = (1 - a) * (Math.sin(rig.breath) * 0.5 + 0.5);
     b.position.y = rig.home.y + Math.abs(Math.sin(rig.gait)) * g.bob * a - crouch * 0.28;
-    b.position.z = rig.home.z + punch * 0.35 - (rig.flinchX || 0) * 0.14;   // lunge forward (+Z) on a strike, rock back from one taken
-    b.rotation.x = 0.10 * a + crouch * 0.14 - (rig.flinchX || 0) * 0.26;   // lean forward while moving / crouching
-    b.rotation.y = 0;
+    b.position.z = rig.home.z + punch * 0.12 - (rig.flinchX || 0) * 0.14;   // a short step into a strike, rocked back by one taken
+    b.rotation.x = 0; b.rotation.y = 0;
     b.rotation.z = Math.sin(rig.gait * 0.5) * g.roll * a + (rig.flinchZ || 0) * 0.20;
+    // Everything that bends the upper body accumulates here and is laid across
+    // the spine further down, so the legs never come along for the ride.
+    let torsoX = 0.10 * a + crouch * 0.14 - (rig.flinchX || 0) * 0.26, torsoY = 0, torsoZ = 0;   // lean into a walk / a crouch
     b.scale.set(bs.x * (1 - br * 0.02), bs.y * (1 + br * 0.03), bs.z * (1 - br * 0.02));
 
     // Walk stride: thighs anti-phase; the knee bends on the back-swing; arms
@@ -5448,17 +5454,20 @@ function animateEntity(rec, e, kind, dt) {
         rArm = -2.4 * raise; rArmZ = 0.3 * raise;      // right arm hauls the weapon up and over
         rFore = [-1.5 * (u < 0.4 ? raise : Math.max(0, 1 - (u - 0.4) / 0.25)), 0, 0.2 * raise];   // forearm folds behind the head, snaps straight into the cut
         lArm = 0.45 * wind; lArmZ = -0.1 * wind;       // off hand steadies
-        b.rotation.x = 0.10 * a - 0.12 * raise + 0.32 * (u > 0.4 ? 1 - raise : 0);   // lean back, then into the swing
-        b.rotation.y = -0.18 * raise + 0.1 * (u > 0.4 ? 1 - raise : 0);
+        // The torso coils away from the wind-up and uncoils through the cut,
+        // then settles upright. The power reads from the shoulders and the
+        // hips, not from throwing the whole figure back and then forward.
+        torsoX += kf(u, [[0, 0], [0.40, -0.09], [0.62, 0.18], [1, 0]]);
+        torsoY += kf(u, [[0, 0], [0.40, -0.16], [0.62, 0.10], [1, 0]]);
       } else if ((rig.atkKind || 0) === 0) {           // punch: right jab, left guards
         rArm = -1.7 * punch; rArmZ = -0.08;
         lArm = 0.5 * punch;
-        b.rotation.y = -0.28 * punch;                  // twist the torso into it
+        torsoY += -0.28 * punch;                       // twist the torso into it
       } else {                                         // kick: right leg snaps forward, knee extends
         rLeg = -1.4 * punch; rShin = -0.15 * punch;
         lShin = 0.4 * punch;                            // the support knee bends
         lArm = -0.4 * punch; rArm = 0.4 * punch;       // arms balance
-        b.rotation.x = 0.10 * a - 0.12 * punch;        // lean back a touch
+        torsoX += -0.12 * punch;                       // lean back a touch
       }
     }
     // A Bard carries the lute: left hand up on the neck, right forearm resting
@@ -5492,7 +5501,7 @@ function animateEntity(rec, e, kind, dt) {
       if (P.lFore === undefined && P.lArm != null) lFore = [-Math.min(1.3, Math.max(0, -P.lArm - 0.4) * 0.5), 0, 0];
       if (P.strum != null) rig.luteStrum = P.strum; else rec.holdLute = false;   // horn / drum / harp poses (and a swing) take the arms off the lute
       if (P.lLeg != null) lLeg = P.lLeg; if (P.rLeg != null) rLeg = P.rLeg; if (P.lShin != null) lShin = P.lShin; if (P.rShin != null) rShin = P.rShin;
-      if (P.bodyX != null) b.rotation.x = P.bodyX; if (P.bodyY != null) b.rotation.y = P.bodyY; if (P.bodyZ != null) b.rotation.z = P.bodyZ;
+      if (P.bodyX != null) torsoX = P.bodyX; if (P.bodyY != null) torsoY = P.bodyY; if (P.bodyZ != null) torsoZ = P.bodyZ;
       if (P.spin != null) b.rotation.y = P.spin; if (P.bob != null) b.position.y = rig.home.y + P.bob;
       if (rig.head) rig.head.rotation.x = P.head || 0;
       // Effects keyed to the animation's beats, at the character's feet, facing its yaw.
@@ -5500,6 +5509,10 @@ function animateEntity(rec, e, kind, dt) {
       if (!casting) for (let i = 0; i < (A.fx || []).length; i++) { const f = A.fx[i]; if (u >= f.at && !an.fired.has(i)) { an.fired.add(i); spawnFx(f.kind, mp.x, mp.y, mp.z, yaw, f); } }
       if (an.t >= hold + an.dur) { rig.anim = null; if (rig.weapon) rig.weapon.visible = true; }
     }
+    // Spread the bend evenly from the waist up. A model with no spine chain
+    // falls back to hinging the root, the way it did before.
+    if (rig.spine.length) { const w = 1 / rig.spine.length; for (const s of rig.spine) s.rotation.set(torsoX * w, torsoY * w, torsoZ * w); }
+    else { b.rotation.x += torsoX; b.rotation.y += torsoY; b.rotation.z += torsoZ; }
     updateWeaponTrail(rec, !!(rig.anim && ABILITY_ANIMS[rig.anim.id].trail !== false) || rig.atk > 0.15, dt);
     if (rig.armL) rig.armL.rotation.set(lArm, 0, lArmZ);
     if (rig.armR) rig.armR.rotation.set(rArm, 0, rArmZ);
@@ -5514,7 +5527,8 @@ function animateEntity(rec, e, kind, dt) {
       const tR = rec.mesh.localToWorld(new THREE.Vector3(-0.34, 1.52, 0.2)), tL = rec.mesh.localToWorld(new THREE.Vector3(0.22, 1.32, 0.42));
       gr.lerp(tR, k); gl.lerp(tL, k);
       solveArm(rec, rig, 'R', gr, [-0.7, -1.0, -0.5]); solveArm(rec, rig, 'L', gl, [1.0, -0.6, -0.2]);   // sword elbow down and back so the forearm (and blade) rise
-      b.rotation.y += -0.2 * k; b.rotation.x += 0.05 * k;
+      if (rig.spine.length) { const w = k / rig.spine.length; for (const s of rig.spine) { s.rotation.y += -0.2 * w; s.rotation.x += 0.05 * w; } }
+      else { b.rotation.y += -0.2 * k; b.rotation.x += 0.05 * k; }
     }
     if (rec.instrumentObj && rec.holdLute) luteArms(rec, rig, rig.luteStrum || 0, dt);
     else if (rig.fingersR) {   // a held weapon closes the fist; otherwise the hands relax
