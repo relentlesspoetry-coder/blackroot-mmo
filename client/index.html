@@ -6663,11 +6663,27 @@ const ABILITY_ANIMS = {
     P.bodyX = kf(u, [[0, 0], [0.3, -0.2], [0.55, 0.6], [1, 0.05]]);
     P.lLeg = kf(u, [[0, 0], [0.3, -0.8], [0.55, -0.6], [1, 0]]); P.rLeg = kf(u, [[0, 0], [0.3, -0.8], [0.55, 0.5], [1, 0]]); P.lShin = kf(u, [[0, 0], [0.3, 1.2], [0.55, 0.8], [1, 0]]); P.rShin = kf(u, [[0, 0], [0.3, 1.2], [0.55, 0.6], [1, 0]]);
   }, fx: [{ at: 0.53, kind: 'sfx', key: 'groundbreaker' }, { at: 0.55, kind: 'shock', r: 6.0, shake: 0.22 }, { at: 0.55, kind: 'dust', r: 2.2 }, { at: 0.55, kind: 'cracks', r: 2.4, fwd: 0.5 }, { at: 0.55, kind: 'sparks', n: 20, color: 0xc9b48a, fwd: 0.6 }] },
-  reckless_strike: { trailColor: 0xff6a3c, dur: 0.75, pose(u, P) {        // a wild full spin into the strike
-    P.spin = kf(u, [[0, 0], [0.75, Math.PI * 2], [1, Math.PI * 2]]);
-    P.rArm = kf(u, [[0, 0], [0.2, -1.6], [0.75, -1.4], [1, 0]]); P.rArmZ = kf(u, [[0, 0], [0.2, -1.3], [0.75, 0.6], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.5, -0.6], [1, 0]]); P.lArmZ = 0.6;
-    P.bodyX = kf(u, [[0, 0], [0.7, 0.35], [1, 0]]); P.bob = -crouch(u, 0.1, 0.7);
-  }, fx: [{ at: 0.5, kind: 'sfx', key: 'reckless_strike' }, { at: 0.6, kind: 'arc', r: 2.4, spread: 3.2, color: 0xff6a3c }, { at: 0.65, kind: 'sparks', n: 16, color: 0xff7a3c }, { at: 0.65, kind: 'glow', color: 0xff3a1a }, { at: 0.65, kind: 'flash', r: 1.0, color: 0xff8a4a, fwd: 1.2 }] },
+  reckless_strike: { trailColor: 0xff6a3c, dur: 0.75, pose(u, P) {
+    // He throws himself into a full turn and lets the blade come round with it,
+    // which is the whole point -- it is reckless because the spin leaves him
+    // open, and the self-debuff says so. The arm stays out at full stretch the
+    // entire way so the spin, not the shoulder, is what carries the edge round.
+    P.spin  = kf(u, [[0, 0], [0.22, 0.3], [0.72, Math.PI * 2], [1, Math.PI * 2]]);
+    P.rArm  = kf(u, [[0, 0], [0.20, -1.45], [0.72, -1.35], [0.88, -0.55], [1, 0]]);
+    P.rArmZ = kf(u, [[0, 0], [0.20, -0.75], [0.50,  0.15], [0.72,  0.75], [1, 0]]);
+    P.rFore = [kf(u, [[0, 0], [0.20, -0.20], [0.72, -0.10], [1, 0]]), 0, 0];   // held out straight: all the reach he has
+    P.lArm  = kf(u, [[0, 0], [0.30, -0.70], [0.72,  0.45], [1, 0]]); P.lArmZ = kf(u, [[0, 0], [0.30, 0.80], [0.72, 0.55], [1, 0]]);
+    P.bodyX = kf(u, [[0, 0], [0.20, -0.12], [0.62,  0.40], [1, 0]]);
+    P.bob   = kf(u, [[0, 0], [0.20,  0.04], [0.62, -0.16], [1, 0]]);
+    P.lLeg  = kf(u, [[0, 0], [0.25, -0.35], [0.62,  0.30], [1, 0]]);
+    P.rLeg  = kf(u, [[0, 0], [0.25,  0.40], [0.62, -0.35], [1, 0]]); P.rShin = kf(u, [[0, 0], [0.62, 0.50], [1, 0]]);
+  }, fx: [{ at: 0.44, kind: 'sfx', key: 'reckless_strike' },
+          // the turn carries the edge the whole way round, so the arc does too
+          { at: 0.50, kind: 'crescent', r: 1.9, spread: 5.4, y: 1.35, tilt: -0.10, color: 0xff7a3c, life: 0.45 },
+          { at: 0.62, kind: 'sparks', n: 18, color: 0xff7a3c, fwd: 1.3 },
+          { at: 0.62, kind: 'flash', r: 1.0, color: 0xff8a4a, fwd: 1.2 },
+          { at: 0.63, kind: 'glow', color: 0xff3a1a },
+          { at: 0.64, kind: 'dust', r: 1.3, shake: 0.10 }] },
   heavy_riposte: { dur: 0.6, pose(u, P) {           // step back, then a straight-arm thrust
     P.bodyX = kf(u, [[0, 0], [0.25, -0.25], [0.55, 0.4], [1, 0]]);
     P.rArm = kf(u, [[0, 0], [0.25, 0.9], [0.55, -1.7], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.55, 0.7], [1, 0]]);
@@ -6686,11 +6702,28 @@ const ABILITY_ANIMS = {
     P.bodyX = kf(u, [[0, 0], [0.4, -0.35], [1, 0]]); P.rArm = kf(u, [[0, 0], [0.4, 1.2], [1, 0]]); P.lArm = kf(u, [[0, 0], [0.4, 1.2], [1, 0]]);
     P.rArmZ = kf(u, [[0, 0], [0.4, -0.6], [1, 0]]); P.lArmZ = kf(u, [[0, 0], [0.4, 0.6], [1, 0]]); P.head = kf(u, [[0, 0], [0.4, -0.5], [1, 0]]);
   }, fx: [{ at: 0.35, kind: 'sfx', key: 'savage_momentum' }, { at: 0.35, kind: 'ring', r: 1.8, color: 0xff8a4a }, { at: 0.35, kind: 'glow', color: 0x7dff5a }] },
-  bonebreaker: { dur: 0.8, pose(u, P) {             // low sweep at the knees from a deep crouch
-    P.bob = -crouch(u, 0.4, 0.55); P.bodyX = kf(u, [[0, 0], [0.55, 0.5], [1, 0]]);
-    P.rArm = kf(u, [[0, 0], [0.3, -0.6], [0.55, 0.6], [1, 0]]); P.rArmZ = kf(u, [[0, 0], [0.3, -1.3], [0.6, 1.0], [1, 0]]); P.bodyY = kf(u, [[0, 0], [0.3, -0.6], [0.6, 0.7], [1, 0]]);
-    P.lLeg = kf(u, [[0, 0], [0.55, -0.9], [1, 0]]); P.rLeg = kf(u, [[0, 0], [0.55, -0.9], [1, 0]]); P.lShin = kf(u, [[0, 0], [0.55, 1.4], [1, 0]]); P.rShin = kf(u, [[0, 0], [0.55, 1.4], [1, 0]]);
-  }, fx: [{ at: 0.52, kind: 'sfx', key: 'bonebreaker' }, { at: 0.55, kind: 'arc', r: 1.8, spread: 1.8, y: 0.5 }, { at: 0.6, kind: 'sparks', n: 8, color: 0xe8e0c8, fwd: 1.2 }, { at: 0.6, kind: 'dust', r: 1.0 }] },
+  bonebreaker: { trailColor: 0xe8e0c8, dur: 0.82, pose(u, P) {
+    // The low one. He drops into a deep crouch and sweeps the edge through at
+    // shin height -- it is the ability that breaks legs, so it has to visibly
+    // go under the guard rather than across the chest like everything else.
+    // Keys solved against the blade tip (forward, left, up), before the crouch
+    // drops the whole figure another 0.36:
+    //   back at the right (-0.60, -1.60, 0.60) -> through (1.70, 0.10, 0.50)
+    P.rArm  = kf(u, [[0, 0], [0.30, -0.70], [0.38, -0.70], [0.55, -1.00], [0.68, -0.80], [0.86, -0.40], [1, 0]]);
+    P.rArmZ = kf(u, [[0, 0], [0.30, -0.90], [0.38, -0.90], [0.55,  0.30], [0.68,  1.20], [0.86,  0.50], [1, 0]]);
+    P.rFore = [kf(u, [[0, 0], [0.30, 0.30], [0.68, 0.30], [1, 0]]), 0,
+               kf(u, [[0, 0], [0.30, 0.30], [0.55, 0], [1, 0]])];
+    P.lArm  = kf(u, [[0, 0], [0.30, -0.55], [0.68, 0.30], [1, 0]]); P.lArmZ = kf(u, [[0, 0], [0.30, -0.40], [0.68, 0.70], [1, 0]]);
+    P.bodyY = kf(u, [[0, 0], [0.32, -0.60], [0.68, 0.70], [0.88, 0.20], [1, 0]]);
+    P.bodyX = kf(u, [[0, 0], [0.34,  0.20], [0.58, 0.42], [1, 0]]);                // folded down over the sweep
+    P.bob   = kf(u, [[0, 0], [0.34, -0.24], [0.58, -0.28], [0.80, -0.08], [1, 0]]); // the crouch that puts the edge at shin height
+    P.lLeg  = kf(u, [[0, 0], [0.34, -0.85], [0.58, -0.95], [1, 0]]);
+    P.rLeg  = kf(u, [[0, 0], [0.34, -0.80], [0.58, -0.70], [1, 0]]);
+    P.lShin = kf(u, [[0, 0], [0.34, 1.35], [0.58, 1.45], [1, 0]]); P.rShin = kf(u, [[0, 0], [0.34, 1.25], [0.58, 1.30], [1, 0]]);
+  }, fx: [{ at: 0.44, kind: 'sfx', key: 'bonebreaker' },
+          { at: 0.50, kind: 'crescent', r: 1.5, spread: 2.2, y: 0.48, tilt: -0.06, fwd: 0.25, color: 0xf0e8d0 },
+          { at: 0.56, kind: 'sparks', n: 10, color: 0xe8e0c8, fwd: 1.2 },
+          { at: 0.57, kind: 'dust', r: 1.2, shake: 0.08 }] },
   whirlwind_cleave: { dur: 3.0, loop: true, pose(u, P) { // the 3s spin: arms out, turning all the way round each second
     P.spin = u * Math.PI * 6; P.rArm = -1.5; P.lArm = -1.5; P.rArmZ = -1.2; P.lArmZ = 1.2; P.bodyX = 0.12; P.bob = -0.08 + Math.sin(u * Math.PI * 6) * 0.04;
     P.lLeg = Math.sin(u * Math.PI * 6) * 0.4; P.rLeg = -Math.sin(u * Math.PI * 6) * 0.4;
@@ -6844,13 +6877,37 @@ const ABILITY_ANIMS = {
   songweave: { trail: false, hideWeapon: true, dur: 1.2, pose(u, P) { harpPose(P, u * 3.5); P.bodyY = Math.sin(u * Math.PI * 2) * 0.25; }, fx: [{ at: 0.05, kind: 'sfx', key: 'harp' }, { at: 0.2, kind: 'notes', n: 12, color: 0xffd27a }, { at: 0.2, kind: 'ripple', r: 4.0, color: 0xffd27a, life: 1.0 }, { at: 0.5, kind: 'ripple', r: 4.0, color: 0x8ab0ff, life: 1.0 }, { at: 0.8, kind: 'ripple', r: 4.0, color: 0x9be6a0, life: 1.0 }] },
   legendary_ballad: { trail: false, hideWeapon: true, dur: 1.6, pose(u, P) { lutePose(P, u * 3, 0.9); P.head = -0.35; P.bodyX = -0.15; P.bob = 0.05 + 0.03 * Math.sin(u * Math.PI * 3); }, fx: [{ at: 0.05, kind: 'sfx', key: 'ballad' }, { at: 0.15, kind: 'ripple', r: 5.0, color: 0xffd27a, life: 1.3 }, { at: 0.4, kind: 'ripple', r: 5.0, color: 0xffe9a0, life: 1.3 }, { at: 0.65, kind: 'ripple', r: 5.0, color: 0xffd27a, life: 1.3 }, { at: 0.4, kind: 'notes', n: 16, color: 0xffe0a0 }, { at: 0.4, kind: 'staff', r: 6.0, color: 0xffd27a, life: 2.5 }, { at: 0.4, kind: 'glow', color: 0xffd27a }] },
   dreamsong_crescendo: { trail: false, hideWeapon: true, dur: 1.6, castPose(t, P) { lutePose(P, t * 2.5, 0.8 + t * 0.4); P.head = -0.2 - Math.min(0.3, t * 0.15); P.bob = Math.min(0.25, t * 0.12); }, pose(u, P) { lutePose(P, u * 5 + 5, 2.2); P.head = -0.5; P.bob = kf(u, [[0, 0.25], [0.5, 0.45], [1, 0]]); P.bodyX = -0.2; }, fx: [{ at: 0.02, kind: 'sfx', key: 'crescendo' }, { at: 0.05, kind: 'flash', r: 3.5, color: 0xd8b0ff }, { at: 0.05, kind: 'ripple', r: 6.0, color: 0xc9a6ff, life: 1.4 }, { at: 0.25, kind: 'ripple', r: 6.5, color: 0xffd27a, life: 1.4 }, { at: 0.45, kind: 'ripple', r: 7.0, color: 0x8ab0ff, life: 1.4 }, { at: 0.65, kind: 'ripple', r: 7.5, color: 0xffffff, life: 1.4 }, { at: 0.2, kind: 'notes', n: 24, color: 0xffffff, spread: 2.5 }, { at: 0.2, kind: 'staff', r: 8.0, color: 0xc9a6ff, life: 3.5 }, { at: 0.3, kind: 'shock', r: 22, color: 0xd8b0ff, life: 1.4 }] },
-  perfect_masterstroke: { dur: 1.15, pose(u, P) {   // planted stance, weapon drawn far back, a beat, one clean cut
-    P.bob = -crouch(u, 0.18, 0.5);
-    P.rArm = kf(u, [[0, 0], [0.35, 1.4], [0.58, 1.5], [0.7, -1.6], [1, 0]]); P.rArmZ = kf(u, [[0, 0], [0.35, -0.9], [0.58, -1.0], [0.7, 0.8], [1, 0]]);
-    P.lArm = kf(u, [[0, 0], [0.35, -0.6], [0.7, 0.5], [1, 0]]); P.bodyY = kf(u, [[0, 0], [0.35, -1.0], [0.58, -1.05], [0.7, 0.9], [1, 0]]);
-    P.bodyX = kf(u, [[0, 0], [0.58, -0.1], [0.7, 0.4], [1, 0]]);
-    P.lLeg = kf(u, [[0, 0], [0.4, -0.6], [1, 0]]); P.lShin = kf(u, [[0, 0], [0.4, 0.8], [1, 0]]); P.rLeg = kf(u, [[0, 0], [0.4, 0.5], [1, 0]]);
-  }, fx: [{ at: 0.3, kind: 'sfx', key: 'perfect_masterstroke_plant' }, { at: 0.68, kind: 'sfx', key: 'perfect_masterstroke' }, { at: 0.6, kind: 'ring', r: 1.0, color: 0xfff1c8 }, { at: 0.6, kind: 'glow', color: 0xfff1c8 }, { at: 0.7, kind: 'arc', r: 2.8, spread: 2.6, color: 0xfff1c8 }, { at: 0.7, kind: 'flash', r: 1.8, color: 0xffffff, fwd: 1.5, shake: 0.2 }, { at: 0.7, kind: 'streak', fwd: 1.8, y: 1.0, len: 4.5 }] },
+  perfect_masterstroke: { trailColor: 0xfff1c8, dur: 1.15, pose(u, P) {
+    // The capstone, and the only one that is mostly stillness. He plants,
+    // draws the blade right back past the hip and holds it there while the
+    // light gathers, and then spends it all on a single cut. The draw used to
+    // swing the arm back through the hanging pose, which dropped the blade
+    // through his own legs on the way; it now stays carried and the body turn
+    // takes it back instead.
+    // Keys solved against the blade tip (forward, left, up), the hold at
+    // (-1.00, -1.50, 1.25) and the cut running out to (1.95, 0.40, 1.35).
+    P.rArm  = kf(u, [[0, 0], [0.30, -1.20], [0.58, -1.20], [0.70, -1.50], [0.86, -0.60], [1, 0]]);
+    P.rArmZ = kf(u, [[0, 0], [0.30, -0.90], [0.58, -0.90], [0.70, -0.60], [0.86,  0.20], [1, 0]]);
+    P.rFore = [kf(u, [[0, 0], [0.30, 0.30], [0.58, 0.30], [0.70, 0.20], [1, 0]]), 0,
+               kf(u, [[0, 0], [0.58, 0], [0.70, 0.30], [1, 0]])];
+    P.lArm  = kf(u, [[0, 0], [0.30, -0.65], [0.70, 0.45], [1, 0]]); P.lArmZ = kf(u, [[0, 0], [0.30, -0.50], [0.70, 0.70], [1, 0]]);
+    P.bodyY = kf(u, [[0, 0], [0.30, -1.00], [0.58, -1.02], [0.70, 0.85], [0.88, 0.25], [1, 0]]);
+    P.bodyX = kf(u, [[0, 0], [0.58, -0.10], [0.70,  0.20], [1, 0]]);
+    P.bodyZ = Math.sin(u * 44) * 0.012 * kf(u, [[0.32, 0], [0.40, 1], [0.56, 1], [0.60, 0]]);   // the blade trembling on the hold
+    P.bob   = kf(u, [[0, 0], [0.30, -0.12], [0.70, -0.08], [0.90, -0.02], [1, 0]]);             // planted low the whole time
+    P.lLeg  = kf(u, [[0, 0], [0.30, -0.55], [0.70, -0.70], [1, 0]]); P.lShin = kf(u, [[0, 0], [0.30, 0.75], [0.70, 0.85], [1, 0]]);
+    P.rLeg  = kf(u, [[0, 0], [0.30,  0.45], [0.70,  0.55], [1, 0]]); P.rShin = kf(u, [[0, 0], [0.30, 0.35], [1, 0]]);
+  }, fx: [{ at: 0.28, kind: 'sfx', key: 'perfect_masterstroke_plant' },
+          { at: 0.30, kind: 'dust', r: 0.9 },
+          { at: 0.34, kind: 'glyph', r: 1.3, color: 0xfff1c8, spin: 0.9 },   // the light gathering under him through the hold
+          { at: 0.40, kind: 'rise', n: 14, color: 0xfff1c8, y: 1.4, spread: 1.1 },
+          { at: 0.56, kind: 'glow', color: 0xfff1c8 },
+          { at: 0.66, kind: 'sfx', key: 'perfect_masterstroke' },
+          { at: 0.68, kind: 'crescent', r: 2.2, spread: 2.6, y: 1.45, tilt: -0.16, fwd: 0.25, color: 0xfff6dc, life: 0.55 },
+          { at: 0.70, kind: 'crescent', r: 1.55, spread: 2.3, y: 1.35, tilt: -0.12, fwd: 0.25, color: 0xffd98a, life: 0.4 },
+          { at: 0.71, kind: 'flash', r: 1.8, color: 0xffffff, fwd: 1.5, shake: 0.2 },
+          { at: 0.71, kind: 'sparks', n: 24, color: 0xfff1c8, fwd: 1.5 },
+          { at: 0.73, kind: 'shock', r: 3.0, color: 0xfff1c8 }] },
 };
 function startAbilityAnim(rec, id, windup) {
   const A = ABILITY_ANIMS[id], rig = rec.mesh.userData.rig;
@@ -9333,6 +9390,7 @@ if (location.search.includes('debug')) {
     // the target once the turn is added back.
     async solvePose(target, g = {}) {
       const { m, rig, F, L } = this.abilityFrame();
+      rig.anim = null;   // an ability pose held from an earlier still would override the search
       if (g.bodyY) {
         const c = Math.cos(-g.bodyY), s = Math.sin(-g.bodyY);
         target = [target[0] * c - target[1] * s, target[0] * s + target[1] * c, target[2]];
