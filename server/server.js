@@ -43,11 +43,23 @@ function rand(min, max) { return min + Math.random() * (max - min); }
 // A player's chosen appearance (see HAIR_STYLES / OUTFITS in the client): hair
 // style and outfit as indices, colours as '#rrggbb'. Anything off is dropped.
 function sanitizeLook(raw) {
-  // A look is skin and hair colour. Clothing used to live here too; it will
-  // again once there is a wardrobe cut for the new base bodies.
+  // A look is a body colour and what they are wearing: one of the wardrobe's
+  // 50 outfits, with optional per-slot overrides by piece name (0 = bare).
   const o = raw && typeof raw === 'object' ? raw : {};
   const col = (v, d) => (typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v)) ? v.toLowerCase() : d;
-  return { hairColor: col(o.hairColor, '#4a2e1a'), skin: col(o.skin, '#cba281') };
+  const look = { hairColor: col(o.hairColor, '#4a2e1a'), skin: col(o.skin, '#cba281') };
+  const n = Math.floor(Number(o.outfit));
+  if (Number.isFinite(n) && n >= 1 && n <= 50) look.outfit = n;
+  if (o.wear && typeof o.wear === 'object') {
+    const wear = {};
+    for (const slot of ['shirt', 'pants', 'hat', 'boots', 'gloves', 'cape']) {
+      const v = o.wear[slot];
+      if (v === 0 || v === null) wear[slot] = 0;
+      else if (typeof v === 'string' && /^[A-Za-z]+_[A-Za-z0-9]+_[A-Za-z]+$/.test(v)) wear[slot] = v;
+    }
+    if (Object.keys(wear).length) look.wear = wear;
+  }
+  return look;
 }
 
 // What the character visibly wears from their equipment: pack item ids by

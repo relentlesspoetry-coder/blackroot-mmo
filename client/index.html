@@ -426,6 +426,7 @@
   <div class="card">
     <input id="nameInput" maxlength="16" placeholder="Character name" autocomplete="off" />
     <div id="lookrows">
+      <div class="lookrow"><label>Outfit <select id="outfitSel"></select></label></div>
       <div class="lookrow"><label>Skin <input type="color" id="skinCol" value="#cba281"></label><label>Hair <input type="color" id="hairCol" value="#4a2e1a"></label></div>
     </div>
     <div id="fixedlook">The Fighter comes as he is — mantle, pauldron and all.</div>
@@ -1028,7 +1029,7 @@ function buildBodyTemplate(key) {
   for (const m of skinned) m.removeFromParent();
   root.updateMatrixWorld(true);
   const box = new THREE.Box3(); for (const pt of parts) { pt.geo.computeBoundingBox(); box.union(pt.geo.boundingBox); }
-  const tpl = { root, skeleton, boneNames, parts, parent, armUpper, armFore,
+  const tpl = { key, root, skeleton, boneNames, parts, parent, armUpper, armFore,
     geos: new Map(), height: box.max.y - Math.min(0, box.min.y), minY: box.min.y };
   bodyTemplates.set(key, tpl);
   return tpl;
@@ -1053,6 +1054,71 @@ function bodyGeometry(T, look) {
   T.geos.set(key, geo);
   return geo;
 }
+// ---------------------------------------------------------------------------
+// The wardrobe: one library GLB holding every garment in the game — 50 outfits'
+// worth of shirts, pants, hats, boots, gloves and capes — all skinned to the
+// same skeleton as the bases. A look is then just a list of piece names to fuse
+// on top of the body, and any piece goes with any other.
+// ---------------------------------------------------------------------------
+const WARDROBE_SLOTS = ['shirt', 'pants', 'hat', 'boots', 'gloves', 'cape'];
+let wardrobe = null, wardrobeLoading = null;
+function loadWardrobe() {
+  if (wardrobe) return Promise.resolve(wardrobe);
+  if (wardrobeLoading) return wardrobeLoading;
+  wardrobeLoading = Promise.all([
+    gltfLoader.loadAsync('models/human/Wardrobe.glb'),
+    fetch('models/human/wardrobe.json').then(r => r.json()).catch(() => null),
+  ]).then(([g, manifest]) => {
+    // A garment with trim or metal is several materials, and the loader splits
+    // those into Name_1, Name_2..., so parts are collected under the piece's
+    // own name — otherwise every trimmed shirt in the wardrobe goes missing.
+    const pieces = new Map();
+    let boneNames = null;
+    g.scene.traverse(o => {
+      if (!o.isSkinnedMesh) return;
+      if (!boneNames) boneNames = o.skeleton.bones.map(b => flatBoneName(b.name));
+      if (!/^(Shirt|Pants|Hat|Boots|Gloves|Cape)_/.test(o.name)) return;
+      const base = o.name.replace(/_\d+$/, '');
+      const mat = Array.isArray(o.material) ? o.material[0] : o.material;
+      const part = { geo: o.geometry, color: mat.color.clone(), matName: mat.name, name: o.name };
+      if (pieces.has(base)) pieces.get(base).push(part); else pieces.set(base, [part]);
+    });
+    wardrobe = { pieces, manifest, boneNames, geos: new Map() };
+    return wardrobe;
+  }).catch(e => { console.warn('Wardrobe failed to load', e); wardrobe = { pieces: new Map(), manifest: null, boneNames: null, geos: new Map() }; return wardrobe; });
+  return wardrobeLoading;
+}
+// Which garments a look wears: an outfit number out of the manifest, with any
+// per-slot override on top (so an NPC can wear the farmhand's shirt and a
+// knight's boots if that is what the world wants).
+function lookPieces(look) {
+  if (!wardrobe || !look) return [];
+  const out = [];
+  const o = look.outfit && wardrobe.manifest ? wardrobe.manifest.outfits[look.outfit - 1] : null;
+  for (const slot of WARDROBE_SLOTS) {
+    const override = look.wear && look.wear[slot];
+    if (override === 0 || override === null) continue;               // bare on purpose
+    const name = typeof override === 'string' ? override : (o && o.pieces[slot] && o.pieces[slot].object);
+    if (name && wardrobe.pieces.has(name)) out.push(name);
+  }
+  return out;
+}
+// The fused garments for one look, cached by the pieces themselves so two
+// villagers in the same outfit share the geometry.
+function wardrobeGeometry(T, look) {
+  const names = lookPieces(look);
+  if (!names.length) return null;
+  const key = T.key + '|' + names.join(',');
+  if (wardrobe.geos.has(key)) return wardrobe.geos.get(key);
+  // The library is skinned to the same skeleton, but its bones keep their own
+  // names and order — map them onto this body's.
+  const remap = wardrobe.boneNames ? wardrobe.boneNames.map(n => Math.max(0, T.boneNames.indexOf(n))) : null;
+  const parts = names.flatMap(n => wardrobe.pieces.get(n).map(pt => ({ ...pt, remap })));
+  const geo = fuseSkinned(parts, T.boneNames);
+  wardrobe.geos.set(key, geo);
+  return geo;
+}
+
 function makeBody(key, targetH, look) {
   const T = buildBodyTemplate(key);
   if (!T) return null;
@@ -1070,6 +1136,17 @@ function makeBody(key, targetH, look) {
   const wrap = new THREE.Group(); wrap.add(obj);
   wrap.userData.armUpper = T.armUpper * s; wrap.userData.armFore = T.armFore * s;
   wrap.userData.look = look || null;
+  // Clothes arrive when the wardrobe does, bound to the same skeleton.
+  if (look && (look.outfit || look.wear)) loadWardrobe().then(() => {
+    if (!wrap.parent) return;
+    const wg = wardrobeGeometry(T, look);
+    if (!wg) return;
+    const cm = new THREE.SkinnedMesh(wg, detailize(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8 }), null, { attr: true, scale: 0.9 }));
+    cm.name = 'Outfit'; cm.castShadow = cm.receiveShadow = true; cm.frustumCulled = false;
+    cm.bind(skeleton, new THREE.Matrix4());
+    (obj.getObjectByName(T.parent.name) || obj).add(cm);
+    cm.traverse(o2 => Object.assign(o2.userData, wrap.userData.pickTag || {}));
+  });
   return wrap;
 }
 
@@ -8999,6 +9076,7 @@ if (location.search.includes('debug')) {
     get quests() { return questData; },
     get entities() { return entityMeshes; },
     get npcs() { return npcMeshes; },
+    get wardrobe() { return wardrobe; }, wardrobePieces: (look) => lookPieces(look),
     get self() { return entityMeshes.get(myId); },
     send(o) { ws?.send(JSON.stringify(o)); },   // raw message to the server (editor / test hooks)
     get friendId() { return friendId; }, target(id) { setFriend(id); },
@@ -9306,19 +9384,27 @@ async function enterZone(zdata) {
 }
 
 let pickedClass = 'fighter';
-// Character look on the login card: skin and hair colour, remembered. Clothing
-// will come back with a wardrobe cut for this body.
+// Character look on the login card: an outfit out of the wardrobe, and skin and
+// hair colour. Remembered between visits.
 const hairCol = document.getElementById('hairCol'), skinCol = document.getElementById('skinCol');
+const outfitSel = document.getElementById('outfitSel');
+fetch('models/human/wardrobe.json').then(r => r.json()).then(m => {
+  for (const o of m.outfits) outfitSel.add(new Option(o.title, o.index));
+  try { const saved = JSON.parse(localStorage.getItem('bk.look') || 'null'); if (saved && saved.outfit) outfitSel.value = saved.outfit; } catch (e) {}
+  if (!outfitSel.value) outfitSel.value = CLASS_OUTFIT[pickedClass] || 1;
+}).catch(() => {});
 try {
   const saved = JSON.parse(localStorage.getItem('bk.look') || 'null');
   if (saved) { if (saved.hairColor) hairCol.value = saved.hairColor; if (saved.skin) skinCol.value = saved.skin; }
 } catch (e) {}
-function currentLook() { return { hairColor: hairCol.value, skin: skinCol.value }; }
+// The Fighter wears his own figure, so his outfit choice is ignored.
+const CLASS_OUTFIT = { fighter: 47, cleric: 31, bard: 19 };
+function currentLook() { return { hairColor: hairCol.value, skin: skinCol.value, outfit: +outfitSel.value || CLASS_OUTFIT[pickedClass] || 1 }; }
 // Class pick on the login card; remembered like the look.
 try { const c = localStorage.getItem('bk.cls'); if (['fighter', 'cleric', 'bard'].includes(c)) pickedClass = c; } catch (e) {}
 document.querySelectorAll('#classRow .classopt').forEach(d => {
   d.classList.toggle('sel', d.dataset.cls === pickedClass);
-  d.onclick = () => { pickedClass = d.dataset.cls; document.querySelectorAll('#classRow .classopt').forEach(x => x.classList.toggle('sel', x === d)); syncLookRows(); try { localStorage.setItem('bk.cls', pickedClass); } catch (e) {} };
+  d.onclick = () => { pickedClass = d.dataset.cls; document.querySelectorAll('#classRow .classopt').forEach(x => x.classList.toggle('sel', x === d)); if (CLASS_OUTFIT[pickedClass]) outfitSel.value = CLASS_OUTFIT[pickedClass]; syncLookRows(); try { localStorage.setItem('bk.cls', pickedClass); } catch (e) {} };
 });
 // A Fighter's figure is fixed, so the pickers that wouldn't do anything hide.
 function syncLookRows() {
