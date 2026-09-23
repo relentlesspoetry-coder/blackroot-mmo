@@ -4210,7 +4210,7 @@ function buildNpcs() {
     // Use a real humanoid model (Male/Female) when one is given and loaded.
     if (def.model === 'Male' || def.look) g = makeHuman(def.look, 2.3);
     if (!g && def.model && LOADED[def.model]) {
-      g = cloneModel(def.model, 2.3);
+      g = cloneModel(def.model, def.h || 2.3);   // a goblin is not the height of a guardsman
       if (g) mergeRigidParts(g);
     }
     if (g) g.rotation.y = def.yaw != null ? def.yaw : Math.PI;
@@ -4351,9 +4351,21 @@ function buildWorldObjects() {
   }
   applyObjectStates();
 }
-// A lit lantern burns; a picked clump of glowcaps is gone until it grows back.
+// A lit lantern burns; a doused signal fire becomes a cold pit; a picked clump
+// of glowcaps is gone until it grows back.
 function applyObjectState(rec) {
   const o = rec.def;
+  if (o.doused && rec.used && !rec.swapped) {
+    rec.swapped = true;
+    loadModels([o.doused]).then(() => {
+      const g = cloneModel(modelKey(o.doused), null);
+      if (!g) return;
+      for (const c of [...rec.group.children]) if (c.isObject3D && !c.isLight) rec.group.remove(c);
+      if (o.s) g.scale.setScalar(o.s);
+      g.traverse(x => { if (x.isMesh) { x.userData.pickKind = 'object'; x.userData.pickId = o.id; } });
+      rec.group.add(g);
+    });
+  }
   const lit = o.tag === 'lantern' ? rec.used : false;
   rec.group.visible = !rec.spent;
   if (o.light || lit) {

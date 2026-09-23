@@ -79,7 +79,7 @@ function lookOf(p) { return Object.keys(p.gear || {}).length ? { ...p.look, gear
 function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
 import {
   QUESTS, questPayload, questProgress, canStart, recordKill, recordReach,
-  consumeQuestItems, recordUse, recordTalk,
+  consumeQuestItems, recordUse, recordTalk, objectiveProgress,
 } from './quests.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -1299,6 +1299,16 @@ function sendQuests(p) {
   }
 }
 
+// Optional objectives pay their own bonus when you hand the quest in.
+function questBonus(p, q) {
+  let gold = 0, xp = 0;
+  for (const o of (q.objectives || [])) {
+    if (!o.optional || !o.bonus) continue;
+    if (!objectiveProgress(p, q, o).done) continue;
+    gold += o.bonus.gold || 0; xp += o.bonus.xp || 0;
+  }
+  return { gold, xp };
+}
 function notifyQuestProgress(p, ids) {
   if (!ids || !ids.length) return;
   for (const id of new Set(ids)) {
@@ -1333,9 +1343,13 @@ function acceptQuest(p, id) {
 
 function turnInQuest(p, id) {
   const q = QUESTS[id];
-  if (!q || !p.quests.has(id) || !nearGiver(p, q)) return;
-  if (!questProgress(p, q).complete) return;
+  if (!q || !p.quests.has(id)) return;
+  // Say why, rather than doing nothing: "walk back to them" is a fair thing
+  // for the game to tell you.
+  if (!nearGiver(p, q)) return send(p.ws, { t: 'event', kind: 'notice', text: `You need to speak to ${q.giver} in person.` });
+  if (!questProgress(p, q).complete) return send(p.ws, { t: 'event', kind: 'notice', text: `"${q.name}" is not finished yet.` });
 
+  const bonus = questBonus(p, q);      // read before the tallies are cleared
   consumeQuestItems(p, q);
   p.quests.delete(id);
   p.questDone.add(id);
@@ -1343,11 +1357,12 @@ function turnInQuest(p, id) {
   delete p.questKills[id];
 
   const r = q.reward || {};
-  if (r.gold) p.gold += r.gold;
+  const gold = (r.gold || 0) + bonus.gold, xp = (r.xp || 0) + bonus.xp;
+  if (gold) p.gold += gold;
   for (const it of (r.items || [])) p.inventory.push(it);
   send(p.ws, { t: 'event', kind: 'questcomplete', id, name: q.name,
-    text: q.done, xp: r.xp || 0, gold: r.gold || 0, items: r.items || [] });
-  if (r.xp) grantXp(p, r.xp);          // may level the player up
+    text: q.done, xp, gold, items: r.items || [], bonus: (bonus.gold || bonus.xp) ? bonus : undefined });
+  if (xp) grantXp(p, xp);              // may level the player up
   systemChat(`${p.name} completed "${q.name}".`);
   sendBag(p);                           // also re-sends the quest payload
 }
@@ -2468,12 +2483,14 @@ function useWorldObject(p, id) {
   if (!objectReady(zone, o)) return notice(`There is nothing left to take here yet.`);
   // Some things only make sense while you are on the errand that asked for them.
   if (o.quest && !p.quests.has(o.quest)) return notice(o.idleText || 'You have no reason to touch that.');
+  if (o.needDead && !((p.questKills[o.quest] || {})['★' + o.needDead] > 0)) return notice(`${o.needDead} is still standing.`);
   if (o.need) {
     const have = p.inventory.filter(n => n === o.need.item).length;
     if (have < (o.need.count || 1)) return notice(`You need ${o.need.count || 1} × ${o.need.item}.`);
     for (let i = 0; i < (o.need.count || 1); i++) p.inventory.splice(p.inventory.indexOf(o.need.item), 1);
   }
   if (o.gives) { for (let i = 0; i < (o.gives.count || 1); i++) p.inventory.push(o.gives.item); }
+  if (o.hurt) hurtPlayer(p, o.hurt, null, 'poison');   // the red ones bite back
   if (o.respawn) o._until = Date.now() + o.respawn * 1000;
   if (o.once) { /* recorded below */ }
   const moved = recordUse(p, o);
@@ -2740,8 +2757,8 @@ wss.on('connection', (ws) => {
       }
       case 'talk': {
         if (!player) break;
-        const moved = recordTalk(player, String(msg.npc || ''));
-        if (moved.length) notifyQuestProgress(player, moved);
+        const moved = recordTalk(player, String(msg.npc || ''));   // may also hand over what you were asked to bring
+        if (moved.length) { sendBag(player); notifyQuestProgress(player, moved); }
         break;
       }
       case 'useobject': {

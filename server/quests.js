@@ -51,6 +51,187 @@ export const QUESTS = {
     reward: { xp: 150, gold: 40, items: ['Minor Healing Potion', 'Minor Healing Potion'] },
   },
 
+  // --- GOBLIN TROUBLE -------------------------------------------------------
+  // A straightforward enemy after the corruption's opening questions: raids,
+  // stolen stores, and a chief who only knows the hard way.
+  dw_supplies: {
+    id: 'dw_supplies', name: 'Missing Supplies', giver: 'tessa', minLevel: 2, requires: ['dw_lanterns'],
+    summary: 'Find the supply cart that never arrived, and get back what the goblins left.',
+    intro: "Yesterday's supply cart never arrived. Find the cart — and if goblins took the stores, bring back whatever hasn't been eaten, burned, or worn as a hat.",
+    active: 'The cart went missing on the eastern road. Read the scene, thin out the raiders, and recover four crates.',
+    done: 'Four crates. That is four more than I expected.',
+    talk: [
+      ['n', 'We have a problem.'],
+      ['y', 'The forest?'],
+      ['n', 'A different problem.'],
+      ['y', 'Goblins?'],
+      ['n', "You're getting disturbingly good at this."],
+      ['n', "Yesterday's supply cart never arrived."],
+      ['n', 'Find the cart.'],
+      ['n', "If goblins took the supplies, bring back whatever hasn't been eaten, burned, or worn as a hat."],
+    ],
+    accept: 'East road, past the thicket. Mind the ditch.',
+    outro: [
+      ['n', 'Four crates?'],
+      ['y', "That's what survived."],
+      ['n', 'Food?'],
+      ['y', 'Mostly.'],
+      ['n', 'Medicine?'],
+      ['y', 'Some.'],
+      ['n', 'My coffee?'],
+      ['y', '...No.'],
+      ['n', 'Those monsters.'],
+    ],
+    objectives: [
+      { type: 'use', tag: 'cart', count: 3, label: 'The cart, read over' },
+      { type: 'kill', target: 'goblin', count: 6, label: 'Woodfang goblins slain' },
+      { type: 'collect', item: 'Supply Crate', count: 4, label: 'Supply crates recovered' },
+    ],
+    reward: { xp: 350, gold: 100, items: ["Hunter's Rations", "Hunter's Rations"] },
+  },
+  dw_pib: {
+    id: 'dw_pib', name: 'A Goblin Named Pib', giver: 'tessa', minLevel: 3, requires: ['dw_supplies'],
+    summary: 'Talk to the goblin by the creek — and pay his price.',
+    intro: 'One of the scouts saw a goblin hiding near the creek. He was not armed. Apparently he waved. Go and talk to him before somebody shoots him.',
+    active: 'Pib is down by Blackroot Creek. He wants three redberries and a honeycake before he says a word.',
+    done: 'You traded food to a goblin.',
+    talk: [
+      ['n', 'One of the scouts saw a goblin hiding near the creek.'],
+      ['y', "I'll deal with him."],
+      ['n', 'Wait.'],
+      ['n', "He wasn't armed."],
+      ['y', 'A goblin?'],
+      ['n', 'Apparently he waved.'],
+      ['y', "That's suspicious."],
+      ['n', 'Extremely.'],
+      ['n', 'Go and talk to him before somebody shoots him.'],
+    ],
+    accept: 'Down by the creek, west of here. Try not to be the one who shoots him.',
+    outro: [
+      ['n', 'You traded food to a goblin.'],
+      ['y', 'It worked.'],
+      ['n', "I suppose I can't argue with that."],
+      ['y', 'Three signal fires protect their camp.'],
+      ['n', "Then we'd better put them out."],
+    ],
+    objectives: [
+      { type: 'talk', npc: 'pib', label: 'Speak with Pib' },
+      { type: 'gather', tag: 'redberry', count: 3, label: 'Redberries picked' },
+      { type: 'use', object: 'honeycake', label: 'A honeycake from the larder' },
+      { type: 'give', npc: 'pib', items: [{ item: 'Redberry', count: 3 }, { item: 'Honeycake', count: 1 }], label: 'Pay Pib his price' },
+    ],
+    reward: { xp: 300, gold: 80 },
+  },
+  dw_smoke: {
+    id: 'dw_smoke', name: 'Smoke on the Ridge', giver: 'lysa', minLevel: 4, requires: ['dw_pib'],
+    summary: "Put out the goblin signal fires so Rattlecap can't call for help.",
+    intro: 'Three fires on the ridge above the Wolf Den. Put them out and Rattlecap cannot summon reinforcements. Quietly, preferably.',
+    active: 'Three signal fires on the ridge, and the lookouts watching them.',
+    done: 'No smoke. No reinforcements.',
+    talk: [
+      ['n', 'So Pib gave us the camp layout.'],
+      ['y', 'For a cake.'],
+      ['n', "I've worked for less."],
+      ['y', "What's the plan?"],
+      ['n', 'Three fires.'],
+      ['n', 'Put them out and Rattlecap cannot summon reinforcements.'],
+      ['y', 'Quietly?'],
+      ['n', 'Preferably.'],
+      ['y', "And if quiet doesn't work?"],
+      ['n', 'Then loudly.'],
+    ],
+    accept: 'Up the ridge, east. I will be watching the smoke.',
+    outro: [
+      ['n', 'No smoke.'],
+      ['y', 'No reinforcements.'],
+      ['n', 'Excellent.'],
+      ['n', 'Now comes the fun part.'],
+      ['y', 'Your definition of fun worries me.'],
+    ],
+    objectives: [
+      { type: 'use', tag: 'signalfire', count: 3, label: 'Signal fires doused' },
+      { type: 'kill', target: 'goblin_archer', count: 3, label: 'Goblin lookouts killed' },
+    ],
+    reward: { xp: 450, gold: 110 },
+  },
+  dw_rattlecap: {
+    id: 'dw_rattlecap', name: 'Chief Rattlecap', giver: 'rowan', minLevel: 5, requires: ['dw_smoke'],
+    summary: "Take the Wolf Den camp, kill the chief, and bring the outpost's banner home.",
+    intro: 'The signal fires are out and Rattlecap is isolated. His raids have cost us food, medicine, weapons and people. End it — and bring back our banner.',
+    active: 'The camp at the Wolf Den: the warriors, his two brutes, the chief himself, and the banner he strung up.',
+    done: "That's our banner.",
+    talk: [
+      ['n', 'The signal fires are out.'],
+      ['y', "Rattlecap's isolated."],
+      ['n', "Then we're ending this."],
+      ['n', 'His raids have cost us food, medicine, weapons, and people.'],
+      ['y', "I'll bring him down."],
+      ['n', 'One more thing.'],
+      ['y', 'What?'],
+      ['n', 'He stole our banner.'],
+      ['y', "That's what you're worried about?"],
+      ['n', 'No.'],
+      ['n', "But I'd like it back."],
+    ],
+    accept: 'Then go. We will keep a fire lit for you.',
+    outro: [
+      ['n', "That's our banner."],
+      ['y', "And Rattlecap won't be raiding anyone again."],
+      ['n', 'Good work.'],
+      ['y', 'Something strange happened at the camp.'],
+      ['n', 'What?'],
+      ['y', 'Several goblins had black roots growing through their armour.'],
+      ['n', 'So the corruption reached them too.'],
+      ['y', 'Or they reached it.'],
+    ],
+    objectives: [
+      { type: 'kill', target: 'goblin_warrior', count: 8, label: 'Woodfang goblins slain' },
+      { type: 'kill', target: 'goblin_chief', count: 2, label: 'Goblin brutes slain' },
+      { type: 'slay', name: 'Chief Rattlecap', label: 'Chief Rattlecap killed' },
+      { type: 'use', object: 'banner', label: 'Outpost banner recovered' },
+    ],
+    reward: { xp: 750, gold: 225, items: ["Rattlecap's Trophy"] },
+  },
+
+  // --- Old Fenwick, and the difference between a mushroom and a mistake ------
+  dw_mushrooms: {
+    id: 'dw_mushrooms', name: 'Mushroom Business', giver: 'fenwick', minLevel: 3,
+    summary: 'Pick browncaps and mooncaps for Fenwick. Leave the red ones alone.',
+    intro: 'Brown ones are safe. Blue ones are safe. Red ones depend on how attached you are to your organs. Five of each of the first two, and use your eyes.',
+    active: 'Five browncaps, five mooncaps, and not one rotcap if you can help it.',
+    done: "Browncaps. Mooncaps. Let's see what else you brought me.",
+    talk: [
+      ['n', 'You know mushrooms?'],
+      ['y', 'A little.'],
+      ['n', 'Good.'],
+      ['n', 'Then you know the brown ones are safe.'],
+      ['y', 'Right.'],
+      ['n', 'And the blue ones?'],
+      ['y', 'Safe?'],
+      ['n', 'Correct.'],
+      ['y', 'And the red ones?'],
+      ['n', 'Depends.'],
+      ['y', 'On what?'],
+      ['n', 'How attached you are to your organs.'],
+      ['y', "I'll avoid the red ones."],
+      ['n', "You're a natural."],
+    ],
+    accept: 'Five of each. Take your time; the woods are not going anywhere.',
+    outro: [
+      ['n', "Let's see."],
+      ['n', 'Browncaps.'],
+      ['n', 'Mooncaps.'],
+      ['y', 'And no rotcaps.'],
+      ['n', 'We shall see. I can smell it when you are lying.'],
+    ],
+    objectives: [
+      { type: 'collect', item: 'Browncap', count: 5, label: 'Browncaps' },
+      { type: 'collect', item: 'Mooncap', count: 5, label: 'Mooncaps' },
+      { type: 'avoid', tag: 'rotcap', label: 'Not one rotcap picked', optional: true, bonus: { gold: 45 } },
+    ],
+    reward: { xp: 250, gold: 65, items: ['Mushroom Stew', 'Mushroom Stew', 'Mushroom Stew'] },
+  },
+
   // --- Warden Alric, Entrance Clearing -------------------------------------
   feathers: {
     id: 'feathers', name: 'Feathers and Hide', giver: 'alric', minLevel: 1,
@@ -245,14 +426,19 @@ export function objectiveProgress(p, q, obj) {
     // Work done rather than goods held: six glowcaps picked stay picked even
     // after the lanterns burn them.
     case 'gather': have = (p.questKills[q.id] && p.questKills[q.id]['@' + obj.tag]) || 0; break;
+    // A bonus for what you did NOT do — pick the red ones, in Fenwick's case.
+    case 'avoid':  have = ((p.questKills[q.id] && p.questKills[q.id]['@' + obj.tag]) || 0) === 0 ? 1 : 0; break;
     case 'talk':   have = p.questFlags.has(`talk:${obj.npc}`) ? 1 : 0; break;
+    // Goods handed to someone other than the quest giver (a goblin, say).
+    case 'give':   have = p.questFlags.has(`give:${q.id}:${obj.npc}`) ? 1 : 0; break;
   }
   return { have: Math.min(have, need), need, label: obj.label, done: have >= need };
 }
 
 export function questProgress(p, q) {
-  const objs = q.objectives.map(o => objectiveProgress(p, q, o));
-  return { objectives: objs, complete: objs.every(o => o.done) };
+  const objs = q.objectives.map(o => ({ ...objectiveProgress(p, q, o), optional: !!o.optional }));
+  // Optional lines are for the bonus, not for finishing the job.
+  return { objectives: objs, complete: objs.every(o => o.optional || o.done) };
 }
 
 export function canStart(p, q) {
@@ -340,7 +526,8 @@ export function recordUse(p, obj) {
     const q = QUESTS[id]; if (!q) continue;
     for (const o of (q.objectives || [])) {
       if (o.type === 'use' && (o.object === obj.id || (o.tag && o.tag === obj.tag))) { touched.push(id); continue; }
-      if (o.type === 'gather' && o.tag === obj.tag) {
+      if ((o.type === 'gather' || o.type === 'avoid') && o.tag === obj.tag) {
+        if (o.type === 'avoid') { const key = '@' + o.tag; p.questKills[id] = p.questKills[id] || {}; p.questKills[id][key] = (p.questKills[id][key] || 0) + 1; touched.push(id); continue; }
         const key = '@' + o.tag, need = o.count || 1;
         p.questKills[id] = p.questKills[id] || {};
         if ((p.questKills[id][key] || 0) >= need) continue;
@@ -353,11 +540,23 @@ export function recordUse(p, obj) {
 }
 // Called when a player opens a conversation with an NPC.
 export function recordTalk(p, npcId) {
+  const touched = [];
   const flag = `talk:${npcId}`;
-  const want = [...p.quests.keys()].filter(id => (QUESTS[id].objectives || []).some(o => o.type === 'talk' && o.npc === npcId));
-  if (!want.length || p.questFlags.has(flag)) return [];
-  p.questFlags.add(flag);
-  return want;
+  const wantTalk = [...p.quests.keys()].filter(id => (QUESTS[id].objectives || []).some(o => o.type === 'talk' && o.npc === npcId));
+  if (wantTalk.length && !p.questFlags.has(flag)) { p.questFlags.add(flag); touched.push(...wantTalk); }
+  // Anything you were asked to bring them changes hands as you speak.
+  for (const id of p.quests.keys()) {
+    const q = QUESTS[id]; if (!q) continue;
+    for (const o of (q.objectives || [])) {
+      if (o.type !== 'give' || o.npc !== npcId) continue;
+      const gflag = `give:${id}:${npcId}`;
+      if (p.questFlags.has(gflag)) continue;
+      if (!(o.items || []).every(it => countIn(p.inventory, it.item) >= (it.count || 1))) continue;
+      for (const it of (o.items || [])) for (let n = it.count || 1; n > 0; n--) p.inventory.splice(p.inventory.indexOf(it.item), 1);
+      p.questFlags.add(gflag); touched.push(id);
+    }
+  }
+  return [...new Set(touched)];
 }
 
 // Consume the items a collect objective asked for. Called on turn-in only.

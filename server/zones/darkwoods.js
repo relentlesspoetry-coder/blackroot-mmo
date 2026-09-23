@@ -152,6 +152,9 @@ export const darkwoods = {
     { id: 'fenwick',  name: 'Old Fenwick',         x: -2,   z: -30, poi: 'outpost', model: 'Male', yaw: 4.2,
       look: { hair: 20, hairColor: '#b9b2a4', skin: '#b98f6a', outfit: 19, colors: { top: '#5a4a32' } },   // trapper, going grey
       idle: 'Brown ones are safe. Blue ones are safe. Red ones depend on how attached you are to your organs.' },
+    // Far enough from his own camp's roamers that a level-3 errand isn't a fight.
+    { id: 'pib',      name: 'Pib',                 x: -26,  z: -24, poi: 'creek', model: 'Goblin_Scavenger', yaw: 1.0, h: 1.5,
+      idle: 'Pib not fighting. Pib waving. Keep doing nothing, is good.' },
     { id: 'sela',     name: 'Ranger Sela',         x: 48,   z: -70, poi: 'watchtower', model: 'Female', yaw: 2.2,
       idle: 'From the old tower you can see their fires. The Wolf Den grows bolder every night.' },
     { id: 'dorn',     name: 'Prospector Dorn',     x: -34,  z: 42,  poi: 'ravine',   model: 'Male', yaw: 5.0,
@@ -217,6 +220,58 @@ export const darkwoods = {
       quest: 'dw_lanterns', need: { item: 'Glowcap', count: 2 }, verb: 'Light',
       text: 'The last lantern takes the flame. All three trail lanterns are burning.',
       idleText: 'The lantern is dark. Warden Rowan would know what it needs.' },
+    // The supply cart the goblins jumped, on the eastern road. Read the scene,
+    // then prise the crates back out of the ditch.
+    { id: 'cart_wheel', tag: 'cart', name: 'Broken Wheel',    m: 'farm/Farm_Handcart', x: 30, z: -48, yaw: 0.6, s: 1.0, c: 1.2, once: true,
+      quest: 'dw_supplies', verb: 'Inspect', reach: 4,
+      text: 'The wheel is split through, and the axle with it. Nobody drove this off the road by accident.',
+      idleText: 'A handcart, tipped into the ditch and stripped.' },
+    { id: 'cart_tracks', tag: 'cart', name: 'Goblin Footprints', m: 'Bone_Pile', x: 33, z: -45, yaw: 2.2, s: 0.7, c: 0, once: true,
+      quest: 'dw_supplies', verb: 'Inspect', reach: 4,
+      text: 'Small feet, a dozen of them, all heading east into the thicket.',
+      idleText: 'Churned mud, and something picked clean beside it.' },
+    { id: 'cart_chest', tag: 'cart', name: 'Empty Supply Chest', m: 'props/Supply_Crate', x: 28, z: -44, yaw: 1.1, s: 1.0, c: 0.7, once: true,
+      quest: 'dw_supplies', verb: 'Inspect', reach: 4,
+      text: 'Lid off, straw everywhere, nothing left inside but a boot print.',
+      idleText: 'An empty crate with its lid prised off.' },
+    // What the raiders dropped on the way home — scattered along the thicket road.
+    ...[[38, -42], [43, -38], [47, -33], [41, -29]].map(([x, z], i) => ({
+      id: 'crate_' + i, tag: 'crate', name: 'Supply Crate', m: 'props/Supply_Crate', x, z, s: 1.0, c: 0.7, once: true, reach: 3.5,
+      quest: 'dw_supplies', verb: 'Recover', gives: { item: 'Supply Crate' },
+      text: 'You haul the crate out of the bracken. Still sealed.',
+      idleText: 'A crate from the outpost stores, dropped in the bracken.' })),
+    // Redberries on the creek bank, and a honeycake from the outpost stores —
+    // a goblin's price for what he knows.
+    ...[[-24, -18], [-30, -22], [-22, -28], [-33, -17]].map(([x, z], i) => ({
+      id: 'redberry_' + i, tag: 'redberry', name: 'Redberry Bush', m: 'Red_Berry_Bush', x, z, s: 1.0, c: 0.6, reach: 3.2,
+      verb: 'Pick', gives: { item: 'Redberry' }, respawn: 60,
+      text: 'Sharp red berries, three or four to a handful.' })),
+    { id: 'honeycake', tag: 'cake', name: 'Outpost Larder', m: 'props/Water_Barrel', x: -7, z: -34, s: 1.0, c: 0.6, once: true, reach: 3,
+      quest: 'dw_pib', verb: 'Take a honeycake', gives: { item: 'Honeycake' },
+      text: 'You take one honeycake from the larder. Tessa is counting, somewhere.',
+      idleText: "The outpost larder. Tessa's, and she counts it." },
+    // Rattlecap's signal fires on the ridge above the Wolf Den: three columns of
+    // smoke that call the other camps in.
+    ...[[56, 20], [66, 18], [61, 34]].map(([x, z], i) => ({
+      id: 'signal_' + i, tag: 'signalfire', name: 'Goblin Signal Fire', m: 'props/Campfire', x, z, s: 1.2, c: 0.8, once: true, reach: 3.5,
+      quest: 'dw_smoke', verb: 'Douse', doused: 'props/Unlit_Fire_Pit',
+      text: 'You kick the fire apart and smother the smoke.',
+      idleText: 'Green wood, banked to smoke rather than burn.' })),
+    { id: 'banner', tag: 'banner', name: 'Dark Woods Outpost Banner', m: 'Goblin_Banner', x: 63, z: 27, s: 1.1, c: 0.5, once: true, reach: 3.5,
+      quest: 'dw_rattlecap', verb: 'Take down', needDead: 'Chief Rattlecap',
+      text: 'You cut the outpost banner down and fold it under your arm.',
+      idleText: "The outpost's own banner, strung up as a goblin trophy." },
+    // Fenwick's mushrooms: two worth picking, one that is not.
+    ...[[-24, 10], [-18, 16], [-30, 6], [-14, 6], [-26, 20], [-20, 2]].map(([x, z], i) => ({
+      id: 'browncap_' + i, tag: 'browncap', name: 'Browncaps', m: 'cave/Brown_Mushrooms', x, z, s: 2.2, c: 0, reach: 3,
+      verb: 'Pick', gives: { item: 'Browncap' }, respawn: 60, text: 'Squat and brown. The safe one.' })),
+    ...[[-28, 16], [-16, 12], [-33, 14], [-22, 22], [-12, 18], [-31, 2]].map(([x, z], i) => ({
+      id: 'mooncap_' + i, tag: 'mooncap', name: 'Mooncaps', m: 'cave/Luminous_Mushrooms', x, z, s: 2.2, c: 0, reach: 3, light: 0x8ab4ff,
+      verb: 'Pick', gives: { item: 'Mooncap' }, respawn: 60, text: 'Pale blue, and cold to the touch.' })),
+    ...[[-21, 14], [-27, 12], [-17, 20]].map(([x, z], i) => ({
+      id: 'rotcap_' + i, tag: 'rotcap', name: 'Rotcaps', m: 'Poison_Mushrooms', x, z, s: 1.4, c: 0, reach: 3,
+      verb: 'Pick', gives: { item: 'Rotcap' }, respawn: 60, hurt: 6,
+      text: 'The mushroom releases a foul green cloud. Wrong mushroom.' })),
     // Glowcaps: they grow in the shade of the old trees around the outpost and
     // come back in their own time, so the road can always be relit.
     ...[[-18, -28], [-22, -34], [-16, -44], [-4, -44], [2, -36], [4, -26], [-26, -20], [-8, -22], [10, -42], [-20, -48]]
@@ -417,6 +472,9 @@ export const darkwoods = {
     { type: 'goblin_archer',  count: 3, cx: 66, cz: 32, r: 7,  level: 5, expect: 5, fixed: true, hint: 'Wolf Den camp (archers)' },
     { type: 'goblin_shaman',  count: 2, cx: 64, cz: 26, r: 5,  level: 5, expect: 6, fixed: true, hint: 'Wolf Den camp (shamans: heal the camp, interrupt them)' },
     { type: 'goblin_warrior', count: 2, cx: 62, cz: 28, r: 18, level: 4, expect: 5, roam: 22, fixed: true, hint: 'Wolf Den camp (roamers)' },
+    { type: 'goblin_chief',   count: 2, cx: 62, cz: 28, r: 7,  level: 5, expect: 6, fixed: true, hint: 'Wolf Den camp (Rattlecap\'s brutes)' },
+    // The band that jumped the supply cart, still on the thicket road with it.
+    { type: 'goblin', count: 6, cx: 40, cz: -38, r: 10, level: 3, expect: 3, fixed: true, hint: 'Supply road raiders (Woodfang goblins)' },
     // --- Hill ogres squatting on the South Gate approach ---
     { type: 'guard',   count: 3, cx: 10,  cz: 80,  r: 8,  level: 6, expect: 7, fixed: true, hint: 'Ogre hollow (core)' },
     { type: 'guard',   count: 1, cx: 10,  cz: 80,  r: 20, level: 5, expect: 6, roam: 24, fixed: true, hint: 'Ogre hollow (roamer)' },
@@ -425,6 +483,8 @@ export const darkwoods = {
   // A single low-level optional elite — the zone's capstone, nothing harder.
   elites: [
     { type: 'guard', name: 'The Rootbound Guardian', cx: 24, cz: 36, level: 6, expect: 6 },
+    // The chief who has been raiding the roads, in the middle of his own camp.
+    { type: 'goblin_chief', name: 'Chief Rattlecap', cx: 62, cz: 28, level: 6, expect: 6 },
   ],
 
   // The farmstead ringing the Entrance Clearing. Coords are pre-scale like the
