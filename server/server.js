@@ -982,6 +982,134 @@ function grantXp(p, amount) {
 }
 
 // ---------------------------------------------------------------------------
+// Trading
+//
+// Two people, two offers, and nothing moves until both have said yes. What an
+// offer holds has actually left the bag -- it sits in escrow on the trade and
+// comes straight back if anything goes wrong -- so the same sword cannot be
+// offered to two people, or sold out from under a trade half way through.
+//
+// Changing either offer clears both acceptances. That is the old rule from
+// every game that ever had a trade window, and it exists because the alternative
+// is somebody swapping the gold for a rock while your finger is over the button.
+// ---------------------------------------------------------------------------
+const trades = new Map();              // id -> { id, a, b, items: {}, gold: {}, ok: {} }
+let nextTradeId = 1;
+const TRADE_REQUEST_TTL = 30;
+const TRADE_START_RANGE = 12;          // how close you must be to ask
+const TRADE_BREAK_RANGE = 16;          // how far apart calls it off
+
+function tradeOf(p) { return (p && p.tradeId && trades.get(p.tradeId)) || null; }
+function tradePair(t) { return [players.get(t.a), players.get(t.b)]; }
+function tradePayload(t, forId) {
+  const other = t.a === forId ? t.b : t.a;
+  const who = players.get(other);
+  return { t: 'trade', with: other, name: who ? who.name : '',
+    mine: bagStacks(t.items[forId] || []), theirs: bagStacks(t.items[other] || []),
+    myGold: t.gold[forId] || 0, theirGold: t.gold[other] || 0,
+    myOk: !!t.ok[forId], theirOk: !!t.ok[other] };
+}
+function sendTrade(t) { for (const q of tradePair(t)) if (q && q.ws.readyState === q.ws.OPEN) send(q.ws, tradePayload(t, q.id)); }
+// Any change to what is on the table puts both acceptances back to nothing.
+function tradeTouched(t) { t.ok[t.a] = false; t.ok[t.b] = false; }
+
+function tradeRequest(from, toId) {
+  const to = players.get(Number(toId));
+  const no = (text) => send(from.ws, { t: 'event', kind: 'notice', text });
+  if (!to || to === from) return no('There is nobody there to trade with.');
+  if (to.zoneId !== from.zoneId) return no(`${to.name} is not in this zone.`);
+  if (!from.alive || !to.alive) return no('Not while one of you is dead.');
+  if (tradeOf(from) || tradeOf(to)) return no('One of you is already trading.');
+  if (duelOf(from) || duelOf(to)) return no('Not in the middle of a duel.');
+  if (dist2(from.x, from.z, to.x, to.z) > TRADE_START_RANGE * TRADE_START_RANGE) return no(`${to.name} is too far away.`);
+  if (to.tradeRequest && to.tradeRequest.t > 0) return no(`${to.name} is already being asked.`);
+  to.tradeRequest = { from: from.id, name: from.name, t: TRADE_REQUEST_TTL };
+  send(to.ws, { t: 'trade:request', from: from.id, name: from.name, seconds: TRADE_REQUEST_TTL });
+  no(`You ask ${to.name} to trade.`);
+}
+function tradeAccept(p) {
+  const rq = p.tradeRequest; p.tradeRequest = null;
+  if (!rq || rq.t <= 0) return send(p.ws, { t: 'event', kind: 'notice', text: 'That offer to trade has lapsed.' });
+  const from = players.get(rq.from);
+  if (!from || !from.alive || !p.alive) return send(p.ws, { t: 'event', kind: 'notice', text: 'They are in no state to trade.' });
+  if (tradeOf(from) || tradeOf(p)) return send(p.ws, { t: 'event', kind: 'notice', text: 'One of you is already trading.' });
+  const t = { id: nextTradeId++, a: from.id, b: p.id, items: { [from.id]: [], [p.id]: [] }, gold: { [from.id]: 0, [p.id]: 0 }, ok: {} };
+  trades.set(t.id, t); from.tradeId = t.id; p.tradeId = t.id;
+  sendTrade(t);
+}
+function tradeDecline(p) {
+  const rq = p.tradeRequest; p.tradeRequest = null;
+  if (!rq) return;
+  const from = players.get(rq.from);
+  if (from) send(from.ws, { t: 'event', kind: 'notice', text: `${p.name} does not want to trade.` });
+}
+// Put one of something on the table: it leaves the bag now, not at the end.
+function tradeAdd(p, name) {
+  const t = tradeOf(p); if (!t) return;
+  const i = p.inventory.indexOf(String(name)); if (i < 0) return;
+  p.inventory.splice(i, 1);
+  t.items[p.id].push(String(name));
+  tradeTouched(t); sendBag(p); sendTrade(t);
+}
+function tradeTake(p, name) {
+  const t = tradeOf(p); if (!t) return;
+  const i = t.items[p.id].indexOf(String(name)); if (i < 0) return;
+  t.items[p.id].splice(i, 1);
+  p.inventory.push(String(name));
+  tradeTouched(t); sendBag(p); sendTrade(t);
+}
+function tradeGold(p, n) {
+  const t = tradeOf(p); if (!t) return;
+  const want = Math.max(0, Math.floor(Number(n) || 0));
+  const pool = (t.gold[p.id] || 0) + p.gold;          // what is on the table plus what is in the purse
+  const set = Math.min(want, pool);
+  p.gold = pool - set; t.gold[p.id] = set;
+  tradeTouched(t); sendBag(p); sendTrade(t);
+}
+function tradeOk(p, on) {
+  const t = tradeOf(p); if (!t) return;
+  t.ok[p.id] = !!on;
+  if (t.ok[t.a] && t.ok[t.b]) return tradeCommit(t);
+  sendTrade(t);
+}
+// Both said yes. Everything is already in escrow, so this is just handing each
+// pile to the other person -- there is nothing left that can fail half way.
+function tradeCommit(t) {
+  const [a, b] = tradePair(t);
+  if (!a || !b) return tradeCancel(t, 'The trade fell through.');
+  for (const [from, to] of [[a, b], [b, a]]) {
+    for (const name of t.items[from.id]) to.inventory.push(name);
+    to.gold += t.gold[from.id] || 0;
+  }
+  trades.delete(t.id);
+  for (const q of [a, b]) { q.tradeId = null; send(q.ws, { t: 'trade', closed: true }); sendBag(q); send(q.ws, { t: 'event', kind: 'notice', text: 'The trade is done.' }); }
+}
+// However it ends short, everything goes back where it came from.
+function tradeCancel(t, why) {
+  if (!t || !trades.has(t.id)) return;
+  trades.delete(t.id);
+  for (const q of tradePair(t)) {
+    if (!q) continue;
+    q.tradeId = null;
+    for (const name of (t.items[q.id] || [])) q.inventory.push(name);
+    q.gold += t.gold[q.id] || 0;
+    send(q.ws, { t: 'trade', closed: true }); sendBag(q);
+    send(q.ws, { t: 'event', kind: 'notice', text: why || 'The trade is off.' });
+  }
+}
+function tradeAbort(p, why) { const t = tradeOf(p); if (t) tradeCancel(t, why || `${p.name} called the trade off.`); }
+function stepTrades() {
+  for (const t of [...trades.values()]) {
+    const [a, b] = tradePair(t);
+    if (!a || !b) { tradeCancel(t, 'The trade fell through.'); continue; }
+    if (!a.alive || !b.alive) { tradeCancel(t, 'The trade is off.'); continue; }
+    if (a.zoneId !== b.zoneId || dist2(a.x, a.z, b.x, b.z) > TRADE_BREAK_RANGE * TRADE_BREAK_RANGE) {
+      tradeCancel(t, 'You are too far apart to trade.');
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Duels
 //
 // A duel is a fight between two players that nobody dies in. It borrows the
@@ -2969,7 +3097,7 @@ setInterval(() => {
   for (const [id, p] of players) {   // bodies left behind by a mid-fight disconnect
     if (p.lingerT == null) continue;
     p.lingerT -= DT;
-    if (p.lingerT <= 0 || !p.alive) { duelForfeit(p, `${p.name} leaves the duel.`); partyRemove(p, `${p.name} has left the party.`); players.delete(id); systemChat(`${p.name} has left the world.`); }
+    if (p.lingerT <= 0 || !p.alive) { tradeAbort(p, `${p.name} leaves. The trade is off.`); duelForfeit(p, `${p.name} leaves the duel.`); partyRemove(p, `${p.name} has left the party.`); players.delete(id); systemChat(`${p.name} has left the world.`); }
   }
   for (const [id, it] of groundItems) { it.ttl -= DT; if (it.ttl <= 0) groundItems.delete(id); }
   for (const p of players.values()) {
@@ -2981,8 +3109,13 @@ setInterval(() => {
       p.duelChallenge.t -= DT;
       if (p.duelChallenge.t <= 0) { p.duelChallenge = null; send(p.ws, { t: 'duel:challenge', expired: true }); }
     }
+    if (p.tradeRequest) {
+      p.tradeRequest.t -= DT;
+      if (p.tradeRequest.t <= 0) { p.tradeRequest = null; send(p.ws, { t: 'trade:request', expired: true }); }
+    }
   }
   stepDuels(DT);
+  stepTrades();
 
   const now = Date.now();
   if (now - lastSnap >= 1000 / SNAPSHOT_HZ) {
@@ -3125,7 +3258,7 @@ wss.on('connection', (ws) => {
           known: new Set(classDef(cls).abilities.filter(a => a.level <= 1).map(a => a.id)), // learned abilities
           cooldowns: {}, buffs: {}, gcd: 0, momentum: 0, momentumT: 0, rage: 0, rageMax: classStats(cls, 1).rage, rageIdle: 0,
           mana: classStats(cls, 1).mana, manaMax: classStats(cls, 1).mana, friendId: null,
-          partyId: null, partyInvite: null, duelId: null, duelChallenge: null,
+          partyId: null, partyInvite: null, duelId: null, duelChallenge: null, tradeId: null, tradeRequest: null,
           meditation: { level: 1, xp: 0 }, resting: false,
           // Everyone starts able to mine and fish; better tools are earned. The
           // pickaxe rides in the bag (it counts for mining from there); the
@@ -3186,14 +3319,14 @@ wss.on('connection', (ws) => {
         break;
       }
       case 'stand': { if (player) standUp(player); break; }
-      // Trading is still not built; say so rather than letting the click do
-      // nothing and look broken.
-      case 'trade:request': {
-        if (!player) break;
-        const t = players.get(Number(msg.id));
-        send(player.ws, { t: 'event', kind: 'notice', text: `Trading is not in the world yet${t ? ` — ${t.name} will have to wait` : ''}.` });
-        break;
-      }
+      case 'trade:request': { if (player) tradeRequest(player, msg.id); break; }
+      case 'trade:accept':  { if (player) tradeAccept(player); break; }
+      case 'trade:decline': { if (player) tradeDecline(player); break; }
+      case 'trade:add':     { if (player) tradeAdd(player, msg.item); break; }
+      case 'trade:take':    { if (player) tradeTake(player, msg.item); break; }
+      case 'trade:gold':    { if (player) tradeGold(player, msg.gold); break; }
+      case 'trade:ok':      { if (player) tradeOk(player, msg.on); break; }
+      case 'trade:cancel':  { if (player) tradeAbort(player); break; }
       case 'duel:challenge': { if (player) duelChallenge(player, msg.id); break; }
       case 'duel:accept':    { if (player) duelAccept(player); break; }
       case 'duel:decline':   { if (player) duelDecline(player); break; }
@@ -3425,7 +3558,7 @@ wss.on('connection', (ws) => {
         if (!player) return;
         const wait = player.lastCombat ? LOGOUT_COMBAT_WAIT - (Date.now() - player.lastCombat) / 1000 : 0;
         if (player.alive && wait > 0) { send(ws, { t: 'event', kind: 'notice', text: `You can't log out in combat. Wait ${Math.ceil(wait)}s.` }); break; }
-        send(ws, { t: 'logout' }); duelForfeit(player, `${player.name} leaves the duel.`); partyRemove(player); players.delete(player.id); systemChat(`${player.name} has left the world.`); player = null;
+        send(ws, { t: 'logout' }); tradeAbort(player, `${player.name} leaves. The trade is off.`); duelForfeit(player, `${player.name} leaves the duel.`); partyRemove(player); players.delete(player.id); systemChat(`${player.name} has left the world.`); player = null;
         break;
       }
       case 'chat': {
@@ -3446,7 +3579,7 @@ wss.on('connection', (ws) => {
       systemChat(`${player.name} tried to flee the fight — their body lingers.`);
       return;
     }
-    duelForfeit(player, `${player.name} leaves the duel.`); partyRemove(player); players.delete(player.id); systemChat(`${player.name} has left the world.`);
+    tradeAbort(player, `${player.name} leaves. The trade is off.`); duelForfeit(player, `${player.name} leaves the duel.`); partyRemove(player); players.delete(player.id); systemChat(`${player.name} has left the world.`);
   });
 });
 

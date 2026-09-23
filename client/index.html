@@ -106,6 +106,27 @@
   #invite button { background: #3a3020; border: 1px solid #6b5a3a; border-radius: 6px; color: #ffdf9e; padding: 6px 16px; font-size: 13px; cursor: pointer; }
   #invite button:hover { background: #4a3d28; }
   #invite .isub { font-size: 11px; color: #b9ad90; margin-top: 6px; }
+  /* The trade window: their side, your side, and your bag underneath. */
+  #trade { display: none; position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); z-index: 58; pointer-events: auto;
+    width: min(560px, 92vw); background: #2e2820; border: 2px solid #1c150e; border-radius: 10px; box-shadow: 0 12px 34px #000c; overflow: hidden; }
+  #trade .t-head { background: #5a4a34; color: #ffdf9e; padding: 7px 12px; font-weight: 700; font-size: 13px; display: flex; justify-content: space-between; align-items: center; }
+  #trade .t-head span.x { cursor: pointer; opacity: .8; } #trade .t-head span.x:hover { opacity: 1; }
+  #trade .t-cols { display: flex; gap: 10px; padding: 10px; }
+  #trade .t-col { flex: 1; min-width: 0; }
+  #trade h4 { margin: 0 0 5px; font-size: 11px; color: #b9ad90; font-weight: 600; display: flex; justify-content: space-between; }
+  #trade .t-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; min-height: 96px;
+    background: #1d1913; border: 1px solid #4a3d2a; border-radius: 6px; padding: 4px; align-content: start; }
+  #trade .t-gold { margin-top: 6px; font-size: 12px; color: #e7dcc2; display: flex; align-items: center; gap: 6px; }
+  #trade .t-gold input { width: 96px; background: #1d1913; border: 1px solid #4a3d2a; color: #ffdf9e; border-radius: 5px; padding: 3px 6px; font-size: 12px; }
+  #trade .t-ok { margin-top: 6px; font-size: 12px; font-weight: 700; color: #8a7f68; }
+  #trade .t-ok.on { color: #7de08c; }
+  #trade .t-bag { padding: 0 10px 10px; }
+  #trade .t-bag .t-grid { grid-template-columns: repeat(10, 1fr); min-height: 0; max-height: 128px; overflow-y: auto; }
+  #trade .t-foot { padding: 8px 10px 12px; display: flex; gap: 8px; justify-content: flex-end; }
+  #trade button { background: #3a3020; border: 1px solid #6b5a3a; border-radius: 6px; color: #ffdf9e; padding: 6px 18px; font-size: 13px; cursor: pointer; }
+  #trade button:hover { background: #4a3d28; }
+  #trade button.go { border-color: #6a9f4a; color: #d8f0c0; }
+  #trade button.go.on { background: #2f5a24; }
   /* The duel: who you are up against, and how long until it starts. */
   #duelbar { display: none; position: absolute; left: 50%; top: 14%; transform: translateX(-50%); z-index: 55; pointer-events: auto;
     background: #2a1818; border: 2px solid #7a3030; border-radius: 9px; padding: 7px 16px; box-shadow: 0 8px 24px #000a;
@@ -588,6 +609,25 @@
   <div id="dialogue">
     <div class="d-head"><span id="dName">NPC</span><span class="d-close" id="dClose">✕</span></div>
     <div class="d-body"><div class="d-script" id="dScript"></div><div class="d-say" id="dSay"></div><div id="dQuests"></div></div>
+  </div>
+  <div id="trade">
+    <div class="t-head"><span id="tradeWith">Trading</span><span class="x" id="tradeX">✕</span></div>
+    <div class="t-cols">
+      <div class="t-col">
+        <h4>Your offer</h4>
+        <div class="t-grid" id="tradeMine"></div>
+        <div class="t-gold">Gold <input id="tradeGold" type="number" min="0" step="1" value="0"></div>
+        <div class="t-ok" id="tradeMyOk">Not accepted</div>
+      </div>
+      <div class="t-col">
+        <h4 id="tradeTheirHead">Their offer</h4>
+        <div class="t-grid" id="tradeTheirs"></div>
+        <div class="t-gold">Gold <b id="tradeTheirGold">0</b></div>
+        <div class="t-ok" id="tradeTheirOk">Not accepted</div>
+      </div>
+    </div>
+    <div class="t-bag"><h4>Your bag <span class="dim">click to offer</span></h4><div class="t-grid" id="tradeBag"></div></div>
+    <div class="t-foot"><button id="tradeOk" class="go">Accept</button><button id="tradeCancel">Cancel</button></div>
   </div>
   <div id="duelbar"><span id="duelText">—</span><a id="duelYield">Yield</a></div>
   <div id="invite">
@@ -1344,10 +1384,17 @@ function handle(m) {
       renderParty();
       break;
     case 'party:invite':
-      showInvite(m, false);
+      showInvite(m, 'party');
       break;
     case 'duel:challenge':
-      showInvite(m, true);
+      showInvite(m, 'duel');
+      break;
+    case 'trade:request':
+      showInvite(m, 'trade');
+      break;
+    case 'trade':
+      tradeState = m.closed ? null : m;
+      renderTrade();
       break;
     case 'transition':
       enterZone(m.zone);
@@ -6481,13 +6528,16 @@ function renderParty() {
   }).join('');
   list.querySelectorAll('.pmem').forEach(el => { el.onclick = () => setFriend(+el.dataset.id); });
 }
-function showInvite(m, duel) {
+const INVITE_TEXT = {
+  party: (n) => `<b>${n}</b> invites you to join their party.`,
+  duel:  (n) => `<b>${n}</b> challenges you to a duel.`,
+  trade: (n) => `<b>${n}</b> wants to trade with you.`,
+};
+function showInvite(m, kind) {
   const box = document.getElementById('invite');
   if (m.expired) { box.style.display = 'none'; return; }
-  inviteIsDuel = !!duel;
-  document.getElementById('inviteText').innerHTML = duel
-    ? `<b>${escapeHtml(m.name)}</b> challenges you to a duel.`
-    : `<b>${escapeHtml(m.name)}</b> invites you to join their party.`;
+  inviteKind = kind;
+  document.getElementById('inviteText').innerHTML = INVITE_TEXT[kind](escapeHtml(m.name));
   document.getElementById('inviteSub').textContent = `Expires in ${m.seconds}s`;
   box.style.display = 'block';
   clearInterval(showInvite._t); let left = m.seconds;
@@ -6496,13 +6546,47 @@ function showInvite(m, duel) {
     document.getElementById('inviteSub').textContent = `Expires in ${left}s`;
   }, 1000);
 }
-let inviteIsDuel = false;
+let inviteKind = 'party';
 function answerInvite(yes) {
   clearInterval(showInvite._t);
   document.getElementById('invite').style.display = 'none';
-  const kind = inviteIsDuel ? 'duel' : 'party';
-  ws?.send(JSON.stringify({ t: `${kind}:${yes ? 'accept' : 'decline'}` }));
+  ws?.send(JSON.stringify({ t: `${inviteKind}:${yes ? 'accept' : 'decline'}` }));
 }
+// ---------------------------------------------------------------------------
+// Trading. The server owns both offers and holds the goods while they are on
+// the table, so this only draws what it is told and sends what was clicked.
+// ---------------------------------------------------------------------------
+let tradeState = null;
+function tradeSlots(stacks, onClick) {
+  return (stacks || []).map(st =>
+    `<div class="slot" data-item="${escapeHtml(st.name)}" title="${escapeHtml(st.name)}${st.qty > 1 ? ' ×' + st.qty : ''}">` +
+    `<span class="ic">${iconFor(st.name)}</span>${st.qty > 1 ? `<span class="n">${st.qty}</span>` : ''}</div>`).join('');
+}
+function renderTrade() {
+  const el = document.getElementById('trade');
+  if (!tradeState) { el.style.display = 'none'; return; }
+  const t = tradeState;
+  el.style.display = 'block';
+  document.getElementById('tradeWith').textContent = `Trading with ${t.name}`;
+  document.getElementById('tradeTheirHead').textContent = `${t.name}'s offer`;
+  const mine = document.getElementById('tradeMine'), theirs = document.getElementById('tradeTheirs'), bagEl = document.getElementById('tradeBag');
+  mine.innerHTML = tradeSlots(t.mine);
+  theirs.innerHTML = tradeSlots(t.theirs);
+  bagEl.innerHTML = tradeSlots(bag.stacks || []);
+  mine.querySelectorAll('.slot').forEach(s2 => { s2.onclick = () => ws?.send(JSON.stringify({ t: 'trade:take', item: s2.dataset.item })); });
+  bagEl.querySelectorAll('.slot').forEach(s2 => { s2.onclick = () => ws?.send(JSON.stringify({ t: 'trade:add', item: s2.dataset.item })); });
+  const g = document.getElementById('tradeGold');
+  if (document.activeElement !== g) g.value = t.myGold;      // don't fight someone mid-type
+  document.getElementById('tradeTheirGold').textContent = (t.theirGold || 0).toLocaleString();
+  const mo = document.getElementById('tradeMyOk'), to = document.getElementById('tradeTheirOk');
+  mo.textContent = t.myOk ? 'You have accepted' : 'Not accepted'; mo.classList.toggle('on', !!t.myOk);
+  to.textContent = t.theirOk ? `${t.name} has accepted` : 'Not accepted'; to.classList.toggle('on', !!t.theirOk);
+  document.getElementById('tradeOk').classList.toggle('on', !!t.myOk);
+}
+document.getElementById('tradeOk').onclick = () => ws?.send(JSON.stringify({ t: 'trade:ok', on: !(tradeState && tradeState.myOk) }));
+document.getElementById('tradeCancel').onclick = () => ws?.send(JSON.stringify({ t: 'trade:cancel' }));
+document.getElementById('tradeX').onclick = () => ws?.send(JSON.stringify({ t: 'trade:cancel' }));
+document.getElementById('tradeGold').onchange = (e) => ws?.send(JSON.stringify({ t: 'trade:gold', gold: e.target.value }));
 // The banner runs off the snapshot, so it survives a reload mid-duel and
 // clears itself the moment the duel is over however that happened.
 let duelCount = 0;
@@ -9432,6 +9516,7 @@ function renderEquipment() {
 function setBagGold() { document.getElementById('bagGold').textContent = (bag.gold || 0).toLocaleString() + ' gp'; }
 function renderBag() {
   setBagGold();
+  if (tradeState) renderTrade();   // the trade window shows your bag too
   const stacks = bag.stacks || [];
   document.getElementById('bagCnt').textContent = stacks.length || '';   // slots used, not loose items
   renderSkills();
