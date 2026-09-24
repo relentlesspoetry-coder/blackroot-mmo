@@ -26,7 +26,7 @@ import { isBardSpell, checkBardCast, castBard, spendSongCharges, songAmp, atkSpe
   bardMonsterDmgMult, bardMonsterDefMult, bardMonsterTakenMult, bardMonsterSpeedMult, bardMonsterAtkSpeedMult, stepSongs } from './bard.js';
 import {
   dist2, closestOnPolyline, mulberry32, pointInPoly, polyCentroid, generateTrees, generateScatter, generateHanging,
-  mergeOutlines, roughenOutline, generateEdgeForest, inHouse, riversOf, bridgesOf, pathsOf, pathSpecsOf, closestOnPaths, lakesOf, lakeRing, lakeEdgeDist, cliffsOf, cliffFoot, cliffDist,
+  mergeOutlines, roughenOutline, generateEdgeForest, inHouse, riversOf, bridgesOf, pathsOf, pathSpecsOf, closestOnPaths, terrainAt, isSolid, isWater, terrainClearance, T_OFF, T_ROCK, T_DEEP,
   caveOutline,
 } from './worldgen.js';
 import {
@@ -115,10 +115,9 @@ function scaleZone(zone, k) {
     r.width *= k; (r.points || []).forEach(sp);
     for (const br of bridgesOf(r)) { br.x *= k; br.z *= k; if (br.halfWidth != null) br.halfWidth *= k; }
   }
-  for (const l of lakesOf(zone)) { (l.points || []).forEach(sp); l._ring = null; }
+  if (zone.terrain) { const t = zone.terrain; t.cell *= k; t.minX *= k; t.minZ *= k; }
   (zone.hills || []).forEach(h => { h.x *= k; h.z *= k; h.r *= k; });
   for (const a of [...(zone.clearings || []), ...(zone.groves || [])]) { a.x *= k; a.z *= k; a.r *= k; if (a.edge != null) a.edge *= k; }   // `h.h` is authored in world metres, so it does not scale
-  for (const c of (zone.cliffs || [])) { (c.points || []).forEach(sp); c.w *= k; if (c.slope != null) c.slope *= k; }   // `c.h` likewise
   (zone.rocks || []).forEach(sp);
   (zone.pools || []).forEach(sp);
   (zone.chests || []).forEach(sp);
@@ -177,10 +176,9 @@ function offsetZone(zone, dx, dz) {
     (r.points || []).forEach(sp);
     for (const br of bridgesOf(r)) { br.x += dx; br.z += dz; }
   }
-  for (const l of lakesOf(zone)) { (l.points || []).forEach(sp); l._ring = null; }
+  if (zone.terrain) { zone.terrain.minX += dx; zone.terrain.minZ += dz; }
   (zone.hills || []).forEach(h => { h.x += dx; h.z += dz; });
   for (const a of [...(zone.clearings || []), ...(zone.groves || [])]) { a.x += dx; a.z += dz; }
-  for (const c of (zone.cliffs || [])) (c.points || []).forEach(sp);
   (zone.rocks || []).forEach(sp);
   (zone.pools || []).forEach(sp);
   (zone.chests || []).forEach(sp);
@@ -217,8 +215,6 @@ function buildSeamlessWorld() {
   // Multiple paths/rivers now — keep each so the client can draw them all.
   w.paths = [...pathSpecsOf(w), ...pathSpecsOf(kf)];
   w.rivers = [...riversOf(w), ...riversOf(kf)];
-  w.lakes = [...lakesOf(w), ...lakesOf(kf)];
-  w.cliffs = [...cliffsOf(w), ...cliffsOf(kf)];
   w.clearings = [...(w.clearings || []), ...(kf.clearings || [])];
   w.groves = [...(w.groves || []), ...(kf.groves || [])];
   // Union bounds + one rectangular boundary wall around the whole world (no
@@ -457,8 +453,7 @@ function standableAt(zone, x, z) {
   if (x < b.minX || x > b.maxX || z < b.minZ || z > b.maxZ) return false;
   if (zone.boundary && !pointInPoly(x, z, zone.boundary)) return false;
   for (const o of (zone.rocks || [])) if (dist2(x, z, o.x, o.z) < o.r * o.r) return false;
-  for (const c of cliffsOf(zone)) if (cliffDist(c, x, z) < cliffFoot(c)) return false;
-  for (const l of lakesOf(zone)) if (!l.shallow && pointInPoly(x, z, l.points)) return false;
+  if (zone.terrain && isSolid(terrainAt(zone, x, z))) return false;
   for (const r of riversOf(zone)) {
     if (closestOnPolyline(x, z, r.points).dist < r.width / 2 + RIVER_BANK) {
       // standing on a bridge deck is fine
@@ -482,23 +477,23 @@ function resolveCollision(zone, ent, radius) {
 
   // Every river is solid (with a passable bridge deck). The fused world can hold
   // several, each with its own bridge frame cached on the river object.
-  // Cliffs are rock walls: you stop at the foot of the talus and go round.
-  for (const c of cliffsOf(zone)) {
-    const near = closestOnPolyline(ent.x, ent.z, c.points);
-    const min = cliffFoot(c) + radius;
-    if (near.dist >= min) continue;
-    const dx = ent.x - near.x, dz = ent.z - near.z, d = Math.hypot(dx, dz);
-    if (d > 1e-4) { ent.x = near.x + (dx / d) * min; ent.z = near.z + (dz / d) * min; }
-  }
-  // Deep lakes are solid: push out to the nearest point on the shore. A shallow
-  // one (a fen) is water you wade, so it does not push at all.
-  for (const l of lakesOf(zone)) {
-    if (l.shallow) continue;
-    if (!pointInPoly(ent.x, ent.z, l.points)) continue;
-    const c = closestOnPolyline(ent.x, ent.z, lakeRing(l));
-    const dx = ent.x - c.x, dz = ent.z - c.z, d = Math.hypot(dx, dz);
-    if (d > 1e-4) { ent.x = c.x + (dx / d) * radius; ent.z = c.z + (dz / d) * radius; }
-    else { ent.x = c.x; ent.z = c.z; }
+  // The traced terrain decides what is solid: deep water, rock, and anything
+  // off the map. Step back out the way you came in -- search outward for the
+  // nearest cell that is standable and move there.
+  if (zone.terrain && isSolid(terrainAt(zone, ent.x, ent.z))) {
+    const step = zone.terrain.cell;
+    let bx = null, bz = null, bd = Infinity;
+    for (let r = step; r <= step * 8 && bx === null; r += step) {
+      const n = Math.max(8, Math.round(2 * Math.PI * r / step));
+      for (let i = 0; i < n; i++) {
+        const a = 2 * Math.PI * i / n, nx = ent.x + Math.cos(a) * r, nz = ent.z + Math.sin(a) * r;
+        if (isSolid(terrainAt(zone, nx, nz))) continue;
+        const d = (nx - ent.x) ** 2 + (nz - ent.z) ** 2;
+        if (d < bd) { bd = d; bx = nx; bz = nz; }
+      }
+      if (bx !== null) break;
+    }
+    if (bx !== null) { ent.x = bx; ent.z = bz; }
   }
   const rivers = riversOf(zone);
   const paths = pathsOf(zone);
@@ -674,8 +669,7 @@ function spawnInRegion(zone, region, opts = {}) {
     if (keepOut && dist2(x, z, zone.spawn.x, zone.spawn.z) < keepOut * keepOut) continue;
     if ((zone.rocks || []).some(o => dist2(x, z, o.x, o.z) < (o.r + 2) ** 2)) continue;
     if (riversOf(zone).some(r => closestOnPolyline(x, z, r.points).dist < r.width / 2 + RIVER_BANK + 1)) continue;
-    if (lakesOf(zone).some(l => !l.shallow && lakeEdgeDist(l, x, z) < 2)) continue;
-    if (cliffsOf(zone).some(c => cliffDist(c, x, z) < cliffFoot(c) + 2)) continue;
+    if (zone.terrain && terrainClearance(zone, x, z, c => !isSolid(c), 5) < 4) continue;
     return { x, z };
   }
   // Fallback: the region centre, pushed clear of the keep-out ring if needed.
@@ -3538,8 +3532,7 @@ function zoneForClient(zone) {
   return {
     id: zone.id, name: zone.name, subtitle: zone.subtitle, spawn: zone.spawn,
     bounds: zone.bounds, boundary: zone.boundary, pois: zone.pois, path: zone.path, river: zone.river,
-    paths: pathSpecsOf(zone), rivers: riversOf(zone), lakes: lakesOf(zone), hills: zone.hills || [], cliffs: cliffsOf(zone),
-    clearings: zone.clearings || [], groves: zone.groves || [],
+    paths: pathSpecsOf(zone), rivers: riversOf(zone), hills: zone.hills || [], terrain: zone.terrain || null,
     rocks: zone.rocks, hazards: zone.hazards, pools: zone.pools, chests: zone.chests, objects: zone.objects,
     fishingSpots: zone.fishingSpots || [], campfires: zone.campfires || [],
     caves: (zone.caves || []).map(c => ({ boundary: c.boundary, rooms: c.rooms, tunnels: c.tunnels, floorY: c.floorY, ceilingY: c.ceilingY,

@@ -28,53 +28,52 @@ export function bridgesOf(river) {
   if (!river) return [];
   return river.bridges || (river.bridge ? [river.bridge] : []);
 }
-// Forest density. The blueprint separates open "traversable area" from dense
-// forest, and that contrast is most of what the drawing looks like on the
-// ground. A zone authors the two exceptions -- `clearings` where the wood
-// opens out and `groves` where it closes in -- and everything between them is
-// ordinary woodland. Each is { x, z, r, edge? } and blends over its rim.
-const FOREST_OPEN = 0.07, FOREST_DENSE = 1.85;
-function blend(x, z, a) {
-  const d = Math.hypot(x - a.x, z - a.z), edge = a.edge != null ? a.edge : a.r * 0.3;
-  if (d >= a.r + edge) return 0;
-  if (d <= a.r) return 1;
-  const t = 1 - (d - a.r) / edge;
-  return t * t * (3 - 2 * t);
+// ---------------------------------------------------------------------------
+// TERRAIN GRID
+//
+// The zone's ground comes from `terrain`, a grid traced straight off the
+// blueprint (see tools/trace_blueprint.py). Every question about a point --
+// is it water, is it rock, how thick is the wood, is it even on the map --
+// is answered by reading one cell, so the world matches the drawing instead
+// of approximating it with circles and lines.
+// ---------------------------------------------------------------------------
+export const T_OFF = ' ', T_DEEP = 'W', T_MARSH = 'w', T_ROCK = 'R',
+             T_DENSE = 'F', T_WOOD = 'f', T_OPEN = '.';
+
+export function terrainOf(zone) { return zone && zone.terrain; }
+// The class at (x,z). Off the grid reads as off the map.
+export function terrainAt(zone, x, z) {
+  const t = zone && zone.terrain;
+  if (!t) return T_OPEN;
+  const gx = Math.floor((x - t.minX) / t.cell), gz = Math.floor((z - t.minZ) / t.cell);
+  if (gz < 0 || gz >= t.h || gx < 0 || gx >= t.w) return T_OFF;
+  return t.rows[gz][gx] || T_OFF;
 }
+export function isWater(c) { return c === T_DEEP || c === T_MARSH; }
+// Solid ground you cannot enter: deep water, rock, and off the map.
+export function isSolid(c) { return c === T_DEEP || c === T_ROCK || c === T_OFF; }
+// Distance from (x,z) out to the nearest cell that is not `ok`, capped at
+// `max`. Used to keep things a sensible distance off water, rock and the rim.
+export function terrainClearance(zone, x, z, ok, max = 12) {
+  const t = zone && zone.terrain; if (!t) return max;
+  const step = t.cell;
+  for (let r = step; r <= max; r += step) {
+    const n = Math.max(6, Math.round(2 * Math.PI * r / step));
+    for (let i = 0; i < n; i++) {
+      const a = 2 * Math.PI * i / n;
+      if (!ok(terrainAt(zone, x + Math.cos(a) * r, z + Math.sin(a) * r))) return r;
+    }
+  }
+  return max;
+}
+// How thick the wood is here, as a multiplier on the base tree density.
 export function forestAt(zone, x, z) {
-  let dens = 1;
-  // Groves thicken the wood; clearings are applied last and win outright,
-  // because somewhere authored as open ground is open ground.
-  for (const g of (zone.groves || [])) {
-    const m = blend(x, z, g); if (m > 0) dens = Math.max(dens, 1 + ((g.d != null ? g.d : FOREST_DENSE) - 1) * m);
+  switch (terrainAt(zone, x, z)) {
+    case T_DENSE: return 1.9;
+    case T_WOOD:  return 1.0;
+    case T_OPEN:  return 0.06;
+    default:      return 0;          // water, rock, off the map
   }
-  for (const c of (zone.clearings || [])) {
-    const m = blend(x, z, c); if (m > 0) dens = Math.min(dens, 1 + ((c.d != null ? c.d : FOREST_OPEN) - 1) * m);
-  }
-  return dens;
-}
-
-// Cliffs: a rock wall following a line, the way the blueprint draws them. `w`
-// is the half-width of the flat top, `slope` the talus falling away from it,
-// `h` how high it stands. Nothing walks onto one -- the gap between two of
-// them is the way through.
-export function cliffsOf(zone) { return (zone && zone.cliffs) || []; }
-export function cliffFoot(c) { return c.w + (c.slope != null ? c.slope : 7); }
-export function cliffDist(c, x, z) { return closestOnPolyline(x, z, c.points).dist; }
-
-// Lakes and fens: standing water with a real outline, rather than a river made
-// fat enough to pretend. `points` is a closed polygon; `shallow` water can be
-// waded (a fen), deep water is solid and you walk around it.
-export function lakesOf(zone) { return (zone && zone.lakes) || []; }
-// A closed ring of the polygon, for distance queries.
-export function lakeRing(lake) {
-  if (!lake._ring) lake._ring = [...lake.points, lake.points[0]];
-  return lake._ring;
-}
-// Distance from (x,z) to the lake's edge, negative inside it.
-export function lakeEdgeDist(lake, x, z) {
-  const d = closestOnPolyline(x, z, lakeRing(lake)).dist;
-  return pointInPoly(x, z, lake.points) ? -d : d;
 }
 
 // The same one-or-many rule for roads: `path` is a single route, `paths` is a
@@ -180,8 +179,6 @@ export function generateTrees(zone) {
     if (zone.boundary && !pointInPoly(x, z, zone.boundary)) continue;
     if (pathSpecsOf(zone).some(p => closestOnPolyline(x, z, p.points).dist < pathClearOf(p.kind))) continue;
     if (riversOf(zone).some(r => closestOnPolyline(x, z, r.points).dist < r.width / 2 + RIVER_BANK + 3)) continue;
-    if (lakesOf(zone).some(l => lakeEdgeDist(l, x, z) < 3)) continue;
-    if (cliffsOf(zone).some(c => cliffDist(c, x, z) < cliffFoot(c) + 2)) continue;
     if (riversOf(zone).some(r => bridgesOf(r).some(b => dist2(x, z, b.x, b.z) < 15 * 15))) continue;
     if (inFarm(zone, x, z, 3)) continue;
     if (inHouse(zone, x, z, 2.5)) continue;
@@ -236,8 +233,6 @@ export function generateScatter(zone) {
       if (riversOf(zone).some(r => closestOnPolyline(x, z, r.points).dist < r.width / 2 + RIVER_BANK + 2.5)) continue;
       // Deep water takes nothing. A fen takes reeds and sedge -- pure decor
       // wades out into it -- but keeps anything solid on the bank.
-      if (lakesOf(zone).some(l => lakeEdgeDist(l, x, z) < (l.shallow ? (spec.r > 0 ? 1.5 : -7) : 2.5))) continue;
-      if (cliffsOf(zone).some(c => cliffDist(c, x, z) < cliffFoot(c) + 1.5)) continue;
       // Undergrowth thickens and thins with the wood above it.
       if (!spec.near && rng() > Math.min(1, 0.45 + forestAt(zone, x, z) * 0.5)) continue;
       if (inFarm(zone, x, z, 2)) continue;
@@ -568,8 +563,6 @@ export function generateEdgeForest(zone, innerPolys, seed, band = 32) {
     if (dEdge < 2.5) continue;                              // not in the rock
     if (pathSpecsOf(zone).some(p => closestOnPolyline(x, z, p.points).dist < pathClearOf(p.kind))) continue;
     if (riversOf(zone).some(r => closestOnPolyline(x, z, r.points).dist < r.width / 2 + RIVER_BANK + 3)) continue;
-    if (lakesOf(zone).some(l => lakeEdgeDist(l, x, z) < 3)) continue;
-    if (cliffsOf(zone).some(c => cliffDist(c, x, z) < cliffFoot(c) + 2)) continue;
     if (inFarm(zone, x, z, 3) || inMine(zone, x, z, 4) || inHouse(zone, x, z, 2.5)) continue;
     if (forestAt(zone, x, z) < 0.4 && rng() > 0.12) continue;   // the border band still respects a clearing
     if ((zone.pois || []).some(p => dist2(x, z, p.x, p.z) < clearRadiusS(p) ** 2)) continue;

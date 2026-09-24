@@ -1500,27 +1500,39 @@ function pathSpecs() {
   return raw.map(p => Array.isArray(p) ? { points: p, kind: 'road' } : { points: p.points, kind: p.kind || 'road' });
 }
 function worldPaths() { return pathSpecs().map(p => p.points); }
-// Standing water with a real outline. `points` is a closed polygon; a shallow
-// lake is a fen you wade, a deep one is solid and you walk around it.
-function worldLakes() { return (zone && zone.lakes) || []; }
-function lakeRing(l) { if (!l._ring) l._ring = [...l.points, l.points[0]]; return l._ring; }
-// Distance to the lake's edge, negative inside it.
-function lakeEdgeDist(l, x, z) {
-  const d = distToPolyline(x, z, lakeRing(l));
-  return pointInPoly(x, z, l.points) ? -d : d;
+// ---- Terrain grid ------------------------------------------------------
+// The ground is the blueprint, traced cell by cell (server/zones/*.js
+// `terrain`). Every question about a point is one lookup.
+const T_OFF = ' ', T_DEEP = 'W', T_MARSH = 'w', T_ROCK = 'R',
+      T_DENSE = 'F', T_WOOD = 'f', T_OPEN = '.';
+function terrainAt(x, z) {
+  const t = zone && zone.terrain;
+  if (!t) return T_OPEN;
+  const gx = Math.floor((x - t.minX) / t.cell), gz = Math.floor((z - t.minZ) / t.cell);
+  if (gz < 0 || gz >= t.h || gx < 0 || gx >= t.w) return T_OFF;
+  return t.rows[gz][gx] || T_OFF;
 }
-// How far in from the shore the bed reaches its full depth.
-const LAKE_SHELF = 14;
-// Carve for ONE lake, using the same bed/water/lip profile a river uses so a
-// creek running into a lake meets it at the same height.
-function lakeHeightAt1(lake, x, z) {
-  const d = lakeEdgeDist(lake, x, z);
-  if (d >= RIVER_LIP) return 0;
-  const bed = lake.shallow ? RIVER_WATER_Y - 0.35 : RIVER_BED_Y;
-  if (d >= 0) return RIVER_WATER_Y + (0 - RIVER_WATER_Y) * (d / RIVER_LIP);   // the lip, rising to grass
-  const t = 1 - Math.min(1, -d / (lake.shallow ? LAKE_SHELF * 0.5 : LAKE_SHELF));
-  return bed + (RIVER_WATER_Y - bed) * (t * t * t);
+// Smooth 0..1 fields sampled off the grid, so the ground rolls between cells
+// instead of stepping. Bilinear over the four surrounding cell centres.
+function terrainField(x, z, f) {
+  const t = zone && zone.terrain;
+  if (!t) return 0;
+  const gx = (x - t.minX) / t.cell - 0.5, gz = (z - t.minZ) / t.cell - 0.5;
+  const x0 = Math.floor(gx), z0 = Math.floor(gz), tx = gx - x0, tz = gz - z0;
+  const at = (ix, iz) => {
+    if (iz < 0 || iz >= t.h || ix < 0 || ix >= t.w) return f(T_OFF);
+    return f(t.rows[iz][ix] || T_OFF);
+  };
+  const a = at(x0, z0) * (1 - tx) + at(x0 + 1, z0) * tx;
+  const b = at(x0, z0 + 1) * (1 - tx) + at(x0 + 1, z0 + 1) * tx;
+  return a * (1 - tz) + b * tz;
 }
+const fDeep  = c => c === T_DEEP ? 1 : 0;
+const fWet   = c => (c === T_DEEP || c === T_MARSH) ? 1 : 0;
+const fRock  = c => c === T_ROCK ? 1 : 0;
+const fDense = c => c === T_DENSE ? 1 : (c === T_WOOD ? 0.45 : 0);
+const fOpen  = c => c === T_OPEN ? 1 : 0;
+
 // Carve for ONE river.
 function riverHeightAt1(river, x, z) {
   const half = riverWaterHalf(river.width);
@@ -1538,22 +1550,6 @@ function riverHeightAt1(river, x, z) {
 // the slopes are a wall to a third-person camera -- so the land rolls and the
 // high ground still reads as high ground.
 function worldHills() { return (zone && zone.hills) || []; }
-// How much a hill is allowed to lift the ground here. Water has to stay level,
-// so the relief fades out as it approaches any channel or shore.
-const HILL_WATER_FADE = 16;
-function hillDamp(x, z) {
-  let w = 1;
-  for (const r of worldRivers()) {
-    const d = distToPolyline(x, z, r.points) - riverWaterHalf(r.width);
-    w = Math.min(w, Math.max(0, Math.min(1, d / HILL_WATER_FADE)));
-    if (w <= 0) return 0;
-  }
-  for (const l of worldLakes()) {
-    w = Math.min(w, Math.max(0, Math.min(1, lakeEdgeDist(l, x, z) / HILL_WATER_FADE)));
-    if (w <= 0) return 0;
-  }
-  return w;
-}
 function landHeight(x, z) {
   let h = 0;
   for (const k of worldHills()) {
@@ -1562,57 +1558,19 @@ function landHeight(x, z) {
     const t = 1 - d / k.r;
     h += k.h * t * t * (3 - 2 * t);          // smoothstep dome, flat at the top and the foot
   }
-  return h + cliffLift(x, z);                 // rock walls stand on top of the land
+  return h;
 }
-// ---- Cliffs ------------------------------------------------------------
-// A rock wall following a line: flat on top out to `w`, then falling away
-// across `slope` to the ground it stands on. The tallest wall wins where two
-// overlap rather than stacking into a spire.
-function worldCliffs() { return (zone && zone.cliffs) || []; }
-// Forest density, matching the server's field: open ground reads as a sunlit
-// meadow green, deep wood as shaded forest floor.
-function areaBlend(x, z, a) {
-  const d = Math.hypot(x - a.x, z - a.z), edge = a.edge != null ? a.edge : a.r * 0.3;
-  if (d >= a.r + edge) return 0;
-  if (d <= a.r) return 1;
-  const t = 1 - (d - a.r) / edge;
-  return t * t * (3 - 2 * t);
-}
-function forestAt(x, z) {
-  if (!zone) return 1;
-  let dens = 1;
-  for (const g of (zone.groves || [])) { const m = areaBlend(x, z, g); if (m > 0) dens = Math.max(dens, 1 + 0.85 * m); }
-  for (const c of (zone.clearings || [])) { const m = areaBlend(x, z, c); if (m > 0) dens = Math.min(dens, 1 - 0.93 * m); }
-  return dens;
-}
-function cliffFoot(c) { return c.w + (c.slope != null ? c.slope : 7); }
-// 0 at the foot, 1 on the top -- how much of this wall is under (x,z).
-function cliffMix(c, x, z) {
-  const d = distToPolyline(x, z, c.points), foot = cliffFoot(c);
-  if (d >= foot) return 0;
-  if (d <= c.w) return 1;
-  const t = 1 - (d - c.w) / (foot - c.w);
-  return t * t * (3 - 2 * t);
-}
-function cliffLift(x, z) {
-  let top = 0;
-  for (const c of worldCliffs()) { const v = c.h * cliffMix(c, x, z); if (v > top) top = v; }
-  return top;
-}
-// How rocky the ground reads here (0 grass, 1 bare stone).
-function cliffRock(x, z) {
-  let m = 0;
-  for (const c of worldCliffs()) { const v = cliffMix(c, x, z); if (v > m) m = v; }
-  return m;
-}
+// Rock stands above the land it sits on; water cuts down through it.
+const ROCK_RISE = 15, WATER_CUT = 2.4, MARSH_CUT = 0.9;
 function terrainHeight(x, z) {
   if (!zone || zone.enclosed) return 0;
-  // The land rises to the hills; water then cuts down through it. The carve
-  // functions return 0 to mean "no water here", which is NOT a height to take
-  // the minimum with -- doing that flattens every hill back to zero.
-  let y = landHeight(x, z) * hillDamp(x, z) + cliffLift(x, z) * (1 - hillDamp(x, z));
+  const wet = terrainField(x, z, fWet), rock = terrainField(x, z, fRock);
+  // Hills roll under everything; rock stands on them; water cuts through.
+  let y = landHeight(x, z) * (1 - wet) + ROCK_RISE * rock * rock;
+  const deep = terrainField(x, z, fDeep);
+  y -= WATER_CUT * deep + MARSH_CUT * (wet - deep);
+  // Rivers are still polylines -- they are too narrow to trace as cells.
   for (const r of worldRivers()) { const h = riverHeightAt1(r, x, z); if (h < 0 && h < y) y = h; }
-  for (const l of worldLakes()) { const h = lakeHeightAt1(l, x, z); if (h < 0 && h < y) y = h; }
   return y;
 }
 // Height an entity should stand at: on a bridge use its deck, else the terrain.
@@ -2103,7 +2061,6 @@ function buildDirtField(shapes, discs, material, y, T, polys = []) {
         let al = d <= s.hw ? 1 : 1 - (d - s.hw) / s.fr;
         if (s.fadeEnd) { const along = s.cum[i] + Math.sqrt(L2) * t; al *= Math.max(0, Math.min(1, (s.total - along) / s.fadeEnd)); }
         if (s.river) for (const r of worldRivers()) { const rd = distToPolyline(x, z, r.points); al *= Math.max(0, Math.min(1, (rd - riverWaterHalf(r.width)) / 2.5)); }
-        if (s.river) for (const l of worldLakes()) { al *= Math.max(0, Math.min(1, lakeEdgeDist(l, x, z) / 2.5)); }
         if (al > best) best = al;
       }
     }
@@ -2288,50 +2245,6 @@ function buildStripRibbon(points, width, y, material, tile, feather, cutRiver, e
 // carved to, so it lies flush on the ground (real dirt bank, not a floating
 // layer), and its outer rim feathers to transparent so the dirt melts into the
 // surrounding grass.
-// A ring of shore hugging a lake's outline: bed on the inside, the lip rising
-// to grass on the outside, with the outer rim faded so it melts into the field.
-function buildLakeShore(lake) {
-  const raw = lake.points;
-  // Outward normal depends on which way the outline was authored.
-  let area = 0;
-  for (let i = 0; i < raw.length; i++) { const a = raw[i], b = raw[(i + 1) % raw.length]; area += a.x * b.z - b.x * a.z; }
-  const out = area > 0 ? -1 : 1;
-  const pts = smoothPoly(lakeRing(lake), 6);
-  const bed = lake.shallow ? RIVER_WATER_Y - 0.35 : RIVER_BED_Y;
-  const SHELF = lake.shallow ? LAKE_SHELF * 0.5 : LAKE_SHELF, FR = 2.0;
-  // o < 0 is into the water, o > 0 is up the bank.
-  const yAt = (o) => {
-    if (o >= RIVER_LIP) return 0;
-    if (o >= 0) return RIVER_WATER_Y + (0 - RIVER_WATER_Y) * (o / RIVER_LIP);
-    const t = 1 - Math.min(1, -o / SHELF);
-    return bed + (RIVER_WATER_Y - bed) * (t * t * t);
-  };
-  const cols = [
-    { o: -SHELF, a: 1 }, { o: -SHELF * 0.55, a: 1 }, { o: -SHELF * 0.25, a: 1 },
-    { o: 0, a: 1 }, { o: RIVER_LIP, a: 1 }, { o: RIVER_LIP + FR, a: 0 },
-  ];
-  const N = cols.length, T = 4, pos = [], uv = [], col = [], idx = [];
-  let dist = 0;
-  for (let i = 0; i < pts.length; i++) {
-    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
-    let dx = b.x - a.x, dz = b.z - a.z; const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
-    const nx = -dz * out, nz = dx * out;
-    if (i > 0) dist += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z);
-    for (const c of cols) { pos.push(pts[i].x + nx * c.o, yAt(c.o) + 0.03, pts[i].z + nz * c.o); uv.push(c.o / T, dist / T); col.push(1, 1, 1, c.a); }
-  }
-  for (let i = 0; i < pts.length - 1; i++) for (let j = 0; j < N - 1; j++) {
-    const q = i * N + j; idx.push(q, q + 1, q + N, q + 1, q + N + 1, q + N);
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
-  g.setIndex(idx); g.computeVertexNormals();
-  const mat = detailize(new THREE.MeshStandardMaterial({ color: 0x9c7a52, roughness: 1,
-    vertexColors: true, transparent: true, depthWrite: false }), 'dirt', { scale: 2, strength: 0.5 });
-  const m = new THREE.Mesh(g, mat); m.receiveShadow = true; scene.add(m);
-}
-
 function buildRiverShore(points, half) {
   const pts = smoothPoly(points, 8);
   const H = half + RIVER_LIP, W = RIVER_WATER_Y, FR = 2.0;
@@ -2529,29 +2442,6 @@ function buildSpoilBank(mine) {
 }
 
 // Rivers — deep flowing water sitting in the carved channel, one per river.
-  // Lakes and fens: a shore ring hugging the outline, then the water surface
-  // filling the polygon. Built before the rivers so a creek's mouth draws over
-  // the lake edge rather than under it.
-  for (const lake of worldLakes()) {
-    buildLakeShore(lake);
-    const shape = new THREE.Shape(lake.points.map(q => new THREE.Vector2(q.x, q.z)));
-    const geo = new THREE.ShapeGeometry(shape, 12);
-    geo.rotateX(Math.PI / 2);                    // Shape's +Y becomes world +Z
-    geo.translate(0, RIVER_WATER_Y, 0);
-    const ltex = makeWaterTexture();
-    const lmat = detailize(new THREE.MeshStandardMaterial({ map: ltex,
-      color: lake.shallow ? 0x4d87a8 : 0x2a6b96, roughness: 0.3, metalness: 0.25,
-      transparent: true, opacity: lake.shallow ? 0.78 : 0.96, side: THREE.DoubleSide,
-      emissive: 0x11364f, emissiveIntensity: 0.9 }), 'water', { scale: 4, strength: 0.6 });
-    // World-space UVs so the surface texture is continuous with the rivers'.
-    const pos = geo.attributes.position, uv = [];
-    for (let i = 0; i < pos.count; i++) uv.push(pos.getX(i) / 8, pos.getZ(i) / 8);
-    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-    const mesh = new THREE.Mesh(geo, lmat);
-    mesh.receiveShadow = true; scene.add(mesh);
-    if (!riverMesh) { riverMesh = mesh; riverTex = ltex; }   // share the flow animation
-  }
-
   for (const river of worldRivers()) {
     const rtex = makeWaterTexture();
     const waterMat = detailize(new THREE.MeshStandardMaterial({ map: rtex, color: 0x2f74a0, roughness: 0.3, metalness: 0.25, transparent: true, opacity: 0.96, side: THREE.DoubleSide,
@@ -2758,8 +2648,8 @@ function buildLowPolyGround(W, D, cx, cz) {
     const hueN = fbm2(wx * 2.2, wz * 2.2, 11), ligN = fbm2((wx + 311) * 2.2, (wz - 97) * 2.2, 23), satN = fbm2((wx - 173) * 2.2, (wz + 421) * 2.2, 37);
     let onBed = false;
     for (const r of worldRivers()) { if (distToPolyline(wx, wz, r.points) < riverWaterHalf(r.width) + 0.5) { onBed = true; break; } }
-    if (!onBed) for (const l of worldLakes()) { if (lakeEdgeDist(l, wx, wz) < 0.5) { onBed = true; break; } }
-    const rock = cliffRock(wx, wz);
+    if (!onBed && terrainField(wx, wz, fWet) > 0.45) onBed = true;
+    const rock = terrainField(wx, wz, fRock);
     if (rock > 0.02) {                                                     // bare stone on the walls
       const g = 0.30 + ligN * 0.16 + (hueN - 0.5) * 0.05;
       c.setRGB(g * 1.02, g, g * 0.96);
@@ -2769,9 +2659,10 @@ function buildLowPolyGround(W, D, cx, cz) {
     else {
       // Shift with the canopy: open ground is a warmer, lighter sward, deep
       // wood is cooler and darker, which is the blueprint's two greens.
-      const f = forestAt(wx, wz);               // ~0.07 open .. 1.85 dense
-      const open = Math.max(0, Math.min(1, (1 - f) / 0.93));      // 1 in a clearing
-      const deep = Math.max(0, Math.min(1, (f - 1) / 0.85));      // 1 in a grove
+      // Straight off the traced grid: 1 where the drawing shows open
+      // "traversable area", 1 where it shows dense forest.
+      const open = terrainField(wx, wz, fOpen);
+      const deep = terrainField(wx, wz, c => c === T_DENSE ? 1 : 0);
       const hue = 0.23 + hueN * 0.16 + deep * 0.05 - open * 0.03;
       const sat = 0.30 + satN * 0.34 - deep * 0.05 + open * 0.06;
       const lig = 0.13 + ligN * 0.2 + open * 0.07 - deep * 0.05;
@@ -2838,7 +2729,7 @@ function buildDetails() {
     !inFarmYard(x, z, 2) &&
     worldPaths().every(p => distToPolyline(x, z, p) >= pathClear) &&
     worldRivers().every(r => distToPolyline(x, z, r.points) >= riverWaterHalf(r.width) + RIVER_LIP) &&
-    worldLakes().every(l => lakeEdgeDist(l, x, z) >= RIVER_LIP) &&
+    terrainField(x, z, fWet) < 0.3 && terrainField(x, z, fRock) < 0.3 &&
     !zone.pois.some(p => Math.hypot(x - p.x, z - p.z) < Math.max(3, clearRadius(p) - 3)) &&
     !zone.rocks.some(o => Math.hypot(x - o.x, z - o.z) < o.r + 1);
   const gen = (n, pathClear = 2.5) => {
@@ -2923,7 +2814,7 @@ function buildGrass() {
   const ok = (x, z) => (!zone.boundary || inBoundary(x, z)) &&
     !inHouse(x, z) && !inField(x, z) && !inMine(x, z) &&
     worldRivers().every(r => distToPolyline(x, z, r.points) >= riverWaterHalf(r.width) + RIVER_LIP) &&
-    worldLakes().every(l => lakeEdgeDist(l, x, z) >= RIVER_LIP) &&
+    terrainField(x, z, fWet) < 0.3 && terrainField(x, z, fRock) < 0.3 &&
     !zone.rocks.some(o => Math.hypot(x - o.x, z - o.z) < o.r);
   const onPathSkip = (x, z) => (worldPaths().some(p => distToPolyline(x, z, p) < 2.2) || (zone.trails || []).some(t => distToPolyline(x, z, t) < 1.5)) && rng() > 0.12;
   const spots = [];
@@ -10131,7 +10022,7 @@ respawnBtn.onclick = () => ws?.send(JSON.stringify({ t: 'respawn' }));
 if (location.search.includes('debug')) {
   window.__bk = {
     THREE,
-    terrainHeight, landHeight, hillDamp, groundY,   // terrain probes, for checking relief
+    terrainHeight, landHeight, groundY, terrainAt, terrainField,   // terrain probes
     get scene() { return scene; },
     get camera() { return camera; },
     get renderer() { return renderer; },
@@ -10335,24 +10226,17 @@ function drawMap() {
   // it is wadeable, not a channel you have to walk around.
   // Forest cover, so the map reads as woodland rather than an empty field. One
   // soft blot per tree, well under the labels and roads drawn after it.
-  if (!under) for (const a of (zone.clearings || [])) {
-    if (!inReg(a.x, a.z)) continue;
-    ctx.beginPath(); ctx.arc(px(a.x), pz(a.z), Math.max(3, a.r * s), 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(122,150,86,0.30)'; ctx.fill();      // traversable area
-  }
-  if (!under && (zone.trees || []).length) {
-    ctx.save(); ctx.fillStyle = 'rgba(38,82,56,0.82)';
-    for (const t of zone.trees) {
-      if (!inReg(t.x, t.z)) continue;
-      ctx.beginPath(); ctx.arc(px(t.x), pz(t.z), Math.max(2.4, 4.2 * (t.s || 1) * s), 0, Math.PI * 2); ctx.fill();
+  // The traced terrain, drawn cell by cell -- the blueprint's own ground.
+  const T = zone.terrain;
+  if (!under && T) {
+    const COL = { 'W': '#2f6f9c', 'w': '#4f8cb4', 'R': '#8d93a0', 'F': '#1e3b28', 'f': '#2c5138', '.': '#71894f' };
+    const cs = Math.ceil(T.cell * s) + 1;
+    for (let gz = 0; gz < T.h; gz++) for (let gx = 0; gx < T.w; gx++) {
+      const c = T.rows[gz][gx]; const col = COL[c]; if (!col) continue;
+      const wx = T.minX + (gx + 0.5) * T.cell, wz = T.minZ + (gz + 0.5) * T.cell;
+      if (!inReg(wx, wz)) continue;
+      ctx.fillStyle = col; ctx.fillRect(px(wx) - cs / 2, pz(wz) - cs / 2, cs, cs);
     }
-    ctx.restore();
-  }
-  if (!under) for (const lk of (zone.lakes || [])) {
-    if (!inReg(lk.points[0].x, lk.points[0].z)) continue;
-    line(lk.points, true);
-    ctx.fillStyle = lk.shallow ? 'rgba(79,140,180,0.5)' : 'rgba(47,111,156,0.92)'; ctx.fill();
-    ctx.strokeStyle = 'rgba(120,170,205,0.5)'; ctx.lineWidth = 1.5; ctx.stroke();
   }
   if (!under) for (const r of worldRivers()) { if (!r.points) continue; line(r.points); ctx.strokeStyle = '#2f6f9c'; ctx.lineWidth = Math.max(3, r.width * s * 0.6); ctx.lineJoin = ctx.lineCap = 'round'; ctx.stroke(); }
   // paths (dashed trails)

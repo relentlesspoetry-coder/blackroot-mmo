@@ -46,36 +46,6 @@ export const darkwoods = {
   // unevenly, so the dense stands need headroom to actually read as dense.
   treeCount: 240, // scaled up with the zone at load
 
-  // ------------------------------------------------------------------
-  // Where the wood opens and where it closes in. The blueprint separates
-  // light "traversable area" from dark "forest (dense)", and that contrast
-  // is most of what the drawing looks like from the ground. Everything not
-  // listed here is ordinary woodland in between.
-  // ------------------------------------------------------------------
-  clearings: [
-    { x: -26, z: -86, r: 40 },   // Hearthstead's fields and yards
-    { x: 1,   z: -6,  r: 30 },   // the bowl Witchlight Camp sits in
-    { x: 34,  z: -78, r: 22 },   // the chapel's graveyard sward
-    { x: -84, z: 26,  r: 34 },   // Crow Hill's bare summit -- the wide views
-    { x: 63,  z: 35,  r: 24 },   // the ground Briar Camp cleared for itself
-    { x: -14, z: 56,  r: 16 },   // the Wayside Camp
-    { x: -84, z: -20, r: 20 },   // the floor of Wolfsnag Pass
-    { x: 88,  z: 3,   r: 34 },   // Murkfen -- open water and sedge, not timber
-    { x: -86, z: -58, r: 30 },   // Ravenwater's shore
-    { x: -114, z: -16, r: 14 },  // the Root-Choked Ravine dig
-    { x: 104, z: -46, r: 12 },   // Copper Hollow
-    { x: -122, z: -14, r: 12 },  // Tin Scrape
-  ],
-  groves: [
-    { x: 91,  z: -68, r: 34 },   // Grimroot Thicket -- the cursed heart of it
-    { x: 62,  z: -46, r: 30 },   // the belt between the thicket and the road
-    { x: -46, z: -62, r: 30 },   // the old wood above the creek
-    { x: -38, z: 36,  r: 26 },   // the bandit wood under Crow Hill
-    { x: 24,  z: 58,  r: 30 },   // the deep wood around the Spider Den
-    { x: -64, z: 68,  r: 26 },   // the south-western timber
-    { x: 40,  z: -34, r: 24 },   // between the creek and the fen
-    { x: -10, z: 80,  r: 24 },   // the belt above the South Track
-  ],
 
   // A low-level farming zone: mobs respawn quickly so grinding stays smooth.
   respawnMult: 0.4,
@@ -83,7 +53,7 @@ export const darkwoods = {
   // Axis-aligned bounds (used for spawn sampling / grid sizing).
   // 270 x 210 zone units = 459 x 357 metres once scaled: the blueprint's
   // 1.7:1.3 proportion, at a density the forest and the framerate can carry.
-  bounds: { minX: -135, maxX: 135, minZ: -110, maxZ: 100 },
+  bounds: { minX: -135, maxX: 135, minZ: -113.2, maxZ: 113.2 },
 
   // Organic landmass outline (clockwise), traced off the blueprint: the wide
   // north shoulder that holds Hearthstead, the eastern bulge behind Murkfen,
@@ -98,11 +68,117 @@ export const darkwoods = {
     { x: -90, z: -82 },
   ],
 
+  // ------------------------------------------------------------------
+  // TERRAIN, traced from the Dark Woods Zone Layout Blueprint by
+  // tools/trace_blueprint.py: the drawing read pixel by pixel and classified
+  // by colour, rather than approximated by hand in circles and lines.
+  //
+  // One character per 2.5-unit cell, origin (minX, minZ), row 0 is north:
+  //   ' ' off the map   'W' deep water   'w' shallow marsh   'R' rock
+  //   'F' dense forest  'f' ordinary wood  '.' open ground
+  // ------------------------------------------------------------------
+  terrain: {
+    cell: 2.5, w: 108, h: 91, minX: -135.0, minZ: -113.2,
+    rows: [
+      'RRRRRRRRRR                            RRRRRRRRRRR                                                           ',
+      'RRRRRRRRRR                           .RRRRRRRRRRR..RRRR.         RRRRRRRRRRRR...                            ',
+      'RRRRRRRRRR.                          .RRRRRRRRRRRRRR...RR     .RR..RRR...f.RR..RRRR.                        ',
+      'RRRRRRRRRR                       RRRRRR.RRRRRRRRRRfF.f..RRRRRRRR...fffFFFFFF......RRR                       ',
+      'RRRRRRRRR                      .RR..R..........fFFFFFFFf........ff..FFFFFFFFFFFFFFF.RRRR.                   ',
+      'RRRRRRRR                   .RRRR..f............FFFFFFfFff....fFFFFf.FFf.....fFFFFFFF...RRRRRR               ',
+      '.RRRRR.              .RRRRRR......ff............ffFFFfF...fffFFFFFF...........ffFFFFFFFf....RR              ',
+      ' .......        .RRRRRR...ffff....ff..............fFF.......FFFfFFf.............fFFFFFFF.FFf.R              ',
+      ' .......      RRRR....fFFFFFFF............FFf.........f....fFFFFFF........ff.......FFFFFFFFFfRR             ',
+      '            .RR.fffFfFFFFFFFFFF..F....w..FFFFFfFF.....f....fFffFFf...ff.FFff........fffFf..FF.R.            ',
+      '           RR..FFFFFFFfFFFfffff..FFFF..f.FFFFFFF........................f.....ff..........fFFf.RR.          ',
+      '       ..RRR.FFFFFFFFFF.........fFFFFF....Fff.ff..................FF......f..FFF..........fFFFF..RRR        ',
+      '     .RRRR.fFFFFFFfFFFFf........ffFFFFfW...........................f.....fFFFFFFFfFf..fFf...ffFFF..RR       ',
+      '    RR.fffFFF......FFFF..f......FFF.FFFW................................FFFFFFFFFFF...fFF......FFFF.RR      ',
+      '   RR.FFFFF......WWF....FFff....fff.FFf......f........f................fFfFFFFFFFFF....f...f....fff..R.     ',
+      '  RRfFFFFF..WWWWWW.F....FFFFf..f....FF............f.................f....fFFFFFff...f.....fFFFf.......R     ',
+      ' RRfFFFFF..WWWWWWW.f.....FF....Ff...Ff..........f.......................fFFF.FF....FFF....FFFFFFFFf...R     ',
+      'RR.FFFFf..WWWWWWWWW..f......W.FFF.W.F........F.....................fFF.fFff..FF...fFFFf...FFFFFfFFF...R     ',
+      'RRfFFF...WWWWWWWWWWWWWWWWWWWWWfFF.W.f.......FF.........R..........FFFf.fF..fFFF...fFFFF..FFFFFfFFFF...R     ',
+      'RRFFF...WWWWWfWWWWWWWWWWWWWWWWWWWWW.......fFFF........RRRRRRR....fFFf..fFFFFFFFFf....ffFFFFFFFFFFFF..RR     ',
+      'RRFFf...W.WWffWWWWWWWWW...WWWWWWWWW.......fFFF........RRRRRRRR...ff....FFFFffFFFF..ff..f.fFFfffFFFF..R      ',
+      '.R.FF....f..Ff.f.WWWWWWWWWWWWWWWWWWW........fFFf.f....RRRRRRRR........fFFF...FFFFF..RRRRRRRRRRRfFFF..R      ',
+      ' RRfFf...f.WW...WWWWWWWWWWWWWWWWWWWWW..WW.....f.FFF...RRRRRRRR..............fFFFFF..RRRRRRRRRRRRFFf..R      ',
+      ' .R.FFFfWWW..WWWWWWwwwwwwwwwwWWWWWWWW..WW...ff...FF.........................fFFFFFf.RRRRRRRRRRRfFFf..R.     ',
+      '  R.FFf.WWW...WWWWw..........wwWWWWW....WW.fFf...FF...........ff..........ff...FFFffRRRRRRRRRRRFFF...R.     ',
+      ' RR.fFff.WWWWWWWWww..wwwwwww..wwWWWW....WWW..fF..Ff........ffFFf..........FF....Fff.RRRRRRRRRRRFFf...R      ',
+      ' R....FF...WWWWWWWwwwWWWWWWWWWWWWWW.......wwWfF..FFf......fFf.......f.f...FF......FFf.fFFffFFFFFf...RR      ',
+      'RR.FFFFFFF.....WWWWWWWWWWWWWWWWWWW..........WW...fFF....FFf......fFFFFFFFFFfFF..FFF.FFFFFFFffFf...f.RR      ',
+      'RfFffff.....f..FFWWWWWWWWWWWWWWWWF.W..w..............FFfFFf.....fFFFFFFFFFF.Ff..f...fFFFFf.......fFRR       ',
+      'RfFf.......FF.fFFFF....ffWWWWWWW.F......ff...............Ff...FFFFFF.fFFFFF.F........FFFf...ffffF           ',
+      'RRFF....FffFF.....F...fFF.......ff......FFf....WW.............FFFFFF..FFFFf...........F.....ffFFf           ',
+      '.RfF...FFFFFf.....FFFFFFF....fFf...Ff....f.....WW..FF.fff.....fFfFFFffFFFFF....f.....fFFF........           ',
+      ' RRFFf.Ff.........FfffFFf.fFFFFFf..Ff...........WWWfFFFFF......FFFFFFFFFFFf..........FFFF........           ',
+      ' .RFFf.f...............f.fFFF.fFF..ff...ff......fWWWWWW.......FFFFFfffFFf..........FffFFf........           ',
+      ' .RfFfFFF.fRRR................FFF.....fFFF..f...f..WWWW.......FFF.....................f....FFFf..           ',
+      ' RRFFFFFFFF.RR................ffff....FFFFFFf......fFWWW......FF..........f...............FFFFF..           ',
+      ' R.fF.......RRRR........RR.f...FFF...fFFFFFFFf......f.....WW.......fF...fFFf...............FFFFf.           ',
+      '.R..........f..RR....RRRRRRF...fFF........fff.............WWW.....FFFFffF......f..............fFf           ',
+      'R..fFf......FF.RR...RRRRRRRFF..............................W.....fffFf..............fFf.........f           ',
+      'R.FFf.......FfRRRRRRRRRRRRRff..................................WW...................fFf..........ffFFFf.R   ',
+      'R.FF..........RRRRRRRRRRRRR..f....f.............................WW........ww.............ww..w.......FF.R.  ',
+      'R.FFfFf.......RRRRRRRRRRRR..fFf..FFF.ff.........................WW...WWW....W...........www..www......f..R  ',
+      'RRfFFFF.......RRRRRRRRRRRR..fFFF.fFFFFf......................FFf.....WWW....W..WWWWWWWWWWww...ww.........R. ',
+      ' RRfFFFF.......RRRRRRRRRR.....FFf..FFF.......................FFF......WWWWWwW....WWWWWWW..ww.....WW.....f.R.',
+      '..RRFFFFf.......RRRRRR.ffFFF..FfFfffFF........................FF.......W.W.........WWWWwwwwwww....Ww.....fRR',
+      'RRRR.fFf..ff......RRR..FFFFFFFf......f...........RRRRRRRRR....fF.Ff................WWWww....wwwWW..w.......R',
+      'RRRR................RR.fFFFFf...................RRRRRRRRRRR....F........f.WW.WW......ww......wwWWWww.......R',
+      'RRRR.............................................RRRRRRRRR..........wWWWf.WWWW..W....www......wWW........f.R',
+      'RRR..fF.....ffff............................................f.........WW.WWwwww.w....wwwwww..www....ff....RR',
+      'RR..fFFFFFffFFFf..F.WW.......FFffF........................FFf..........WWWWwww..wWW..........ww...........R ',
+      '...fFFFFFFFfFFf...f.WW.fF...FFFFffFFF......................f........WW.WWW.W.....w..........ww............R ',
+      'ffFFFFFFFFf..........w......F..f.fFFFF................................f.WWWW..WWW.WWW..wWWWWww.w..........R ',
+      'FFFFFFFFFFF..........ww....fFf....FFFFfFfff........fFF................f.WWWWWWWWWWW.....WW.WWWwww.........R.',
+      'FFFFFFFFFFFF...........fFf.FFFfF......fFFFFf...f.fFFFFf.....F.......WWWWW.WWWWWWWWW..........wwwww.......fRR',
+      'FFFFFfff.fFF.............fFFFFFFf......FFFF...FFFFFFFFffFFFFFf.......W..ff.......WWW............w......FFF.R',
+      'FFf........................fFFFFFF.WWW..Ff...fFFFFFFFf.fFFFFFf.ff......fFf........WWW...WWWWWW.........FFFRR',
+      'FF............f....F.........FFFFFf.WW..........fFFFFf..fFFFF...ff..........f......WW....WWWWWW.........fFRR',
+      'F............ff....F..........fFFFFf..wwff...f....ff....fFFFF.fFFFf.......fFFFf..........WWWWWW....WWWWw.fR.',
+      'f.fF.......FF......F.............FFF..wWfF..ff.........Fffff..FFFFf.......FFFFFF.........WWWWWW.....W.....R ',
+      'FFFFf.....FFF.....ff.............fFF..ww..........FF..FFf....FFFf...........fFFFFf.........fF............R  ',
+      'FFFFF...fFFF...fFFF...............Fff.........f...FFFFFFFF.f.fFf..............fFFF.......fFFFFfFFFFF..f.R.  ',
+      'FFFfF.fFFFf....ff.................FFF.....ww.fF..fFFFFFF.f......................FffFf.....FFFFFFFFFFF..R    ',
+      'FFf...FFf......................f.........WWW.fF..Ff.FFFFf...f..........................f...fFFFffFFFFfRR    ',
+      'FFF...FF..ff.f..........................F..ww....f......F..F.....f.f...................Ff....ff..FFFF.R     ',
+      'FFF.......FFFFf.....................fffFF..ww...W...f...FFFFf......FF...................FF........FF..R     ',
+      'FFf......FFFff......................fFFFf..f..F.W...F...FFFf.............................F........f..R      ',
+      'FFf......FFF.........................FFF..fFFFf.f..WF.....f..ff.............................FF......R       ',
+      'FFFf......fF...............f..........ff..fFFf...f..fWW.....FFF.......ff...................FFFFFF..R.       ',
+      'FFFFf.FF............f..f.Fff...................fFFf...ww...FFFf.......ff..................fFFFFFf.R.        ',
+      'FFFFf.FFf..........fF.FFf................f.....fFFFf..ww..FFfFf...FF....................ffFFFFF..RR         ',
+      'FFFFffFFf..........FF...............fFFffFF......fFF..WW..f......FfFf.f................FFFFFFFFf.R.         ',
+      'FFFFFFFF......fFf..FF............fffFFF.fFFf.fff...Ff.WW........fFfFFFF...............fF.FF.FFFf.R          ',
+      'FFFFFFFfFf....FFFfFFFFF.........fFFFFF...fFF.FFFF......w............fFF.....f.........fF.FFFFFF..R          ',
+      'fFFf....FFf...fFFfFFFFF..........fFFFF............f...........W.........fFFFFf..........FFFFFFF..R          ',
+      '.Ff.....FFFF......fFFF...........fFFf.............FFFFf......WWw........FFFFFFF.........FFFFFFF.R.          ',
+      '.......FFFFFF................fFFFFf...............ffFFFf........wWWW....FFFFFFF........fFFFFFFF..           ',
+      'R......FFFFFFFFfFF..........fFFFF........ff..........fFFF......f..WWW...fFFFFFFF...FF.fFFFF.                ',
+      '.R....FFFFFFFFFFFFF.........fFFFFf.......ff....fFf....fFFf.fFf.ff..WWW...ffFFFFFFFfFFFFFF...                ',
+      ' RR..FFFFFFFFFFFFff.fFfFf....fFFfFfF......R....FFFRRRR.f...FFFfff.ffWWW.....fFFFFFFFFFFFFF..                ',
+      '  RR.ff.FFFfFFFFFFFfFFFFF.........Ff.RR..RRR...FFFRRRRRR...F......FFfWWW......FFFFFFFfFFff..                ',
+      '   .RR...FF.fFFFFFFFFFFf.......ffF...RRRRRRRF...fRRRRRRRRR.........ff.WW......fFFFFFFFfRRRR                 ',
+      '     .R...FFFFFFFFFFFFF.f.....FFFFFf.RRRRRR.f....RRRRRRRRRR....F.......WW.....fFFFFFf.RR.                   ',
+      '       RR....fFFFFFFFFF.FFf...FFFFFFf.RRRRR......RRRRRRRRRR..fFFFFf....wW.....FFFFf.RR.                     ',
+      '         RRRRRfFFFFFFf..FFF.....ffFFF..RRRR.......RRRRRRRR.FFFFffFf...Rwww.R..f.RRRR.                       ',
+      '            .RR.FFFFFf..FFf........FF..R......FFf.fRRRR..ffFFF.....f...RRwwRRRRRRR.                         ',
+      '              RR.FFFFFfFF....fFFf..........ffFFFFFFf..fFFFF.fFf..FFF..RRR.RRRRR.                            ',
+      '               .R.fFFFFFF.RRRfFFFf........fffFffFff.RR.fFFff.fF.fFFfRR.     .RR.                            ',
+      '                 R.FFFFFF.RRRRR.f..f.f....RRRRRRRRRRRRRRRR.R.fFfff.RR      RRRRRRRRR                        ',
+      '                  RR..ff.RRR..RRRR.f.f.RRRR........     .RRRRRRRRRR.      .RRRRRRRRRR                       ',
+      '                   RRRRRR.       .RRRRRR                    .RRRR          RRRRRRRRRR                       ',
+      '                                    ..                                       .......                        ',
+    ],
+  },
+
   // The continuous rock wall's foot sits on the boundary line, so the player is
   // stopped right at the rock by the boundary itself — no inset gap needed.
   boundaryInset: 0,
 
-  spawn: { x: -49, z: -96, yaw: 1.2 }, // beside the bed, inside the Hearthstead farmhouse (see farm.houses)
+  spawn: { x: -100.5, z: 49.5, yaw: 1.2 }, // beside the bed, inside the Hearthstead farmhouse (see farm.houses)
 
   // Rendering atmosphere — bright, readable, Old School RuneScape style.
   // Deeper woods: pull the clear-weather fog in so distant trees fade into a
@@ -142,58 +218,58 @@ export const darkwoods = {
   // ------------------------------------------------------------------
   pois: [
     // --- The road in, and the farm the player wakes up on ---
-    { key: 'northtrail', name: 'North Trail',           x: -44, z: -105, kind: 'landmark' },
-    { key: 'entrance',   name: 'Hearthstead Farm',      x: -26, z: -86, kind: 'safe', r: 26 },
-    { key: 'hunter',     name: "Old Hunter's Trail",    x: -40, z: -58, kind: 'landmark' },
+    { key: 'northtrail', name: 'North Trail',           x: -42.2, z: -97.7, kind: 'landmark' },
+    { key: 'entrance',   name: 'Hearthstead Farm',      x: -77.5, z: 59.5, kind: 'safe', r: 26 },
+    { key: 'hunter',     name: "Old Hunter's Trail",    x: -41.8, z: -62.7, kind: 'landmark' },
     // --- North: the pool, the chapel, the cursed thicket ---
-    { key: 'ravenwater', name: 'Ravenwater Pool',       x: -48, z: -30, kind: 'landmark' },   // marked from the quiet north shore
+    { key: 'ravenwater', name: 'Ravenwater Pool',       x: -48, z: -27.5, kind: 'landmark' },   // marked from the quiet north shore
     { key: 'shrine',     name: 'Fallen Chapel',         x: 34,  z: -78, kind: 'safe', r: 12 },
     { key: 'stones',     name: 'Grimroot Thicket',      x: 91,  z: -68, kind: 'boss', optional: true },
     // --- The main road west to east ---
-    { key: 'westroad',   name: 'West Road',             x: -128, z: 2,  kind: 'landmark' },
-    { key: 'wolfsnag',   name: 'Wolfsnag Pass',         x: -84, z: -20, kind: 'landmark' },
+    { key: 'westroad',   name: 'West Road',             x: -120.9, z: 4.4,  kind: 'landmark' },
+    { key: 'wolfsnag',   name: 'Wolfsnag Pass',         x: -86.2, z: -21.3, kind: 'landmark' },
     { key: 'ravine',     name: 'Root-Choked Ravine',    x: -114, z: -16, kind: 'mine', art: 'mine', optional: true },
-    { key: 'creek',      name: 'Blackroot Creek',       x: -30, z: -24, kind: 'landmark' },   // the ford, south bank
+    { key: 'creek',      name: 'Blackroot Creek',       x: -30, z: -21.5, kind: 'landmark' },   // the ford, south bank
     { key: 'outpost',    name: 'Witchlight Camp',       x: 1,   z: -6,  kind: 'safe', r: 14 },
     { key: 'rotfen',     name: 'Murkfen',               x: 88,  z: 3,   kind: 'landmark', optional: true },
-    { key: 'eastpath',   name: 'East Path',             x: 120, z: -36, kind: 'landmark' },
+    { key: 'eastpath',   name: 'East Path',             x: 108.2, z: -45.2, kind: 'landmark' },
     // --- South: the lookout, the war camp, the den ---
     { key: 'watchtower', name: 'Crow Hill',             x: -84, z: 26,  kind: 'landmark', optional: true },
-    { key: 'bridge',     name: 'Mossy Bridge',          x: 20,  z: 27,  kind: 'landmark' },
+    { key: 'bridge',     name: 'Mossy Bridge',          x: 24.4,  z: 29.3,  kind: 'landmark' },
     { key: 'wolfden',    name: 'Briar Camp',            x: 63,  z: 35,  kind: 'landmark' },
     { key: 'camp',       name: 'Wayside Camp',          x: -14, z: 56,  kind: 'safe', r: 9, merchant: true, optional: true },
-    { key: 'cave',       name: 'Spider Den',            x: 1,   z: 69,  kind: 'cave' },
-    { key: 'southgate',  name: 'South Track',           x: 48,  z: 86,  kind: 'gate', exit: true },
+    { key: 'cave',       name: 'Spider Den',            x: 1,   z: 71.5,  kind: 'cave' },
+    { key: 'southgate',  name: 'South Track',           x: 50.5,  z: 86,  kind: 'gate', exit: true },
     // --- Mining scrapes, off the road and worth the walk ---
-    { key: 'copperhollow', name: 'Copper Hollow',       x: 104, z: -46, kind: 'mine', art: 'mine', optional: true },
+    { key: 'copperhollow', name: 'Copper Hollow',       x: 106.5, z: -46, kind: 'mine', art: 'mine', optional: true },
     { key: 'tinscrape',    name: 'Tin Scrape',          x: -122, z: -14, kind: 'mine', art: 'mine', optional: true },
   ],
 
   // NPCs. `id` matches a quest's `giver`; the client builds a figure here and
   // floats a ! / ? marker over it when that giver has something for you.
   npcs: [
-    { id: 'alric',    name: 'Warden Alric',        x: -40.0,  z: -77.0, poi: 'entrance', model: 'Male', yaw: 3.1,
+    { id: 'alric',    name: 'Warden Alric',        x: -91.5,  z: 68.5, poi: 'entrance', model: 'Male', yaw: 3.1,
       // Looks mix the modular outfit pack by slot (outfit numbers; see client OUTFITS) with per-slot recolours.
       look: { hairColor: '#2b1d14', skin: '#c49a76', outfit: 4, hair: 'Hair_Crop', beard: 'Beard_Short' },   // Royal Knight — the warden of the clearing in plate
       idle: 'Keep to the path, and keep your blade where you can reach it.' },
     // Farmstead folk at the Entrance Clearing.
-    { id: 'garrick',  name: 'Drillmaster Garrick',  x: -16.0,    z: -76.0, poi: 'entrance', model: 'Male', yaw: 3.1, trainer: 'fighter',
+    { id: 'garrick',  name: 'Drillmaster Garrick',  x: -67.5,    z: 69.5, poi: 'entrance', model: 'Male', yaw: 3.1, trainer: 'fighter',
       look: { hairColor: '#3a2a1a', skin: '#b58a66', outfit: 6, hair: 'Hair_Undercut', beard: 'Beard_Full' },   // Sellsword — the drillmaster in a mercenary's brigandine
       idle: 'Swinging a stick is free. Swinging it properly costs coin. Come learn.' },
-    { id: 'aldis',    name: 'Mother Aldis',         x: -28.0,   z: -71.0, poi: 'entrance', model: 'Female', yaw: 3.0, trainer: 'cleric',
+    { id: 'aldis',    name: 'Mother Aldis',         x: -79.5,   z: 74.5, poi: 'entrance', model: 'Female', yaw: 3.0, trainer: 'cleric',
       look: { hairColor: '#d9d2c4', skin: '#d4b394', outfit: 31, hair: 'Hair_Bowl' },   // Temple Acolyte — undyed long tunic and circlet
       idle: 'The Light asks little of us: mend what is broken, and stand between the dark and those who cannot.' },
-    { id: 'lark',     name: 'Lark the Minstrel',    x: -6.0,   z: -69.0, poi: 'entrance', model: 'Male', yaw: 3.4, trainer: 'bard',
+    { id: 'lark',     name: 'Lark the Minstrel',    x: -57.5,   z: 76.5, poi: 'entrance', model: 'Male', yaw: 3.4, trainer: 'bard',
       look: { hairColor: '#7a4a22', skin: '#d2a67f', outfit: 19, hair: 'Hair_Swept', beard: 'Beard_Goatee' },   // Rose Bard — doublet and feathered cape
       idle: 'Every fight has a rhythm, friend. Learn to hear it and the whole party keeps time.' },
-    { id: 'maggie',   name: 'Old Maggie',          x: -2.0,   z: -90.0, poi: 'entrance', model: 'Female', yaw: 3.0,
+    { id: 'maggie',   name: 'Old Maggie',          x: -53.5,   z: 55.5, poi: 'entrance', model: 'Female', yaw: 3.0,
       look: { hairColor: '#b9b2a4', skin: '#d4b394', outfit: 1, hair: 'Hair_Topknot' },   // Village Farmhand
       idle: 'Mind the hens, love — and shut the gate on your way out.' },
-    { id: 'bram',     name: 'Farmhand Bram',       x: -39.0,  z: -88.0, poi: 'entrance', model: 'Male', yaw: 1.4,
+    { id: 'bram',     name: 'Farmhand Bram',       x: -90.5,  z: 57.5, poi: 'entrance', model: 'Male', yaw: 1.4,
       look: { hairColor: '#8a5a2b', skin: '#d9ab86', outfit: 1, hair: 'Hair_Bowl' },   // Village Farmhand
       idle: 'Cows need feedin’, fences need mendin’. No rest out here.' },
     // --- Dark Woods Outpost: the warden's camp, and the zone's story ---
-    { id: 'rowan',    name: 'Warden Rowan',        x: 1.0,  z: -3.0, poi: 'outpost', model: 'Male', yaw: 3.14,
+    { id: 'rowan',    name: 'Warden Rowan',        x: 1,  z: -5.5, poi: 'outpost', model: 'Male', yaw: 3.14,
       look: { hairColor: '#4a4038', skin: '#bc8f68', outfit: 47, hair: 'Hair_Receding', beard: 'Beard_Short' },   // Steel Vanguard — the outpost's warden
       idle: 'Never walk these roads without light. The animals I understand — it is what moves when they go quiet that bothers me.' },
     { id: 'brann',    name: 'Hunter Brann',        x: -5.0,  z: -8.0, poi: 'outpost', model: 'Male', yaw: 1.2,
@@ -202,16 +278,16 @@ export const darkwoods = {
     { id: 'lysa',     name: 'Scout Lysa',          x: 6.0,   z: -9.0, poi: 'outpost', model: 'Female', yaw: 0.6,
       look: { hairColor: '#2e1d12', skin: '#c99a74', outfit: 36, hair: 'Hair_Ponytail' },   // Snow Scout — fur vest and hood
       idle: 'The trees in the old grove are changing. Black bark, purple veins under the roots.' },
-    { id: 'mira',     name: 'Mira Thorn',          x: -3.0,  z: 0.0, poi: 'outpost', model: 'Female', yaw: 2.4,
+    { id: 'mira',     name: 'Mira Thorn',          x: -6.7,  z: -3.3, poi: 'outpost', model: 'Female', yaw: 2.4,
       look: { hairColor: '#6b4a24', skin: '#d0a57e', outfit: 9, hair: 'Hair_Mane' },   // Grey Wanderer — a herbalist's robe
       idle: 'A disease kills something. This is changing it. That is the difference, and it is the whole problem.' },
-    { id: 'tessa',    name: 'Quartermaster Tessa', x: 5.0,   z: -2.0, poi: 'outpost', model: 'Female', yaw: 3.6,
+    { id: 'tessa',    name: 'Quartermaster Tessa', x: 5,   z: -4.5, poi: 'outpost', model: 'Female', yaw: 3.6,
       look: { hairColor: '#3a2a1a', skin: '#c9996f', outfit: 29, hair: 'Hair_Braids' },   // Wine Merchant — a quartermaster's surcoat
       idle: 'Food, medicine, weapons, coffee. Ask me which one I miss most.' },
     { id: 'alden',    name: 'Brother Alden',       x: -2.0,  z: -11.0, poi: 'outpost', model: 'Male', yaw: 0.2,
       look: { hairColor: '#8a8276', skin: '#c7a081', outfit: 42, hair: 'Hair_Receding', beard: 'Beard_Full' },   // Crimson Cardinal — the priest
       idle: 'Have you heard the bell? It has been abandoned twenty years, and still it rings.' },
-    { id: 'fenwick',  name: 'Old Fenwick',         x: 9.0,   z: -14.0, poi: 'outpost', model: 'Male', yaw: 4.2,
+    { id: 'fenwick',  name: 'Old Fenwick',         x: 9,   z: -11.5, poi: 'outpost', model: 'Male', yaw: 4.2,
       look: { hairColor: '#b9b2a4', skin: '#b98f6a', outfit: 28, hair: 'Hair_Mane', beard: 'Beard_Full' },   // Bog Hermit — the old woodsman
       idle: 'Brown ones are safe. Blue ones are safe. Red ones depend on how attached you are to your organs.' },
     // Far enough from his own camp's roamers that a level-3 errand isn't a fight.
@@ -226,48 +302,100 @@ export const darkwoods = {
     { id: 'hermit',   name: 'Hermit of the Grove', x: 37.0,    z: -76.0,   poi: 'shrine',   model: 'Male',
       look: { hairColor: '#9a9a90', skin: '#c9a07c', outfit: 28, wear: { boots: 0 } },   // Bog Hermit, barefoot
       idle: 'The shrine holds. Not much else out here does.' },
-    { id: 'merchant', name: 'Wandering Merchant',  x: -15.5, z: 53.0,  poi: 'camp',     model: 'Female', trade: true,
+    { id: 'merchant', name: 'Wandering Merchant',  x: -15.5, z: 55.5,  poi: 'camp',     model: 'Female', trade: true,
       look: { hairColor: '#4a2e1a', skin: '#d0a57e', outfit: 29, hair: 'Hair_Topknot' },   // Wine Merchant
       idle: 'Wares? Aye, soon enough, traveller. Mind the woods.' },
   ],
 
-  // The road network. The blueprint draws two kinds and the legend names them:
-  // a major path (road) and a minor path (trail). The three arteries that join
-  // the four ways out through Witchlight Camp are roads -- broad, worn, kept
-  // clear of timber. Everything hanging off them is a trail: a thin scuff
-  // through the grass with the wood standing much closer to it.
+  // The road network. Two kinds, as the legend names them: a major path (road)
+  // and a minor path (trail). Every route is A*-routed over the traced terrain
+  // between its landmarks, so a road goes where the ground actually allows --
+  // through Wolfsnag Pass rather than into the cliff beside it.
   paths: [
-    // --- Major paths (roads) ---
     // West Road -> Wolfsnag Pass -> Witchlight Camp -> Murkfen -> East Path
     { kind: 'road', points: [
-      { x: -128, z: 2 }, { x: -121, z: -14 }, { x: -104, z: -19 }, { x: -84, z: -20 },
-      { x: -62, z: -21 }, { x: -40, z: -17 }, { x: -20, z: -12 }, { x: 1, z: -6 },
-      { x: 24, z: -4 }, { x: 48, z: -4 }, { x: 70, z: -4 }, { x: 86, z: -6 },
-      { x: 102, z: -18 }, { x: 120, z: -36 } ] },
-    // North Trail -> Hearthstead's gate -> south to Witchlight Camp
+      { x: -121.3, z: -4.5 }, { x: -121.3, z: -14.5 }, { x: -111.3, z: -14.5 }, { x: -108.8, z: -17 },
+      { x: -106.3, z: -17 }, { x: -108.8, z: -17 }, { x: -108.8, z: -19.5 }, { x: -111.3, z: -22 },
+      { x: -111.3, z: -32 }, { x: -96.3, z: -32 }, { x: -86.3, z: -22 }, { x: -86.3, z: -24.5 },
+      { x: -81.3, z: -24.5 }, { x: -78.8, z: -27 }, { x: -66.3, z: -27 }, { x: -56.3, z: -17 },
+      { x: -28.8, z: -17 }, { x: -26.3, z: -14.5 }, { x: -23.8, z: -14.5 }, { x: -21.3, z: -12 },
+      { x: -8.8, z: -12 }, { x: -6.3, z: -9.5 }, { x: -3.8, z: -9.5 }, { x: -1.3, z: -7 },
+      { x: 18.8, z: -7 }, { x: 21.3, z: -4.5 }, { x: 23.8, z: -4.5 }, { x: 26.3, z: -2 },
+      { x: 26.3, z: 0.5 }, { x: 31.3, z: 5.5 }, { x: 31.3, z: 25.5 }, { x: 33.8, z: 28 },
+      { x: 63.8, z: 28 }, { x: 68.8, z: 33 }, { x: 81.3, z: 33 }, { x: 81.3, z: 10.5 },
+      { x: 91.3, z: 0.5 }, { x: 91.3, z: -4.5 }, { x: 93.8, z: -7 }, { x: 93.8, z: -12 },
+      { x: 78.8, z: -27 }, { x: 61.3, z: -27 }, { x: 51.3, z: -17 }, { x: 51.3, z: -14.5 },
+      { x: 48.8, z: -12 }, { x: 48.8, z: -9.5 }, { x: 51.3, z: -7 }, { x: 53.8, z: -7 },
+      { x: 53.8, z: -2 }, { x: 61.3, z: -2 }, { x: 63.8, z: 0.5 }, { x: 68.8, z: 0.5 },
+      { x: 71.3, z: 3 }, { x: 83.8, z: 3 }, { x: 86.3, z: 0.5 }, { x: 86.3, z: -2 },
+      { x: 88.8, z: -4.5 }, { x: 88.8, z: -9.5 }, { x: 86.3, z: -12 }, { x: 81.3, z: -12 },
+      { x: 86.3, z: -12 }, { x: 88.8, z: -14.5 }, { x: 96.3, z: -14.5 }, { x: 98.8, z: -17 },
+      { x: 101.3, z: -17 }, { x: 101.3, z: -19.5 }, { x: 103.8, z: -22 }, { x: 103.8, z: -44.5 },
+      { x: 106.3, z: -44.5 }, { x: 108.8, z: -47 }, { x: 111.3, z: -47 },
+    ] },
+    // North Trail -> south to Witchlight Camp
     { kind: 'road', points: [
-      { x: -44, z: -105 }, { x: -44, z: -92 }, { x: -44, z: -80 }, { x: -44, z: -73 },
-      { x: -42, z: -62 }, { x: -38, z: -48 }, { x: -28, z: -32 }, { x: -16, z: -18 },
-      { x: 1, z: -6 } ] },
+      { x: -38.8, z: -99.5 }, { x: -38.8, z: -97 }, { x: -43.8, z: -92 }, { x: -43.8, z: -72 },
+      { x: -41.3, z: -69.5 }, { x: -41.3, z: -52 }, { x: -38.8, z: -49.5 }, { x: -38.8, z: -47 },
+      { x: -33.8, z: -47 }, { x: -33.8, z: -44.5 }, { x: -28.8, z: -39.5 }, { x: -28.8, z: -32 },
+      { x: -16.3, z: -19.5 }, { x: -16.3, z: -17 }, { x: -13.8, z: -14.5 }, { x: -11.3, z: -14.5 },
+      { x: -6.3, z: -9.5 }, { x: -3.8, z: -9.5 }, { x: -1.3, z: -7 }, { x: 1.3, z: -7 },
+    ] },
     // Witchlight Camp -> Mossy Bridge -> Spider Den -> South Track
     { kind: 'road', points: [
-      { x: 1, z: -6 }, { x: 4, z: 8 }, { x: 2, z: 26 }, { x: -2, z: 42 },
-      { x: -6, z: 56 }, { x: 1, z: 69 }, { x: 16, z: 78 }, { x: 32, z: 83 }, { x: 48, z: 86 } ] },
-
-    // --- Minor paths (trails) ---
-    // Chapel spur, east off the north road
-    { kind: 'trail', points: [ { x: -40, z: -58 }, { x: -20, z: -66 }, { x: 2, z: -72 }, { x: 20, z: -76 }, { x: 34, z: -78 } ] },
-    // Grimroot spur, north-east off the main road
-    { kind: 'trail', points: [ { x: 48, z: -4 }, { x: 58, z: -22 }, { x: 70, z: -40 }, { x: 82, z: -56 }, { x: 91, z: -68 } ] },
-    // Crow Hill spur, west off the south road
-    { kind: 'trail', points: [ { x: -2, z: 42 }, { x: -24, z: 38 }, { x: -46, z: 33 }, { x: -66, z: 29 }, { x: -84, z: 26 } ] },
-    // Briar Camp spur, east off the south road, over the Mossy Bridge
-    { kind: 'trail', points: [ { x: 2, z: 26 }, { x: 22, z: 29 }, { x: 42, z: 32 }, { x: 63, z: 35 } ] },
-    // Fen causeway: Briar Camp north along the shallows to the main road,
-    // which closes the eastern half of the blueprint's loop.
-    { kind: 'trail', points: [ { x: 63, z: 35 }, { x: 74, z: 26 }, { x: 82, z: 14 }, { x: 87, z: 2 }, { x: 86, z: -6 } ] },
-    // The south-western sweep: Crow Hill round to the Wayside Camp.
-    { kind: 'trail', points: [ { x: -84, z: 26 }, { x: -68, z: 40 }, { x: -46, z: 51 }, { x: -28, z: 56 }, { x: -14, z: 56 } ] },
+      { x: 1, z: -6 }, { x: -1.3, z: -4.5 }, { x: -16.3, z: -4.5 }, { x: -18.8, z: -2 },
+      { x: -18.8, z: 8 }, { x: -16.3, z: 10.5 }, { x: 1.3, z: 10.5 }, { x: 1.3, z: 33 },
+      { x: -1.3, z: 35.5 }, { x: -1.3, z: 43 }, { x: -18.8, z: 43 }, { x: -18.8, z: 55.5 },
+      { x: -13.8, z: 55.5 }, { x: -11.3, z: 58 }, { x: -8.8, z: 58 }, { x: -3.8, z: 63 },
+      { x: -3.8, z: 70.5 }, { x: 3.8, z: 70.5 }, { x: 6.3, z: 73 }, { x: 8.8, z: 73 },
+      { x: 11.3, z: 75.5 }, { x: 13.8, z: 75.5 }, { x: 13.8, z: 80.5 }, { x: 23.8, z: 80.5 },
+      { x: 26.3, z: 83 }, { x: 28.8, z: 83 }, { x: 23.8, z: 83 }, { x: 21.3, z: 80.5 },
+      { x: 11.3, z: 80.5 }, { x: 1.3, z: 70.5 }, { x: -6.3, z: 70.5 }, { x: -18.8, z: 58 },
+      { x: -18.8, z: 43 }, { x: -8.8, z: 33 }, { x: 6.3, z: 33 }, { x: 8.8, z: 35.5 },
+      { x: 13.8, z: 35.5 }, { x: 16.3, z: 38 }, { x: 18.8, z: 38 }, { x: 43.8, z: 63 },
+      { x: 43.8, z: 75.5 }, { x: 48.8, z: 80.5 }, { x: 48.8, z: 85.5 },
+    ] },
+    // Chapel spur
+    { kind: 'trail', points: [
+      { x: -41.3, z: -62 }, { x: -33.8, z: -62 }, { x: -28.8, z: -67 }, { x: -8.8, z: -67 },
+      { x: -6.3, z: -69.5 }, { x: -3.8, z: -69.5 }, { x: -1.3, z: -72 }, { x: 11.3, z: -72 },
+      { x: 13.8, z: -74.5 }, { x: 16.3, z: -74.5 }, { x: 18.8, z: -77 }, { x: 33.8, z: -77 },
+    ] },
+    // Grimroot spur
+    { kind: 'trail', points: [
+      { x: 48.8, z: -9.5 }, { x: 48.8, z: -12 }, { x: 61.3, z: -24.5 }, { x: 61.3, z: -27 },
+      { x: 71.3, z: -37 }, { x: 71.3, z: -64.5 }, { x: 81.3, z: -64.5 }, { x: 83.8, z: -67 },
+      { x: 91.3, z: -67 },
+    ] },
+    // Crow Hill spur
+    { kind: 'trail', points: [
+      { x: -2, z: 42 }, { x: -3.8, z: 43 }, { x: -8.8, z: 43 }, { x: -11.3, z: 40.5 },
+      { x: -13.8, z: 40.5 }, { x: -16.3, z: 38 }, { x: -41.3, z: 38 }, { x: -46.3, z: 33 },
+      { x: -58.8, z: 33 }, { x: -63.8, z: 28 }, { x: -78.8, z: 28 }, { x: -81.3, z: 25.5 },
+      { x: -83.8, z: 25.5 },
+    ] },
+    // Briar Camp spur
+    { kind: 'trail', points: [
+      { x: 2, z: 26 }, { x: 3.8, z: 28 }, { x: 31.3, z: 28 }, { x: 33.8, z: 30.5 },
+      { x: 36.3, z: 30.5 }, { x: 38.8, z: 33 }, { x: 48.8, z: 33 }, { x: 51.3, z: 35.5 },
+      { x: 53.8, z: 35.5 }, { x: 56.3, z: 38 }, { x: 61.3, z: 38 }, { x: 63.8, z: 35.5 },
+    ] },
+    // Fen causeway
+    { kind: 'trail', points: [
+      { x: 63, z: 35 }, { x: 66.3, z: 33 }, { x: 81.3, z: 33 }, { x: 81.3, z: 20.5 },
+      { x: 78.8, z: 20.5 }, { x: 81.3, z: 20.5 }, { x: 81.3, z: 10.5 }, { x: 86.3, z: 5.5 },
+      { x: 86.3, z: 3 }, { x: 91.3, z: -2 }, { x: 91.3, z: -4.5 }, { x: 93.8, z: -7 },
+      { x: 93.8, z: -12 }, { x: 91.3, z: -14.5 }, { x: 86.3, z: -14.5 }, { x: 83.8, z: -12 },
+      { x: 81.3, z: -12 },
+    ] },
+    // South-western sweep to Hearthstead
+    { kind: 'trail', points: [
+      { x: -84, z: 26 }, { x: -68.8, z: 40.5 }, { x: -66.3, z: 40.5 }, { x: -63.8, z: 43 },
+      { x: -61.3, z: 43 }, { x: -58.8, z: 45.5 }, { x: -56.3, z: 45.5 }, { x: -53.8, z: 48 },
+      { x: -51.3, z: 48 }, { x: -48.8, z: 50.5 }, { x: -46.3, z: 50.5 }, { x: -41.3, z: 55.5 },
+      { x: -28.8, z: 55.5 }, { x: -26.3, z: 58 }, { x: -18.8, z: 58 }, { x: -16.3, z: 55.5 },
+      { x: -13.8, z: 55.5 },
+    ] },
   ],
 
   // Three bodies of water, as the blueprint draws them.
@@ -293,23 +421,6 @@ export const darkwoods = {
       bridges: [ { x: 11, z: 26 }, { x: 29, z: 86 } ] },
   ],
 
-  // Standing water, drawn as the blueprint draws it rather than as a river made
-  // fat enough to pretend. A deep lake is solid -- you walk around Ravenwater.
-  // A shallow one is a fen: you wade it, and it slows nothing but your nerve.
-  lakes: [
-    { name: 'Ravenwater Pool', points: [
-      { x: -118, z: -54 }, { x: -114, z: -66 }, { x: -104, z: -75 }, { x: -90, z: -80 },
-      { x: -76, z: -80 }, { x: -68, z: -77 }, { x: -58, z: -62 }, { x: -54, z: -52 },
-      { x: -58, z: -52 }, { x: -70, z: -51 }, { x: -84, z: -51 }, { x: -98, z: -53 },
-      { x: -110, z: -56 },
-    ] },
-    { name: 'Murkfen', shallow: true, points: [
-      { x: 40, z: -6 }, { x: 46, z: -18 }, { x: 58, z: -26 }, { x: 74, z: -30 },
-      { x: 92, z: -29 }, { x: 108, z: -24 }, { x: 120, z: -14 }, { x: 124, z: -1 },
-      { x: 120, z: 11 }, { x: 108, z: 19 }, { x: 92, z: 22 }, { x: 74, z: 20 },
-      { x: 56, z: 14 }, { x: 44, z: 5 },
-    ] },
-  ],
 
   // ------------------------------------------------------------------
   // Relief. The blueprint labels its contours from 60 m in the fen up to
@@ -331,32 +442,6 @@ export const darkwoods = {
     { x: 127, z: 9,   r: 34, h: 5 },    // the eastern rim (150 m)
   ],
 
-  // ------------------------------------------------------------------
-  // Cliffs. The blueprint draws these as rock walls, not boulders: long grey
-  // ridges that decide where you can and cannot go. `w` is the half-width of
-  // the flat top, `slope` the talus falling away from it, `h` how high it
-  // stands (world metres). You stop at the foot and walk round.
-  //
-  // Wolfsnag Pass is the zone's western chokepoint -- two walls reaching in
-  // from north and south with one gap between them, and the West Road threads
-  // it. There is no way past on this side except through.
-  // ------------------------------------------------------------------
-  cliffs: [
-    { name: 'Wolfsnag north wall', w: 6, slope: 7, h: 17,
-      points: [ { x: -124, z: -39 }, { x: -106, z: -37 }, { x: -88, z: -36 }, { x: -76, z: -37 } ] },
-    { name: 'Wolfsnag south wall', w: 6, slope: 7, h: 16,
-      points: [ { x: -106, z: 2 }, { x: -90, z: 1 }, { x: -74, z: 0 } ] },
-    // Crow Hill's flanks -- the lookout sits above them.
-    { name: 'Crow Hill west face', w: 7, slope: 9, h: 14,
-      points: [ { x: -122, z: 26 }, { x: -119, z: 38 }, { x: -120, z: 50 } ] },
-    { name: 'Crow Hill south face', w: 7, slope: 9, h: 12,
-      points: [ { x: -108, z: 62 }, { x: -90, z: 70 }, { x: -70, z: 70 } ] },
-    // The rock the Spider Den is cut into, and the broken ground west of it.
-    { name: 'Den rock face', w: 6, slope: 8, h: 13,
-      points: [ { x: -40, z: 70 }, { x: -26, z: 76 }, { x: -14, z: 79 } ] },
-    { name: 'Southern scarp', w: 6, slope: 8, h: 10,
-      points: [ { x: -98, z: 80 }, { x: -78, z: 86 }, { x: -58, z: 86 } ] },
-  ],
 
   // Impassable rock (collision) left over for the cave mouth's mound. The
   // Wolfsnag boulders are gone -- that ground is a cliff wall now.
@@ -374,12 +459,12 @@ export const darkwoods = {
     // The outpost's own lanterns, on poles round the edge of the camp. Anyone
     // can light one or put it out again, and everyone standing there sees it:
     // this is world state, not a quest.
-    { id: 'camp_lantern_1', tag: 'lantern', toggle: true, name: 'Camp Lantern', m: 'props/Camp_Lantern', x: 1.0, z: 0.76, s: 1.35, c: 0.5, reach: 3.0, verb: 'Light', verbOff: 'Put out', examine: 'A lantern on a pole at the edge of the camp.' },
-    { id: 'camp_lantern_2', tag: 'lantern', toggle: true, name: 'Camp Lantern', m: 'props/Camp_Lantern', x: 6.86, z: -2.62, s: 1.35, c: 0.5, reach: 3.0, verb: 'Light', verbOff: 'Put out', examine: 'A lantern on a pole at the edge of the camp.' },
+    { id: 'camp_lantern_1', tag: 'lantern', toggle: true, name: 'Camp Lantern', m: 'props/Camp_Lantern', x: -0.8, z: -3.9, s: 1.35, c: 0.5, reach: 3.0, verb: 'Light', verbOff: 'Put out', examine: 'A lantern on a pole at the edge of the camp.' },
+    { id: 'camp_lantern_2', tag: 'lantern', toggle: true, name: 'Camp Lantern', m: 'props/Camp_Lantern', x: 6.9, z: -5.1, s: 1.35, c: 0.5, reach: 3.0, verb: 'Light', verbOff: 'Put out', examine: 'A lantern on a pole at the edge of the camp.' },
     { id: 'camp_lantern_3', tag: 'lantern', toggle: true, name: 'Camp Lantern', m: 'props/Camp_Lantern', x: 6.86, z: -9.38, s: 1.35, c: 0.5, reach: 3.0, verb: 'Light', verbOff: 'Put out', examine: 'A lantern on a pole at the edge of the camp.' },
     { id: 'camp_lantern_4', tag: 'lantern', toggle: true, name: 'Camp Lantern', m: 'props/Camp_Lantern', x: 1.0, z: -12.76, s: 1.35, c: 0.5, reach: 3.0, verb: 'Light', verbOff: 'Put out', examine: 'A lantern on a pole at the edge of the camp.' },
     { id: 'camp_lantern_5', tag: 'lantern', toggle: true, name: 'Camp Lantern', m: 'props/Camp_Lantern', x: -4.86, z: -9.38, s: 1.35, c: 0.5, reach: 3.0, verb: 'Light', verbOff: 'Put out', examine: 'A lantern on a pole at the edge of the camp.' },
-    { id: 'camp_lantern_6', tag: 'lantern', toggle: true, name: 'Camp Lantern', m: 'props/Camp_Lantern', x: -4.86, z: -2.62, s: 1.35, c: 0.5, reach: 3.0, verb: 'Light', verbOff: 'Put out', examine: 'A lantern on a pole at the edge of the camp.' },
+    { id: 'camp_lantern_6', tag: 'lantern', toggle: true, name: 'Camp Lantern', m: 'props/Camp_Lantern', x: -4.9, z: -5.1, s: 1.35, c: 0.5, reach: 3.0, verb: 'Light', verbOff: 'Put out', examine: 'A lantern on a pole at the edge of the camp.' },
     // Warden Rowan's trail lanterns. Dark until someone crushes glowcaps into
     // the oil — the first thing the outpost asks of a newcomer.
     { id: 'lantern_east',  tag: 'lantern', name: 'Eastern Trail Lantern',  m: 'props/Camp_Lantern', x: 27.0,  z: -4.0, s: 1.6, c: 0.5, once: true,
@@ -448,7 +533,7 @@ export const darkwoods = {
       text: 'The mushroom releases a foul green cloud. Wrong mushroom.' })),
     // Glowcaps: they grow in the shade of the old trees around the outpost and
     // come back in their own time, so the road can always be relit.
-    ...[[-7.0, 2.0], [-11.0, -4.0], [-5.0, -14.0], [7.0, -14.0], [13.0, -6.0], [26.0, -10.0], [-15.0, 10.0], [3.0, 8.0], [21.0, -12.0], [-9.0, -18.0]]
+    ...[[-6.4, -3.0], [-11.0, -4.0], [-5.0, -14.0], [7.0, -14.0], [13.0, -6.0], [22.3, -6.7], [-15.0, 10.0], [3.0, 8.0], [21.0, -12.0], [-9.0, -18.0]]
       .map(([x, z], i) => ({ id: 'glowcap_' + i, tag: 'glowcap', name: 'Glowcaps', m: 'cave/Luminous_Mushrooms', x, z, s: 2.6, c: 0, reach: 3,
         verb: 'Gather', gives: { item: 'Glowcap' }, respawn: 45, light: 0x7fe8c8,
         text: 'The mushroom gives off a faint blue-green glow.' })),
@@ -474,7 +559,7 @@ export const darkwoods = {
 
   // Campfire cooking stations. Stand near one to cook raw meat/fish.
   campfires: [
-    { id: 'cf_farm',    x: 0,  z: -91 },  // Hearthstead's yard fire (early cooking)
+    { id: 'cf_farm',    x: -51.5,  z: 54.5 },  // Hearthstead's yard fire (early cooking)
     { id: 'cf_camp',    x: -12, z: 54 },  // the Wayside Camp, above the Spider Den
     { id: 'cf_shrine',  x: 37, z: -75 },  // in the lee of the Fallen Chapel
     { id: 'cf_outpost', x: 1,  z: -6 },   // Witchlight Camp -- the warden's fire
@@ -520,37 +605,37 @@ export const darkwoods = {
   // ---------------------------------------------------------------------
   props: [
       // Four tents in an arc on the high side, each opening onto the fire.
-      { s: 1.45, m: 'Small_Canvas_Tent', x: 2.99, z: -1.74, yaw: 3.58, c: 1.0 },
-      { s: 1.45, m: 'Small_Canvas_Tent', x: 5.42, z: -4.39, yaw: 4.36, c: 1.0 },
-      { s: 1.45, m: 'Small_Canvas_Tent', x: 5.26, z: -7.99, yaw: 5.15, c: 1.0 },
-      { s: 1.45, m: 'Small_Canvas_Tent', x: 2.61, z: -10.42, yaw: 5.93, c: 1.0 },
+      { s: 1.45, m: 'Small_Canvas_Tent', x: 2.07, z: -4.41, yaw: 3.58, c: 1.0 },
+      { s: 1.45, m: 'Small_Canvas_Tent', x: 4.5, z: -7.06, yaw: 4.36, c: 1.0 },
+      { s: 1.45, m: 'Small_Canvas_Tent', x: 4.34, z: -10.66, yaw: 5.15, c: 1.0 },
+      { s: 1.45, m: 'Small_Canvas_Tent', x: 1.69, z: -13.09, yaw: 5.93, c: 1.0 },
       // A bedroll inside each tent, laid along it on the same bearing, head to
       // the back wall.
-      { s: 1.25, m: 'Bedroll', x: 3.08, z: -1.55, yaw: 3.58 },
-      { s: 1.25, m: 'Bedroll', x: 5.62, z: -4.32, yaw: 4.36 },
-      { s: 1.25, m: 'Bedroll', x: 5.45, z: -8.08, yaw: 5.15 },
-      { s: 1.25, m: 'Bedroll', x: 2.68, z: -10.62, yaw: 5.93 },
+      { s: 1.25, m: 'Bedroll', x: 2.16, z: -4.22, yaw: 3.58 },
+      { s: 1.25, m: 'Bedroll', x: 4.7, z: -6.99, yaw: 4.36 },
+      { s: 1.25, m: 'Bedroll', x: 4.53, z: -10.75, yaw: 5.15 },
+      { s: 1.25, m: 'Bedroll', x: 1.76, z: -13.29, yaw: 5.93 },
       // The fire: a pot over it and stools pulled up round it.
-      { m: 'Cooking_Tripod', x: 1.0, z: -6.0, yaw: 0.00, c: 0.35 },
-      { m: 'Camp_Stool', x: 1.71, z: -4.78, yaw: 3.67 },
-      { m: 'Camp_Stool', x: 1.71, z: -7.22, yaw: 5.76 },
-      { m: 'Camp_Stool', x: -0.41, z: -6.0, yaw: 1.57 },
+      { m: 'Cooking_Tripod', x: 0.08, z: -8.67, yaw: 0.00, c: 0.35 },
+      { m: 'Camp_Stool', x: 0.79, z: -7.45, yaw: 3.67 },
+      { m: 'Camp_Stool', x: 0.79, z: -9.89, yaw: 5.76 },
+      { m: 'Camp_Stool', x: -1.33, z: -8.67, yaw: 1.57 },
       // Stores under the pavilion on the sheltered side, crates stacked against it.
-      { s: 1.35, m: 'Supply_Pavilion', x: -3.15, z: -7.51, yaw: 1.22 },
-      { m: 'Supply_Crate', x: -2.22, z: -8.17, yaw: 0.98, c: 0.5 },
-      { m: 'Supply_Crate', x: -3.86, z: -8.37, yaw: 1.12, c: 0.5 },
-      { m: 'Supply_Crate', x: -4.41, z: -7.15, yaw: 1.36, c: 0.5 },
-      { m: 'Supply_Crate', x: -2.99, z: -6.28, yaw: 1.50, c: 0.5 },
-      { m: 'Water_Barrel', x: -2.58, z: -9.23, yaw: 0.84, c: 0.4 },
-      { m: 'Water_Barrel', x: -4.06, z: -5.82, yaw: 1.61, c: 0.4 },
+      { s: 1.35, m: 'Supply_Pavilion', x: -4.07, z: -10.18, yaw: 1.22 },
+      { m: 'Supply_Crate', x: -3.14, z: -10.84, yaw: 0.98, c: 0.5 },
+      { m: 'Supply_Crate', x: -4.78, z: -11.04, yaw: 1.12, c: 0.5 },
+      { m: 'Supply_Crate', x: -5.33, z: -9.82, yaw: 1.36, c: 0.5 },
+      { m: 'Supply_Crate', x: -3.91, z: -8.95, yaw: 1.50, c: 0.5 },
+      { m: 'Water_Barrel', x: -3.5, z: -11.9, yaw: 0.84, c: 0.4 },
+      { m: 'Water_Barrel', x: -4.98, z: -8.49, yaw: 1.61, c: 0.4 },
       // A rough fence across the two open approaches, and a sign on the road.
-      { m: 'Rough_Fence', x: -0.28, z: -13.24, yaw: 0.17, c: 0.8 },
-      { m: 'Rough_Fence', x: -2.11, z: -12.66, yaw: 0.44, c: 0.8 },
-      { m: 'Rough_Fence', x: -3.73, z: -11.63, yaw: 0.70, c: 0.8 },
-      { m: 'Rough_Fence', x: -5.37, z: -2.32, yaw: 2.09, c: 0.8 },
-      { m: 'Rough_Fence', x: -4.2, z: -0.8, yaw: 2.36, c: 0.8 },
-      { m: 'Rough_Fence', x: -2.68, z: 0.37, yaw: 2.62, c: 0.8 },
-      { m: 'Warning_Sign', x: 1.0, z: -13.53, yaw: 0.00, c: 0.25 },
+      { m: 'Rough_Fence', x: -1.2, z: -15.91, yaw: 0.17, c: 0.8 },
+      { m: 'Rough_Fence', x: -3.03, z: -15.33, yaw: 0.44, c: 0.8 },
+      { m: 'Rough_Fence', x: -4.65, z: -14.3, yaw: 0.70, c: 0.8 },
+      { m: 'Rough_Fence', x: -6.29, z: -4.99, yaw: 2.09, c: 0.8 },
+      { m: 'Rough_Fence', x: -5.12, z: -3.47, yaw: 2.36, c: 0.8 },
+      { m: 'Rough_Fence', x: -3.6, z: -2.3, yaw: 2.62, c: 0.8 },
+      { m: 'Warning_Sign', x: 0.08, z: -16.2, yaw: 0.00, c: 0.25 },
   ],
   scatter: [
     // Surface ore veins (small mineable-node collision).
@@ -567,7 +652,7 @@ export const darkwoods = {
     { model: 'Camp_Stool',     count: 2, r: 0, scale: [1.0, 1.0], near: 'camp', nearR: 10 },
     { model: 'Camp_Lantern',   count: 1, r: 0, scale: [1.0, 1.0], near: 'camp', nearR: 10 },
     { model: 'Supply_Crate',   count: 2, r: 0.8, scale: [0.9, 1.1], near: 'camp', nearR: 11 },
-    { model: 'Water_Barrel',   count: 1, r: 0.7, scale: [1.0, 1.0], near: 'camp', nearR: 10 },
+    { model: 'Water_Barrel',   count: 1, r: 0.7, scale: [1.0, 1.0], near: 'camp', nearR: 17 },   // the Wayside Camp stands in thick wood; a solid piece needs more reach
     { model: 'Rolled_Bedroll', count: 1, r: 0, scale: [1.0, 1.0], near: 'camp', nearR: 10 },
 
     // (The Dark Woods Outpost is not scattered — it is laid out by hand in
@@ -691,8 +776,8 @@ export const darkwoods = {
   // player level the area is tuned for (see tools/balance.mjs).
   spawns: [
     // --- Hearthstead, at the North Trail: livestock penned in the yard ---
-    { type: 'chicken', count: 6, cx: -8,  cz: -83, r: 4, level: 1, expect: 1, hint: 'Chicken pen' },
-    { type: 'cow',     count: 3, cx: -28, cz: -82, r: 5, level: 1, expect: 1, hint: 'Cow pen' },
+    { type: 'chicken', count: 6, cx: -59.5,  cz: 62.5, r: 4, level: 1, expect: 1, hint: 'Chicken pen' },
+    { type: 'cow',     count: 3, cx: -79.5, cz: 63.5, r: 5, level: 1, expect: 1, hint: 'Cow pen' },
     // --- Goblins on Blackroot Creek, downhill from the Old Hunter's Trail ---
     { type: 'goblin',  count: 4, cx: -34, cz: -22, r: 5,  level: 1, expect: 2, fixed: true, hint: 'Goblin camp (core)' },
     { type: 'goblin',  count: 4, cx: -34, cz: -22, r: 22, level: 2, expect: 2, roam: 26, fixed: true, hint: 'Goblin camp (roamers)' },
@@ -713,10 +798,10 @@ export const darkwoods = {
     { type: 'goblin_warrior', count: 2, cx: 63, cz: 35, r: 18, level: 4, expect: 5, roam: 22, fixed: true, hint: 'Briar Camp (roamers)' },
     { type: 'goblin_chief',   count: 2, cx: 63, cz: 35, r: 7,  level: 5, expect: 6, fixed: true, hint: "Briar Camp (Rattlecap's brutes)" },
     // The band that jumped the supply cart, still on the Grimroot spur with it.
-    { type: 'goblin', count: 6, cx: 58, cz: -24, r: 10, level: 3, expect: 3, fixed: true, hint: 'Supply road raiders (Woodfang goblins)' },
+    { type: 'goblin', count: 6, cx: 56.2, cz: -28.7, r: 10, level: 3, expect: 3, fixed: true, hint: 'Supply road raiders (Woodfang goblins)' },
     // --- Hill ogres squatting on the South Track approach ---
-    { type: 'guard',   count: 3, cx: 38, cz: 84, r: 8,  level: 6, expect: 7, fixed: true, hint: 'Ogre hollow (core)' },
-    { type: 'guard',   count: 1, cx: 38, cz: 84, r: 20, level: 5, expect: 6, roam: 24, fixed: true, hint: 'Ogre hollow (roamer)' },
+    { type: 'guard',   count: 3, cx: 45.3, cz: 77.2, r: 8,  level: 6, expect: 7, fixed: true, hint: 'Ogre hollow (core)' },
+    { type: 'guard',   count: 1, cx: 45.3, cz: 77.2, r: 20, level: 5, expect: 6, roam: 24, fixed: true, hint: 'Ogre hollow (roamer)' },
   ],
 
   // Two low-level optional elites -- the zone's capstones, nothing harder.
@@ -733,22 +818,22 @@ export const darkwoods = {
     // house sizes / furniture offsets are world metres and are NOT scaled.
     fences: [
       // Village perimeter (north edge is tucked inside the mountain boundary).
-      { x1: -54.0, z1: -103.0, x2: 10.0,  z2: -103.0 },   // north
-      { x1: 10.0,  z1: -103.0, x2: 10.0,  z2: -73.0 },   // east
-      { x1: -62.0, z1: -97.0, x2: -54.0, z2: -103.0 },   // north-west corner
-      { x1: -62.0, z1: -97.0, x2: -62.0, z2: -73.0 },   // west
-      { x1: -62.0, z1: -73.0, x2: -45.8, z2: -73.0 }, // south-west (up to the double gate)
-      { x1: -42.2, z1: -73.0, x2: 10.0, z2: -73.0 },  // south-east (from the double gate)
+      { x1: -105.5, z1: 42.5, x2: -41.5,  z2: 42.5 },   // north
+      { x1: -41.5,  z1: 42.5, x2: -41.5,  z2: 72.5 },   // east
+      { x1: -113.5, z1: 48.5, x2: -105.5, z2: 42.5 },   // north-west corner
+      { x1: -113.5, z1: 48.5, x2: -113.5, z2: 72.5 },   // west
+      { x1: -113.5, z1: 72.5, x2: -97.3, z2: 72.5 }, // south-west (up to the double gate)
+      { x1: -93.7, z1: 72.5, x2: -41.5, z2: 72.5 },  // south-east (from the double gate)
       // Cow pen (west of the yard), set back from the houses — opening on its north side.
-      { x1: -36.0, z1: -89.0, x2: -30.0, z2: -89.0 }, { x1: -26.0, z1: -89.0, x2: -20.0, z2: -89.0 },
-      { x1: -36.0, z1: -89.0, x2: -36.0, z2: -75.0 }, { x1: -20.0, z1: -89.0, x2: -20.0, z2: -75.0 },
-      { x1: -36.0, z1: -75.0, x2: -20.0,   z2: -75.0 },
+      { x1: -87.5, z1: 56.5, x2: -81.5, z2: 56.5 }, { x1: -77.5, z1: 56.5, x2: -71.5, z2: 56.5 },
+      { x1: -87.5, z1: 56.5, x2: -87.5, z2: 70.5 }, { x1: -71.5, z1: 56.5, x2: -71.5, z2: 70.5 },
+      { x1: -87.5, z1: 70.5, x2: -71.5,   z2: 70.5 },
       // Chicken pen (east of the yard), well clear of the Warden's hut — opening on its west side.
-      { x1: -14.0,  z1: -89.0, x2: -3.0, z2: -89.0 }, { x1: -14.0, z1: -77.0, x2: -3.0, z2: -77.0 },
-      { x1: -3.0, z1: -89.0, x2: -3.0, z2: -77.0 },
-      { x1: -14.0,  z1: -89.0, x2: -14.0,  z2: -86.0 }, { x1: -14.0, z1: -82.0, x2: -14.0, z2: -77.0 },
+      { x1: -65.5,  z1: 56.5, x2: -54.5, z2: 56.5 }, { x1: -65.5, z1: 68.5, x2: -54.5, z2: 68.5 },
+      { x1: -54.5, z1: 56.5, x2: -54.5, z2: 68.5 },
+      { x1: -65.5,  z1: 56.5, x2: -65.5,  z2: 59.5 }, { x1: -65.5, z1: 63.5, x2: -65.5, z2: 68.5 },
     ],
-    gate: { x: -44.0, z: -73.0, yaw: 0, double: true, seg: { x1: -45.8, z1: -73.0, x2: -42.2, z2: -73.0 } },
+    gate: { x: -95.5, z: 72.5, yaw: 0, double: true, seg: { x1: -97.3, z1: 72.5, x2: -93.7, z2: 72.5 } },
     // Footpaths from each doorstep to the road. Authored so they walk AROUND
     // the pens (never through a fence): the yard lane runs along z=-83 north of
     // both pens; the Warden's hut path skirts south of the chicken pen.
@@ -756,15 +841,15 @@ export const darkwoods = {
     // Maggie -83.06, hut west wall x 23.35), the lane runs through the front
     // yard between the houses and the pens, and spurs lead into each pen's opening.
     trails: [
-      [ { x: -2.0, z: -92.55 }, { x: -12.0, z: -92.4 }, { x: -22.0, z: -92.85 }, { x: -34.0, z: -91.9 }, { x: -45.0, z: -88.5 } ], // yard lane: Maggie's door -> Bram's door -> road
-      [ { x: 1.85, z: -78.0 }, { x: 1.9, z: -83.0 }, { x: 1.0, z: -89.2 }, { x: -1.5, z: -92.3 } ],                 // Warden's hut door -> lane (east of the chicken pen)
-      [ { x: -28.0, z: -87.8 }, { x: -28.0, z: -92.1 } ],                                                              // cow pen opening -> lane
-      [ { x: -12.8, z: -84.0 }, { x: -15.8, z: -84.0 }, { x: -15.8, z: -90.5 }, { x: -14.5, z: -92.45 } ],                    // chicken pen opening -> lane
+      [ { x: -53.5, z: 52.95 }, { x: -63.5, z: 53.1 }, { x: -73.5, z: 52.65 }, { x: -85.5, z: 53.6 }, { x: -96.5, z: 57.0 } ], // yard lane: Maggie's door -> Bram's door -> road
+      [ { x: -49.65, z: 67.5 }, { x: -49.6, z: 62.5 }, { x: -50.5, z: 56.3 }, { x: -53.0, z: 53.2 } ],                 // Warden's hut door -> lane (east of the chicken pen)
+      [ { x: -79.5, z: 57.7 }, { x: -79.5, z: 53.4 } ],                                                              // cow pen opening -> lane
+      [ { x: -64.3, z: 61.5 }, { x: -67.3, z: 61.5 }, { x: -67.3, z: 55.0 }, { x: -66.0, z: 53.05 } ],                    // chicken pen opening -> lane
     ],
     // Enterable houses: axis-aligned, `door` is the side the doorway is on.
     // Furniture offsets (dx,dz) are metres from the house centre.
     houses: [
-      { key: 'farmhouse', name: 'Farmhouse', x: -46.0, z: -95.0, w: 16, d: 12, h: 3.4, door: 'south', roof: 0x8a5a3a, wall: 0xd9cfb6,
+      { key: 'farmhouse', name: 'Farmhouse', x: -97.5, z: 50.5, w: 16, d: 12, h: 3.4, door: 'south', roof: 0x8a5a3a, wall: 0xd9cfb6,
         furn: [
           { k: 'bed',       dx: -5.2, dz: -3.6, yaw: 0 },     // the player's bed (west room)
           { k: 'chest',     dx: -6.8, dz: -0.2, yaw: 1.57 },
@@ -773,63 +858,63 @@ export const darkwoods = {
           { k: 'hearth',    dx: 6.6,  dz: -4.4, yaw: 0 },
           { k: 'shelf',     dx: -1.0, dz: -5.0, yaw: 0 },
         ] },
-      { key: 'maggie',    name: "Maggie's Cottage", x: -2.0, z: -97.0, w: 12, d: 10, h: 3.2, door: 'south', roof: 0x6f5a48, wall: 0xcdc3a8,
+      { key: 'maggie',    name: "Maggie's Cottage", x: -53.5, z: 48.5, w: 12, d: 10, h: 3.2, door: 'south', roof: 0x6f5a48, wall: 0xcdc3a8,
         furn: [ { k: 'bed', dx: -3.4, dz: -3.0, yaw: 0 }, { k: 'table', dx: 2.6, dz: -0.6, yaw: 0 }, { k: 'stool', dx: 2.6, dz: 1.4, yaw: 0 }, { k: 'hearth', dx: 4.6, dz: -3.6, yaw: 0 } ] },
-      { key: 'bram',      name: "Bram's Cottage",   x: -22.0, z: -97.0, w: 11, d: 9,  h: 3.1, door: 'south', roof: 0x7a6248, wall: 0xd2c8ae,
+      { key: 'bram',      name: "Bram's Cottage",   x: -73.5, z: 48.5, w: 11, d: 9,  h: 3.1, door: 'south', roof: 0x7a6248, wall: 0xd2c8ae,
         furn: [ { k: 'bed', dx: 3.0, dz: -2.6, yaw: 0 }, { k: 'chest', dx: -3.8, dz: -2.8, yaw: 0 }, { k: 'table', dx: -2.4, dz: 0.8, yaw: 0 }, { k: 'stool', dx: -0.6, dz: 0.8, yaw: 0 } ] },
-      { key: 'guardhut',  name: "Warden's Hut",     x: 6.0, z: -78.0, w: 9,  d: 8,  h: 3.0, door: 'west',  roof: 0x5a5148, wall: 0xc9c2ae,
+      { key: 'guardhut',  name: "Warden's Hut",     x: -45.5, z: 67.5, w: 9,  d: 8,  h: 3.0, door: 'west',  roof: 0x5a5148, wall: 0xc9c2ae,
         furn: [ { k: 'bed', dx: 2.4, dz: -2.0, yaw: 0 }, { k: 'table', dx: -1.6, dz: 1.4, yaw: 0 }, { k: 'chest', dx: 2.6, dz: 2.2, yaw: 0 } ] },
     ],
     // A tilled field of crops west of the cow pen.
-    field: { x: -55.0, z: -82.0, w: 22, d: 20, crops: ['Strawberry_Patch', 'Meadow_Sedge', 'Goldenrod_Patch'] },
+    field: { x: -106.5, z: 63.5, w: 22, d: 20, crops: ['Strawberry_Patch', 'Meadow_Sedge', 'Goldenrod_Patch'] },
     // Nature inside the fence: a few trees and bushes/flowers around the yard
     // (worldgen keeps the wild forest out of the farm, so these are placed by hand).
     trees: [
-      { x: -32.0, z: -101.5, s: 1.0 }, { x: -12.0, z: -101.5, s: 1.05 }, { x: 7.5, z: -99.0, s: 0.95 },
-      { x: -59.0, z: -90.0, s: 0.9 }, { x: 8.5, z: -86.0, s: 1.0 }, { x: -17.0, z: -74.6, s: 0.85 }, { x: -56.0, z: -74.2, s: 0.8 },
-      { x: -22.0, z: -102.2, s: 0.8 }, { x: 2.0, z: -101.8, s: 0.9 }, { x: -50.0, z: -101.5, s: 0.85 }, { x: 13.0, z: -72.0, s: 0.85 },
-      { x: -40.0, z: -74.6, s: 0.75 }, { x: -6.0, z: -74.6, s: 0.8 },
+      { x: -83.5, z: 44.0, s: 1.0 }, { x: -63.5, z: 44.0, s: 1.05 }, { x: -44.0, z: 46.5, s: 0.95 },
+      { x: -110.5, z: 55.5, s: 0.9 }, { x: -43.0, z: 59.5, s: 1.0 }, { x: -68.5, z: 70.9, s: 0.85 }, { x: -107.5, z: 71.3, s: 0.8 },
+      { x: -73.5, z: 43.3, s: 0.8 }, { x: -49.5, z: 43.7, s: 0.9 }, { x: -101.5, z: 44.0, s: 0.85 }, { x: -38.5, z: 73.5, s: 0.85 },
+      { x: -91.5, z: 70.9, s: 0.75 }, { x: -57.5, z: 70.9, s: 0.8 },
     ],
     plants: [
-      { m: 'Rose_Bush',        x: -51.0,  z: -91.3, s: 1.0 }, { m: 'Rose_Bush',        x: -41.0,  z: -91.3, s: 1.0 },
-      { m: 'Lavender_Clump',   x: -26.6, z: -94.3, s: 1.0 }, { m: 'Lavender_Clump',   x: -17.4,  z: -94.3, s: 1.0 },
-      { m: 'Flowering_Bush',   x: -6.8, z: -94.0, s: 1.0 }, { m: 'Flowering_Bush',   x: 2.6, z: -94.0, s: 1.0 },
-      { m: 'Wildflower_Patch', x: -28.0,   z: -99.5, s: 1.1 }, { m: 'Wildflower_Patch', x: -7.0,   z: -99.5, s: 1.1 },
-      { m: 'Clover_Patch',     x: -40.0,  z: -99.0,   s: 1.2 }, { m: 'Clover_Patch',     x: 4.0,   z: -91.0,   s: 1.1 },
-      { m: 'Berry_Bush',       x: 9.0,   z: -75.5, s: 0.9 }, { m: 'Round_Box_Bush',   x: 6.0,   z: -74.3, s: 0.8 },
-      { m: 'Meadow_Shrub',     x: -60.0,  z: -97.0,   s: 1.0 }, { m: 'Poppy_Patch',      x: -53.0,  z: -74.2, s: 1.0 },
-      { m: 'Hosta_Plant',      x: -38.0,  z: -91.6, s: 1.0 }, { m: 'Green_Fern',       x: 10.0,   z: -97.0,   s: 1.0 },
-      { m: 'Strawberry_Patch', x: -53.0,  z: -91.4, s: 1.0 }, { m: 'Wildflower_Patch', x: -56.0,  z: -94.0,   s: 1.1 },
-      { m: 'Normal_Bush',      x: -61.0,  z: -81.0,   s: 0.9 }, { m: 'Meadow_Shrub',     x: -61.0,  z: -75.0,   s: 0.9 },
-      { m: 'Clover_Patch',     x: -18.5,  z: -100.5, s: 1.2 }, { m: 'Poppy_Patch',      x: -10.0,   z: -95.5, s: 1.0 },
-      { m: 'Heather_Clump',    x: 8.0,   z: -93.5, s: 1.0 }, { m: 'Goldenrod_Patch',  x: 6.0,   z: -82.5, s: 0.9 },
-      { m: 'Sage_Bush',        x: -17.2,  z: -77.0,   s: 0.9 }, { m: 'Creeping_Bellflowers', x: -26.0, z: -74.4, s: 1.0 },
-      { m: 'Green_Fern',       x: -31.0,  z: -100.8, s: 1.0 }, { m: 'Lavender_Clump',   x: -5.0,   z: -101.4, s: 1.0 },
-      { m: 'Round_Box_Bush',   x: -32.0,  z: -95.6, s: 0.8 }, { m: 'Berry_Bush',       x: -11.0,    z: -77.5, s: 0.85 },
+      { m: 'Rose_Bush',        x: -102.5,  z: 54.2, s: 1.0 }, { m: 'Rose_Bush',        x: -92.5,  z: 54.2, s: 1.0 },
+      { m: 'Lavender_Clump',   x: -78.1, z: 51.2, s: 1.0 }, { m: 'Lavender_Clump',   x: -68.9,  z: 51.2, s: 1.0 },
+      { m: 'Flowering_Bush',   x: -58.3, z: 51.5, s: 1.0 }, { m: 'Flowering_Bush',   x: -48.9, z: 51.5, s: 1.0 },
+      { m: 'Wildflower_Patch', x: -79.5,   z: 46.0, s: 1.1 }, { m: 'Wildflower_Patch', x: -58.5,   z: 46.0, s: 1.1 },
+      { m: 'Clover_Patch',     x: -91.5,  z: 46.5,   s: 1.2 }, { m: 'Clover_Patch',     x: -47.5,   z: 54.5,   s: 1.1 },
+      { m: 'Berry_Bush',       x: -42.5,   z: 70.0, s: 0.9 }, { m: 'Round_Box_Bush',   x: -45.5,   z: 71.2, s: 0.8 },
+      { m: 'Meadow_Shrub',     x: -111.5,  z: 48.5,   s: 1.0 }, { m: 'Poppy_Patch',      x: -104.5,  z: 71.3, s: 1.0 },
+      { m: 'Hosta_Plant',      x: -89.5,  z: 53.9, s: 1.0 }, { m: 'Green_Fern',       x: -41.5,   z: 48.5,   s: 1.0 },
+      { m: 'Strawberry_Patch', x: -104.5,  z: 54.1, s: 1.0 }, { m: 'Wildflower_Patch', x: -107.5,  z: 51.5,   s: 1.1 },
+      { m: 'Normal_Bush',      x: -112.5,  z: 64.5,   s: 0.9 }, { m: 'Meadow_Shrub',     x: -112.5,  z: 70.5,   s: 0.9 },
+      { m: 'Clover_Patch',     x: -70.0,  z: 45.0, s: 1.2 }, { m: 'Poppy_Patch',      x: -61.5,   z: 50.0, s: 1.0 },
+      { m: 'Heather_Clump',    x: -43.5,   z: 52.0, s: 1.0 }, { m: 'Goldenrod_Patch',  x: -45.5,   z: 63.0, s: 0.9 },
+      { m: 'Sage_Bush',        x: -68.7,  z: 68.5,   s: 0.9 }, { m: 'Creeping_Bellflowers', x: -77.5, z: 71.1, s: 1.0 },
+      { m: 'Green_Fern',       x: -82.5,  z: 44.7, s: 1.0 }, { m: 'Lavender_Clump',   x: -56.5,   z: 44.1, s: 1.0 },
+      { m: 'Round_Box_Bush',   x: -83.5,  z: 49.9, s: 0.8 }, { m: 'Berry_Bush',       x: -62.5,    z: 68.0, s: 0.85 },
     ],
     props: [
       // Chicken pen: coop, house, nests, feeders.
-      { m: 'Walk_In_Chicken_House', x: -6.5, z: -86.0, yaw: 3.14, s: 1.0, c: 2.2 },
-      { m: 'Raised_Chicken_Coop',   x: -10.0,  z: -79.5, yaw: 3.6, s: 1.0, c: 1.3 },
-      { m: 'Nesting_Boxes',         x: -5.0,  z: -79.0, yaw: 4.0,  s: 1.0, c: 0.8 },
-      { m: 'Chicken_Feeder',        x: -8.0,  z: -82.5, yaw: 0,  s: 1.0, c: 0.4 },
-      { m: 'Chicken_Waterer',       x: -5.5, z: -82.0, yaw: 0,   s: 1.0, c: 0.4 },
+      { m: 'Walk_In_Chicken_House', x: -58.0, z: 59.5, yaw: 3.14, s: 1.0, c: 2.2 },
+      { m: 'Raised_Chicken_Coop',   x: -61.5,  z: 66.0, yaw: 3.6, s: 1.0, c: 1.3 },
+      { m: 'Nesting_Boxes',         x: -56.5,  z: 66.5, yaw: 4.0,  s: 1.0, c: 0.8 },
+      { m: 'Chicken_Feeder',        x: -59.5,  z: 63.0, yaw: 0,  s: 1.0, c: 0.4 },
+      { m: 'Chicken_Waterer',       x: -57.0, z: 63.5, yaw: 0,   s: 1.0, c: 0.4 },
       // Cow pen: troughs and hay.
-      { m: 'Feeding_Trough',        x: -33.0, z: -79.0, yaw: 1.57, s: 1.0, c: 0.7 },
-      { m: 'Water_Trough',          x: -23.0,  z: -78.0, yaw: 1.57, s: 1.0, c: 0.7 },
-      { m: 'Round_Hay_Bale',        x: -33.0, z: -86.0, yaw: 0.5,  s: 1.0, c: 0.7 },
+      { m: 'Feeding_Trough',        x: -84.5, z: 66.5, yaw: 1.57, s: 1.0, c: 0.7 },
+      { m: 'Water_Trough',          x: -74.5,  z: 67.5, yaw: 1.57, s: 1.0, c: 0.7 },
+      { m: 'Round_Hay_Bale',        x: -84.5, z: 59.5, yaw: 0.5,  s: 1.0, c: 0.7 },
       // Yard clutter around the square and the houses.
-      { m: 'Tall_Haystack',         x: -12.0,   z: -99.0, yaw: 0,    s: 1.0, c: 1.1 },
-      { m: 'Stacked_Hay_Bales',     x: -9.0,  z: -96.0, yaw: 1.2,  s: 1.0, c: 0.9 },
-      { m: 'Hay_Pile',              x: 7.0,  z: -91.0, yaw: 0,    s: 1.0, c: 0.7 },
-      { m: 'Scarecrow',             x: -55.0, z: -82.0, yaw: 3.14, s: 1.0, c: 0.4 },
-      { m: 'Grain_Barrel',          x: -37.0, z: -97.0, yaw: 0,    s: 1.0, c: 0.5 },
-      { m: 'Grain_Sack',            x: -35.0, z: -98.0, yaw: 0.8,  s: 1.0, c: 0.0 },
-      { m: 'Vegetable_Crate',       x: -39.0, z: -98.0, yaw: 0.3,  s: 1.0, c: 0.5 },
-      { m: 'Wheelbarrow',           x: -32.0, z: -95.0, yaw: 2.2,  s: 1.0, c: 0.4 },
-      { m: 'Farm_Handcart',         x: -16.0,   z: -95.0, yaw: 1.0,  s: 1.0, c: 0.6 },
-      { m: 'Pitchfork',             x: -36.0, z: -85.0, yaw: 0.3,  s: 1.0, c: 0.0 },
-      { m: 'Water_Barrel',          x: 6.0,  z: -75.0, yaw: 0,    s: 1.0, c: 0.5 },
+      { m: 'Tall_Haystack',         x: -63.5,   z: 46.5, yaw: 0,    s: 1.0, c: 1.1 },
+      { m: 'Stacked_Hay_Bales',     x: -60.5,  z: 49.5, yaw: 1.2,  s: 1.0, c: 0.9 },
+      { m: 'Hay_Pile',              x: -44.5,  z: 54.5, yaw: 0,    s: 1.0, c: 0.7 },
+      { m: 'Scarecrow',             x: -106.5, z: 63.5, yaw: 3.14, s: 1.0, c: 0.4 },
+      { m: 'Grain_Barrel',          x: -88.5, z: 48.5, yaw: 0,    s: 1.0, c: 0.5 },
+      { m: 'Grain_Sack',            x: -86.5, z: 47.5, yaw: 0.8,  s: 1.0, c: 0.0 },
+      { m: 'Vegetable_Crate',       x: -90.5, z: 47.5, yaw: 0.3,  s: 1.0, c: 0.5 },
+      { m: 'Wheelbarrow',           x: -83.5, z: 50.5, yaw: 2.2,  s: 1.0, c: 0.4 },
+      { m: 'Farm_Handcart',         x: -67.5,   z: 50.5, yaw: 1.0,  s: 1.0, c: 0.6 },
+      { m: 'Pitchfork',             x: -87.5, z: 60.5, yaw: 0.3,  s: 1.0, c: 0.0 },
+      { m: 'Water_Barrel',          x: -45.5,  z: 70.5, yaw: 0,    s: 1.0, c: 0.5 },
     ],
   },
 
