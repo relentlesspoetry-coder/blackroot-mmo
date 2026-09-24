@@ -855,7 +855,23 @@ function stepGates() {
 // (?edit=<key> on the client). Rendered as individual meshes client-side so they
 // can be moved/deleted one at a time.
 // ---------------------------------------------------------------------------
-const EDIT_KEY = process.env.BLACKROOT_EDIT_KEY || 'letmebuild';
+// No default. These commands hand out any item in the game, set your level,
+// teleport you and write zone files to disk -- a key checked into the repo is
+// no key at all, and with accounts and trading an injected item is permanent
+// and can be passed to anybody. Unset means the editor simply is not there.
+const EDIT_KEY = process.env.BLACKROOT_EDIT_KEY || null;
+// Constant-time-ish and null-safe: an absent key matches nothing, including a
+// client that sends no key at all or sends the string "null".
+const EDIT_KEY_BUF = EDIT_KEY ? Buffer.from(EDIT_KEY) : null;
+function editAllowed(key) {
+  if (!EDIT_KEY_BUF || typeof key !== 'string') return false;
+  const buf = Buffer.from(key);
+  // Compare byte lengths, not string lengths: two strings of equal UTF-16
+  // length can encode to different byte counts, and timingSafeEqual throws on
+  // a mismatch rather than returning false.
+  if (buf.length !== EDIT_KEY_BUF.length) return false;
+  return crypto.timingSafeEqual(buf, EDIT_KEY_BUF);
+}
 let editSeq = 1;
 function overridesPath(zone) { return path.join(__dirname, 'zones', zone.id + '.overrides.json'); }
 function loadOverrides(zone) {
@@ -974,6 +990,9 @@ function broadcast(obj) {
   for (const p of players.values()) if (p.ws.readyState === p.ws.OPEN) p.ws.send(s);
 }
 function systemChat(msg) { broadcast({ t: 'chat', from: 'System', msg, sys: true }); }
+// One line of yellow text to one person. The six local `notice`/`no` closures
+// that used to rebuild this payload each delegate here instead.
+function notice(p, text) { if (p && p.ws) send(p.ws, { t: 'event', kind: 'notice', text }); }
 
 // ---------------------------------------------------------------------------
 // Combat & progression
@@ -1033,6 +1052,13 @@ function authenticate(name, pass) {
   if (typeof pass !== 'string' || pass.length < PASS_MIN) return { error: `Password must be at least ${PASS_MIN} characters.` };
   if (pass.length > PASS_MAX) return { error: 'That password is too long.' };
   const acct = readAccount(name);
+  // saveSlug is lossy: "Bob Smith", "Bob-Smith" and "bob_smith" all key the
+  // same file. Whoever registered the slug owns it, and a different spelling of
+  // it is a different person -- refuse before the password is even weighed, or
+  // one player's password opens another player's character.
+  if (acct && acct.name !== name) {
+    return { error: 'That name is too close to an existing character. Pick another.' };
+  }
   if (!acct) {
     const salt = crypto.randomBytes(16).toString('hex');
     writeAccount({ v: 1, name, salt, hash: hashPass(pass, salt), created: Date.now() });
@@ -1101,7 +1127,7 @@ function loadSave(name) {
   try {
     const raw = fs.readFileSync(savePath(name), 'utf8');
     const d = JSON.parse(raw);
-    return (d && d.v === 1 && saveSlug(d.name) === saveSlug(name)) ? d : null;
+    return (d && d.v === 1 && d.name === name) ? d : null;   // exact name, not just the same slug
   } catch (e) { return null; }   // no save, or one we cannot read: start fresh
 }
 // Put a loaded save onto a freshly built player. The player is built first with
@@ -1176,7 +1202,7 @@ function tradeTouched(t) { t.ok[t.a] = false; t.ok[t.b] = false; }
 
 function tradeRequest(from, toId) {
   const to = players.get(Number(toId));
-  const no = (text) => send(from.ws, { t: 'event', kind: 'notice', text });
+  const no = (text) => notice(from, text);
   if (!to || to === from) return no('There is nobody there to trade with.');
   if (to.zoneId !== from.zoneId) return no(`${to.name} is not in this zone.`);
   if (!from.alive || !to.alive) return no('Not while one of you is dead.');
@@ -1310,7 +1336,7 @@ function duelSay(d, text) { for (const q of duelPair(d)) if (q) send(q.ws, { t: 
 
 function duelChallenge(from, toId) {
   const to = players.get(Number(toId));
-  const no = (text) => send(from.ws, { t: 'event', kind: 'notice', text });
+  const no = (text) => notice(from, text);
   if (!to || to === from) return no('There is nobody there to challenge.');
   if (to.zoneId !== from.zoneId) return no(`${to.name} is not in this zone.`);
   if (!from.alive || !to.alive) return no('Not while one of you is dead.');
@@ -2478,14 +2504,14 @@ function abilityList(p) {
 }
 // Buy an ability from the class trainer standing nearby.
 function learnAbility(p, id) {
-  const notice = (text) => send(p.ws, { t: 'event', kind: 'notice', text });
+  const say = (text) => notice(p, text);
   const a = classDef(p.cls).abilities.find(x => x.id === id); if (!a) return;
   const trainer = (zoneOf(p).npcs || []).find(n => n.trainer === p.cls && dist2(n.x, n.z, p.x, p.z) < 8 * 8);
-  if (!trainer) return notice('Find your class trainer to learn that.');
-  if (p.known.has(id)) return notice(`You already know ${a.name}.`);
-  if (p.level < a.level) return notice(`${a.name} needs level ${a.level}.`);
+  if (!trainer) return say('Find your class trainer to learn that.');
+  if (p.known.has(id)) return say(`You already know ${a.name}.`);
+  if (p.level < a.level) return say(`${a.name} needs level ${a.level}.`);
   const price = abilityCost(a);
-  if (p.gold < price) return notice(`${a.name} costs ${price} gp — you have ${p.gold}.`);
+  if (p.gold < price) return say(`${a.name} costs ${price} gp — you have ${p.gold}.`);
   p.gold -= price; p.known.add(id);
   send(p.ws, { t: 'event', kind: 'learned', id, name: a.name, price });
   sendBag(p); sendAbilities(p);
@@ -2513,31 +2539,31 @@ function stepQueue(p) {
 }
 function useAbility(p, id, fromQueue) {
   const c = classDef(p.cls), a = c.abilities.find(x => x.id === id);
-  const notice = (text) => send(p.ws, { t: 'event', kind: 'notice', text });
+  const say = (text) => notice(p, text);
   if (!a || !p.alive || a.passive) return;
-  if (!p.known.has(id)) return notice(`You haven't learned ${a.name}.`);
-  if (p.level < a.level) return notice(`${a.name} unlocks at level ${a.level}.`);
+  if (!p.known.has(id)) return say(`You haven't learned ${a.name}.`);
+  if (p.level < a.level) return say(`${a.name} unlocks at level ${a.level}.`);
   // Busy, but nearly free: hold the press instead of dropping it.
   const busy = Math.max(p.gcd || 0, p.windup ? p.windup.t : 0, p.channel ? 0.2 : 0);
   if (!fromQueue && busy > 0 && busy <= QUEUE_WINDOW && (p.cooldowns[id] || 0) <= busy) return queueAbility(p, id);
-  if ((p.cooldowns[id] || 0) > 0) return notice(`${a.name} is not ready.`);
-  if (p.channel || p.windup) return notice('You are busy.');
+  if ((p.cooldowns[id] || 0) > 0) return say(`${a.name} is not ready.`);
+  if (p.channel || p.windup) return say('You are busy.');
   if ((p.gcd || 0) > 0) return;
-  if (a.requires && !(p.buffs[a.requires] && p.buffs[a.requires].t > 0)) return notice(`${a.name} needs an enemy to have just missed you.`);
+  if (a.requires && !(p.buffs[a.requires] && p.buffs[a.requires].t > 0)) return say(`${a.name} needs an enemy to have just missed you.`);
   const freeProc = Object.values(p.buffs).find(b => b.t > 0 && b.free && b.charges > 0);
   const cost = freeProc ? 0 : (isSpell(a) ? costOf(p, a) : (a.cost || 0));
-  if (resOf(p) < cost) return notice(`Not enough ${(c.resource || 'rage').toLowerCase()}.`);
-  if (isSpell(a)) { const err = checkCast(clericCtx, p, a); if (err) return notice(err); }
-  if (isBardSpell(a)) { const err = checkBardCast(clericCtx, p, a); if (err) return notice(err); }
+  if (resOf(p) < cost) return say(`Not enough ${(c.resource || 'rage').toLowerCase()}.`);
+  if (isSpell(a)) { const err = checkCast(clericCtx, p, a); if (err) return say(err); }
+  if (isBardSpell(a)) { const err = checkBardCast(clericCtx, p, a); if (err) return say(err); }
   const target = combatTargetOf(p);
   const inReach = target && target.alive && dist2(p.x, p.z, target.x, target.z) <= reachOf(p) ** 2;
   const needTarget = ['melee', 'execute', 'cone', 'rush'].includes(a.kind);
-  if (needTarget && !(target && target.alive)) return notice('You need a target.');
-  if (needTarget && target.untargetable) return notice(`${target.name} is out of reach!`);
-  if (['melee', 'execute', 'cone'].includes(a.kind) && !inReach) return notice('You need to be in reach.');
-  if (a.kind === 'execute' && target.hp > target.maxHp * 0.3) return notice(`${a.name} needs the target at 30% health or less.`);
-  if (a.kind === 'rush' && dist2(p.x, p.z, target.x, target.z) > a.range * a.range) return notice('Too far to rush.');
-  if (a.kind === 'rush' && !lineClear(zoneOf(p), p.x, p.z, target.x, target.z)) return notice('No clear path to rush.');
+  if (needTarget && !(target && target.alive)) return say('You need a target.');
+  if (needTarget && target.untargetable) return say(`${target.name} is out of reach!`);
+  if (['melee', 'execute', 'cone'].includes(a.kind) && !inReach) return say('You need to be in reach.');
+  if (a.kind === 'execute' && target.hp > target.maxHp * 0.3) return say(`${a.name} needs the target at 30% health or less.`);
+  if (a.kind === 'rush' && dist2(p.x, p.z, target.x, target.z) > a.range * a.range) return say('Too far to rush.');
+  if (a.kind === 'rush' && !lineClear(zoneOf(p), p.x, p.z, target.x, target.z)) return say('No clear path to rush.');
 
   const fire = () => {
     if (isSpell(a)) { castSpell(clericCtx, p, a); sendStatus(p); return; }
@@ -2848,9 +2874,9 @@ function stepGraves() {
 }
 function lootGrave(p, id) {
   const g = graves.get(id); if (!g || g.zoneId !== p.zoneId) return;
-  const notice = (text) => send(p.ws, { t: 'event', kind: 'notice', text });
-  if (dist2(p.x, p.z, g.x, g.z) > 3.5 * 3.5) return notice('You need to be at the grave.');
-  if (g.owner !== p.id && g.name !== p.name) return notice(`This is ${g.name}'s grave. It is not yours to open.`);
+  const say = (text) => notice(p, text);
+  if (dist2(p.x, p.z, g.x, g.z) > 3.5 * 3.5) return say('You need to be at the grave.');
+  if (g.owner !== p.id && g.name !== p.name) return say(`This is ${g.name}'s grave. It is not yours to open.`);
   let n = 0;
   for (const [slot, name] of Object.entries(g.equipment)) { if (!name) continue; if (!p.equipment[slot]) p.equipment[slot] = name; else p.inventory.push(name); n++; }
   for (const name of g.items) { p.inventory.push(name); n++; }
@@ -2894,17 +2920,18 @@ function stepMonster(m) {
   }
   m.atkTimer = Math.max(0, m.atkTimer - DT);
   if (m.swing) { m.swing.t -= DT; if (m.swing.t <= 0) landMonsterSwing(m); }   // the blow arrives
+  // Debuffs wind down before anything branches. Boss, minion and ordinary
+  // monsters each used to carry their own copy of this line; they are mutually
+  // exclusive, so hoisting it changes nothing except the number of copies.
+  if (m.debuffs) for (const k of Object.keys(m.debuffs)) { m.debuffs[k] -= DT; if (m.debuffs[k] <= 0) delete m.debuffs[k]; }
   if (m.boss === 'cluckifer') {
-    if (m.debuffs) for (const k of Object.keys(m.debuffs)) { m.debuffs[k] -= DT; if (m.debuffs[k] <= 0) delete m.debuffs[k]; }
     stepCluckifer(bossCtx, m, DT); resolveCollision(zone, m, 1.2); return;
   }
   if (m.minion) {
-    if (m.debuffs) for (const k of Object.keys(m.debuffs)) { m.debuffs[k] -= DT; if (m.debuffs[k] <= 0) delete m.debuffs[k]; }
     if (fleeStep(clericCtx, zone, m, DT)) { resolveCollision(zone, m, 0.5); return; }
     if (m.debuffs && m.debuffs.asleep > 0) return;
     stepMinion(bossCtx, m, DT); if (m.alive && m.speed > 0) resolveCollision(zone, m, 0.5); return;
   }
-  if (m.debuffs) for (const k of Object.keys(m.debuffs)) { m.debuffs[k] -= DT; if (m.debuffs[k] <= 0) delete m.debuffs[k]; }
   if ((m.stagger || 0) > 0) { m.stagger -= DT; return; }   // staggered: can't move or swing
   if (fleeStep(clericCtx, zone, m, DT)) { resolveCollision(zone, m, PLAYER_RADIUS); return; }   // turned by a Cleric: running
   if (m.debuffs && m.debuffs.asleep > 0) { m.targetId = null; m.state = 'idle'; return; }   // a Bard's lullaby: out cold until struck
@@ -3190,9 +3217,9 @@ function worldObject(zone, id) { return (zone.objects || []).find(o => o.id === 
 function objectReady(zone, o) { return !o._until || o._until <= Date.now(); }
 function useWorldObject(p, id) {
   const zone = zoneOf(p), o = worldObject(zone, id);
-  const notice = (text) => send(p.ws, { t: 'event', kind: 'notice', text });
+  const say = (text) => notice(p, text);
   if (!o) return;
-  if (dist2(p.x, p.z, o.x, o.z) > (o.reach || 3.5) ** 2) return notice(`You need to be closer to the ${o.name.toLowerCase()}.`);
+  if (dist2(p.x, p.z, o.x, o.z) > (o.reach || 3.5) ** 2) return say(`You need to be closer to the ${o.name.toLowerCase()}.`);
   // A toggle is world state, not yours: everyone standing there sees it go on
   // and off, and it does not care whose quest is running.
   if (o.toggle) {
@@ -3202,14 +3229,14 @@ function useWorldObject(p, id) {
     broadcastObjects(zone);
     return;
   }
-  if (o.once && p.usedObjects.has(o.id)) return notice(`You have already dealt with the ${o.name.toLowerCase()}.`);
-  if (!objectReady(zone, o)) return notice(`There is nothing left to take here yet.`);
+  if (o.once && p.usedObjects.has(o.id)) return say(`You have already dealt with the ${o.name.toLowerCase()}.`);
+  if (!objectReady(zone, o)) return say(`There is nothing left to take here yet.`);
   // Some things only make sense while you are on the errand that asked for them.
-  if (o.quest && !p.quests.has(o.quest)) return notice(o.idleText || 'You have no reason to touch that.');
-  if (o.needDead && !((p.questKills[o.quest] || {})['★' + o.needDead] > 0)) return notice(`${o.needDead} is still standing.`);
+  if (o.quest && !p.quests.has(o.quest)) return say(o.idleText || 'You have no reason to touch that.');
+  if (o.needDead && !((p.questKills[o.quest] || {})['★' + o.needDead] > 0)) return say(`${o.needDead} is still standing.`);
   if (o.need) {
     const have = p.inventory.filter(n => n === o.need.item).length;
-    if (have < (o.need.count || 1)) return notice(`You need ${o.need.count || 1} × ${o.need.item}.`);
+    if (have < (o.need.count || 1)) return say(`You need ${o.need.count || 1} × ${o.need.item}.`);
     for (let i = 0; i < (o.need.count || 1); i++) p.inventory.splice(p.inventory.indexOf(o.need.item), 1);
   }
   if (o.gives) { for (let i = 0; i < (o.gives.count || 1); i++) p.inventory.push(o.gives.item); }
@@ -3264,13 +3291,39 @@ let lastSnap = 0;
 let saveTimer = 0;
 // Stopping the server should not cost anybody their evening.
 let shuttingDown = false;
-function saveEveryoneAndExit(sig) {
+function saveEveryoneAndExit(sig, code = 0) {
   if (shuttingDown) return; shuttingDown = true;
-  let n = 0; for (const p of players.values()) { savePlayer(p); n++; }
+  let n = 0;
+  for (const p of [...players.values()]) {
+    // Hand back anything sitting in escrow first, or the save writes it away.
+    try { tradeAbort(p, 'The server is closing. The trade is off.'); } catch { /* keep saving */ }
+    try { savePlayer(p); n++; } catch (e) { console.error(`[save] ${p.name} failed:`, e && e.message); }
+  }
   console.log(`[save] ${sig}: wrote ${n} character${n === 1 ? '' : 's'}`);
-  process.exit(0);
+  process.exit(code);
 }
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => saveEveryoneAndExit(sig));
+// Last line of defence. A throw that reaches here has already left the game in
+// an unknown state, so the only safe thing is to write everybody out and stop
+// -- but nobody should lose their evening to a bug we did not foresee.
+process.on('uncaughtException', (err) => { console.error('[fatal]', err); saveEveryoneAndExit('uncaughtException', 1); });
+process.on('unhandledRejection', (err) => { console.error('[fatal] unhandled rejection', err); saveEveryoneAndExit('unhandledRejection', 1); });
+// Taking somebody out of the world, the only way it should be done.
+//
+// Order matters and used to be wrong: anything a player has on a trade table
+// has already left their bag, so unwinding the trade has to happen BEFORE the
+// save or the escrowed items and gold are written out of existence. The duel
+// and the party come off first for the same reason -- what they hand back
+// belongs in the file.
+function leaveWorld(p) {
+  tradeAbort(p, `${p.name} leaves. The trade is off.`);
+  duelForfeit(p, `${p.name} leaves the duel.`);
+  partyRemove(p, `${p.name} has left the party.`);
+  savePlayer(p);
+  players.delete(p.id);
+  systemChat(`${p.name} has left the world.`);
+}
+
 setInterval(() => {
   if (DAY_NIGHT_CYCLE) dayTime = (dayTime + DT / DAY_LENGTH) % 1;
   weatherTimer -= DT;
@@ -3291,7 +3344,7 @@ setInterval(() => {
   for (const [id, p] of players) {   // bodies left behind by a mid-fight disconnect
     if (p.lingerT == null) continue;
     p.lingerT -= DT;
-    if (p.lingerT <= 0 || !p.alive) { savePlayer(p); tradeAbort(p, `${p.name} leaves. The trade is off.`); duelForfeit(p, `${p.name} leaves the duel.`); partyRemove(p, `${p.name} has left the party.`); players.delete(id); systemChat(`${p.name} has left the world.`); }
+    if (p.lingerT <= 0 || !p.alive) leaveWorld(p);
   }
   for (const [id, it] of groundItems) { it.ttl -= DT; if (it.ttl <= 0) groundItems.delete(id); }
   for (const p of players.values()) {
@@ -3395,7 +3448,12 @@ setInterval(() => {
 // ---------------------------------------------------------------------------
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.glb': 'model/gltf-binary', '.png': 'image/png', '.jpg': 'image/jpeg' };
 const httpServer = http.createServer((req, res) => {
-  let urlPath = decodeURIComponent(req.url.split('?')[0]);
+  // decodeURIComponent throws on a malformed escape (GET /%zz). That throw used
+  // to come straight out of the request listener and take the whole world down,
+  // so a bad URL is answered rather than raised.
+  let urlPath;
+  try { urlPath = decodeURIComponent(req.url.split('?')[0]); }
+  catch { res.writeHead(400); res.end('Bad request'); return; }
   if (urlPath === '/') urlPath = '/index.html';
   const filePath = path.join(CLIENT_DIR, path.normalize(urlPath).replace(/^(\.\.[/\\])+/, ''));
   if (!filePath.startsWith(CLIENT_DIR)) { res.writeHead(403); res.end('Forbidden'); return; }
@@ -3439,16 +3497,44 @@ function zoneForClient(zone) {
   };
 }
 
-const wss = new WebSocketServer({ server: httpServer });
+// 16 KB is a couple of orders of magnitude more than the largest thing a client
+// ever legitimately sends (a chat line, an edit command); ws otherwise defaults
+// to 100 MB per frame, which an unauthenticated socket can make us allocate.
+const MAX_MSG_BYTES = 16 * 1024;
+// A client sends input at the tick rate plus whatever the person clicks. This
+// allows far more than that and still stops a socket spinning the whole server
+// on chat or ability spam. Over the limit the frames are dropped, not the
+// connection -- a laggy burst should not boot somebody mid-fight.
+const MSG_BURST = 120, MSG_WINDOW_MS = 1000;
+
+const wss = new WebSocketServer({ server: httpServer, maxPayload: MAX_MSG_BYTES });
+// ws raises 'error' on the socket for a protocol fault -- an oversized frame,
+// a bad opcode, a truncated close. Node turns an unhandled 'error' event into a
+// thrown exception, so a socket without this listener is a crash waiting for a
+// malformed packet. One listener per socket, and one for the server itself.
+wss.on('error', (e) => console.warn('[ws] server error:', e && e.message));
+httpServer.on('clientError', (e, socket) => { try { socket.destroy(); } catch { /* already gone */ } });
+
 wss.on('connection', (ws) => {
   let player = null;
+  let msgCount = 0, msgWindow = Date.now(), floodNoted = 0;
+  ws.on('error', (e) => {
+    console.warn(`[ws] ${player ? player.name : 'a socket'}: ${e && e.message}`);
+    try { ws.terminate(); } catch { /* already gone */ }   // the 'close' handler does the cleanup
+  });
   ws.on('message', (raw) => {
+    const now = Date.now();
+    if (now - msgWindow >= MSG_WINDOW_MS) { msgCount = 0; msgWindow = now; }
+    if (++msgCount > MSG_BURST) {
+      if (now - floodNoted > 5000) { floodNoted = now; console.warn(`[flood] dropping messages from ${player ? player.name : 'a socket'}`); }
+      return;
+    }
     let msg; try { msg = JSON.parse(raw); } catch { return; }
     if (!msg || typeof msg !== 'object') return;
     switch (msg.t) {
       case 'join': {
         if (player) return;
-        const name = String(msg.name || '').slice(0, 16).replace(/[^\w \-]/g, '').trim();
+        const name = String(msg.name || '').slice(0, 16).replace(/[^\w \-]/g, '').replace(/\s+/g, ' ').trim();
         if (!name) { send(ws, { t: 'loginfail', text: 'Pick a name.' }); break; }
         // Already in the world: refuse rather than have two of the same person
         // walking about writing over each other's save.
@@ -3507,7 +3593,7 @@ wss.on('connection', (ws) => {
         player.input = {
           f: clamp(Number(msg.f) || 0, -1, 1),
           r: clamp(Number(msg.r) || 0, -1, 1),
-          yaw: Number(msg.yaw) || 0,
+          yaw: Number.isFinite(+msg.yaw) ? +msg.yaw : 0,   // 1e999 parses to Infinity, and sin(Infinity) is NaN
         };
         break;
       }
@@ -3657,36 +3743,36 @@ wss.on('connection', (ws) => {
       }
       // --- World editor (gated by EDIT_KEY) ---
       case 'spawnboss': {   // editor tool: summon Cluckifer beside the player / set his health, to test the fight
-        if (!player || msg.key !== EDIT_KEY) break;
+        if (!player || !editAllowed(msg.key)) break;
         if (msg.god) { player.maxHp = 100000; player.hp = 100000; break; }   // an observer that survives the fight
         if (msg.hp != null) __test.setBossHp(+msg.hp); else __test.forceCluckifer();
         break;
       }
       case 'give': {   // editor tool: hand the player any item, to test gear without grinding for it
-        if (!player || msg.key !== EDIT_KEY || !ITEMS[msg.item]) break;
+        if (!player || !editAllowed(msg.key) || !ITEMS[msg.item]) break;
         for (let i = 0; i < Math.min(28, Math.max(1, msg.qty | 0)); i++) player.inventory.push(String(msg.item));
         sendBag(player); break;
       }
       case 'tp': {   // editor tool: stand somewhere, to test a fight without the walk
-        if (!player || msg.key !== EDIT_KEY) break;
+        if (!player || !editAllowed(msg.key)) break;
         const b = zoneOf(player).bounds;
         player.x = clamp(Number(msg.x) || 0, b.minX, b.maxX); player.z = clamp(Number(msg.z) || 0, b.minZ, b.maxZ);
         player.moveTo = null; player._nav = null; player.combatId = null;
         break;
       }
       case 'setlevel': {   // editor tool: jump to a class level with every ability learned, to test a class
-        if (!player || msg.key !== EDIT_KEY) break;
+        if (!player || !editAllowed(msg.key)) break;
         const L = Math.max(1, Math.min(MAX_LEVEL, msg.level | 0)); player.level = L; player.xp = xpTotalForLevel(L);
         const cs = classStats(player.cls, L); player.maxHp = cs.hp; player.hp = cs.hp; player.manaMax = cs.mana; player.mana = cs.mana;
         for (const a of classDef(player.cls).abilities) if (a.level <= L) player.known.add(a.id);
         sendAbilities(player); sendBag(player); break;
       }
       case 'edit:list': {
-        if (msg.key === EDIT_KEY) send(ws, { t: 'models', models: MODEL_MANIFEST, mobs: MOB_TYPES, items: LOOT_ITEMS, loot: allLootTables() });
+        if (editAllowed(msg.key)) send(ws, { t: 'models', models: MODEL_MANIFEST, mobs: MOB_TYPES, items: LOOT_ITEMS, loot: allLootTables() });
         break;
       }
       case 'edit:loot:set': {
-        if (msg.key !== EDIT_KEY || !MONSTER_TEMPLATES[msg.type] || !Array.isArray(msg.table)) break;
+        if (!editAllowed(msg.key) || !MONSTER_TEMPLATES[msg.type] || !Array.isArray(msg.table)) break;
         const table = msg.table.filter(e => e && lootItemOk(e.item)).map(e => ({
           item: String(e.item), min: Math.max(0, Math.min(9999, (+e.min | 0) || 1)),
           max: Math.max(1, Math.min(9999, (+e.max | 0) || 1)), chance: Math.max(1, Math.min(100000, (+e.chance | 0) || 1)),
@@ -3696,7 +3782,7 @@ wss.on('connection', (ws) => {
         break;
       }
       case 'edit:spawn:place': {
-        if (!player || msg.key !== EDIT_KEY || !MONSTER_TEMPLATES[msg.type]) break;
+        if (!player || !editAllowed(msg.key) || !MONSTER_TEMPLATES[msg.type]) break;
         const z = zoneOf(player);
         const sp = { id: 's' + (editSeq++), type: String(msg.type), cx: +(+msg.x).toFixed(2), cz: +(+msg.z).toFixed(2),
           r: +(+(msg.r || 8)).toFixed(1), count: Math.max(1, Math.min(20, +(msg.count || 3) | 0)),
@@ -3706,7 +3792,7 @@ wss.on('connection', (ws) => {
         break;
       }
       case 'edit:spawn:update': {
-        if (!player || msg.key !== EDIT_KEY) break;
+        if (!player || !editAllowed(msg.key)) break;
         const z = zoneOf(player); const sp = (z._editSpawns || []).find(s => s.id === msg.id); if (!sp) break;
         if (msg.type != null && MONSTER_TEMPLATES[msg.type]) sp.type = String(msg.type);
         if (msg.cx != null) sp.cx = +(+msg.cx).toFixed(2);
@@ -3720,14 +3806,14 @@ wss.on('connection', (ws) => {
         break;
       }
       case 'edit:spawn:delete': {
-        if (!player || msg.key !== EDIT_KEY) break;
+        if (!player || !editAllowed(msg.key)) break;
         const z = zoneOf(player); const i = (z._editSpawns || []).findIndex(s => s.id === msg.id); if (i < 0) break;
         const [sp] = z._editSpawns.splice(i, 1); despawnEditorRegion(sp.id);
         saveOverrides(z); broadcastZone(player.zoneId, { t: 'edit', op: 'spawn:delete', id: sp.id });
         break;
       }
       case 'edit:place': {
-        if (!player || msg.key !== EDIT_KEY || !msg.m) break;
+        if (!player || !editAllowed(msg.key) || !msg.m) break;
         const z = zoneOf(player);
         const o = { id: 'e' + (editSeq++), m: String(msg.m), x: +(+msg.x).toFixed(2), z: +(+msg.z).toFixed(2),
           yaw: +(+(msg.yaw || 0)).toFixed(3), s: +(+(msg.s || 1)).toFixed(3), c: +(+(msg.c || 0)).toFixed(2) };
@@ -3738,7 +3824,7 @@ wss.on('connection', (ws) => {
         break;
       }
       case 'edit:update': {
-        if (!player || msg.key !== EDIT_KEY) break;
+        if (!player || !editAllowed(msg.key)) break;
         const z = zoneOf(player); const o = (z._editObjects || []).find(o => o.id === msg.id); if (!o) break;
         if (msg.x != null) o.x = +(+msg.x).toFixed(2);
         if (msg.z != null) o.z = +(+msg.z).toFixed(2);
@@ -3753,7 +3839,7 @@ wss.on('connection', (ws) => {
         break;
       }
       case 'edit:delete': {
-        if (!player || msg.key !== EDIT_KEY) break;
+        if (!player || !editAllowed(msg.key)) break;
         const z = zoneOf(player); const i = (z._editObjects || []).findIndex(o => o.id === msg.id); if (i < 0) break;
         z._editObjects.splice(i, 1); saveOverrides(z); broadcastZone(player.zoneId, { t: 'edit', op: 'delete', id: msg.id });
         break;
@@ -3792,7 +3878,7 @@ wss.on('connection', (ws) => {
         if (!player) return;
         const wait = player.lastCombat ? LOGOUT_COMBAT_WAIT - (Date.now() - player.lastCombat) / 1000 : 0;
         if (player.alive && wait > 0) { send(ws, { t: 'event', kind: 'notice', text: `You can't log out in combat. Wait ${Math.ceil(wait)}s.` }); break; }
-        send(ws, { t: 'logout' }); savePlayer(player); tradeAbort(player, `${player.name} leaves. The trade is off.`); duelForfeit(player, `${player.name} leaves the duel.`); partyRemove(player); players.delete(player.id); systemChat(`${player.name} has left the world.`); player = null;
+        send(ws, { t: 'logout' }); leaveWorld(player); player = null;
         break;
       }
       case 'chat': {
@@ -3813,7 +3899,7 @@ wss.on('connection', (ws) => {
       systemChat(`${player.name} tried to flee the fight — their body lingers.`);
       return;
     }
-    savePlayer(player); tradeAbort(player, `${player.name} leaves. The trade is off.`); duelForfeit(player, `${player.name} leaves the duel.`); partyRemove(player); players.delete(player.id); systemChat(`${player.name} has left the world.`);
+    leaveWorld(player);
   });
 });
 

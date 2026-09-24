@@ -99,9 +99,8 @@ export function rollBand([lo, hi]) { return lo + Math.floor(Math.random() * (hi 
 // ---------------------------------------------------------------------------
 // The attack table
 // ---------------------------------------------------------------------------
-// Rolled once per swing, in this order. Everything is a plain probability so a
-// player can read their own sheet and see where their swings are going.
-export const OUTCOMES = ['miss', 'dodge', 'parry', 'block', 'glance', 'crit', 'hit'];
+// Rolled once per swing, in the order below. Everything is a plain probability
+// so a player can read their own sheet and see where their swings are going.
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 // Miss climbs steeply against things above your level — the old "you cannot

@@ -302,13 +302,6 @@ export function rollSwing(atk, str, atkBonus, strBonus, defLevel, defBonus, dmgM
   if (Math.random() >= hitChance(ar, dr)) return 0;
   return Math.floor(Math.random() * (Math.floor(maxHit(str, strBonus) * dmgMult) + 1));
 }
-// A monster's swing: accuracy from its levels/bonuses, damage 0..its max hit.
-export function rollMonsterSwing(atkLevel, atkBonus, mh, defLevel, defBonus) {
-  const ar = attackRoll(atkLevel, atkBonus, 0), dr = defenceRoll(defLevel, defBonus);
-  if (Math.random() >= hitChance(ar, dr)) return 0;
-  return Math.floor(Math.random() * (mh + 1));
-}
-
 // Damage scales with level — without this the player's dps is frozen at level 1
 // while monsters keep scaling, which makes everything past the creek unwinnable.
 // A weapon's `atk` shifts the whole roll up.
@@ -316,12 +309,6 @@ export function playerDamageRange(level, atkBonus = 0) {
   // A level-1 hits softly (1-5); damage ramps with level and gear.
   return [1 + Math.floor(level * 0.5) + atkBonus, 3 + Math.round(2.4 * level) + atkBonus];
 }
-export function rollPlayerDamage(level, atkBonus = 0) {
-  const [lo, hi] = playerDamageRange(level, atkBonus);
-  if (Math.random() >= PLAYER.hitChance) return 0;
-  return lo + Math.floor(Math.random() * (hi - lo + 1));
-}
-
 // Armour reduces each incoming hit by a percentage with diminishing returns —
 // flat subtraction collapsed the whole curve once a player had any gear at all
 // (a +10 shield turned a Hill Ogre into a rounding error). A landed blow always
@@ -578,9 +565,6 @@ export function rollGear(type, elite = false) {
   }
   return drops;
 }
-// For tooling / the loot editor: the gear table of a type as [kind, tier, 1-in-N].
-export function gearTableOf(type) { return GEAR_DROPS[type] || []; }
-
 export function rollLoot(type) {
   const t = MONSTER_TEMPLATES[type]; const drops = [];
   // Independent-roll table: each entry rolls on its own (may drop several).
@@ -647,4 +631,3 @@ export const MEDITATION = {
   xpPerHp: 2,                      // plus xp per hitpoint recovered
 };
 export function meditationHealPerTick(level) { return 1 + Math.floor(level / 4); }
-export function meditationHealRate(level) { return meditationHealPerTick(level) / MEDITATION.tick; } // hp/sec, for tooling
