@@ -2045,9 +2045,18 @@ function buildDirtField(shapes, discs, material, y, T, polys = []) {
   const vert = (i, j) => {
     const k = j * (nx + 1) + i; if (vid[k] >= 0) return vid[k];
     const x = mnx + i * CELL, z = mnz + j * CELL;
-    // shades of brown drifting across the ground, the way the grass does
-    const hueN = fbm2(x + 57, z - 211, 41), ligN = fbm2(x - 389, z + 133, 43), satN = fbm2(x + 907, z + 619, 47);
-    dirtCol.setHSL(0.05 + hueN * 0.065, 0.22 + satN * 0.40, 0.14 + ligN * 0.26);
+    // Shades of brown drifting across the ground. The coordinates are scaled up
+    // before the noise so its features come out around 2-18m rather than
+    // 6-45m: across a camp the size of a clearing the wide version barely
+    // changed at all, and the ground read as one flat tone.
+    const hueN = fbm2((x + 57) * 2.6, (z - 211) * 2.6, 41);
+    const ligN = fbm2((x - 389) * 2.6, (z + 133) * 2.6, 43);
+    const satN = fbm2((x + 907) * 2.6, (z + 619) * 2.6, 47);
+    // Earth, not khaki: the hue stays inside orange-brown, the saturation
+    // never drops far enough to go grey, and the lightness has the widest
+    // spread of the three so the brown reads as a gradient drifting across
+    // the ground rather than one flat tone.
+    dirtCol.setHSL(0.047 + hueN * 0.045, 0.36 + satN * 0.32, 0.11 + ligN * 0.28);
     vid[k] = pos.length / 3; pos.push(x, y, z); uv.push(x / T, z / T); col.push(dirtCol.r, dirtCol.g, dirtCol.b, A[k]); return vid[k];
   };
   for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
@@ -2280,8 +2289,12 @@ function buildZone() {
   // at each vertex is the UNION (max) of soft distance fields around every path
   // and doorstep. Nothing is composited on top of anything else, so junctions
   // are flush, every end is naturally round, and the texture is continuous.
+  // Grain at half strength. The detail shader multiplies by up to 2x where the
+  // atlas tile is bright, which at full strength bleached the browns out to a
+  // flat khaki and buried the gradient underneath it; damped, the grain still
+  // reads and the colour underneath is what you see.
   const dirtMat = detailize(new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1,
-    side: THREE.DoubleSide, transparent: true, vertexColors: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }), 'dirt', { scale: 2 });
+    side: THREE.DoubleSide, transparent: true, vertexColors: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }), 'dirt', { scale: 2, strength: 0.5 });
   const shapes = [];
   for (const pathPts of worldPaths()) shapes.push({ pts: smoothPoly(pathPts, 8), hw: 0.8, fr: 1.1, river: true, fadeEnd: 6 });
   for (const tr of (zone.trails || [])) shapes.push({ pts: smoothPoly(tr, 8), hw: 0.45, fr: 0.8 });
