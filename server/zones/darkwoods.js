@@ -133,7 +133,7 @@ export const darkwoods = {
     { key: 'southgate',  name: 'South Track',           x: 48,  z: 86,  kind: 'gate', exit: true },
     // --- Mining scrapes, off the road and worth the walk ---
     { key: 'copperhollow', name: 'Copper Hollow',       x: 104, z: -46, kind: 'mine', art: 'mine', optional: true },
-    { key: 'tinscrape',    name: 'Tin Scrape',          x: -112, z: -40, kind: 'mine', art: 'mine', optional: true },
+    { key: 'tinscrape',    name: 'Tin Scrape',          x: -122, z: -14, kind: 'mine', art: 'mine', optional: true },
   ],
 
   // NPCs. `id` matches a quest's `giver`; the client builds a figure here and
@@ -187,7 +187,7 @@ export const darkwoods = {
     { id: 'sela',     name: 'Ranger Sela',         x: -86.0,   z: 28.0, poi: 'watchtower', model: 'Female', yaw: 2.2,
       look: { hairColor: '#2e1d12', skin: '#c99a74', outfit: 3, hair: 'Hair_Braids' },   // Forest Ranger
       idle: 'From the old tower you can see their fires. The Wolf Den grows bolder every night.' },
-    { id: 'dorn',     name: 'Prospector Dorn',     x: -112.0, z: -11.0,  poi: 'ravine',   model: 'Male', yaw: 5.0,
+    { id: 'dorn',     name: 'Prospector Dorn',     x: -118.0, z: -17.0,  poi: 'ravine',   model: 'Male', yaw: 5.0,
       look: { hairColor: '#b9b2a4', skin: '#b98f6a', outfit: 32, hair: 'Hair_Crop', beard: 'Beard_Full' },   // Blacksmith — apron and headband
       idle: 'That iron seam is mine by right — but the goblins dig it faster than I can chase them off.' },
     { id: 'hermit',   name: 'Hermit of the Grove', x: 37.0,    z: -76.0,   poi: 'shrine',   model: 'Male',
@@ -204,7 +204,7 @@ export const darkwoods = {
   // the old single `path`. Every one is a dirt trail the forest keeps clear of.
   paths: [
     // Main road: West Road -> Wolfsnag Pass -> Witchlight Camp -> Murkfen -> East Path
-    [ { x: -128, z: 2 }, { x: -112, z: -5 }, { x: -96, z: -15 }, { x: -84, z: -20 },
+    [ { x: -128, z: 2 }, { x: -121, z: -14 }, { x: -104, z: -19 }, { x: -84, z: -20 },
       { x: -62, z: -21 }, { x: -40, z: -17 }, { x: -20, z: -12 }, { x: 1, z: -6 },
       { x: 24, z: -4 }, { x: 48, z: -4 }, { x: 70, z: -4 }, { x: 86, z: -6 },
       { x: 102, z: -18 }, { x: 120, z: -36 } ],
@@ -261,8 +261,8 @@ export const darkwoods = {
     { name: 'Ravenwater Pool', points: [
       { x: -118, z: -54 }, { x: -114, z: -66 }, { x: -104, z: -75 }, { x: -90, z: -80 },
       { x: -76, z: -80 }, { x: -68, z: -77 }, { x: -58, z: -62 }, { x: -54, z: -52 },
-      { x: -58, z: -45 }, { x: -68, z: -38 }, { x: -82, z: -35 }, { x: -96, z: -38 },
-      { x: -110, z: -45 },
+      { x: -58, z: -52 }, { x: -70, z: -51 }, { x: -84, z: -51 }, { x: -98, z: -53 },
+      { x: -110, z: -56 },
     ] },
     { name: 'Murkfen', shallow: true, points: [
       { x: 40, z: -6 }, { x: 46, z: -18 }, { x: 58, z: -26 }, { x: 74, z: -30 },
@@ -292,14 +292,36 @@ export const darkwoods = {
     { x: 127, z: 9,   r: 34, h: 5 },    // the eastern rim (150 m)
   ],
 
-  // Impassable rock (collision). Trees are visual-only.
-  // Wolfsnag Pass is the blueprint's western chokepoint: two spurs of cliff
-  // reaching in from north and south, leaving one gap the road threads. Walk
-  // west and this is the only way through.
+  // ------------------------------------------------------------------
+  // Cliffs. The blueprint draws these as rock walls, not boulders: long grey
+  // ridges that decide where you can and cannot go. `w` is the half-width of
+  // the flat top, `slope` the talus falling away from it, `h` how high it
+  // stands (world metres). You stop at the foot and walk round.
+  //
+  // Wolfsnag Pass is the zone's western chokepoint -- two walls reaching in
+  // from north and south with one gap between them, and the West Road threads
+  // it. There is no way past on this side except through.
+  // ------------------------------------------------------------------
+  cliffs: [
+    { name: 'Wolfsnag north wall', w: 6, slope: 7, h: 17,
+      points: [ { x: -124, z: -39 }, { x: -106, z: -37 }, { x: -88, z: -36 }, { x: -76, z: -37 } ] },
+    { name: 'Wolfsnag south wall', w: 6, slope: 7, h: 16,
+      points: [ { x: -106, z: 2 }, { x: -90, z: 1 }, { x: -74, z: 0 } ] },
+    // Crow Hill's flanks -- the lookout sits above them.
+    { name: 'Crow Hill west face', w: 7, slope: 9, h: 14,
+      points: [ { x: -122, z: 26 }, { x: -119, z: 38 }, { x: -120, z: 50 } ] },
+    { name: 'Crow Hill south face', w: 7, slope: 9, h: 12,
+      points: [ { x: -108, z: 62 }, { x: -90, z: 70 }, { x: -70, z: 70 } ] },
+    // The rock the Spider Den is cut into, and the broken ground west of it.
+    { name: 'Den rock face', w: 6, slope: 8, h: 13,
+      points: [ { x: -40, z: 70 }, { x: -26, z: 76 }, { x: -14, z: 79 } ] },
+    { name: 'Southern scarp', w: 6, slope: 8, h: 10,
+      points: [ { x: -98, z: 80 }, { x: -78, z: 86 }, { x: -58, z: 86 } ] },
+  ],
+
+  // Impassable rock (collision) left over for the cave mouth's mound. The
+  // Wolfsnag boulders are gone -- that ground is a cliff wall now.
   rocks: [
-    { x: -94, z: -36, r: 11 }, { x: -82, z: -39, r: 12 }, { x: -69, z: -37, r: 10 },
-    { x: -100, z: 3, r: 11 }, { x: -86, z: 1, r: 12 },   { x: -72, z: -1, r: 10 },
-    // The mound the Spider Den is cut into -- its mouth (the portal) is the only way in.
     { x: -6, z: 74, r: 6 }, { x: 3, z: 76, r: 3 }, { x: -7, z: 66, r: 3 },
   ],
 
@@ -396,7 +418,7 @@ export const darkwoods = {
   // Treasure chests reward exploring the optional landmarks. Loot scales with
   // how deep/dangerous the spot is. Positions are pre-scale like everything else.
   chests: [
-    { id: 'watchtower', x: -80, z: 23,  gold: 70,  item: 'Leather Body' },        // old soldier's kit on Crow Hill
+    { id: 'watchtower', x: -78, z: 31,  gold: 70,  item: 'Leather Body' },        // old soldier's kit on Crow Hill
     { id: 'rotfen',     x: 98,  z: -22, gold: 110, item: 'Battered Iron Shield' }, // stash on the dry ground above Murkfen
     { id: 'wolfden',    x: 66,  z: 33,  gold: 160, item: 'Iron Sword' },           // goblin plunder at Briar Camp
     { id: 'stones',     x: 88,  z: -71, gold: 240, item: 'Crystal Heart' },        // the Guardian's hoard in Grimroot Thicket

@@ -26,7 +26,7 @@ import { isBardSpell, checkBardCast, castBard, spendSongCharges, songAmp, atkSpe
   bardMonsterDmgMult, bardMonsterDefMult, bardMonsterTakenMult, bardMonsterSpeedMult, bardMonsterAtkSpeedMult, stepSongs } from './bard.js';
 import {
   dist2, closestOnPolyline, mulberry32, pointInPoly, polyCentroid, generateTrees, generateScatter, generateHanging,
-  mergeOutlines, roughenOutline, generateEdgeForest, inHouse, riversOf, bridgesOf, pathsOf, closestOnPaths, lakesOf, lakeRing, lakeEdgeDist,
+  mergeOutlines, roughenOutline, generateEdgeForest, inHouse, riversOf, bridgesOf, pathsOf, closestOnPaths, lakesOf, lakeRing, lakeEdgeDist, cliffsOf, cliffFoot, cliffDist,
   caveOutline,
 } from './worldgen.js';
 import {
@@ -117,6 +117,7 @@ function scaleZone(zone, k) {
   }
   for (const l of lakesOf(zone)) { (l.points || []).forEach(sp); l._ring = null; }
   (zone.hills || []).forEach(h => { h.x *= k; h.z *= k; h.r *= k; });   // `h.h` is authored in world metres, so it does not scale
+  for (const c of (zone.cliffs || [])) { (c.points || []).forEach(sp); c.w *= k; if (c.slope != null) c.slope *= k; }   // `c.h` likewise
   (zone.rocks || []).forEach(sp);
   (zone.pools || []).forEach(sp);
   (zone.chests || []).forEach(sp);
@@ -177,6 +178,7 @@ function offsetZone(zone, dx, dz) {
   }
   for (const l of lakesOf(zone)) { (l.points || []).forEach(sp); l._ring = null; }
   (zone.hills || []).forEach(h => { h.x += dx; h.z += dz; });
+  for (const c of (zone.cliffs || [])) (c.points || []).forEach(sp);
   (zone.rocks || []).forEach(sp);
   (zone.pools || []).forEach(sp);
   (zone.chests || []).forEach(sp);
@@ -214,6 +216,7 @@ function buildSeamlessWorld() {
   w.paths = [...pathsOf(w), ...pathsOf(kf)];
   w.rivers = [...riversOf(w), ...riversOf(kf)];
   w.lakes = [...lakesOf(w), ...lakesOf(kf)];
+  w.cliffs = [...cliffsOf(w), ...cliffsOf(kf)];
   // Union bounds + one rectangular boundary wall around the whole world (no
   // interior wall at the seam, so you walk straight from one zone to the next).
   const b = w.bounds, kb = kf.bounds;
@@ -450,6 +453,7 @@ function standableAt(zone, x, z) {
   if (x < b.minX || x > b.maxX || z < b.minZ || z > b.maxZ) return false;
   if (zone.boundary && !pointInPoly(x, z, zone.boundary)) return false;
   for (const o of (zone.rocks || [])) if (dist2(x, z, o.x, o.z) < o.r * o.r) return false;
+  for (const c of cliffsOf(zone)) if (cliffDist(c, x, z) < cliffFoot(c)) return false;
   for (const l of lakesOf(zone)) if (!l.shallow && pointInPoly(x, z, l.points)) return false;
   for (const r of riversOf(zone)) {
     if (closestOnPolyline(x, z, r.points).dist < r.width / 2 + RIVER_BANK) {
@@ -474,6 +478,14 @@ function resolveCollision(zone, ent, radius) {
 
   // Every river is solid (with a passable bridge deck). The fused world can hold
   // several, each with its own bridge frame cached on the river object.
+  // Cliffs are rock walls: you stop at the foot of the talus and go round.
+  for (const c of cliffsOf(zone)) {
+    const near = closestOnPolyline(ent.x, ent.z, c.points);
+    const min = cliffFoot(c) + radius;
+    if (near.dist >= min) continue;
+    const dx = ent.x - near.x, dz = ent.z - near.z, d = Math.hypot(dx, dz);
+    if (d > 1e-4) { ent.x = near.x + (dx / d) * min; ent.z = near.z + (dz / d) * min; }
+  }
   // Deep lakes are solid: push out to the nearest point on the shore. A shallow
   // one (a fen) is water you wade, so it does not push at all.
   for (const l of lakesOf(zone)) {
@@ -659,6 +671,7 @@ function spawnInRegion(zone, region, opts = {}) {
     if ((zone.rocks || []).some(o => dist2(x, z, o.x, o.z) < (o.r + 2) ** 2)) continue;
     if (riversOf(zone).some(r => closestOnPolyline(x, z, r.points).dist < r.width / 2 + RIVER_BANK + 1)) continue;
     if (lakesOf(zone).some(l => !l.shallow && lakeEdgeDist(l, x, z) < 2)) continue;
+    if (cliffsOf(zone).some(c => cliffDist(c, x, z) < cliffFoot(c) + 2)) continue;
     return { x, z };
   }
   // Fallback: the region centre, pushed clear of the keep-out ring if needed.
@@ -3521,7 +3534,7 @@ function zoneForClient(zone) {
   return {
     id: zone.id, name: zone.name, subtitle: zone.subtitle, spawn: zone.spawn,
     bounds: zone.bounds, boundary: zone.boundary, pois: zone.pois, path: zone.path, river: zone.river,
-    paths: pathsOf(zone), rivers: riversOf(zone), lakes: lakesOf(zone), hills: zone.hills || [],
+    paths: pathsOf(zone), rivers: riversOf(zone), lakes: lakesOf(zone), hills: zone.hills || [], cliffs: cliffsOf(zone),
     rocks: zone.rocks, hazards: zone.hazards, pools: zone.pools, chests: zone.chests, objects: zone.objects,
     fishingSpots: zone.fishingSpots || [], campfires: zone.campfires || [],
     caves: (zone.caves || []).map(c => ({ boundary: c.boundary, rooms: c.rooms, tunnels: c.tunnels, floorY: c.floorY, ceilingY: c.ceilingY,

@@ -28,6 +28,14 @@ export function bridgesOf(river) {
   if (!river) return [];
   return river.bridges || (river.bridge ? [river.bridge] : []);
 }
+// Cliffs: a rock wall following a line, the way the blueprint draws them. `w`
+// is the half-width of the flat top, `slope` the talus falling away from it,
+// `h` how high it stands. Nothing walks onto one -- the gap between two of
+// them is the way through.
+export function cliffsOf(zone) { return (zone && zone.cliffs) || []; }
+export function cliffFoot(c) { return c.w + (c.slope != null ? c.slope : 7); }
+export function cliffDist(c, x, z) { return closestOnPolyline(x, z, c.points).dist; }
+
 // Lakes and fens: standing water with a real outline, rather than a river made
 // fat enough to pretend. `points` is a closed polygon; `shallow` water can be
 // waded (a fen), deep water is solid and you walk around it.
@@ -138,6 +146,7 @@ export function generateTrees(zone) {
     if (pathsOf(zone).some(p => closestOnPolyline(x, z, p).dist < 6)) continue;
     if (riversOf(zone).some(r => closestOnPolyline(x, z, r.points).dist < r.width / 2 + RIVER_BANK + 3)) continue;
     if (lakesOf(zone).some(l => lakeEdgeDist(l, x, z) < 3)) continue;
+    if (cliffsOf(zone).some(c => cliffDist(c, x, z) < cliffFoot(c) + 2)) continue;
     if (riversOf(zone).some(r => bridgesOf(r).some(b => dist2(x, z, b.x, b.z) < 15 * 15))) continue;
     if (inFarm(zone, x, z, 3)) continue;
     if (inHouse(zone, x, z, 2.5)) continue;
@@ -183,6 +192,7 @@ export function generateScatter(zone) {
       // thing the player cannot walk through.
       if (riversOf(zone).some(r => closestOnPolyline(x, z, r.points).dist < r.width / 2 + RIVER_BANK + 2.5)) continue;
       if (lakesOf(zone).some(l => lakeEdgeDist(l, x, z) < (l.shallow ? 0 : 2.5))) continue;
+      if (cliffsOf(zone).some(c => cliffDist(c, x, z) < cliffFoot(c) + 1.5)) continue;
       if (inFarm(zone, x, z, 2)) continue;
       if (inHouse(zone, x, z, 1.5)) continue;
       // a pit's own dressing (crates, barricades at the ravine dig) may sit in it; nothing else may
@@ -512,6 +522,7 @@ export function generateEdgeForest(zone, innerPolys, seed, band = 32) {
     if (pathsOf(zone).some(p => closestOnPolyline(x, z, p).dist < 6)) continue;
     if (riversOf(zone).some(r => closestOnPolyline(x, z, r.points).dist < r.width / 2 + RIVER_BANK + 3)) continue;
     if (lakesOf(zone).some(l => lakeEdgeDist(l, x, z) < 3)) continue;
+    if (cliffsOf(zone).some(c => cliffDist(c, x, z) < cliffFoot(c) + 2)) continue;
     if (inFarm(zone, x, z, 3) || inMine(zone, x, z, 4) || inHouse(zone, x, z, 2.5)) continue;
     if ((zone.pois || []).some(p => dist2(x, z, p.x, p.z) < clearRadiusS(p) ** 2)) continue;
     const near = (t) => dist2(x, z, t.x, t.z) < minSpace * minSpace;

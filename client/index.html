@@ -1556,14 +1556,39 @@ function landHeight(x, z) {
     const t = 1 - d / k.r;
     h += k.h * t * t * (3 - 2 * t);          // smoothstep dome, flat at the top and the foot
   }
-  return h;
+  return h + cliffLift(x, z);                 // rock walls stand on top of the land
+}
+// ---- Cliffs ------------------------------------------------------------
+// A rock wall following a line: flat on top out to `w`, then falling away
+// across `slope` to the ground it stands on. The tallest wall wins where two
+// overlap rather than stacking into a spire.
+function worldCliffs() { return (zone && zone.cliffs) || []; }
+function cliffFoot(c) { return c.w + (c.slope != null ? c.slope : 7); }
+// 0 at the foot, 1 on the top -- how much of this wall is under (x,z).
+function cliffMix(c, x, z) {
+  const d = distToPolyline(x, z, c.points), foot = cliffFoot(c);
+  if (d >= foot) return 0;
+  if (d <= c.w) return 1;
+  const t = 1 - (d - c.w) / (foot - c.w);
+  return t * t * (3 - 2 * t);
+}
+function cliffLift(x, z) {
+  let top = 0;
+  for (const c of worldCliffs()) { const v = c.h * cliffMix(c, x, z); if (v > top) top = v; }
+  return top;
+}
+// How rocky the ground reads here (0 grass, 1 bare stone).
+function cliffRock(x, z) {
+  let m = 0;
+  for (const c of worldCliffs()) { const v = cliffMix(c, x, z); if (v > m) m = v; }
+  return m;
 }
 function terrainHeight(x, z) {
   if (!zone || zone.enclosed) return 0;
   // The land rises to the hills; water then cuts down through it. The carve
   // functions return 0 to mean "no water here", which is NOT a height to take
   // the minimum with -- doing that flattens every hill back to zero.
-  let y = landHeight(x, z) * hillDamp(x, z);
+  let y = landHeight(x, z) * hillDamp(x, z) + cliffLift(x, z) * (1 - hillDamp(x, z));
   for (const r of worldRivers()) { const h = riverHeightAt1(r, x, z); if (h < 0 && h < y) y = h; }
   for (const l of worldLakes()) { const h = lakeHeightAt1(l, x, z); if (h < 0 && h < y) y = h; }
   return y;
@@ -2709,7 +2734,13 @@ function buildLowPolyGround(W, D, cx, cz) {
     let onBed = false;
     for (const r of worldRivers()) { if (distToPolyline(wx, wz, r.points) < riverWaterHalf(r.width) + 0.5) { onBed = true; break; } }
     if (!onBed) for (const l of worldLakes()) { if (lakeEdgeDist(l, wx, wz) < 0.5) { onBed = true; break; } }
-    if (onBed) c.setHSL(0.09, 0.34, 0.15 + (ligN - 0.5) * 0.04);            // muddy riverbed
+    const rock = cliffRock(wx, wz);
+    if (rock > 0.02) {                                                     // bare stone on the walls
+      const g = 0.30 + ligN * 0.16 + (hueN - 0.5) * 0.05;
+      c.setRGB(g * 1.02, g, g * 0.96);
+      if (rock < 1) { const gr = new THREE.Color(); gr.setHSL(0.23 + hueN * 0.16, 0.30 + satN * 0.34, 0.13 + ligN * 0.2); c.lerp(gr, 1 - rock); }
+    }
+    else if (onBed) c.setHSL(0.09, 0.34, 0.15 + (ligN - 0.5) * 0.04);      // muddy riverbed
     else {
       const hue = 0.23 + hueN * 0.16;           // 0.23 yellow-green .. 0.39 blue-green
       const sat = 0.30 + satN * 0.34;           // washed-out .. vivid
@@ -10291,6 +10322,16 @@ function drawMap() {
   if (!under) for (const r of worldRivers()) { if (!r.points) continue; line(r.points); ctx.strokeStyle = '#2f6f9c'; ctx.lineWidth = Math.max(3, r.width * s * 0.6); ctx.lineJoin = ctx.lineCap = 'round'; ctx.stroke(); }
   // paths (dashed trails)
   if (!under) for (const pth of worldPaths()) { line(pth); ctx.strokeStyle = '#c9a86a'; ctx.lineWidth = 3; ctx.setLineDash([7, 5]); ctx.lineJoin = 'round'; ctx.stroke(); ctx.setLineDash([]); }
+  // cliffs -- grey walls, the way the blueprint draws them
+  if (!under) for (const c of (zone.cliffs || [])) {
+    if (!inReg(c.points[0].x, c.points[0].z)) continue;
+    line(c.points);
+    ctx.strokeStyle = 'rgba(126,134,148,0.85)';
+    ctx.lineWidth = Math.max(4, (c.w + (c.slope != null ? c.slope : 7)) * s * 1.6);
+    ctx.lineJoin = ctx.lineCap = 'round'; ctx.stroke();
+    line(c.points);
+    ctx.strokeStyle = 'rgba(176,184,196,0.9)'; ctx.lineWidth = Math.max(2, c.w * s * 1.4); ctx.stroke();
+  }
   // rocks (faint)
   ctx.fillStyle = '#33425a'; for (const o of (zone.rocks || [])) { if (!inReg(o.x, o.z)) continue; ctx.beginPath(); ctx.arc(px(o.x), pz(o.z), Math.max(2, o.r * s * 0.5), 0, 7); ctx.fill(); }
   // fishing spots (cyan ripple), campfires (orange), chests (gold) — the
