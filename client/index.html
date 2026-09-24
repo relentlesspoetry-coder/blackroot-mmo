@@ -106,6 +106,15 @@
   #invite button { background: #3a3020; border: 1px solid #6b5a3a; border-radius: 6px; color: #ffdf9e; padding: 6px 16px; font-size: 13px; cursor: pointer; }
   #invite button:hover { background: #4a3d28; }
   #invite .isub { font-size: 11px; color: #b9ad90; margin-top: 6px; }
+  /* Looking someone over: the Equipment sheet, theirs, centred and read-only. */
+  #inspect { display: none; position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); z-index: 57; pointer-events: auto;
+    width: 324px; max-height: calc(100vh - 96px); overflow-y: auto;
+    background: #2e2820; border: 2px solid #1c150e; border-radius: 8px; padding: 10px; box-shadow: 0 12px 34px #000c; }
+  #inspect h3 { color: #ffdf9e; font-size: 13px; margin-bottom: 2px; display: flex; justify-content: space-between; align-items: center; }
+  #inspect h3 .x { cursor: pointer; opacity: .75; font-size: 14px; } #inspect h3 .x:hover { opacity: 1; }
+  #inspect .sub { font-size: 11px; color: #b9ad90; margin-bottom: 8px; }
+  #inspect .eslot { cursor: default; }
+  #inspect .eslot:hover { border-color: #4a3d2a; }
   /* The trade window: their side, your side, and your bag underneath. */
   #trade { display: none; position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); z-index: 58; pointer-events: auto;
     width: min(560px, 92vw); background: #2e2820; border: 2px solid #1c150e; border-radius: 10px; box-shadow: 0 12px 34px #000c; overflow: hidden; }
@@ -318,7 +327,9 @@
      is positioned and each slot placed at the coordinates the server sends. */
   #doll { position: relative; margin: 0 auto; }
   #doll .figure { position: absolute; inset: 0; pointer-events: none; }
-  #doll .eslot { position: absolute; }
+  /* Both paperdolls place their slots by coordinate -- your own kit and,
+     in the inspect window, somebody else's. */
+  #doll .eslot, #inspDoll .eslot { position: absolute; }
   .eslot { width: 50px; height: 50px; background: #16130fe6; border: 1px solid #5a4a34; border-radius: 5px;
     display: flex; align-items: center; justify-content: center; cursor: pointer; }
   .eslot.filled { border-color: #c9a44a; background: #221c14; }
@@ -331,9 +342,9 @@
     background: #000d; color: #ffe9b0; font-size: 11px; padding: 3px 7px; border-radius: 4px;
     white-space: nowrap; z-index: 5; }
   .eslot .tip { display: none; }
-  #equipStats { color: #b9ad90; font-size: 11px; display: flex; gap: 12px; margin-top: 10px;
-    border-top: 1px solid #4a3d2a; padding-top: 8px; }
-  #equipStats b { color: #ffd24a; font-weight: 600; }
+  #equipStats, .statrow { color: #b9ad90; font-size: 11px; display: flex; gap: 12px; margin-top: 10px;
+    border-top: 1px solid #4a3d2a; padding-top: 8px; flex-wrap: wrap; }
+  #equipStats b, .statrow b { color: #ffd24a; font-weight: 600; }
   #equipHint { color: #7e7358; font-size: 10px; margin-top: 6px; }
   .eslot { aspect-ratio: 1; background: #16130f; border: 1px solid #5a4a34; border-radius: 5px; position: relative;
     display: flex; align-items: center; justify-content: center; cursor: pointer; }
@@ -609,6 +620,12 @@
   <div id="dialogue">
     <div class="d-head"><span id="dName">NPC</span><span class="d-close" id="dClose">✕</span></div>
     <div class="d-body"><div class="d-script" id="dScript"></div><div class="d-say" id="dSay"></div><div id="dQuests"></div></div>
+  </div>
+  <div id="inspect">
+    <h3><span id="inspName">—</span><span class="x" id="inspX">✕</span></h3>
+    <div class="sub" id="inspSub"></div>
+    <div id="inspDoll"></div>
+    <div class="statrow" id="inspStats"></div>
   </div>
   <div id="trade">
     <div class="t-head"><span id="tradeWith">Trading</span><span class="x" id="tradeX">✕</span></div>
@@ -1391,6 +1408,9 @@ function handle(m) {
       break;
     case 'trade:request':
       showInvite(m, 'trade');
+      break;
+    case 'inspect':
+      showInspect(m);
       break;
     case 'trade':
       tradeState = m.closed ? null : m;
@@ -6370,13 +6390,14 @@ function pickAt(e) {
 
 // What you learn by looking someone over: who they are, what they fight as,
 // and whether they are standing with you.
+// The line under their name in the inspect window: what they are, and
+// anything about how they are standing there that the kit itself won't say.
 function playerExamine(d) {
-  const bits = [`${d.name}, a level ${d.level} ${CLASS_NAME[d.cls] || 'Fighter'}.`];
-  if (inMyParty(d.id)) bits.push('In your party.');
-  if (d.alive === false) bits.push('Dead, and not enjoying it.');
-  else if (d.inCombat) bits.push('In the middle of a fight.');
-  if (d.weapon) bits.push(`Carrying a ${d.weapon}.`);
-  return bits.join(' ');
+  const bits = [`Level ${d.level} ${CLASS_NAME[d.cls] || 'Fighter'}`];
+  if (inMyParty(d.id)) bits.push('in your party');
+  if (d.alive === false) bits.push('dead, and not enjoying it');
+  else if (d.inCombat) bits.push('in the middle of a fight');
+  return bits.join(' \u00b7 ');
 }
 
 // Options for a right-click menu (first = the default left-click action).
@@ -6402,7 +6423,9 @@ function optionsFor(pk) {
         : { label: `Party Invite <b>${name}</b>`, act: () => ws?.send(JSON.stringify({ t: 'party:invite', id: pk.id })) });
       opts.push({ label: `Trade with <b>${name}</b>`, act: () => ws?.send(JSON.stringify({ t: 'trade:request', id: pk.id })) });
     }
-    opts.push({ label: `Examine ${self ? 'yourself' : name}`, act: () => examineText(self ? 'That would be you.' : playerExamine(pk.data)) });
+    opts.push(self
+      ? { label: 'Examine yourself', act: () => examineText('That would be you.') }
+      : { label: `Examine <b>${name}</b>`, act: () => ws?.send(JSON.stringify({ t: 'inspect', id: pk.id })) });
     if (!self) opts.push({ label: `Duel <b>${name}</b>`, act: () => ws?.send(JSON.stringify({ t: 'duel:challenge', id: pk.id })) });
     return opts;
   }
@@ -9456,16 +9479,39 @@ function toggleEquip(force) {
   if (equipOpen) renderEquipment();
 }
 
-function slotCell(slot, info) {
-  const worn = (bag.equipment || {})[slot];
+// `equipment` defaults to your own kit; the inspect window passes somebody
+// else's and says so, since you cannot take their boots off for them.
+function slotCell(slot, info, equipment, readOnly) {
+  const worn = (equipment || bag.equipment || {})[slot];
   const meta = metaFor(worn);
   return `<div class="eslot${worn ? ' filled' : ' empty'}" data-slot="${slot}" ` +
     `style="left:${info.x}px; top:${info.y}px;">` +
     `<span class="ic">${worn ? iconFor(worn) : (info.icon || '\u25cb')}</span>` +
     `<span class="lb">${escapeHtml(info.label)}</span>` +
-    `<span class="tip">${worn ? escapeHtml(worn) + statText(meta) + ' \u2014 click to remove'
+    `<span class="tip">${worn ? escapeHtml(worn) + statText(meta) + (readOnly ? '' : ' \u2014 click to remove')
       : escapeHtml(info.label) + ' \u2014 empty'}</span></div>`;
 }
+// ---------------------------------------------------------------------------
+// Looking someone over: their kit on the same paperdoll you read your own on.
+// ---------------------------------------------------------------------------
+function showInspect(m) {
+  const win = document.getElementById('inspect');
+  document.getElementById('inspName').textContent = m.name;
+  document.getElementById('inspSub').textContent = playerExamine({ ...(snapCur && snapCur.players.find(q => q.id === m.id)) || {}, name: m.name, level: m.level, cls: m.cls });
+  const d = m.doll || { w: 300, h: 328 }, stage = document.getElementById('inspDoll');
+  stage.style.position = 'relative'; stage.style.margin = '0 auto';
+  stage.style.width = d.w + 'px'; stage.style.height = d.h + 'px';
+  stage.innerHTML = dollFigure(d.w, d.h) +
+    Object.entries(m.slots || {}).map(([slot, info]) => slotCell(slot, info, m.equipment, true)).join('');
+  const st = m.stats || { atk: 0, def: 0 }, sw = m.swing;
+  const worn = Object.values(m.equipment || {}).filter(Boolean).length;
+  document.getElementById('inspStats').innerHTML =
+    `<span>Attack <b>+${st.atk || 0}</b></span><span>Defence <b>+${st.def || 0}</b></span>` +
+    (sw ? `<span>Swing <b>${sw.lo}-${sw.hi}</b> ${sw.type} every <b>${sw.sec}s</b></span>` : '') +
+    `<span>Worn <b>${worn}</b>/${Object.keys(m.slots || {}).length}</span>`;
+  win.style.display = 'block';
+}
+document.getElementById('inspX').onclick = () => { document.getElementById('inspect').style.display = 'none'; };
 
 // A plain humanoid drawn behind the slots, scaled to the stage the server
 // describes, so the arrangement reads as a body rather than a grid.

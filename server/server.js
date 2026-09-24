@@ -3319,6 +3319,20 @@ wss.on('connection', (ws) => {
         break;
       }
       case 'stand': { if (player) standUp(player); break; }
+      // Looking someone over: the same sheet you see of your own kit, for
+      // theirs. Read-only, and it says nothing their character is not wearing
+      // in plain sight.
+      case 'inspect': {
+        if (!player) break;
+        const t = players.get(Number(msg.id));
+        if (!t || t.zoneId !== player.zoneId) break;
+        const w = weaponOf(t), cs = classStats(t.cls, t.level), eq = equipStats(t.equipment);
+        const [lo, hi] = swingBand(w, cs.str, eq.atk || 0);
+        send(player.ws, { t: 'inspect', id: t.id, name: t.name, cls: t.cls, level: t.level,
+          equipment: t.equipment, stats: eq, slots: SLOT_INFO, doll: DOLL,
+          swing: { sec: +swingSeconds(w).toFixed(1), type: w.type, lo, hi } });
+        break;
+      }
       case 'trade:request': { if (player) tradeRequest(player, msg.id); break; }
       case 'trade:accept':  { if (player) tradeAccept(player); break; }
       case 'trade:decline': { if (player) tradeDecline(player); break; }
