@@ -127,9 +127,9 @@ export const darkwoods = {
     // --- South: the lookout, the war camp, the den ---
     { key: 'watchtower', name: 'Crow Hill',             x: -84, z: 26,  kind: 'landmark', optional: true },
     { key: 'bridge',     name: 'Mossy Bridge',          x: 20,  z: 27,  kind: 'landmark' },
-    { key: 'wolfden',    name: 'Briar Camp',            x: 63,  z: 35,  kind: 'landmark', hidden: true },
+    { key: 'wolfden',    name: 'Briar Camp',            x: 63,  z: 35,  kind: 'landmark' },
     { key: 'camp',       name: 'Wayside Camp',          x: -14, z: 56,  kind: 'safe', r: 9, merchant: true, optional: true },
-    { key: 'cave',       name: 'Spider Den',            x: 1,   z: 69,  kind: 'cave', hidden: true },
+    { key: 'cave',       name: 'Spider Den',            x: 1,   z: 69,  kind: 'cave' },
     { key: 'southgate',  name: 'South Track',           x: 48,  z: 86,  kind: 'gate', exit: true },
     // --- Mining scrapes, off the road and worth the walk ---
     { key: 'copperhollow', name: 'Copper Hollow',       x: 104, z: -46, kind: 'mine', art: 'mine', optional: true },
@@ -223,6 +223,12 @@ export const darkwoods = {
     [ { x: -2, z: 42 }, { x: -24, z: 38 }, { x: -46, z: 33 }, { x: -66, z: 29 }, { x: -84, z: 26 } ],
     // Briar Camp spur, east off the south road, over the Mossy Bridge
     [ { x: 2, z: 26 }, { x: 22, z: 29 }, { x: 42, z: 32 }, { x: 63, z: 35 } ],
+    // Fen causeway: Briar Camp north along the shallows to the main road, which
+    // closes the eastern half of the blueprint's loop.
+    [ { x: 63, z: 35 }, { x: 74, z: 26 }, { x: 82, z: 14 }, { x: 87, z: 2 }, { x: 86, z: -6 } ],
+    // The south-western sweep: Crow Hill round to the Wayside Camp, so the
+    // hill is on the circuit instead of being a there-and-back spur.
+    [ { x: -84, z: 26 }, { x: -68, z: 40 }, { x: -46, z: 51 }, { x: -28, z: 56 }, { x: -14, z: 56 } ],
   ],
 
   // Three bodies of water, as the blueprint draws them.
@@ -231,8 +237,6 @@ export const darkwoods = {
   //   the south creek  runs down past the den, crossed at the Mossy Bridge
   // (Murkfen itself is shallow: see `pools` below, which you can wade.)
   rivers: [
-    { name: 'Ravenwater Pool', width: 26,
-      points: [ { x: -86, z: -62 }, { x: -78, z: -56 }, { x: -68, z: -50 }, { x: -58, z: -46 } ] },
     { name: 'Blackroot Creek', width: 8,
       points: [
         { x: -56, z: -45 }, { x: -44, z: -40 }, { x: -30, z: -35 }, { x: -16, z: -31 },
@@ -250,12 +254,20 @@ export const darkwoods = {
       bridges: [ { x: 11, z: 26 }, { x: 29, z: 86 } ] },
   ],
 
-  // Murkfen -- shallow standing water you can wade through, so the fen is
-  // crossable but unmistakably wet. Unlike a river these do not block movement.
-  pools: [
-    { x: 70, z: -14, r: 9 }, { x: 80, z: -16, r: 11 }, { x: 92, z: -12, r: 10 },
-    { x: 100, z: -4, r: 9 }, { x: 88, z: 0, r: 12 },  { x: 76, z: 2, r: 10 },
-    { x: 66, z: -2, r: 8 },  { x: 96, z: 6, r: 8 },   { x: 84, z: 10, r: 7 },
+  // Standing water, drawn as the blueprint draws it rather than as a river made
+  // fat enough to pretend. A deep lake is solid -- you walk around Ravenwater.
+  // A shallow one is a fen: you wade it, and it slows nothing but your nerve.
+  lakes: [
+    { name: 'Ravenwater Pool', points: [
+      { x: -92, z: -60 }, { x: -87, z: -69 }, { x: -78, z: -74 }, { x: -68, z: -74 },
+      { x: -58, z: -69 }, { x: -50, z: -62 }, { x: -49, z: -53 }, { x: -56, z: -45 },
+      { x: -66, z: -41 }, { x: -78, z: -43 }, { x: -88, z: -50 },
+    ] },
+    { name: 'Murkfen', shallow: true, points: [
+      { x: 62, z: -8 }, { x: 68, z: -19 }, { x: 78, z: -24 }, { x: 90, z: -22 },
+      { x: 100, z: -15 }, { x: 105, z: -4 }, { x: 103, z: 7 }, { x: 95, z: 15 },
+      { x: 84, z: 18 }, { x: 72, z: 14 }, { x: 64, z: 5 },
+    ] },
   ],
 
   // Impassable rock (collision). Trees are visual-only.
@@ -371,7 +383,7 @@ export const darkwoods = {
   // Fishing spots, fished from the bank: the deep pool in the north-west, then
   // down Blackroot Creek as it runs east. Tier gates which fish lands.
   fishingSpots: [
-    { id: 'fs_shr1', tier: 'Shrimp', x: -61, z: -31 },   // Ravenwater Pool, south bank
+    { id: 'fs_shr1', tier: 'Shrimp', x: -59, z: -38 },   // Ravenwater Pool, south bank
     { id: 'fs_shr2', tier: 'Shrimp', x: -30, z: -25 },   // the creek below the ford
     { id: 'fs_tro1', tier: 'Trout',  x: 14,  z: -14 },
     { id: 'fs_sal1', tier: 'Salmon', x: 62,  z: -8 },    // where the creek slows into the fen

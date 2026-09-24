@@ -1494,6 +1494,27 @@ function riverWaterHalf(width) { return width / 2 + RIVER_BANK; }
 // river / path; single-river zones still work via the legacy fields.
 function worldRivers() { return (zone && (zone.rivers || (zone.river ? [zone.river] : []))) || []; }
 function worldPaths() { return (zone && (zone.paths || (zone.path ? [zone.path] : []))) || []; }
+// Standing water with a real outline. `points` is a closed polygon; a shallow
+// lake is a fen you wade, a deep one is solid and you walk around it.
+function worldLakes() { return (zone && zone.lakes) || []; }
+function lakeRing(l) { if (!l._ring) l._ring = [...l.points, l.points[0]]; return l._ring; }
+// Distance to the lake's edge, negative inside it.
+function lakeEdgeDist(l, x, z) {
+  const d = distToPolyline(x, z, lakeRing(l));
+  return pointInPoly(x, z, l.points) ? -d : d;
+}
+// How far in from the shore the bed reaches its full depth.
+const LAKE_SHELF = 14;
+// Carve for ONE lake, using the same bed/water/lip profile a river uses so a
+// creek running into a lake meets it at the same height.
+function lakeHeightAt1(lake, x, z) {
+  const d = lakeEdgeDist(lake, x, z);
+  if (d >= RIVER_LIP) return 0;
+  const bed = lake.shallow ? RIVER_WATER_Y - 0.35 : RIVER_BED_Y;
+  if (d >= 0) return RIVER_WATER_Y + (0 - RIVER_WATER_Y) * (d / RIVER_LIP);   // the lip, rising to grass
+  const t = 1 - Math.min(1, -d / (lake.shallow ? LAKE_SHELF * 0.5 : LAKE_SHELF));
+  return bed + (RIVER_WATER_Y - bed) * (t * t * t);
+}
 // Carve for ONE river.
 function riverHeightAt1(river, x, z) {
   const half = riverWaterHalf(river.width);
@@ -1509,6 +1530,7 @@ function terrainHeight(x, z) {
   // Deepest carve wins where rivers overlap; grass (0) everywhere else.
   let y = 0;
   for (const r of worldRivers()) { const h = riverHeightAt1(r, x, z); if (h < y) y = h; }
+  for (const l of worldLakes()) { const h = lakeHeightAt1(l, x, z); if (h < y) y = h; }
   return y;
 }
 // Height an entity should stand at: on a bridge use its deck, else the terrain.
@@ -1999,6 +2021,7 @@ function buildDirtField(shapes, discs, material, y, T, polys = []) {
         let al = d <= s.hw ? 1 : 1 - (d - s.hw) / s.fr;
         if (s.fadeEnd) { const along = s.cum[i] + Math.sqrt(L2) * t; al *= Math.max(0, Math.min(1, (s.total - along) / s.fadeEnd)); }
         if (s.river) for (const r of worldRivers()) { const rd = distToPolyline(x, z, r.points); al *= Math.max(0, Math.min(1, (rd - riverWaterHalf(r.width)) / 2.5)); }
+        if (s.river) for (const l of worldLakes()) { al *= Math.max(0, Math.min(1, lakeEdgeDist(l, x, z) / 2.5)); }
         if (al > best) best = al;
       }
     }
@@ -2183,6 +2206,50 @@ function buildStripRibbon(points, width, y, material, tile, feather, cutRiver, e
 // carved to, so it lies flush on the ground (real dirt bank, not a floating
 // layer), and its outer rim feathers to transparent so the dirt melts into the
 // surrounding grass.
+// A ring of shore hugging a lake's outline: bed on the inside, the lip rising
+// to grass on the outside, with the outer rim faded so it melts into the field.
+function buildLakeShore(lake) {
+  const raw = lake.points;
+  // Outward normal depends on which way the outline was authored.
+  let area = 0;
+  for (let i = 0; i < raw.length; i++) { const a = raw[i], b = raw[(i + 1) % raw.length]; area += a.x * b.z - b.x * a.z; }
+  const out = area > 0 ? -1 : 1;
+  const pts = smoothPoly(lakeRing(lake), 6);
+  const bed = lake.shallow ? RIVER_WATER_Y - 0.35 : RIVER_BED_Y;
+  const SHELF = lake.shallow ? LAKE_SHELF * 0.5 : LAKE_SHELF, FR = 2.0;
+  // o < 0 is into the water, o > 0 is up the bank.
+  const yAt = (o) => {
+    if (o >= RIVER_LIP) return 0;
+    if (o >= 0) return RIVER_WATER_Y + (0 - RIVER_WATER_Y) * (o / RIVER_LIP);
+    const t = 1 - Math.min(1, -o / SHELF);
+    return bed + (RIVER_WATER_Y - bed) * (t * t * t);
+  };
+  const cols = [
+    { o: -SHELF, a: 1 }, { o: -SHELF * 0.55, a: 1 }, { o: -SHELF * 0.25, a: 1 },
+    { o: 0, a: 1 }, { o: RIVER_LIP, a: 1 }, { o: RIVER_LIP + FR, a: 0 },
+  ];
+  const N = cols.length, T = 4, pos = [], uv = [], col = [], idx = [];
+  let dist = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
+    let dx = b.x - a.x, dz = b.z - a.z; const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
+    const nx = -dz * out, nz = dx * out;
+    if (i > 0) dist += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z);
+    for (const c of cols) { pos.push(pts[i].x + nx * c.o, yAt(c.o) + 0.03, pts[i].z + nz * c.o); uv.push(c.o / T, dist / T); col.push(1, 1, 1, c.a); }
+  }
+  for (let i = 0; i < pts.length - 1; i++) for (let j = 0; j < N - 1; j++) {
+    const q = i * N + j; idx.push(q, q + 1, q + N, q + 1, q + N + 1, q + N);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
+  g.setIndex(idx); g.computeVertexNormals();
+  const mat = detailize(new THREE.MeshStandardMaterial({ color: 0x9c7a52, roughness: 1,
+    vertexColors: true, transparent: true, depthWrite: false }), 'dirt', { scale: 2, strength: 0.5 });
+  const m = new THREE.Mesh(g, mat); m.receiveShadow = true; scene.add(m);
+}
+
 function buildRiverShore(points, half) {
   const pts = smoothPoly(points, 8);
   const H = half + RIVER_LIP, W = RIVER_WATER_Y, FR = 2.0;
@@ -2377,6 +2444,29 @@ function buildSpoilBank(mine) {
 }
 
 // Rivers — deep flowing water sitting in the carved channel, one per river.
+  // Lakes and fens: a shore ring hugging the outline, then the water surface
+  // filling the polygon. Built before the rivers so a creek's mouth draws over
+  // the lake edge rather than under it.
+  for (const lake of worldLakes()) {
+    buildLakeShore(lake);
+    const shape = new THREE.Shape(lake.points.map(q => new THREE.Vector2(q.x, q.z)));
+    const geo = new THREE.ShapeGeometry(shape, 12);
+    geo.rotateX(Math.PI / 2);                    // Shape's +Y becomes world +Z
+    geo.translate(0, RIVER_WATER_Y, 0);
+    const ltex = makeWaterTexture();
+    const lmat = detailize(new THREE.MeshStandardMaterial({ map: ltex,
+      color: lake.shallow ? 0x4d87a8 : 0x2a6b96, roughness: 0.3, metalness: 0.25,
+      transparent: true, opacity: lake.shallow ? 0.78 : 0.96, side: THREE.DoubleSide,
+      emissive: 0x11364f, emissiveIntensity: 0.9 }), 'water', { scale: 4, strength: 0.6 });
+    // World-space UVs so the surface texture is continuous with the rivers'.
+    const pos = geo.attributes.position, uv = [];
+    for (let i = 0; i < pos.count; i++) uv.push(pos.getX(i) / 8, pos.getZ(i) / 8);
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    const mesh = new THREE.Mesh(geo, lmat);
+    mesh.receiveShadow = true; scene.add(mesh);
+    if (!riverMesh) { riverMesh = mesh; riverTex = ltex; }   // share the flow animation
+  }
+
   for (const river of worldRivers()) {
     const rtex = makeWaterTexture();
     const waterMat = detailize(new THREE.MeshStandardMaterial({ map: rtex, color: 0x2f74a0, roughness: 0.3, metalness: 0.25, transparent: true, opacity: 0.96, side: THREE.DoubleSide,
@@ -2583,6 +2673,7 @@ function buildLowPolyGround(W, D, cx, cz) {
     const hueN = fbm2(wx * 2.2, wz * 2.2, 11), ligN = fbm2((wx + 311) * 2.2, (wz - 97) * 2.2, 23), satN = fbm2((wx - 173) * 2.2, (wz + 421) * 2.2, 37);
     let onBed = false;
     for (const r of worldRivers()) { if (distToPolyline(wx, wz, r.points) < riverWaterHalf(r.width) + 0.5) { onBed = true; break; } }
+    if (!onBed) for (const l of worldLakes()) { if (lakeEdgeDist(l, wx, wz) < 0.5) { onBed = true; break; } }
     if (onBed) c.setHSL(0.09, 0.34, 0.15 + (ligN - 0.5) * 0.04);            // muddy riverbed
     else {
       const hue = 0.23 + hueN * 0.16;           // 0.23 yellow-green .. 0.39 blue-green
@@ -2651,6 +2742,7 @@ function buildDetails() {
     !inFarmYard(x, z, 2) &&
     worldPaths().every(p => distToPolyline(x, z, p) >= pathClear) &&
     worldRivers().every(r => distToPolyline(x, z, r.points) >= riverWaterHalf(r.width) + RIVER_LIP) &&
+    worldLakes().every(l => lakeEdgeDist(l, x, z) >= RIVER_LIP) &&
     !zone.pois.some(p => Math.hypot(x - p.x, z - p.z) < Math.max(3, clearRadius(p) - 3)) &&
     !zone.rocks.some(o => Math.hypot(x - o.x, z - o.z) < o.r + 1);
   const gen = (n, pathClear = 2.5) => {
@@ -2735,6 +2827,7 @@ function buildGrass() {
   const ok = (x, z) => (!zone.boundary || inBoundary(x, z)) &&
     !inHouse(x, z) && !inField(x, z) && !inMine(x, z) &&
     worldRivers().every(r => distToPolyline(x, z, r.points) >= riverWaterHalf(r.width) + RIVER_LIP) &&
+    worldLakes().every(l => lakeEdgeDist(l, x, z) >= RIVER_LIP) &&
     !zone.rocks.some(o => Math.hypot(x - o.x, z - o.z) < o.r);
   const onPathSkip = (x, z) => (worldPaths().some(p => distToPolyline(x, z, p) < 2.2) || (zone.trails || []).some(t => distToPolyline(x, z, t) < 1.5)) && rng() > 0.12;
   const spots = [];
@@ -10143,10 +10236,21 @@ function drawMap() {
   // river
   // Shallow water (Murkfen's fen) reads as water on the map too, just paler --
   // it is wadeable, not a channel you have to walk around.
-  if (!under) for (const pl of (zone.pools || [])) {
-    if (!inReg(pl.x, pl.z)) continue;
-    ctx.beginPath(); ctx.arc(px(pl.x), pz(pl.z), Math.max(2, pl.r * s), 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(79,140,180,0.55)'; ctx.fill();
+  // Forest cover, so the map reads as woodland rather than an empty field. One
+  // soft blot per tree, well under the labels and roads drawn after it.
+  if (!under && (zone.trees || []).length) {
+    ctx.save(); ctx.fillStyle = 'rgba(38,82,56,0.82)';
+    for (const t of zone.trees) {
+      if (!inReg(t.x, t.z)) continue;
+      ctx.beginPath(); ctx.arc(px(t.x), pz(t.z), Math.max(2.4, 4.2 * (t.s || 1) * s), 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
+  if (!under) for (const lk of (zone.lakes || [])) {
+    if (!inReg(lk.points[0].x, lk.points[0].z)) continue;
+    line(lk.points, true);
+    ctx.fillStyle = lk.shallow ? 'rgba(79,140,180,0.5)' : 'rgba(47,111,156,0.92)'; ctx.fill();
+    ctx.strokeStyle = 'rgba(120,170,205,0.5)'; ctx.lineWidth = 1.5; ctx.stroke();
   }
   if (!under) for (const r of worldRivers()) { if (!r.points) continue; line(r.points); ctx.strokeStyle = '#2f6f9c'; ctx.lineWidth = Math.max(3, r.width * s * 0.6); ctx.lineJoin = ctx.lineCap = 'round'; ctx.stroke(); }
   // paths (dashed trails)
