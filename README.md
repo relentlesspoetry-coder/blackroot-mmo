@@ -1,8 +1,7 @@
 # Blackroot (3D browser MMO)
 
 A modern MMORPG vertical slice built from scratch with an **authoritative
-server** (the security lesson from the old *Gate to Heaven* codebase in this
-repo, applied correctly: the client is never trusted).
+server**: the client is never trusted.
 
 - **Server:** Node.js + WebSocket. Simulates all movement, combat, AI and
   progression at 20 Hz and broadcasts world snapshots at 12 Hz.
