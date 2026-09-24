@@ -5,6 +5,7 @@
 
 import http from 'http';
 import fs from 'fs';
+import crypto from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { WebSocketServer } from 'ws';
@@ -989,6 +990,65 @@ function grantXp(p, amount) {
     systemChat(`${p.name} is now a level ${p.level} ${classDef(p.cls).name}!`);
   }
   if (leveled) { sendSkills(p); sendAbilities(p); }
+}
+
+// ---------------------------------------------------------------------------
+// Accounts
+//
+// A name plus a password. The password is never stored and never logged: what
+// goes on disk is a scrypt hash of it with its own random salt per account, and
+// checking one is a constant-time compare so a wrong guess tells an attacker
+// nothing by how long it took. Logging in with a name nobody has taken creates
+// the account; logging in with one that exists has to match.
+//
+// NOTE: the websocket is plain ws://. On this machine that is fine, but the
+// password crosses the wire in the clear, so put this behind wss:// (TLS)
+// before letting anyone reach it over a network.
+// ---------------------------------------------------------------------------
+const ACCOUNT_DIR = path.join(__dirname, '..', 'accounts');
+const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 64 };
+const PASS_MIN = 6, PASS_MAX = 128;
+const LOGIN_TRIES = 6;                 // wrong guesses before a name goes quiet
+const LOGIN_LOCK_MS = 60 * 1000;
+const loginFails = new Map();          // account slug -> { n, until }
+
+const accountPath = (name) => path.join(ACCOUNT_DIR, saveSlug(name) + '.json');
+function hashPass(pass, salt) { return crypto.scryptSync(pass, salt, SCRYPT.keylen, SCRYPT).toString('hex'); }
+function readAccount(name) {
+  try { const a = JSON.parse(fs.readFileSync(accountPath(name), 'utf8')); return a && a.salt && a.hash ? a : null; }
+  catch (e) { return null; }
+}
+function writeAccount(a) {
+  fs.mkdirSync(ACCOUNT_DIR, { recursive: true });
+  fs.writeFileSync(accountPath(a.name), JSON.stringify(a));
+}
+// Returns { ok: true } or { error } -- never anything derived from the stored
+// password, and the same wording whether the name or the password was wrong.
+function authenticate(name, pass) {
+  const slug = saveSlug(name);
+  const lock = loginFails.get(slug);
+  if (lock && lock.until > Date.now()) {
+    return { error: `Too many attempts. Try again in ${Math.ceil((lock.until - Date.now()) / 1000)}s.` };
+  }
+  if (typeof pass !== 'string' || pass.length < PASS_MIN) return { error: `Password must be at least ${PASS_MIN} characters.` };
+  if (pass.length > PASS_MAX) return { error: 'That password is too long.' };
+  const acct = readAccount(name);
+  if (!acct) {
+    const salt = crypto.randomBytes(16).toString('hex');
+    writeAccount({ v: 1, name, salt, hash: hashPass(pass, salt), created: Date.now() });
+    return { ok: true, created: true };
+  }
+  const got = Buffer.from(hashPass(pass, acct.salt), 'hex');
+  const want = Buffer.from(acct.hash, 'hex');
+  const good = got.length === want.length && crypto.timingSafeEqual(got, want);
+  if (!good) {
+    const f = loginFails.get(slug) || { n: 0, until: 0 };
+    f.n++; if (f.n >= LOGIN_TRIES) { f.until = Date.now() + LOGIN_LOCK_MS; f.n = 0; }
+    loginFails.set(slug, f);
+    return { error: 'That name is taken, and the password does not match it.' };
+  }
+  loginFails.delete(slug);
+  return { ok: true };
 }
 
 // ---------------------------------------------------------------------------
@@ -3388,7 +3448,15 @@ wss.on('connection', (ws) => {
     switch (msg.t) {
       case 'join': {
         if (player) return;
-        const name = String(msg.name || 'Adventurer').slice(0, 16).replace(/[^\w \-]/g, '') || 'Adventurer';
+        const name = String(msg.name || '').slice(0, 16).replace(/[^\w \-]/g, '').trim();
+        if (!name) { send(ws, { t: 'loginfail', text: 'Pick a name.' }); break; }
+        // Already in the world: refuse rather than have two of the same person
+        // walking about writing over each other's save.
+        if ([...players.values()].some(q => saveSlug(q.name) === saveSlug(name))) {
+          send(ws, { t: 'loginfail', text: `${name} is already logged in.` }); break;
+        }
+        const auth = authenticate(name, msg.pass);
+        if (!auth.ok) { send(ws, { t: 'loginfail', text: auth.error }); break; }
         const id = nextId++;
         const look = sanitizeLook(msg.look);
         const cls = CLASSES[msg.cls] ? String(msg.cls) : DEFAULT_CLASS;
@@ -3429,7 +3497,8 @@ wss.on('connection', (ws) => {
         sendSkills(player);
         sendAbilities(player); sendStatus(player);
         sendObjects(player);
-        if (saved) send(ws, { t: 'event', kind: 'notice', text: `Welcome back, ${player.name}.` });
+        if (auth.created) send(ws, { t: 'event', kind: 'notice', text: `Account created for ${player.name}. Use the same password next time.` });
+        else if (saved) send(ws, { t: 'event', kind: 'notice', text: `Welcome back, ${player.name}.` });
         systemChat(`${name} has entered ${here.name}.`);
         break;
       }

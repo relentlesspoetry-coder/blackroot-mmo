@@ -9,3 +9,4 @@ server/zones/*.overrides.json
 
 server/loot.overrides.json
 saves/
+accounts/

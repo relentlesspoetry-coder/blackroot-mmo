@@ -21,6 +21,9 @@
     background: linear-gradient(90deg,#7fd7ff,#c9a4ff); -webkit-background-clip: text; background-clip: text; color: transparent; }
   #login p { color: #8fa3bf; font-size: 14px; }
   #login .card { background: #121a26; border: 1px solid #24344a; border-radius: 14px; padding: 24px 28px; display: flex; flex-direction: column; gap: 12px; width: 320px; }
+  #loginNote { font-size: 11px; color: #7f8ba0; margin: -2px 2px 8px; line-height: 1.4; }
+  #loginErr { display: none; font-size: 12px; color: #ff9a80; background: #3a1f1c; border: 1px solid #7a3030;
+    border-radius: 6px; padding: 6px 9px; margin: 0 0 8px; }
   #login input { background: #0c131d; border: 1px solid #2a3c54; color: #e7eef7; padding: 11px 12px; border-radius: 8px; font-size: 15px; }
   /* A conversation as it is actually spoken: their lines, then yours. */
   .d-script { margin-bottom: 8px; }
@@ -495,7 +498,10 @@
   <h1>Blackroot</h1>
   <p>A fully 3D browser MMO</p>
   <div class="card">
-    <input id="nameInput" maxlength="16" placeholder="Character name" autocomplete="off" />
+    <input id="nameInput" maxlength="16" placeholder="Character name" autocomplete="username" />
+    <input id="passInput" type="password" maxlength="128" placeholder="Password" autocomplete="current-password" />
+    <div id="loginNote">A new name makes an account. Come back with the same two and you carry on where you left off.</div>
+    <div id="loginErr"></div>
     <div id="lookrows">
       <div class="lookrow"><label>Outfit <select id="outfitSel"></select></label></div>
       <div class="lookrow"><label>Hair <select id="hairSel"></select></label><label>Beard <select id="beardSel"></select></label></div>
@@ -1367,16 +1373,19 @@ let snapPrev = null, snapCur = null, snapPrevT = 0, snapCurT = 0;
 const SNAP_INTERP = 100; // ms behind for smooth interpolation
 const ENTITY_CULL_D = 150; // mobs further than this from the camera aren't drawn
 
-function connect(name, look, cls) {
+function connect(name, pass, look, cls) {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(`${proto}://${location.host}`);
-  ws.onopen = () => ws.send(JSON.stringify({ t: 'join', name, look, cls }));
+  // The password goes to the server and is not kept here: it is not written to
+  // localStorage, not held in a module variable, and not sent anywhere else.
+  ws.onopen = () => { ws.send(JSON.stringify({ t: 'join', name, pass, look, cls })); pass = null; };
   ws.onmessage = (e) => handle(JSON.parse(e.data));
   ws.onclose = () => addChat('System', 'Disconnected from server.', true);
 }
 
 function handle(m) {
   if (m.t === 'logout') { location.reload(); return; }
+  if (m.t === 'loginfail') { showLoginError(m.text); return; }
   switch (m.t) {
     case 'welcome':
       myId = m.id; zone = m.zone; if (m.items) itemCatalog = m.items; startGame();
@@ -2076,28 +2085,50 @@ function buildDirtField(shapes, discs, material, y, T, polys = []) {
   return m;
 }
 // Loose stones on bare ground. The grass gets blades, so the dirt gets grit:
-// the same instanced scatter, sown only where the dirt field is actually
-// opaque, each stone its own shade of brown.
-function buildDirtStones(dirtMesh) {
+// the same instanced scatter, each stone its own shade of brown.
+//
+// Sown INTO the dirt rather than across the zone. The first version threw
+// darts at the whole map and kept whatever landed on bare ground, which for a
+// world that is mostly meadow meant 665,000 rejections and about 1.7 seconds
+// of blocking work to place nine thousand stones -- enough churn, on top of
+// everything else a zone builds, to cost the renderer its context. Now each
+// road, doorstep, camp and mine scrape is sown at its own size, so nearly
+// every sample lands and the whole thing costs a few milliseconds.
+function buildDirtStones(dirtMesh, shapes, discs, polys) {
   const alphaAt = dirtMesh && dirtMesh.userData.alphaAt; if (!alphaAt) return;
-  const b = zone.bounds, rng = mulberry32((zone.treeSeed || 1) + 613);
+  const rng = mulberry32((zone.treeSeed || 1) + 613);
+  const PER_M2 = 1.1, OVER = 1.7;        // stones per square metre, and how many extra samples to throw
+  const spots = [];
+  // Thicker where the dirt is opaque, thinning through the fringe, so the grit
+  // fades into the grass exactly as the dirt does.
+  const sow = (x, z) => { const a = alphaAt(x, z); if (a >= 0.12 && rng() <= a * 0.9) spots.push({ x, z }); };
+  for (const d of (discs || [])) {
+    const R = d.r + (d.fr || 0), n = Math.round(Math.PI * R * R * PER_M2 * OVER);
+    for (let i = 0; i < n; i++) { const a = rng() * 6.2832, rr = Math.sqrt(rng()) * R; sow(d.x + Math.cos(a) * rr, d.z + Math.sin(a) * rr); }
+  }
+  for (const sh of (shapes || [])) {
+    const w = (sh.hw || 0.5) + (sh.fr || 0), pts = sh.pts || [];
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1], b = pts[i], dx = b.x - a.x, dz = b.z - a.z, L = Math.hypot(dx, dz);
+      if (L < 1e-3) continue;
+      const ox = -dz / L, oz = dx / L, n = Math.round(L * w * 2 * PER_M2 * OVER);
+      for (let k = 0; k < n; k++) { const t = rng(), off = (rng() * 2 - 1) * w; sow(a.x + dx * t + ox * off, a.z + dz * t + oz * off); }
+    }
+  }
+  for (const pl of (polys || [])) {     // mine scrapes: sample the bounding box, alphaAt does the shaping
+    const pts = pl.pts || []; if (!pts.length) continue;
+    let mnx = 1e9, mxx = -1e9, mnz = 1e9, mxz = -1e9;
+    for (const q of pts) { mnx = Math.min(mnx, q.x); mxx = Math.max(mxx, q.x); mnz = Math.min(mnz, q.z); mxz = Math.max(mxz, q.z); }
+    const fr = pl.fr || 0; mnx -= fr; mxx += fr; mnz -= fr; mxz += fr;
+    const n = Math.round((mxx - mnx) * (mxz - mnz) * PER_M2 * OVER);
+    for (let i = 0; i < n; i++) sow(mnx + rng() * (mxx - mnx), mnz + rng() * (mxz - mnz));
+  }
+  if (!spots.length) return;
   const geo = new THREE.DodecahedronGeometry(0.5, 0);
   // No vertexColors here: a dodecahedron has no colour attribute, and asking
   // for one makes the shader read zero and paint every stone black however
   // pale the per-instance colour is. The instance colour alone does it.
   const mat = new THREE.MeshStandardMaterial({ roughness: 1, flatShading: true });
-  const areaK = Math.min(3.2, ((b.maxX - b.minX) * (b.maxZ - b.minZ)) / 37800);
-  const spots = [];
-  let want = Math.round(26000 * areaK), guard = 0;
-  while (want > 0 && guard++ < want * 8) {
-    const x = b.minX + 2 + rng() * (b.maxX - b.minX - 4), z = b.minZ + 2 + rng() * (b.maxZ - b.minZ - 4);
-    // Thicker where the dirt is bare, thinning out through the fringe, so the
-    // grit fades into the grass exactly as the dirt does.
-    const a = alphaAt(x, z);
-    if (a < 0.12 || rng() > a * 0.9) continue;
-    spots.push({ x, z }); want--;
-  }
-  if (!spots.length) return;
   const mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), col = new THREE.Color();
   chunkedInstances(geo, mat, spots, (p, i, im) => {
     q.setFromEuler(new THREE.Euler(rng() * 6.28, rng() * 6.28, rng() * 6.28));
@@ -2105,9 +2136,7 @@ function buildDirtStones(dirtMesh) {
     sc.set(s * (0.7 + rng() * 0.6), s * (0.5 + rng() * 0.5), s * (0.7 + rng() * 0.6));   // squat, never marbles
     mtx.compose(new THREE.Vector3(p.x, 0.055 + s * 0.25, p.z), q, sc); im.setMatrixAt(i, mtx);
     // Every stone its own brown, drawn at random from the same gradient the
-    // ground is painted with -- the hue held inside orange-brown, the
-    // saturation never low enough to go grey, and the lightness sitting above
-    // the dirt's own so the grit reads against it.
+    // ground is painted with.
     col.setHSL(0.047 + rng() * 0.045, 0.30 + rng() * 0.26, 0.34 + rng() * 0.26);
     im.setColorAt(i, col);
   }, { castShadow: false });
@@ -2308,7 +2337,7 @@ function buildZone() {
   // into a camp the two are one piece of dirt rather than two overlapping ones.
   for (const d of (zone.dirt || [])) discs.push({ x: d.x, z: d.z, r: d.r, fr: d.fr != null ? d.fr : 3 });
   const polys = (zone.mines || []).map(m => ({ pts: m.outline, fr: 6.5 }));   // the mining pits' bare scrapes (the fringe runs out under the bank's fade)
-  buildDirtStones(buildDirtField(shapes, discs, dirtMat, 0.05, 3, polys));
+  buildDirtStones(buildDirtField(shapes, discs, dirtMat, 0.05, 3, polys), shapes, discs, polys);
   for (const m of (zone.mines || [])) buildSpoilBank(m);
 
   // The spoil bank around a mining pit: earth heaped along the outline (except
@@ -10457,16 +10486,32 @@ document.querySelectorAll('#classRow .classopt').forEach(d => {
   d.onclick = () => { pickedClass = d.dataset.cls; document.querySelectorAll('#classRow .classopt').forEach(x => x.classList.toggle('sel', x === d)); if (CLASS_OUTFIT[pickedClass]) outfitSel.value = CLASS_OUTFIT[pickedClass]; try { localStorage.setItem('bk.cls', pickedClass); } catch (e) {} };
 });
 setInterval(() => { if (!zone) music.update(0.1); }, 100); // fades tick on the login screen too (the render loop isn't running yet)
+// Turned away at the door: say why, put the button back, and let them try
+// again rather than leaving a dead screen.
+function showLoginError(text) {
+  const el = document.getElementById('loginErr');
+  el.textContent = text || 'Could not log in.';
+  el.style.display = 'block';
+  playBtn.disabled = false; playBtn.textContent = 'Enter World';
+  try { ws.onclose = null; ws.close(); } catch (e) {}
+  ws = null;
+  passInput.value = ''; passInput.focus();
+}
 async function play() {
-  const name = nameInput.value.trim() || 'Adventurer';
+  const name = nameInput.value.trim();
+  const pass = passInput.value;
+  if (!name) return showLoginError('Pick a name.');
+  if (pass.length < 6) return showLoginError('Password must be at least 6 characters.');
+  document.getElementById('loginErr').style.display = 'none';
   const look = currentLook();
-  try { localStorage.setItem('bk.look', JSON.stringify(look)); } catch (e) {}
+  try { localStorage.setItem('bk.look', JSON.stringify(look)); } catch (e) {}   // the look, never the password
   playBtn.disabled = true;
   if (!modelsDone) { playBtn.textContent = 'Loading models…'; await modelsReady; }
-  connect(name, look, pickedClass);
+  connect(name, pass, look, pickedClass);
+  passInput.value = '';
 }
 playBtn.onclick = play;
-nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') play(); });
+for (const el of [nameInput, passInput]) el.addEventListener('keydown', e => { if (e.key === 'Enter') play(); });
 </script>
 </body>
 </html>
