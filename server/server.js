@@ -116,7 +116,8 @@ function scaleZone(zone, k) {
     for (const br of bridgesOf(r)) { br.x *= k; br.z *= k; if (br.halfWidth != null) br.halfWidth *= k; }
   }
   for (const l of lakesOf(zone)) { (l.points || []).forEach(sp); l._ring = null; }
-  (zone.hills || []).forEach(h => { h.x *= k; h.z *= k; h.r *= k; });   // `h.h` is authored in world metres, so it does not scale
+  (zone.hills || []).forEach(h => { h.x *= k; h.z *= k; h.r *= k; });
+  for (const a of [...(zone.clearings || []), ...(zone.groves || [])]) { a.x *= k; a.z *= k; a.r *= k; if (a.edge != null) a.edge *= k; }   // `h.h` is authored in world metres, so it does not scale
   for (const c of (zone.cliffs || [])) { (c.points || []).forEach(sp); c.w *= k; if (c.slope != null) c.slope *= k; }   // `c.h` likewise
   (zone.rocks || []).forEach(sp);
   (zone.pools || []).forEach(sp);
@@ -178,6 +179,7 @@ function offsetZone(zone, dx, dz) {
   }
   for (const l of lakesOf(zone)) { (l.points || []).forEach(sp); l._ring = null; }
   (zone.hills || []).forEach(h => { h.x += dx; h.z += dz; });
+  for (const a of [...(zone.clearings || []), ...(zone.groves || [])]) { a.x += dx; a.z += dz; }
   for (const c of (zone.cliffs || [])) (c.points || []).forEach(sp);
   (zone.rocks || []).forEach(sp);
   (zone.pools || []).forEach(sp);
@@ -217,6 +219,8 @@ function buildSeamlessWorld() {
   w.rivers = [...riversOf(w), ...riversOf(kf)];
   w.lakes = [...lakesOf(w), ...lakesOf(kf)];
   w.cliffs = [...cliffsOf(w), ...cliffsOf(kf)];
+  w.clearings = [...(w.clearings || []), ...(kf.clearings || [])];
+  w.groves = [...(w.groves || []), ...(kf.groves || [])];
   // Union bounds + one rectangular boundary wall around the whole world (no
   // interior wall at the seam, so you walk straight from one zone to the next).
   const b = w.bounds, kb = kf.bounds;
@@ -3535,6 +3539,7 @@ function zoneForClient(zone) {
     id: zone.id, name: zone.name, subtitle: zone.subtitle, spawn: zone.spawn,
     bounds: zone.bounds, boundary: zone.boundary, pois: zone.pois, path: zone.path, river: zone.river,
     paths: pathsOf(zone), rivers: riversOf(zone), lakes: lakesOf(zone), hills: zone.hills || [], cliffs: cliffsOf(zone),
+    clearings: zone.clearings || [], groves: zone.groves || [],
     rocks: zone.rocks, hazards: zone.hazards, pools: zone.pools, chests: zone.chests, objects: zone.objects,
     fishingSpots: zone.fishingSpots || [], campfires: zone.campfires || [],
     caves: (zone.caves || []).map(c => ({ boundary: c.boundary, rooms: c.rooms, tunnels: c.tunnels, floorY: c.floorY, ceilingY: c.ceilingY,

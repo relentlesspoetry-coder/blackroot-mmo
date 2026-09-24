@@ -28,6 +28,32 @@ export function bridgesOf(river) {
   if (!river) return [];
   return river.bridges || (river.bridge ? [river.bridge] : []);
 }
+// Forest density. The blueprint separates open "traversable area" from dense
+// forest, and that contrast is most of what the drawing looks like on the
+// ground. A zone authors the two exceptions -- `clearings` where the wood
+// opens out and `groves` where it closes in -- and everything between them is
+// ordinary woodland. Each is { x, z, r, edge? } and blends over its rim.
+const FOREST_OPEN = 0.07, FOREST_DENSE = 1.85;
+function blend(x, z, a) {
+  const d = Math.hypot(x - a.x, z - a.z), edge = a.edge != null ? a.edge : a.r * 0.3;
+  if (d >= a.r + edge) return 0;
+  if (d <= a.r) return 1;
+  const t = 1 - (d - a.r) / edge;
+  return t * t * (3 - 2 * t);
+}
+export function forestAt(zone, x, z) {
+  let dens = 1;
+  // Groves thicken the wood; clearings are applied last and win outright,
+  // because somewhere authored as open ground is open ground.
+  for (const g of (zone.groves || [])) {
+    const m = blend(x, z, g); if (m > 0) dens = Math.max(dens, 1 + ((g.d != null ? g.d : FOREST_DENSE) - 1) * m);
+  }
+  for (const c of (zone.clearings || [])) {
+    const m = blend(x, z, c); if (m > 0) dens = Math.min(dens, 1 + ((c.d != null ? c.d : FOREST_OPEN) - 1) * m);
+  }
+  return dens;
+}
+
 // Cliffs: a rock wall following a line, the way the blueprint draws them. `w`
 // is the half-width of the flat top, `slope` the talus falling away from it,
 // `h` how high it stands. Nothing walks onto one -- the gap between two of
@@ -137,9 +163,9 @@ export function clearRadiusS(p) {
 export function generateTrees(zone) {
   if (!zone.treeCount || zone.treeCount <= 0) return [];
   const b = zone.bounds, rng = mulberry32(zone.treeSeed || 1);
-  const trees = [], minSpace = 11;
+  const trees = [], minSpace = 9;
   let guard = 0;
-  while (trees.length < zone.treeCount && guard++ < zone.treeCount * 25) {
+  while (trees.length < zone.treeCount && guard++ < zone.treeCount * 60) {
     const x = b.minX + 3 + rng() * (b.maxX - b.minX - 6);
     const z = b.minZ + 3 + rng() * (b.maxZ - b.minZ - 6);
     if (zone.boundary && !pointInPoly(x, z, zone.boundary)) continue;
@@ -153,7 +179,12 @@ export function generateTrees(zone) {
     if (inMine(zone, x, z, 4)) continue;
     if (zone.pois.some(p => dist2(x, z, p.x, p.z) < clearRadiusS(p) ** 2)) continue;
     if ((zone.rocks || []).some(o => dist2(x, z, o.x, o.z) < (o.r + 2) ** 2)) continue;
-    if (trees.some(t => dist2(x, z, t.x, t.z) < minSpace * minSpace)) continue;
+    // Density decides both whether a tree stands here at all and how close it
+    // stands to its neighbours: a grove packs them in, a clearing is bare.
+    const dens = forestAt(zone, x, z);
+    if (dens <= 0.02 || rng() > Math.min(1, dens)) continue;
+    const space = minSpace / Math.sqrt(Math.max(0.12, dens));
+    if (trees.some(t => dist2(x, z, t.x, t.z) < space * space)) continue;
     trees.push({ x: +x.toFixed(1), z: +z.toFixed(1), s: +(0.85 + rng() * 0.35).toFixed(2), r: +(rng() * 6).toFixed(2) });
   }
   return trees;
@@ -193,6 +224,8 @@ export function generateScatter(zone) {
       if (riversOf(zone).some(r => closestOnPolyline(x, z, r.points).dist < r.width / 2 + RIVER_BANK + 2.5)) continue;
       if (lakesOf(zone).some(l => lakeEdgeDist(l, x, z) < (l.shallow ? 0 : 2.5))) continue;
       if (cliffsOf(zone).some(c => cliffDist(c, x, z) < cliffFoot(c) + 1.5)) continue;
+      // Undergrowth thickens and thins with the wood above it.
+      if (!spec.near && rng() > Math.min(1, 0.45 + forestAt(zone, x, z) * 0.5)) continue;
       if (inFarm(zone, x, z, 2)) continue;
       if (inHouse(zone, x, z, 1.5)) continue;
       // a pit's own dressing (crates, barricades at the ravine dig) may sit in it; nothing else may
@@ -524,6 +557,7 @@ export function generateEdgeForest(zone, innerPolys, seed, band = 32) {
     if (lakesOf(zone).some(l => lakeEdgeDist(l, x, z) < 3)) continue;
     if (cliffsOf(zone).some(c => cliffDist(c, x, z) < cliffFoot(c) + 2)) continue;
     if (inFarm(zone, x, z, 3) || inMine(zone, x, z, 4) || inHouse(zone, x, z, 2.5)) continue;
+    if (forestAt(zone, x, z) < 0.4 && rng() > 0.12) continue;   // the border band still respects a clearing
     if ((zone.pois || []).some(p => dist2(x, z, p.x, p.z) < clearRadiusS(p) ** 2)) continue;
     const near = (t) => dist2(x, z, t.x, t.z) < minSpace * minSpace;
     if (trees.some(near) || out.some(near)) continue;

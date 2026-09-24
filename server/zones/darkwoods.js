@@ -42,7 +42,40 @@ export const darkwoods = {
   ],
 
   treeSeed: 1337,
-  treeCount: 120, // scaled up with the zone at load
+  // Raised from 120: with clearings and groves the count is a budget spread
+  // unevenly, so the dense stands need headroom to actually read as dense.
+  treeCount: 240, // scaled up with the zone at load
+
+  // ------------------------------------------------------------------
+  // Where the wood opens and where it closes in. The blueprint separates
+  // light "traversable area" from dark "forest (dense)", and that contrast
+  // is most of what the drawing looks like from the ground. Everything not
+  // listed here is ordinary woodland in between.
+  // ------------------------------------------------------------------
+  clearings: [
+    { x: -26, z: -86, r: 40 },   // Hearthstead's fields and yards
+    { x: 1,   z: -6,  r: 30 },   // the bowl Witchlight Camp sits in
+    { x: 34,  z: -78, r: 22 },   // the chapel's graveyard sward
+    { x: -84, z: 26,  r: 34 },   // Crow Hill's bare summit -- the wide views
+    { x: 63,  z: 35,  r: 24 },   // the ground Briar Camp cleared for itself
+    { x: -14, z: 56,  r: 16 },   // the Wayside Camp
+    { x: -84, z: -20, r: 20 },   // the floor of Wolfsnag Pass
+    { x: 88,  z: 3,   r: 34 },   // Murkfen -- open water and sedge, not timber
+    { x: -86, z: -58, r: 30 },   // Ravenwater's shore
+    { x: -114, z: -16, r: 14 },  // the Root-Choked Ravine dig
+    { x: 104, z: -46, r: 12 },   // Copper Hollow
+    { x: -122, z: -14, r: 12 },  // Tin Scrape
+  ],
+  groves: [
+    { x: 91,  z: -68, r: 34 },   // Grimroot Thicket -- the cursed heart of it
+    { x: 62,  z: -46, r: 30 },   // the belt between the thicket and the road
+    { x: -46, z: -62, r: 30 },   // the old wood above the creek
+    { x: -38, z: 36,  r: 26 },   // the bandit wood under Crow Hill
+    { x: 24,  z: 58,  r: 30 },   // the deep wood around the Spider Den
+    { x: -64, z: 68,  r: 26 },   // the south-western timber
+    { x: 40,  z: -34, r: 24 },   // between the creek and the fen
+    { x: -10, z: 80,  r: 24 },   // the belt above the South Track
+  ],
 
   // A low-level farming zone: mobs respawn quickly so grinding stays smooth.
   respawnMult: 0.4,

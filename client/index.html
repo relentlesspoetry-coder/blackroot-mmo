@@ -1563,6 +1563,22 @@ function landHeight(x, z) {
 // across `slope` to the ground it stands on. The tallest wall wins where two
 // overlap rather than stacking into a spire.
 function worldCliffs() { return (zone && zone.cliffs) || []; }
+// Forest density, matching the server's field: open ground reads as a sunlit
+// meadow green, deep wood as shaded forest floor.
+function areaBlend(x, z, a) {
+  const d = Math.hypot(x - a.x, z - a.z), edge = a.edge != null ? a.edge : a.r * 0.3;
+  if (d >= a.r + edge) return 0;
+  if (d <= a.r) return 1;
+  const t = 1 - (d - a.r) / edge;
+  return t * t * (3 - 2 * t);
+}
+function forestAt(x, z) {
+  if (!zone) return 1;
+  let dens = 1;
+  for (const g of (zone.groves || [])) { const m = areaBlend(x, z, g); if (m > 0) dens = Math.max(dens, 1 + 0.85 * m); }
+  for (const c of (zone.clearings || [])) { const m = areaBlend(x, z, c); if (m > 0) dens = Math.min(dens, 1 - 0.93 * m); }
+  return dens;
+}
 function cliffFoot(c) { return c.w + (c.slope != null ? c.slope : 7); }
 // 0 at the foot, 1 on the top -- how much of this wall is under (x,z).
 function cliffMix(c, x, z) {
@@ -2742,10 +2758,15 @@ function buildLowPolyGround(W, D, cx, cz) {
     }
     else if (onBed) c.setHSL(0.09, 0.34, 0.15 + (ligN - 0.5) * 0.04);      // muddy riverbed
     else {
-      const hue = 0.23 + hueN * 0.16;           // 0.23 yellow-green .. 0.39 blue-green
-      const sat = 0.30 + satN * 0.34;           // washed-out .. vivid
-      const lig = 0.13 + ligN * 0.2;            // deep shade .. lit meadow (kept off "bright")
-      c.setHSL(hue, sat, lig);
+      // Shift with the canopy: open ground is a warmer, lighter sward, deep
+      // wood is cooler and darker, which is the blueprint's two greens.
+      const f = forestAt(wx, wz);               // ~0.07 open .. 1.85 dense
+      const open = Math.max(0, Math.min(1, (1 - f) / 0.93));      // 1 in a clearing
+      const deep = Math.max(0, Math.min(1, (f - 1) / 0.85));      // 1 in a grove
+      const hue = 0.23 + hueN * 0.16 + deep * 0.05 - open * 0.03;
+      const sat = 0.30 + satN * 0.34 - deep * 0.05 + open * 0.06;
+      const lig = 0.13 + ligN * 0.2 + open * 0.07 - deep * 0.05;
+      c.setHSL(hue, sat, Math.max(0.05, lig));
     }
     colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
   }
@@ -10305,6 +10326,11 @@ function drawMap() {
   // it is wadeable, not a channel you have to walk around.
   // Forest cover, so the map reads as woodland rather than an empty field. One
   // soft blot per tree, well under the labels and roads drawn after it.
+  if (!under) for (const a of (zone.clearings || [])) {
+    if (!inReg(a.x, a.z)) continue;
+    ctx.beginPath(); ctx.arc(px(a.x), pz(a.z), Math.max(3, a.r * s), 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(122,150,86,0.30)'; ctx.fill();      // traversable area
+  }
   if (!under && (zone.trees || []).length) {
     ctx.save(); ctx.fillStyle = 'rgba(38,82,56,0.82)';
     for (const t of zone.trees) {
