@@ -2249,6 +2249,9 @@ function buildZone() {
     const o = h.door === 'south' ? [0, h.d / 2 + 1.0] : h.door === 'north' ? [0, -h.d / 2 - 1.0] : h.door === 'east' ? [h.w / 2 + 1.0, 0] : [-h.w / 2 - 1.0, 0];
     discs.push({ x: h.x + o[0], z: h.z + o[1], r: 0.9, fr: 0.9 });
   }
+  // Ground a camp has worn bare. Same field as the roads, so where a path runs
+  // into a camp the two are one piece of dirt rather than two overlapping ones.
+  for (const d of (zone.dirt || [])) discs.push({ x: d.x, z: d.z, r: d.r, fr: d.fr != null ? d.fr : 3 });
   const polys = (zone.mines || []).map(m => ({ pts: m.outline, fr: 6.5 }));   // the mining pits' bare scrapes (the fringe runs out under the bank's fade)
   buildDirtField(shapes, discs, dirtMat, 0.05, 3, polys);
   for (const m of (zone.mines || [])) buildSpoilBank(m);

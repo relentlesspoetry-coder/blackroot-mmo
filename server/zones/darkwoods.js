@@ -327,6 +327,13 @@ export const darkwoods = {
   scatterSeed: 4412,
   // NOTE: in generateScatter, `r` is the piece's COLLISION radius (0 = walk
   // through / pure decor) and `nearR` is how far it spreads around its anchor.
+  // Ground the camp has worn through: a bare patch under the whole of it, part
+  // of the same dirt field as the roads, so it blends into them instead of
+  // sitting on top as a separate disc.
+  dirt: [
+    { x: -10, z: -36, r: 7.6, fr: 4.0 },     // the camp floor, feathering out into the grass
+    { x: -10, z: -36, r: 2.4, fr: 1.4 },     // and a harder-trodden ring round the fire
+  ],
   // ---------------------------------------------------------------------
   // The Dark Woods Outpost, placed rather than sprinkled. Positions are
   // offsets from the outpost POI at (-10, -36) and scale with the zone like
@@ -335,20 +342,23 @@ export const darkwoods = {
   // ---------------------------------------------------------------------
   props: [
       // Four tents in an arc on the high side, each opening onto the fire.
-      { m: 'Small_Canvas_Tent', x: -8.01, z: -31.74, yaw: 3.58 },
-      { m: 'Small_Canvas_Tent', x: -5.58, z: -34.39, yaw: 4.36 },
-      { m: 'Small_Canvas_Tent', x: -5.74, z: -37.99, yaw: 5.15 },
-      { m: 'Small_Canvas_Tent', x: -8.39, z: -40.42, yaw: 5.93 },
-      // Two spare bedrolls between the tents, for the watch coming off duty.
-      { m: 'Bedroll', x: -7.33, z: -33.51, yaw: 3.96 },
-      { m: 'Bedroll', x: -7.51, z: -38.67, yaw: 5.53 },
+      { s: 1.45, m: 'Small_Canvas_Tent', x: -8.01, z: -31.74, yaw: 3.58 },
+      { s: 1.45, m: 'Small_Canvas_Tent', x: -5.58, z: -34.39, yaw: 4.36 },
+      { s: 1.45, m: 'Small_Canvas_Tent', x: -5.74, z: -37.99, yaw: 5.15 },
+      { s: 1.45, m: 'Small_Canvas_Tent', x: -8.39, z: -40.42, yaw: 5.93 },
+      // A bedroll inside each tent, laid along it on the same bearing, head to
+      // the back wall.
+      { m: 'Bedroll', x: -7.92, z: -31.55, yaw: 3.58 },
+      { m: 'Bedroll', x: -5.38, z: -34.32, yaw: 4.36 },
+      { m: 'Bedroll', x: -5.55, z: -38.08, yaw: 5.15 },
+      { m: 'Bedroll', x: -8.32, z: -40.62, yaw: 5.93 },
       // The fire: a pot over it and stools pulled up round it.
       { m: 'Cooking_Tripod', x: -10.00, z: -36.00, yaw: 0.00 },
       { m: 'Camp_Stool', x: -9.29, z: -34.78, yaw: 3.67 },
       { m: 'Camp_Stool', x: -9.29, z: -37.22, yaw: 5.76 },
       { m: 'Camp_Stool', x: -11.41, z: -36.00, yaw: 1.57 },
       // Stores under the pavilion on the sheltered side, crates stacked against it.
-      { m: 'Supply_Pavilion', x: -14.15, z: -37.51, yaw: 1.22 },
+      { s: 1.35, m: 'Supply_Pavilion', x: -14.15, z: -37.51, yaw: 1.22 },
       { m: 'Supply_Crate', x: -13.22, z: -38.17, yaw: 0.98 },
       { m: 'Supply_Crate', x: -14.86, z: -38.37, yaw: 1.12 },
       { m: 'Supply_Crate', x: -15.41, z: -37.15, yaw: 1.36 },

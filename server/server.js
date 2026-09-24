@@ -116,6 +116,7 @@ function scaleZone(zone, k) {
   (zone.chests || []).forEach(sp);
   (zone.objects || []).forEach(sp);   // quest objects: positions scale, model sizes stay native
   (zone.props || []).forEach(sp);     // hand-placed camp dressing: same rule, sizes stay in metres
+  (zone.dirt || []).forEach(d => { sp(d); if (d.fr != null) d.fr *= k; });   // worn ground: the fringe grows with the patch
   (zone.fishingSpots || []).forEach(sp);
   (zone.campfires || []).forEach(sp);
   if (zone.safeSpawnRadius) zone.safeSpawnRadius *= k;
@@ -189,7 +190,7 @@ function buildSeamlessWorld() {
   }
   const w = darkwoods, kf = killingfields;
   const cat = (k) => { w[k] = (w[k] || []).concat(kf[k] || []); };
-  ['pois', 'npcs', 'rocks', 'pools', 'chests', 'hazards', 'spawns', 'elites', 'objects', 'props', '_trees', '_scatter'].forEach(cat);
+  ['pois', 'npcs', 'rocks', 'pools', 'chests', 'hazards', 'spawns', 'elites', 'objects', 'props', 'dirt', '_trees', '_scatter'].forEach(cat);
   // Multiple paths/rivers now — keep each so the client can draw them all.
   w.paths = [w.path, kf.path].filter(Boolean);
   w.rivers = [w.river, kf.river].filter(Boolean);
@@ -3235,6 +3236,7 @@ function zoneForClient(zone) {
     gate: zone.farm && zone.farm.gate ? (g => ({ x: g.x, z: g.z, yaw: g.yaw || 0, s: g.s || 1, double: !!g.double,
       gap: g.seg ? Math.hypot(g.seg.x2 - g.seg.x1, g.seg.z2 - g.seg.z1) : 2.4 }))(zone.farm.gate) : null,
     seats: zone._seats || [],
+    dirt: zone.dirt || [],
     editObjects: zone._editObjects || [],
     editSpawns: zone._editSpawns || [],
   };
