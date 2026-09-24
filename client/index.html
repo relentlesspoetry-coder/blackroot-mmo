@@ -1484,10 +1484,11 @@ function bridgeLift(x, z) {
 // above it. terrainHeight is the ground height at (x,z) — 0 on flat land, the
 // water line at the shore, dropping to the bed under the water.
 const RIVER_WATER_Y = -0.5, RIVER_BED_Y = -2.2, RIVER_BANK = 4, RIVER_LIP = 2.0;
-// How deep a swimmer sits. Measured, not guessed: at 1.15 the whole body
-// finished 2 cm under an opaque surface and the swimmer was invisible. This
-// puts the waterline across the shoulders, with head and back showing.
-const SWIM_DEPTH = 0.7;
+// How deep a swimmer sits, measured off the rig rather than guessed. In the
+// upright tread the shoulder joints sit 1.78 above the mesh origin and the head
+// 1.98, so dropping the origin 1.55 under the waterline puts the surface just
+// below the shoulders: head, neck and shoulders clear, the rest of the body in.
+const SWIM_DEPTH = 1.55;
 // Half-width of the water surface: the whole carved channel is flooded, so the
 // water reaches out to `river half-width + RIVER_BANK`. A dedicated smooth dirt
 // shore ribbon (buildRiverShore) forms the visible dirt border out to
@@ -5636,22 +5637,36 @@ function animateEntity(rec, e, kind, dt) {
     if (cls === 'cleric') updateClericMeditationFx(rec, dt); else if (cls === 'bard') updateBardMeditationFx(rec, dt); else updateMeditationFx(rec, dt);
     return;
   }
-  // --- swimming: prone at the waterline, pulling an alternating breaststroke,
-  // legs trailing and kicking behind. The trunk rolls a little with each pull.
+  // --- swimming: upright in the water, treading and sculling, so the head,
+  // the neck and the shoulders all stay clear of the surface. Only a slight
+  // forward lean into the direction of travel; the work is below the waterline.
   if (e.swim) {
-    const tt = performance.now() / 1000, k = tt * 2.1, pull = Math.sin(k), kick = Math.sin(k * 2 + 0.6);
-    b.position.set(rig.home.x, rig.home.y - 0.62, rig.home.z);
-    b.rotation.set(1.05 + pull * 0.05, 0, pull * 0.10);        // face down, rolling with the stroke
-    if (rig.armL) rig.armL.rotation.set(-2.15 + pull * 0.95, 0, 0.45 - pull * 0.2);
-    if (rig.armR) rig.armR.rotation.set(-2.15 - pull * 0.95, 0, -0.45 - pull * 0.2);
-    if (rig.foreL) rig.foreL.rotation.set(-0.55 + pull * 0.35, 0, 0);
-    if (rig.foreR) rig.foreR.rotation.set(-0.55 - pull * 0.35, 0, 0);
-    if (rig.legL) rig.legL.rotation.set(0.28 + kick * 0.32, 0, 0.10);
-    if (rig.legR) rig.legR.rotation.set(0.28 - kick * 0.32, 0, -0.10);
-    if (rig.shinL) rig.shinL.rotation.set(-0.35 - Math.max(0, kick) * 0.5, 0, 0);
-    if (rig.shinR) rig.shinR.rotation.set(-0.35 - Math.max(0, -kick) * 0.5, 0, 0);
-    if (rig.head) rig.head.rotation.x = -0.75 + Math.max(0, pull) * 0.28;   // head up to breathe on the pull
-    if (rig.spine) for (const sp of rig.spine) sp.rotation.set(-0.12, 0, 0);
+    const tt = performance.now() / 1000;
+    // Two ways of being in the water, blended: treading on the spot, and an
+    // actual stroke when going somewhere. `sw` is 0 for one and 1 for the other.
+    rec.swimGo = Math.max(0, Math.min(1, (rec.swimGo || 0) + (e.moving ? dt * 3.5 : -dt * 3) ));
+    const sw = rec.swimGo * rec.swimGo * (3 - 2 * rec.swimGo);
+    const k = tt * (1.9 + sw * 1.6);                          // strokes quicken when swimming
+    const scull = Math.sin(k), kick = Math.sin(k * 1.6 + 0.9), swell = Math.sin(tt * 1.3) * 0.035;
+    b.position.set(rig.home.x, rig.home.y + swell - sw * 0.12, rig.home.z);
+    b.rotation.set(0.26 + sw * 0.34, 0, scull * (0.045 + sw * 0.07));   // leans down into the stroke
+    // arms sculling out at the sides, just under the surface
+    // Treading: arms forward and low, sweeping in and out under the surface.
+    // Swimming: the same arms reach right out and pull back through, alternating.
+    const reach = 0.30 + sw * 1.15, splay = 0.42 - sw * 0.22, out = 0.46 - sw * 0.16;
+    if (rig.armL) rig.armL.rotation.set(-0.92 + scull * reach, splay, out - scull * 0.16);
+    if (rig.armR) rig.armR.rotation.set(-0.92 - scull * reach, -splay, -out - scull * 0.16);
+    if (rig.foreL) rig.foreL.rotation.set(-1.05 + scull * (0.34 + sw * 0.5), 0.20 - sw * 0.1, 0.22);
+    if (rig.foreR) rig.foreR.rotation.set(-1.05 - scull * (0.34 + sw * 0.5), -0.20 + sw * 0.1, -0.22);
+    // legs cycling underneath, knees well bent -- a slow tread
+    // legs cycle under a tread and straighten into a flutter kick when swimming
+    if (rig.legL) rig.legL.rotation.set(-0.62 + sw * 0.5 + kick * (0.48 - sw * 0.2), 0, 0.16);
+    if (rig.legR) rig.legR.rotation.set(-0.62 + sw * 0.5 - kick * (0.48 - sw * 0.2), 0, -0.16);
+    if (rig.shinL) rig.shinL.rotation.set((1.05 - sw * 0.75) + Math.max(0, kick) * 0.55, 0, 0);
+    if (rig.shinR) rig.shinR.rotation.set((1.05 - sw * 0.75) + Math.max(0, -kick) * 0.55, 0, 0);
+    // chin clear treading; head turns to breathe on the stroke
+    if (rig.head) rig.head.rotation.set(-0.10 - sw * 0.12, scull * (0.10 + sw * 0.35), 0);
+    if (rig.spine) for (const sp of rig.spine) sp.rotation.set(-0.06, 0, 0);
     return;
   }
   if (rec.medFx) endMeditationFx(rec);
@@ -6089,6 +6104,10 @@ function renderWorld(dt) {
       rec.mesh.rotation.y = yaw + (rec.mesh.userData.faceOffset || 0);
       rec.data = e;
       if (kind === 'player' && e.weapon !== rec.heldWeapon) updateHeldWeapon(rec, e.weapon);
+      // Both hands are busy in the water, so the weapon goes away rather than
+      // sticking out sideways across the surface.
+      { const rigW = rec.mesh.userData.rig; if (rigW && rigW.weapon) rigW.weapon.visible = !e.swim; }
+      if (e.swim && rec.mesh.visible) swimWake(rec, x, z, !!e.moving, dt);
       if (kind === 'player') updateInstrument(rec, e);
       if (rec.mesh.visible) animateEntity(rec, e, kind, dt);
     }
@@ -8825,6 +8844,137 @@ function spawnFx(kind, x, y, z, yaw, o = {}) {
 }
 function me_pos_near(x, z, d) { const r = entityMeshes.get(myId); return !r || Math.hypot(r.mesh.position.x - x, r.mesh.position.z - z) < d; }
 let camShake = 0;
+// ---- A swimmer's wake ------------------------------------------------------
+// Three parts, all sitting a hair above the surface and never writing depth:
+// soft rings that open out and break up as they go, a trail of foam dragged
+// behind the swimmer, and a little spray thrown off each stroke.
+let _rippleTex = null, _foamTex = null;
+// A ring drawn as a soft band with a broken, uneven edge -- a hard-edged torus
+// reads as a plastic hoop lying on the water.
+function makeRippleTexture() {
+  if (_rippleTex) return _rippleTex;
+  const S = 256, cv = document.createElement('canvas'); cv.width = cv.height = S;
+  const c = cv.getContext('2d'), mid = S / 2;
+  c.clearRect(0, 0, S, S);
+  // two soft bands at slightly different radii, so the crest has a trough behind it
+  for (const [r, w, a] of [[0.80, 0.085, 0.95], [0.63, 0.05, 0.35], [0.92, 0.035, 0.28]]) {
+    const g = c.createRadialGradient(mid, mid, mid * (r - w), mid, mid, mid * (r + w));
+    g.addColorStop(0, 'rgba(255,255,255,0)');
+    g.addColorStop(0.5, `rgba(255,255,255,${a})`);
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    c.fillStyle = g; c.beginPath(); c.arc(mid, mid, mid, 0, Math.PI * 2); c.fill();
+  }
+  // break the crest up so it is never a perfect circle
+  c.globalCompositeOperation = 'destination-out';
+  for (let i = 0; i < 90; i++) {
+    const a = Math.random() * Math.PI * 2, rr = mid * (0.58 + Math.random() * 0.42);
+    const g = c.createRadialGradient(mid + Math.cos(a) * rr, mid + Math.sin(a) * rr, 0,
+                                     mid + Math.cos(a) * rr, mid + Math.sin(a) * rr, 6 + Math.random() * 20);
+    g.addColorStop(0, `rgba(0,0,0,${0.25 + Math.random() * 0.4})`);
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    c.fillStyle = g; c.fillRect(0, 0, S, S);
+  }
+  c.globalCompositeOperation = 'source-over';
+  _rippleTex = new THREE.CanvasTexture(cv); _rippleTex.colorSpace = THREE.SRGBColorSpace;
+  return _rippleTex;
+}
+// A soft blob for foam and spray.
+function makeFoamTexture() {
+  if (_foamTex) return _foamTex;
+  const S = 64, cv = document.createElement('canvas'); cv.width = cv.height = S;
+  const c = cv.getContext('2d'), mid = S / 2;
+  const g = c.createRadialGradient(mid, mid, 0, mid, mid, mid);
+  g.addColorStop(0, 'rgba(255,255,255,0.95)');
+  g.addColorStop(0.45, 'rgba(226,244,255,0.5)');
+  g.addColorStop(1, 'rgba(210,238,255,0)');
+  c.fillStyle = g; c.fillRect(0, 0, S, S);
+  for (let i = 0; i < 26; i++) {           // a little curdle, so it is not a clean dot
+    const a = Math.random() * Math.PI * 2, r = mid * Math.random() * 0.8;
+    c.globalAlpha = 0.12 + Math.random() * 0.2;
+    c.beginPath(); c.arc(mid + Math.cos(a) * r, mid + Math.sin(a) * r, 2 + Math.random() * 5, 0, 7);
+    c.fillStyle = '#ffffff'; c.fill();
+  }
+  _foamTex = new THREE.CanvasTexture(cv); _foamTex.colorSpace = THREE.SRGBColorSpace;
+  return _foamTex;
+}
+const ripples = [];
+let _quad = null;
+function flatQuad() { if (!_quad) _quad = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2); return _quad; }
+function addWakePiece(tex, x, z, opts) {
+  if (ripples.length > 220) return null;
+  const m = new THREE.Mesh(flatQuad(), new THREE.MeshBasicMaterial({
+    map: tex, transparent: true, depthWrite: false, side: THREE.DoubleSide,
+    color: opts.tint || 0xeaf7ff, opacity: 0 }));
+  m.position.set(x, RIVER_WATER_Y + (opts.lift || 0.03), z);
+  m.rotation.y = opts.yaw != null ? opts.yaw : Math.random() * Math.PI * 2;
+  m.scale.set(opts.r0, 1, opts.r0 * (opts.squash || 1));
+  m.renderOrder = 3; scene.add(m);
+  const rec = { mesh: m, t: 0, ...opts };
+  ripples.push(rec); return rec;
+}
+function updateRipples(dt) {
+  for (let i = ripples.length - 1; i >= 0; i--) {
+    const r = ripples[i]; r.t += dt;
+    const u = r.t / r.life;
+    if (u >= 1) { scene.remove(r.mesh); r.mesh.material.dispose(); ripples.splice(i, 1); continue; }
+    const grow = 1 - Math.pow(1 - u, 2.2);                   // opens fast, then eases out
+    const rad = r.r0 + (r.r1 - r.r0) * grow;
+    r.mesh.scale.set(rad, 1, rad * (r.squash || 1));
+    // fade in over the first breath, then away -- nothing pops into existence
+    const fade = Math.min(1, u / 0.10) * Math.pow(1 - u, r.tail || 1.1);
+    r.mesh.material.opacity = (r.alpha || 0.5) * fade;
+    if (r.spin) r.mesh.rotation.y += r.spin * dt;
+    if (r.drift) { r.mesh.position.x += r.drift.x * dt; r.mesh.position.z += r.drift.z * dt; }
+    if (r.rise != null) { r.vy = (r.vy || r.rise) - 9.2 * dt; r.mesh.position.y += r.vy * dt; }
+  }
+}
+// Called per swimmer per frame; paces its own spawning off the record.
+function swimWake(rec, x, z, moving, dt) {
+  const yaw = rec.mesh.rotation.y || 0;
+  const fx = Math.sin(yaw), fz = Math.cos(yaw);            // the way they are facing
+  rec.wakeT = (rec.wakeT || 0) - dt;
+  rec.foamT = (rec.foamT || 0) - dt;
+  const tex = makeRippleTexture(), foam = makeFoamTexture();
+  if (rec.wakeT <= 0) {
+    if (moving) {
+      rec.wakeT = 0.15;
+      // the bow wave, stretched along the direction of travel, with a second
+      // slower ring behind it so the wake has depth rather than one thin hoop
+      addWakePiece(tex, x + fx * 0.25, z + fz * 0.25,
+        { r0: 0.8, r1: 4.4, life: 2.1, alpha: 0.62, yaw, squash: 0.58, tail: 1.15, spin: 0.12 });
+      addWakePiece(tex, x - fx * 0.5, z - fz * 0.5,
+        { r0: 0.5, r1: 2.6, life: 1.5, alpha: 0.4, yaw, squash: 0.75, tail: 1.3, spin: -0.2 });
+    } else {
+      rec.wakeT = 0.5;
+      addWakePiece(tex, x, z, { r0: 0.6, r1: 3.0, life: 2.8, alpha: 0.42, squash: 0.94, tail: 1.2 });
+    }
+  }
+  if (rec.foamT <= 0) {
+    if (moving) {
+      rec.foamT = 0.07;
+      // foam dragged off the shoulders and left behind in the trail
+      const a = yaw + Math.PI / 2, ox = Math.cos(a) * 0.4, oz = -Math.sin(a) * 0.4;
+      for (const s of [1, -1]) {
+        addWakePiece(foam, x + ox * s - fx * 0.3, z + oz * s - fz * 0.3,
+          { r0: 0.34, r1: 1.25, life: 1.7, alpha: 0.72, tail: 1.3, lift: 0.05,
+            drift: { x: -fx * 0.32 + ox * s * 0.25, z: -fz * 0.32 + oz * s * 0.25 } });
+      }
+      // and a few flecks of spray thrown clear of the surface on the stroke
+      if (Math.random() < 0.85) for (let i = 0; i < 4; i++) {
+        const a2 = yaw + (Math.random() - 0.5) * 2.4, sp = 0.5 + Math.random() * 0.9;
+        addWakePiece(foam, x + Math.sin(a2) * 0.45, z + Math.cos(a2) * 0.45,
+          { r0: 0.1, r1: 0.3, life: 0.6 + Math.random() * 0.3, alpha: 0.95, tail: 1.0,
+            lift: 0.12, rise: 1.5 + Math.random(),
+            drift: { x: Math.sin(a2) * sp, z: Math.cos(a2) * sp } });
+      }
+    } else {
+      rec.foamT = 0.34;
+      addWakePiece(foam, x + (Math.random() - 0.5) * 0.8, z + (Math.random() - 0.5) * 0.8,
+        { r0: 0.22, r1: 0.8, life: 1.6, alpha: 0.45, tail: 1.3 });
+    }
+  }
+}
+
 function updateFx(dt) {
   for (let i = fxList.length - 1; i >= 0; i--) {
     const f = fxList[i]; f.t += dt; const u = f.t / f.life;
@@ -10467,7 +10617,7 @@ function animate() {
   _pf('boss', () => { updateHazardFx(dt); updateBossFx(dt); updateStatusFx(dt); updateHolyFx(dt); updateCastFx(dt); });
   _pf('region', () => updateRegionTitle());
   _pf('abilities', () => updateActionBar());
-  _pf('fx', () => { updateFx(dt); updateAuras(dt); });
+  _pf('fx', () => { updateFx(dt); updateAuras(dt); updateRipples(dt); });
   _pf('audio', () => { music.update(dt); if ((frameCount & 15) === 0) musicDirector(); });
   _pf('talk', () => updatePendingTalk());
   if (mapOpen) _pf('map', () => drawMap());
