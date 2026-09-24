@@ -1484,6 +1484,10 @@ function bridgeLift(x, z) {
 // above it. terrainHeight is the ground height at (x,z) — 0 on flat land, the
 // water line at the shore, dropping to the bed under the water.
 const RIVER_WATER_Y = -0.5, RIVER_BED_Y = -2.2, RIVER_BANK = 4, RIVER_LIP = 2.0;
+// How deep a swimmer sits. Measured, not guessed: at 1.15 the whole body
+// finished 2 cm under an opaque surface and the swimmer was invisible. This
+// puts the waterline across the shoulders, with head and back showing.
+const SWIM_DEPTH = 0.7;
 // Half-width of the water surface: the whole carved channel is flooded, so the
 // water reaches out to `river half-width + RIVER_BANK`. A dedicated smooth dirt
 // shore ribbon (buildRiverShore) forms the visible dirt border out to
@@ -5632,6 +5636,24 @@ function animateEntity(rec, e, kind, dt) {
     if (cls === 'cleric') updateClericMeditationFx(rec, dt); else if (cls === 'bard') updateBardMeditationFx(rec, dt); else updateMeditationFx(rec, dt);
     return;
   }
+  // --- swimming: prone at the waterline, pulling an alternating breaststroke,
+  // legs trailing and kicking behind. The trunk rolls a little with each pull.
+  if (e.swim) {
+    const tt = performance.now() / 1000, k = tt * 2.1, pull = Math.sin(k), kick = Math.sin(k * 2 + 0.6);
+    b.position.set(rig.home.x, rig.home.y - 0.62, rig.home.z);
+    b.rotation.set(1.05 + pull * 0.05, 0, pull * 0.10);        // face down, rolling with the stroke
+    if (rig.armL) rig.armL.rotation.set(-2.15 + pull * 0.95, 0, 0.45 - pull * 0.2);
+    if (rig.armR) rig.armR.rotation.set(-2.15 - pull * 0.95, 0, -0.45 - pull * 0.2);
+    if (rig.foreL) rig.foreL.rotation.set(-0.55 + pull * 0.35, 0, 0);
+    if (rig.foreR) rig.foreR.rotation.set(-0.55 - pull * 0.35, 0, 0);
+    if (rig.legL) rig.legL.rotation.set(0.28 + kick * 0.32, 0, 0.10);
+    if (rig.legR) rig.legR.rotation.set(0.28 - kick * 0.32, 0, -0.10);
+    if (rig.shinL) rig.shinL.rotation.set(-0.35 - Math.max(0, kick) * 0.5, 0, 0);
+    if (rig.shinR) rig.shinR.rotation.set(-0.35 - Math.max(0, -kick) * 0.5, 0, 0);
+    if (rig.head) rig.head.rotation.x = -0.75 + Math.max(0, pull) * 0.28;   // head up to breathe on the pull
+    if (rig.spine) for (const sp of rig.spine) sp.rotation.set(-0.12, 0, 0);
+    return;
+  }
   if (rec.medFx) endMeditationFx(rec);
   if (rec.medFx2) endMeditationFx2(rec);
 
@@ -6053,6 +6075,16 @@ function renderWorld(dt) {
       // e.y is the floor offset above terrain (placed floors, and the cave/tunnel
       // descent). Players and cave monsters both ride it; surface mobs send 0.
       if (e.y != null) py += (prev && prev.y != null) ? prev.y + (e.y - prev.y) * t : e.y;
+      // Swimming: float at the waterline, chest-deep, with a slow swell --
+      // rather than standing on the bed three metres under.
+      if (e.swim) {
+        const bob = Math.sin(renderTime * 0.0016 + (x + z) * 0.08) * 0.09;
+        py = Math.max(py, RIVER_WATER_Y - SWIM_DEPTH + bob);
+        rec.swimT = Math.min(1, (rec.swimT || 0) + dt * 5);
+      } else if (rec.swimT) {
+        rec.swimT = Math.max(0, rec.swimT - dt * 5);
+        if (rec.swimT > 0) py = Math.max(py, RIVER_WATER_Y - SWIM_DEPTH) * rec.swimT + py * (1 - rec.swimT);
+      }
       rec.mesh.position.y = py;
       rec.mesh.rotation.y = yaw + (rec.mesh.userData.faceOffset || 0);
       rec.data = e;

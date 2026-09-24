@@ -477,17 +477,21 @@ function resolveCollision(zone, ent, radius) {
 
   // Every river is solid (with a passable bridge deck). The fused world can hold
   // several, each with its own bridge frame cached on the river object.
-  // The traced terrain decides what is solid: deep water, rock, and anything
-  // off the map. Step back out the way you came in -- search outward for the
-  // nearest cell that is standable and move there.
-  if (zone.terrain && isSolid(terrainAt(zone, ent.x, ent.z))) {
+  // The traced terrain decides what is solid: rock and anything off the map
+  // always, and deep water for whatever cannot swim. A player can, so for them
+  // the lakes and the channels are places to go rather than walls.
+  const hereC = zone.terrain ? terrainAt(zone, ent.x, ent.z) : T_OFF;
+  const swims = !!ent.canSwim;
+  const blocked = hereC === T_OFF || hereC === T_ROCK || (hereC === T_DEEP && !swims);
+  if (zone.terrain && blocked) {
     const step = zone.terrain.cell;
     let bx = null, bz = null, bd = Infinity;
     for (let r = step; r <= step * 8 && bx === null; r += step) {
       const n = Math.max(8, Math.round(2 * Math.PI * r / step));
       for (let i = 0; i < n; i++) {
         const a = 2 * Math.PI * i / n, nx = ent.x + Math.cos(a) * r, nz = ent.z + Math.sin(a) * r;
-        if (isSolid(terrainAt(zone, nx, nz))) continue;
+        const c = terrainAt(zone, nx, nz);
+        if (c === T_OFF || c === T_ROCK || (c === T_DEEP && !swims)) continue;
         const d = (nx - ent.x) ** 2 + (nz - ent.z) ** 2;
         if (d < bd) { bd = d; bx = nx; bz = nz; }
       }
@@ -530,6 +534,7 @@ function resolveCollision(zone, ent, radius) {
         }
       }
     }
+    if (!onDeck && swims) continue;   // a swimmer just gets in
     if (!onDeck) { // not on the deck — keep out of the water
       const c = closestOnPolyline(ent.x, ent.z, r.points);
       const half = r.width / 2 + RIVER_BANK + radius;
@@ -2432,8 +2437,21 @@ function dmgBuff(p, heavy, spell) {
 }
 function critChance(p) { let c = classDef(p.cls).critBase || 0.05; for (const bf of Object.values(p.buffs)) if (bf.t > 0 && bf.crit) c += bf.crit * songAmp(p, bf); return c; }
 function incomingMult(p) { let m = 1; for (const bf of Object.values(p.buffs)) if (bf.t > 0 && bf.taken) m += bf.taken; return m; }
+// Deep water, either a lake cell or one of the traced channels. A player in it
+// is swimming: slower, and with both hands busy.
+const SWIM_SPEED = 0.55;
+function inDeepWater(zone, x, z) {
+  if (zone.terrain && terrainAt(zone, x, z) === T_DEEP) return true;
+  for (const r of riversOf(zone)) {
+    if (closestOnPolyline(x, z, r.points).dist >= r.width / 2) continue;
+    // standing on a bridge deck is not swimming
+    if (bridgesOf(r).some(b => dist2(x, z, b.x, b.z) < (b.span ? b.span : 12) ** 2 / 4)) continue;
+    return true;
+  }
+  return false;
+}
 function moveMult(p) {
-  let m = 1;
+  let m = p.swimming ? SWIM_SPEED : 1;
   for (const bf of Object.values(p.buffs)) { if (!(bf.t > 0) || !bf.move) continue; const v = bf.moveCombat != null && (p.combatTimer || 0) > 0 ? bf.moveCombat : bf.move; m += v * songAmp(p, bf); }
   if (p.channel) m *= 0.6; if (p.slow && p.slow.t > 0) m *= p.slow.k; return m;
 }
@@ -2610,6 +2628,7 @@ function useAbility(p, id, fromQueue) {
   // Busy, but nearly free: hold the press instead of dropping it.
   const busy = Math.max(p.gcd || 0, p.windup ? p.windup.t : 0, p.channel ? 0.2 : 0);
   if (!fromQueue && busy > 0 && busy <= QUEUE_WINDOW && (p.cooldowns[id] || 0) <= busy) return queueAbility(p, id);
+  if (p.swimming) return say('Not while you are swimming.');
   if ((p.cooldowns[id] || 0) > 0) return say(`${a.name} is not ready.`);
   if (p.channel || p.windup) return say('You are busy.');
   if ((p.gcd || 0) > 0) return;
@@ -3081,6 +3100,14 @@ function stepMonster(m) {
 function stepPlayer(p) {
   if (!p.alive) { p.deathTimer -= DT; return; }
   const zone = zoneOf(p);
+  p.canSwim = true;
+  const wasSwimming = !!p.swimming;
+  p.swimming = inDeepWater(zone, p.x, p.z);
+  if (p.swimming !== wasSwimming) {
+    // Out of the water you pick your weapon back up; into it you cannot fight.
+    if (p.swimming) { p.combatId = null; p.windup = null; p.swing = null; p.channel = null; }
+    send(p.ws, { t: 'event', kind: 'notice', text: p.swimming ? 'You wade in and start to swim.' : 'You climb out, dripping.' });
+  }
   p.atkTimer = Math.max(0, p.atkTimer - DT);
   if (p.swing) { p.swing.t -= DT; if (p.swing.t <= 0) landPlayerSwing(p); }   // the axe reaches the target
   if (p.portalCd > 0) p.portalCd -= DT;
@@ -3142,6 +3169,7 @@ function stepPlayer(p) {
       const reach = reachOf(p) - 0.4;
       const inRange = dist2(p.x, p.z, m.x, m.z) <= reach ** 2, los = inRange && hasLos(zone, p.x, p.z, m.x, m.z);
       if (!inRange || !los) { if (p.windup || p.channel || p.swing) p.yaw = Math.atan2(m.x - p.x, m.z - p.z); /* casting: hold here */ else if (step(m.x, m.z, los ? reach : 0.9)) moved = true; }
+      else if (p.swimming) { p.combatId = null; }   // both hands are busy staying afloat
       else { p._nav = null; p.yaw = Math.atan2(m.x - p.x, m.z - p.z); doPlayerAttack(p, m); }
     }
   } else if (p.pendingUse) {
@@ -3460,7 +3488,7 @@ setInterval(() => {
           tgt: p.combatId != null ? p.combatId : undefined,   // who they are actually fighting
           seat: p.seat ? { k: p.seat.k, yaw: +p.seat.yaw.toFixed(2) } : undefined,
           duel: (() => { const d = duelOf(p); return d ? { foe: d.a === p.id ? d.b : d.a, ready: d.state === 'fighting' } : undefined; })(),
-          moving: p.moving, inSafe: !!p.inSafe, resting: !!p.resting, inCombat: (p.combatTimer || 0) > 0 || p.combatId != null,
+          moving: p.moving, swim: !!p.swimming || undefined, inSafe: !!p.inSafe, resting: !!p.resting, inCombat: (p.combatTimer || 0) > 0 || p.combatId != null,
           combatWait: p.lastCombat ? Math.max(0, Math.ceil(LOGOUT_COMBAT_WAIT - (Date.now() - p.lastCombat) / 1000)) : 0,
           weapon: p.equipment.weapon || null,     // held item for the paperdoll
           look: lookOf(p) });                        // hair / outfit / colours + worn armour
