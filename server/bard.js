@@ -122,7 +122,7 @@ export function castBard(ctx, p, a) {
       const m = r.m;
       if (m.boss) { setDebuff(p, m, 'lull_atk', a.bossAtk, a.bossDur); notice(`${m.name} only yawns.`); }
       else if (m.elite) { setDebuff(p, m, 'lull_slow', a.eliteSlow, a.eliteDur); setDebuff(p, m, 'lull_atk', a.eliteAtk, a.eliteDur); }
-      else { m.debuffs = m.debuffs || {}; m.debuffs.asleep = a.sleep; m.targetId = null; m.state = 'idle'; m.provoked = false; p.combatId = null; }   // and the Bard stops swinging at it
+      else { m.debuffs = m.debuffs || {}; m.debuffs.asleep = a.sleep; m.targetId = null; m.state = 'idle'; m.provoked = false; p.combatId = null; ctx.interruptMonster && ctx.interruptMonster(m, p); }   // and the Bard stops swinging at it
       fx('lullaby', { target: m.id });
       break;
     }

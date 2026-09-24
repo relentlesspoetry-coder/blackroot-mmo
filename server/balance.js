@@ -33,6 +33,29 @@ export function xpForLevel(level) { return level >= MAX_LEVEL ? Infinity : XP_TA
 export function levelForXp(total) { let l = 1; while (l < MAX_LEVEL && total >= XP_TABLE[l + 1]) l++; return l; }
 export function progressForXp(total) { const level = levelForXp(total); return { level, into: total - XP_TABLE[level], next: xpForLevel(level) }; }
 
+// What a kill is worth once you have outgrown it. A creature at your level --
+// or within a couple beneath it, since a fight you can still lose should still
+// pay -- is worth all of its xp; past that the value slides off, and far
+// enough down it is worth nothing but the loot.
+//
+// The window widens as you climb, because a level is a smaller share of what
+// you are at 30 than it was at 5: six levels at the bottom, twelve by level 20,
+// sixteen by 30. That is what keeps the slide slow rather than a cliff, and it
+// is deliberately generous here -- the world's creatures top out at level 9,
+// so a tighter window would grey the whole game out by the early teens.
+export const XP_FULL_UNDER = 2;                                     // levels beneath you that still pay in full
+export function xpWindow(playerLevel) { return 6 + Math.floor(playerLevel / 3); }
+export function xpLevelMult(playerLevel, monLevel) {
+  const under = playerLevel - (monLevel || 1);
+  if (under <= XP_FULL_UNDER) return 1;                             // its level or near it: full value
+  return Math.max(0, 1 - (under - XP_FULL_UNDER) / xpWindow(playerLevel));
+}
+// The xp a kill actually hands over. Quest rewards do not go through here:
+// finishing an errand is worth what it says whatever you outrank.
+export function xpForKill(playerLevel, monLevel, baseXp) {
+  return Math.round((baseXp || 0) * xpLevelMult(playerLevel, monLevel));
+}
+
 // ---------------------------------------------------------------------------
 // OSRS-style combat maths
 // ---------------------------------------------------------------------------
@@ -60,7 +83,7 @@ export const CLASSES = {
     rage: { max: 100, autoHit: 8, abilityHit: 4, damageTaken: 0.6, combatTick: 2.5, decay: 6, decayDelay: 8 },
     gcd: 1.5,                      // global cooldown between abilities
     // (class xp comes from kills — each monster's xp value — never per hit)
-    critBase: 0.05, critMult: 1.5,
+    critBase: 0.05, critMult: 2.0,
     // Momentum: heavy attacks stack it (max 5, 5 min), +2% attack speed a stack;
     // some abilities spend it.
     momentum: { max: 5, dur: 300, atkSpeedPerStack: 0.02 },
@@ -73,13 +96,13 @@ export const CLASSES = {
         desc: 'A slow, heavy two-handed strike. Generates Momentum (2 on a crit).' },
       { id: 'cleave', name: 'Cleave', level: 2, cost: 18, cd: 6, kind: 'cone', cone: 100, cap: 3, flat: 10, wd: 1.05, momentumIf2: 1,
         desc: 'Swing in a wide arc, hitting up to 3 enemies in front of you. Generates Momentum if it hits 2+.' },
-      { id: 'battle_rush', name: 'Battle Rush', level: 3, cost: 20, cd: 20, kind: 'rush', range: 20, buff: { id: 'rushing_force', dur: 300, charges: 1, dmg: 0.25 },
+      { id: 'battle_rush', name: 'Battle Rush', level: 3, cost: 20, cd: 20, kind: 'rush', range: 20, interrupt: true, offGcd: true, threatSpike: 40, buff: { id: 'rushing_force', dur: 300, charges: 1, dmg: 0.25 },
         desc: 'Charge to a target within 20m. Your next melee ability deals +25% damage.' },
       { id: 'crushing_blow', name: 'Crushing Blow', level: 4, cost: 26, cd: 10, kind: 'melee', flat: 24, wd: 1.35, momentum: 1, heavy: true, debuff: { id: 'crushed_armor', dur: 12 },
         desc: 'Smash the enemy, reducing its armour by 8% for 12s. Generates Momentum.' },
       { id: 'momentum', name: 'Momentum', level: 5, passive: true,
         desc: 'Passive. Heavy attacks build Momentum (max 5, 5 min): +2% attack speed per stack. Some abilities spend it.' },
-      { id: 'groundbreaker', name: 'Groundbreaker', level: 6, cost: 38, cd: 18, kind: 'aoe', radius: 6, cap: 5, flat: 34, wd: 1.2, stagger: 0.75, momentumIf2: 1, heavy: true,
+      { id: 'groundbreaker', name: 'Groundbreaker', level: 6, cost: 38, cd: 18, kind: 'aoe', radius: 6, cap: 5, flat: 34, wd: 1.2, stagger: 0.75, interrupt: true, momentumIf2: 1, heavy: true,
         desc: 'Slam the ground: damages and staggers (0.75s) up to 5 enemies within 6m. More vs Crushed Armour.' },
       { id: 'reckless_strike', name: 'Reckless Strike', level: 7, cost: 34, cd: 12, kind: 'melee', flat: 40, wd: 2.2, momentum: 1, heavy: true, selfDebuff: { id: 'reckless_exposure', dur: 8, taken: 0.08 },
         desc: 'A brutal strike. You take +8% damage for 8s afterwards.' },
@@ -99,14 +122,14 @@ export const CLASSES = {
         desc: 'Only on targets at or below 30% HP: up to +75% damage the closer they are to death. Refunds 30 rage on a kill.' },
       { id: 'bloodrush', name: 'Bloodrush', level: 15, cost: 90, cd: 180, kind: 'self', buff: { id: 'bloodrush', dur: 300, charges: 10, dmg: 0.18, crit: 0.12, taken: 0.08 },
         desc: '+18% melee damage and +12% crit chance for 10 melee abilities. You take +8% damage while it lasts.' },
-      { id: 'shatter_guard', name: 'Shatter Guard', level: 16, cost: 92, cd: 30, kind: 'melee', flat: 70, wd: 1.75, momentum: 1,
+      { id: 'shatter_guard', name: 'Shatter Guard', level: 16, cost: 92, cd: 30, kind: 'melee', flat: 70, wd: 1.75, momentum: 1, interrupt: true,
         desc: 'A heavy impact that breaks a defensive shield or guard if the enemy has one (+30% damage when it does).' },
       { id: 'titan_chop', name: 'Titan Chop', level: 17, cost: 110, cd: 45, kind: 'melee', windup: 1, flat: 100, wd: 3.0, momentum: 1, heavy: true,
         desc: 'A 1s wind-up overhead strike for massive damage. Crits deal +20% at 3+ Momentum.' },
-      { id: 'unstoppable_footwork', name: 'Unstoppable Footwork', level: 18, cost: 70, cd: 90, kind: 'self', buff: { id: 'footwork', dur: 300, move: 0.10 },
+      { id: 'unstoppable_footwork', name: 'Unstoppable Footwork', level: 18, cost: 70, cd: 90, kind: 'self', offGcd: true, buff: { id: 'footwork', dur: 300, move: 0.10 },
         desc: 'Break free of snares and move 10% faster for 5 min.' },
-      { id: 'berserkers_roar', name: "Berserker's Roar", level: 19, cost: 120, cd: 300, kind: 'self', buff: { id: 'berserkers_roar', dur: 300, charges: 8, dmg: 0.15, taken: 0.10, radius: 2 },
-        desc: '+15% melee damage and +2m to cleave radius for 8 melee abilities. You take +10% damage.' },
+      { id: 'berserkers_roar', name: "Berserker's Roar", level: 19, cost: 120, cd: 300, kind: 'self', taunt: 14, buff: { id: 'berserkers_roar', dur: 300, charges: 8, dmg: 0.15, taken: 0.10, radius: 2 },
+        desc: '+15% melee damage and +2m to cleave radius for 8 melee abilities, and every enemy within 14m turns on you. You take +10% damage.' },
       { id: 'perfect_masterstroke', name: 'Perfect Masterstroke', level: 20, cost: 160, cd: 120, kind: 'melee', flat: 150, wd: 2.8, spendMomentum: { flat: 30, wd: 0.35 }, heavy: true,
         desc: 'The capstone: spends all Momentum for +30 damage and +35% weapon damage per stack. +15% vs Split Guard. Refunds 50 rage on a kill.' },
     ],
@@ -123,7 +146,7 @@ export const CLASSES = {
     // 5 s — a trickle in a fight, a flood out of one.
     mana: { max: (L) => 125 + (L - 1) * 33, combatRegen: 0.026, idleRegen: 0.08, period: 5 },
     gcd: 1.5,
-    critBase: 0.05, critMult: 1.5, // heals crit too
+    critBase: 0.05, critMult: 2.0, critHealMult: 1.5,  // a crit blow doubles; a crit heal is gentler, as the spec's numbers assume
     // Spell numbers are the spec's level-1 values × spellScale(level) (1.0 at
     // level 1, ~4.7 at 20 — the spec's level-20 targets). `cast` is the
     // wind-up in seconds (moving breaks it); `range` is metres to the target.
@@ -144,7 +167,7 @@ export const CLASSES = {
         desc: 'Shield an ally: absorbs 75 (+12% of their max health) damage for 5 min. They take +5% healing from you while it holds. Only a stronger ward replaces it.' },
       { id: 'radiant_touch', name: 'Radiant Touch', level: 7, cost: 50, cd: 20, range: 30, kind: 'heal', heal: 70, woundedBonus: 0.2,
         desc: 'An instant heal for an ally. +20% if they are below 40% health.' },
-      { id: 'turn_undead', name: 'Turn Undead', level: 8, cost: 48, cd: 60, cast: 0.5, range: 25, kind: 'turn', radius: 8, fear: 8, dur: 300, charges: 4,
+      { id: 'turn_undead', name: 'Turn Undead', level: 8, cost: 48, cd: 60, cast: 0.5, range: 25, kind: 'turn', interrupt: true, radius: 8, fear: 8, dur: 300, charges: 4,
         desc: 'Undead and demons within 8m of your target flee for 8s (bosses instead deal 5% less for 6s). Allies nearby take 10% less from undead for 4 hits.' },
       { id: 'prayer_of_mending', name: 'Prayer of Mending', level: 9, cost: 58, cd: 25, range: 30, kind: 'mending', heal: 48, charges: 5, jump: 25, dur: 300,
         desc: 'Place a prayer on an ally: when they are struck it heals them, then leaps to a hurt ally within 25m. 5 jumps or 5 min.' },
@@ -158,11 +181,11 @@ export const CLASSES = {
         desc: 'Instant holy damage to an enemy; the most hurt ally within 25m is healed for 60% of it. +25% against undead and demons.' },
       { id: 'purify_soul', name: 'Purify Soul', level: 14, cost: 90, cd: 45, range: 30, kind: 'cleanse', n: 2, resist: 0.35, dur: 300, charges: 2,
         desc: 'Remove up to two poisons, burns, bleeds or snares from an ally, and leave them 35% likely to shrug off the next two.' },
-      { id: 'divine_intervention', name: 'Divine Intervention', level: 15, cost: 140, cd: 300, range: 30, kind: 'intervention', mendPct: 0.2, mendDur: 6, dr: 0.2, charges: 3, dur: 300,
+      { id: 'divine_intervention', name: 'Divine Intervention', level: 15, cost: 140, cd: 300, range: 30, kind: 'intervention', offGcd: true, mendPct: 0.2, mendDur: 6, dr: 0.2, charges: 3, dur: 300,
         desc: 'For 5 min, a blow that would kill the ally leaves them at 1 health instead, heals 20% of their health over 6s and softens the next 3 hits by 20%. One ally at a time.' },
       { id: 'hymn_of_renewal', name: 'Hymn of Renewal', level: 16, cost: 155, cd: 120, kind: 'hymn', radius: 14, heal: 52, ticks: 5, period: 0.8, cap: 6, rpBonus: 0.1,
         desc: 'Channel for 4s: five waves of healing to up to 6 allies within 14m. +10% on allies under Renewing Prayer. Moving breaks the hymn.' },
-      { id: 'exorcise_evil', name: 'Exorcise Evil', level: 17, cost: 120, cd: 30, cast: 1.5, range: 30, kind: 'holy', dmg: 150, evil: 0.4, weaken: 0.08, weakenDur: 8,
+      { id: 'exorcise_evil', name: 'Exorcise Evil', level: 17, cost: 120, cd: 30, cast: 1.5, range: 30, kind: 'holy', interrupt: true, dmg: 150, evil: 0.4, weaken: 0.08, weakenDur: 8,
         desc: 'Heavy holy damage. +40% against undead and demons, who also deal 8% less for 8s afterwards.' },
       { id: 'guardian_prayer', name: 'Guardian Prayer', level: 18, cost: 135, cd: 120, range: 30, kind: 'guardian', dr: 0.15, healIn: 0.18, charges: 8, dur: 300,
         desc: 'One ally takes 15% less damage for 8 hits or 5 min, and +18% healing from you. Recasting moves it.' },
@@ -182,7 +205,7 @@ export const CLASSES = {
     hp:  (L) => 74 + (L - 1) * 9,
     mana: { max: (L) => 115 + (L - 1) * 29, combatRegen: 0.025, idleRegen: 0.075, period: 5 },
     gcd: 1.5,
-    critBase: 0.05, critMult: 1.5,
+    critBase: 0.05, critMult: 2.0,
     // Songs are auras: cast once, they settle on up to 6 allies within `radius`
     // (the Bard included) as a buff that lasts 5 min or its charges. A Bard
     // keeps 2 major songs going; a third pushes the oldest off. `fx` is the
@@ -201,7 +224,7 @@ export const CLASSES = {
       { id: 'hymn_of_courage', name: 'Hymn of Courage', level: 4, cost: 38, cd: 20, kind: 'song', radius: 18, cap: 6, dur: 300, major: true, family: 'morale',
         fx: { dmg: 0.05, offensive: true }, charges: 12,
         desc: 'Major song: nearby allies deal +5% damage for 12 attacks or 5 min.' },
-      { id: 'dissonant_chord', name: 'Dissonant Chord', level: 5, cost: 30, cd: 10, range: 28, kind: 'sonic', dmg: 24, debuff: { id: 'dissonant', val: 0.08, dur: 10, elite: [0.05, 8], boss: [0.03, 6] },
+      { id: 'dissonant_chord', name: 'Dissonant Chord', level: 5, cost: 30, cd: 10, range: 28, kind: 'sonic', dmg: 24, interrupt: true, offGcd: true, debuff: { id: 'dissonant', val: 0.08, dur: 10, elite: [0.05, 8], boss: [0.03, 6] },
         desc: 'Sonic damage, and the enemy deals 8% less for 10s (elites 5%, bosses 3%).' },
       { id: 'lullaby', name: 'Lullaby', level: 6, cost: 42, cd: 45, cast: 1, range: 25, kind: 'lullaby', sleep: 10, eliteSlow: 0.35, eliteAtk: 0.1, eliteDur: 6, bossAtk: 0.05, bossDur: 4,
         desc: 'Sing a weak or normal enemy to sleep for 10s (damage wakes it). Elites are slowed 35% and attack 10% slower for 6s; bosses attack 5% slower for 4s.' },
@@ -224,7 +247,7 @@ export const CLASSES = {
         desc: 'Major song: snares and stuns on nearby allies are 25% shorter, 4 times or 5 min.' },
       { id: 'dirge_of_weakness', name: 'Dirge of Weakness', level: 13, cost: 95, cd: 45, cast: 1, range: 30, kind: 'dirge', radius: 8, cap: 6, dmg: 42, debuff: { id: 'dirge', val: 0.08, dur: 10, slow: 0.3, slowDur: 8, elite: [0.05, 10, 0.2], boss: [0.03, 10, 0] },
         desc: 'Sonic damage to up to 6 enemies within 8m of your target: they deal 8% less for 10s and move 30% slower for 8s (elites 5% / 20%, bosses 3%, no slow).' },
-      { id: 'echoing_verse', name: 'Echoing Verse', level: 14, cost: 65, cd: 120, kind: 'echo', dur: 300, chargeK: 1.5,
+      { id: 'echoing_verse', name: 'Echoing Verse', level: 14, cost: 65, cd: 120, kind: 'echo', offGcd: true, dur: 300, chargeK: 1.5,
         desc: 'Your next major song carries 50% more charges.' },
       { id: 'resonant_shield', name: 'Resonant Shield', level: 15, cost: 110, cd: 120, kind: 'song', radius: 18, cap: 6, dur: 300, major: true, family: 'shield',
         fx: { dr: 0.1, absorb: 45, absorbPct: 0.05, protect: true }, charges: 6,
@@ -232,7 +255,7 @@ export const CLASSES = {
       { id: 'chorus_of_war', name: 'Chorus of War', level: 16, cost: 140, cd: 300, kind: 'song', radius: 18, cap: 6, dur: 300, major: true, family: 'war', replaces: 'hymn_of_courage',
         fx: { dmg: 0.12, atkSpeed: 0.08, crit: 0.05, offensive: true }, charges: 10,
         desc: 'Major song: nearby allies deal +12% damage, attack 8% faster and crit 5% more for 10 attacks or 5 min. Replaces Hymn of Courage.' },
-      { id: 'final_refrain', name: 'Final Refrain', level: 17, cost: 105, cd: 30, range: 28, kind: 'sonic', dmg: 92, execute: 0.35, extend: 4,
+      { id: 'final_refrain', name: 'Final Refrain', level: 17, cost: 105, cd: 30, range: 28, kind: 'sonic', dmg: 92, interrupt: true, execute: 0.35, extend: 4,
         desc: 'Heavy sonic damage, +35% against an enemy below 30% health, and your debuffs on it last 4s longer (up to 150% of their length).' },
       { id: 'songweave', name: 'Songweave', level: 18, cost: 130, cd: 180, kind: 'weave', radius: 18, cap: 6, dur: 300, charges: 8,
         desc: 'Blend your last two major songs into one at half strength, for 8 triggers or 5 min. Counts as a single song.' },
@@ -279,13 +302,6 @@ export function rollSwing(atk, str, atkBonus, strBonus, defLevel, defBonus, dmgM
   if (Math.random() >= hitChance(ar, dr)) return 0;
   return Math.floor(Math.random() * (Math.floor(maxHit(str, strBonus) * dmgMult) + 1));
 }
-// A monster's swing: accuracy from its levels/bonuses, damage 0..its max hit.
-export function rollMonsterSwing(atkLevel, atkBonus, mh, defLevel, defBonus) {
-  const ar = attackRoll(atkLevel, atkBonus, 0), dr = defenceRoll(defLevel, defBonus);
-  if (Math.random() >= hitChance(ar, dr)) return 0;
-  return Math.floor(Math.random() * (mh + 1));
-}
-
 // Damage scales with level — without this the player's dps is frozen at level 1
 // while monsters keep scaling, which makes everything past the creek unwinnable.
 // A weapon's `atk` shifts the whole roll up.
@@ -293,12 +309,6 @@ export function playerDamageRange(level, atkBonus = 0) {
   // A level-1 hits softly (1-5); damage ramps with level and gear.
   return [1 + Math.floor(level * 0.5) + atkBonus, 3 + Math.round(2.4 * level) + atkBonus];
 }
-export function rollPlayerDamage(level, atkBonus = 0) {
-  const [lo, hi] = playerDamageRange(level, atkBonus);
-  if (Math.random() >= PLAYER.hitChance) return 0;
-  return lo + Math.floor(Math.random() * (hi - lo + 1));
-}
-
 // Armour reduces each incoming hit by a percentage with diminishing returns —
 // flat subtraction collapsed the whole curve once a player had any gear at all
 // (a +10 shield turned a Hill Ogre into a rounding error). A landed blow always
@@ -555,9 +565,6 @@ export function rollGear(type, elite = false) {
   }
   return drops;
 }
-// For tooling / the loot editor: the gear table of a type as [kind, tier, 1-in-N].
-export function gearTableOf(type) { return GEAR_DROPS[type] || []; }
-
 export function rollLoot(type) {
   const t = MONSTER_TEMPLATES[type]; const drops = [];
   // Independent-roll table: each entry rolls on its own (may drop several).
@@ -624,4 +631,3 @@ export const MEDITATION = {
   xpPerHp: 2,                      // plus xp per hitpoint recovered
 };
 export function meditationHealPerTick(level) { return 1 + Math.floor(level / 4); }
-export function meditationHealRate(level) { return meditationHealPerTick(level) / MEDITATION.tick; } // hp/sec, for tooling

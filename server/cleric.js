@@ -86,6 +86,7 @@ export function healMult(ctx, by, t) {
   const gp = buffOn(t, 'guardian_prayer'); if (gp && gp.by === by.id) k += gp.healIn || 0;
   const sanct = sanctuaryAt(ctx.zoneOf(t), t.x, t.z); if (sanct && sanct.by === by.id) k += sanct.healIn || 0;
   const av = buffOn(by, 'avatar_of_mercy'); if (av) k += av.healBonus || 0;
+  const bh = buffOn(by, 'blessed_hands'); if (bh) k += bh.heal || 0;   // the crit proc: one empowered heal
   if (buffOn(by, 'revival_sickness')) k -= 0.15;
   return Math.max(0.1, k);
 }
@@ -95,11 +96,12 @@ export function healPlayer(ctx, by, t, amount, o = {}) {
   if (!t.alive) return 0;
   let amt = amount * healMult(ctx, by, t);
   const crit = o.crit !== false && Math.random() < ctx.critChance(by);
-  if (crit) amt *= classDef(by.cls).critMult || 1.5;
+  if (crit) amt *= classDef(by.cls).critHealMult || 1.5;
   amt = Math.max(1, Math.round(amt));
   const real = Math.max(0, Math.min(amt, t.maxHp - t.hp));
   t.hp = Math.min(t.maxHp, t.hp + real);
   ctx.broadcast({ t: 'event', kind: 'heal', by: by.id, target: t.id, amount: amt, over: amt - real, crit, spell: o.id || null, tick: !!o.tick });
+  if (real > 0 && ctx.healThreat) ctx.healThreat(by, t, real);   // a healer is never invisible
   return real;
 }
 function spendMercy(p, a) {
@@ -200,7 +202,7 @@ export function castSpell(ctx, p, a) {
         q.debuffs = q.debuffs || {};
         if (q.boss) q.debuffs.turn_weak = 6;                 // bosses shrug it off: a small damage penalty
         else if (q.elite) q.debuffs.turn_weak = a.fear;      // elites: no fear, 15% less damage
-        else { q.debuffs.turned = a.fear; q.targetId = null; }
+        else { q.debuffs.turned = a.fear; q.targetId = null; ctx.interruptMonster && ctx.interruptMonster(q, p); }
         turned++;
       }
       for (const q of alliesNear(ctx, p, m.x, m.z, a.radius + 4)) ctx.addBuff(q, { id: 'undead_ward', dur: a.dur, charges: a.charges });

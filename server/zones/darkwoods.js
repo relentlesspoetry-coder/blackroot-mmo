@@ -11,7 +11,7 @@ export const darkwoods = {
   subtitle: 'Zone I',
   // Client assets this zone needs. Fetched on entry, cached after that.
   models: [
-    'Goblin', 'Bandit', 'Hill_Ogre', 'Cow', 'Chicken', 'Male', 'Female', 'items/Egg',
+    'Goblin', 'Bandit', 'Hill_Ogre', 'Cow', 'Chicken', 'items/Egg',
     // Low-level goblin-kin variants
     'Goblin_Scavenger', 'Goblin_Warrior', 'Goblin_Archer', 'Goblin_Shaman', 'Goblin_Miner',
     // Full-canopy tree models + every bush species
@@ -94,6 +94,7 @@ export const darkwoods = {
     { key: 'watchtower', name: 'Fallen Watchtower',    x: 50,  z: -72, kind: 'landmark', optional: true },
     { key: 'creek',      name: 'Blackroot Creek',      x: -40, z: -22, kind: 'landmark' },
     { key: 'rotfen',     name: 'Rotfen Thicket',       x: 48,  z: -30, kind: 'landmark', optional: true },
+    { key: 'outpost',    name: 'Dark Woods Outpost',   x: -10, z: -36, kind: 'safe', r: 13 },
     { key: 'shrine',     name: 'Shrine Grove',         x: 6,   z: 2,   kind: 'safe', r: 11 },
     { key: 'camp',       name: 'Abandoned Camp',       x: -50, z: 12,  kind: 'safe', r: 9, merchant: true, optional: true },
     { key: 'stones',     name: 'Ancient Stone Circle', x: 24,  z: 36,  kind: 'boss', optional: true },
@@ -112,32 +113,60 @@ export const darkwoods = {
   npcs: [
     { id: 'alric',    name: 'Warden Alric',        x: -20,  z: -66, poi: 'entrance', model: 'Male', yaw: 3.1,
       // Looks mix the modular outfit pack by slot (outfit numbers; see client OUTFITS) with per-slot recolours.
-      look: { hair: 8, hairColor: '#2b1d14', skin: '#c49a76', outfit: 21 },   // Town Guard
+      look: { hairColor: '#2b1d14', skin: '#c49a76', outfit: 4, hair: 'Hair_Crop', beard: 'Beard_Short' },   // Royal Knight — the warden of the clearing in plate
       idle: 'Keep to the path, and keep your blade where you can reach it.' },
     // Farmstead folk at the Entrance Clearing.
     { id: 'garrick',  name: 'Drillmaster Garrick',  x: 4,    z: -65, poi: 'entrance', model: 'Male', yaw: 3.1, trainer: 'fighter',
-      look: { hair: 15, hairColor: '#3a2a1a', skin: '#b58a66', outfit: 25 },   // Sellsword
+      look: { hairColor: '#3a2a1a', skin: '#b58a66', outfit: 6, hair: 'Hair_Undercut', beard: 'Beard_Full' },   // Sellsword — the drillmaster in a mercenary's brigandine
       idle: 'Swinging a stick is free. Swinging it properly costs coin. Come learn.' },
     { id: 'aldis',    name: 'Mother Aldis',         x: -8,   z: -60, poi: 'entrance', model: 'Female', yaw: 3.0, trainer: 'cleric',
-      look: { hair: 3, hairColor: '#d9d2c4', skin: '#d4b394', outfit: 29, colors: { top: '#e8e0cc' } },   // a pilgrim in undyed linen
+      look: { hairColor: '#d9d2c4', skin: '#d4b394', outfit: 31, hair: 'Hair_Bowl' },   // Temple Acolyte — undyed long tunic and circlet
       idle: 'The Light asks little of us: mend what is broken, and stand between the dark and those who cannot.' },
     { id: 'lark',     name: 'Lark the Minstrel',    x: 14,   z: -58, poi: 'entrance', model: 'Male', yaw: 3.4, trainer: 'bard',
-      look: { hair: 12, hairColor: '#7a4a22', skin: '#d2a67f', outfit: 17, colors: { top: '#3b4f8a' } },   // a traveller in a blue doublet
+      look: { hairColor: '#7a4a22', skin: '#d2a67f', outfit: 19, hair: 'Hair_Swept', beard: 'Beard_Goatee' },   // Rose Bard — doublet and feathered cape
       idle: 'Every fight has a rhythm, friend. Learn to hear it and the whole party keeps time.' },
     { id: 'maggie',   name: 'Old Maggie',          x: 18,   z: -79, poi: 'entrance', model: 'Female', yaw: 3.0,
+      look: { hairColor: '#b9b2a4', skin: '#d4b394', outfit: 1, hair: 'Hair_Topknot' },   // Village Farmhand
       idle: 'Mind the hens, love — and shut the gate on your way out.' },
     { id: 'bram',     name: 'Farmhand Bram',       x: -19,  z: -77, poi: 'entrance', model: 'Male', yaw: 1.4,
-      look: { hair: 5, hairColor: '#8a5a2b', skin: '#d9ab86', outfit: 1, slots: { boots: 2 } },   // Fieldhand in the orchard worker's boots
+      look: { hairColor: '#8a5a2b', skin: '#d9ab86', outfit: 1, hair: 'Hair_Bowl' },   // Village Farmhand
       idle: 'Cows need feedin’, fences need mendin’. No rest out here.' },
+    // --- Dark Woods Outpost: the warden's camp, and the zone's story ---
+    { id: 'rowan',    name: 'Warden Rowan',        x: -10,  z: -33, poi: 'outpost', model: 'Male', yaw: 3.14,
+      look: { hairColor: '#4a4038', skin: '#bc8f68', outfit: 47, hair: 'Hair_Receding', beard: 'Beard_Short' },   // Steel Vanguard — the outpost's warden
+      idle: 'Never walk these roads without light. The animals I understand — it is what moves when they go quiet that bothers me.' },
+    { id: 'brann',    name: 'Hunter Brann',        x: -16,  z: -38, poi: 'outpost', model: 'Male', yaw: 1.2,
+      look: { hairColor: '#5a3a1e', skin: '#c08a5e', outfit: 3, hair: 'Hair_Ponytail', beard: 'Beard_Stubble' },   // Forest Ranger — jerkin, hood and cloak
+      idle: 'Lift your boot. You are standing in a track, and a very big one.' },
+    { id: 'lysa',     name: 'Scout Lysa',          x: -5,   z: -39, poi: 'outpost', model: 'Female', yaw: 0.6,
+      look: { hairColor: '#2e1d12', skin: '#c99a74', outfit: 36, hair: 'Hair_Ponytail' },   // Snow Scout — fur vest and hood
+      idle: 'The trees in the old grove are changing. Black bark, purple veins under the roots.' },
+    { id: 'mira',     name: 'Mira Thorn',          x: -14,  z: -30, poi: 'outpost', model: 'Female', yaw: 2.4,
+      look: { hairColor: '#6b4a24', skin: '#d0a57e', outfit: 9, hair: 'Hair_Mane' },   // Grey Wanderer — a herbalist's robe
+      idle: 'A disease kills something. This is changing it. That is the difference, and it is the whole problem.' },
+    { id: 'tessa',    name: 'Quartermaster Tessa', x: -6,   z: -32, poi: 'outpost', model: 'Female', yaw: 3.6,
+      look: { hairColor: '#3a2a1a', skin: '#c9996f', outfit: 29, hair: 'Hair_Braids' },   // Wine Merchant — a quartermaster's surcoat
+      idle: 'Food, medicine, weapons, coffee. Ask me which one I miss most.' },
+    { id: 'alden',    name: 'Brother Alden',       x: -13,  z: -41, poi: 'outpost', model: 'Male', yaw: 0.2,
+      look: { hairColor: '#8a8276', skin: '#c7a081', outfit: 42, hair: 'Hair_Receding', beard: 'Beard_Full' },   // Crimson Cardinal — the priest
+      idle: 'Have you heard the bell? It has been abandoned twenty years, and still it rings.' },
+    { id: 'fenwick',  name: 'Old Fenwick',         x: -2,   z: -30, poi: 'outpost', model: 'Male', yaw: 4.2,
+      look: { hairColor: '#b9b2a4', skin: '#b98f6a', outfit: 28, hair: 'Hair_Mane', beard: 'Beard_Full' },   // Bog Hermit — the old woodsman
+      idle: 'Brown ones are safe. Blue ones are safe. Red ones depend on how attached you are to your organs.' },
+    // Far enough from his own camp's roamers that a level-3 errand isn't a fight.
+    { id: 'pib',      name: 'Pib',                 x: -26,  z: -24, poi: 'creek', model: 'Goblin_Scavenger', yaw: 1.0, h: 1.5,
+      idle: 'Pib not fighting. Pib waving. Keep doing nothing, is good.' },
     { id: 'sela',     name: 'Ranger Sela',         x: 48,   z: -70, poi: 'watchtower', model: 'Female', yaw: 2.2,
+      look: { hairColor: '#2e1d12', skin: '#c99a74', outfit: 3, hair: 'Hair_Braids' },   // Forest Ranger
       idle: 'From the old tower you can see their fires. The Wolf Den grows bolder every night.' },
     { id: 'dorn',     name: 'Prospector Dorn',     x: -34,  z: 42,  poi: 'ravine',   model: 'Male', yaw: 5.0,
-      look: { hair: 1, hairColor: '#6b6b6b', skin: '#b8865f', outfit: 5 },    // Miner
+      look: { hairColor: '#b9b2a4', skin: '#b98f6a', outfit: 32, hair: 'Hair_Crop', beard: 'Beard_Full' },   // Blacksmith — apron and headband
       idle: 'That iron seam is mine by right — but the goblins dig it faster than I can chase them off.' },
     { id: 'hermit',   name: 'Hermit of the Grove', x: 9,    z: 4,   poi: 'shrine',   model: 'Male',
-      look: { hair: 29, hairColor: '#9a9a90', skin: '#c9a07c', outfit: 29, slots: { boots: 0 }, colors: { top: '#6a6f5a' } },   // barefoot Pilgrim
+      look: { hairColor: '#9a9a90', skin: '#c9a07c', outfit: 28, wear: { boots: 0 } },   // Bog Hermit, barefoot
       idle: 'The shrine holds. Not much else out here does.' },
     { id: 'merchant', name: 'Wandering Merchant',  x: -51.5, z: 9,  poi: 'camp',     model: 'Female', trade: true,
+      look: { hairColor: '#4a2e1a', skin: '#d0a57e', outfit: 29, hair: 'Hair_Topknot' },   // Wine Merchant
       idle: 'Wares? Aye, soon enough, traveller. Mind the woods.' },
   ],
 
@@ -175,6 +204,94 @@ export const darkwoods = {
 
   // Treasure chests reward exploring the optional landmarks. Loot scales with
   // how deep/dangerous the spot is. Positions are pre-scale like everything else.
+  // Things in the world a quest can ask you to put your hands on. `tag` groups
+  // a set (three lanterns, three signal fires); `once` means it stays done for
+  // that player; `respawn` makes it a gathering node that grows back.
+  //   m/yaw/s/c behave like props; `reach` is how close you must stand.
+  objects: [
+    // The outpost's own lanterns, on poles round the edge of the camp. Anyone
+    // can light one or put it out again, and everyone standing there sees it:
+    // this is world state, not a quest.
+    { id: 'camp_lantern_1', tag: 'lantern', toggle: true, name: 'Camp Lantern', m: 'props/Camp_Lantern', x: -10.00, z: -29.24, s: 1.35, c: 0.5, reach: 3.0, verb: 'Light', verbOff: 'Put out', examine: 'A lantern on a pole at the edge of the camp.' },
+    { id: 'camp_lantern_2', tag: 'lantern', toggle: true, name: 'Camp Lantern', m: 'props/Camp_Lantern', x: -4.14, z: -32.62, s: 1.35, c: 0.5, reach: 3.0, verb: 'Light', verbOff: 'Put out', examine: 'A lantern on a pole at the edge of the camp.' },
+    { id: 'camp_lantern_3', tag: 'lantern', toggle: true, name: 'Camp Lantern', m: 'props/Camp_Lantern', x: -4.14, z: -39.38, s: 1.35, c: 0.5, reach: 3.0, verb: 'Light', verbOff: 'Put out', examine: 'A lantern on a pole at the edge of the camp.' },
+    { id: 'camp_lantern_4', tag: 'lantern', toggle: true, name: 'Camp Lantern', m: 'props/Camp_Lantern', x: -10.00, z: -42.76, s: 1.35, c: 0.5, reach: 3.0, verb: 'Light', verbOff: 'Put out', examine: 'A lantern on a pole at the edge of the camp.' },
+    { id: 'camp_lantern_5', tag: 'lantern', toggle: true, name: 'Camp Lantern', m: 'props/Camp_Lantern', x: -15.86, z: -39.38, s: 1.35, c: 0.5, reach: 3.0, verb: 'Light', verbOff: 'Put out', examine: 'A lantern on a pole at the edge of the camp.' },
+    { id: 'camp_lantern_6', tag: 'lantern', toggle: true, name: 'Camp Lantern', m: 'props/Camp_Lantern', x: -15.86, z: -32.62, s: 1.35, c: 0.5, reach: 3.0, verb: 'Light', verbOff: 'Put out', examine: 'A lantern on a pole at the edge of the camp.' },
+    // Warden Rowan's trail lanterns. Dark until someone crushes glowcaps into
+    // the oil — the first thing the outpost asks of a newcomer.
+    { id: 'lantern_east',  tag: 'lantern', name: 'Eastern Trail Lantern',  m: 'props/Camp_Lantern', x: 16,  z: -34, s: 1.6, c: 0.5, once: true,
+      quest: 'dw_lanterns', need: { item: 'Glowcap', count: 2 }, verb: 'Light',
+      text: 'You crush the Glowcaps into the lantern oil. The lantern flickers to life.',
+      idleText: 'The lantern is dark. Warden Rowan would know what it needs.' },
+    { id: 'lantern_bridge', tag: 'lantern', name: 'Old Bridge Lantern',    m: 'props/Camp_Lantern', x: -30, z: -26, s: 1.6, c: 0.5, once: true,
+      quest: 'dw_lanterns', need: { item: 'Glowcap', count: 2 }, verb: 'Light',
+      text: 'The oil catches. The dark trail becomes easier to see.',
+      idleText: 'The lantern is dark. Warden Rowan would know what it needs.' },
+    { id: 'lantern_north', tag: 'lantern', name: 'Northern Trail Lantern', m: 'props/Camp_Lantern', x: -12, z: -56, s: 1.6, c: 0.5, once: true,
+      quest: 'dw_lanterns', need: { item: 'Glowcap', count: 2 }, verb: 'Light',
+      text: 'The last lantern takes the flame. All three trail lanterns are burning.',
+      idleText: 'The lantern is dark. Warden Rowan would know what it needs.' },
+    // The supply cart the goblins jumped, on the eastern road. Read the scene,
+    // then prise the crates back out of the ditch.
+    { id: 'cart_wheel', tag: 'cart', name: 'Broken Wheel',    m: 'farm/Farm_Handcart', x: 30, z: -48, yaw: 0.6, s: 1.0, c: 1.2, once: true,
+      quest: 'dw_supplies', verb: 'Inspect', reach: 4,
+      text: 'The wheel is split through, and the axle with it. Nobody drove this off the road by accident.',
+      idleText: 'A handcart, tipped into the ditch and stripped.' },
+    { id: 'cart_tracks', tag: 'cart', name: 'Goblin Footprints', m: 'Bone_Pile', x: 33, z: -45, yaw: 2.2, s: 0.7, c: 0, once: true,
+      quest: 'dw_supplies', verb: 'Inspect', reach: 4,
+      text: 'Small feet, a dozen of them, all heading east into the thicket.',
+      idleText: 'Churned mud, and something picked clean beside it.' },
+    { id: 'cart_chest', tag: 'cart', name: 'Empty Supply Chest', m: 'props/Supply_Crate', x: 28, z: -44, yaw: 1.1, s: 1.0, c: 0.7, once: true,
+      quest: 'dw_supplies', verb: 'Inspect', reach: 4,
+      text: 'Lid off, straw everywhere, nothing left inside but a boot print.',
+      idleText: 'An empty crate with its lid prised off.' },
+    // What the raiders dropped on the way home — scattered along the thicket road.
+    ...[[38, -42], [43, -38], [47, -33], [41, -29]].map(([x, z], i) => ({
+      id: 'crate_' + i, tag: 'crate', name: 'Supply Crate', m: 'props/Supply_Crate', x, z, s: 1.0, c: 0.7, once: true, reach: 3.5,
+      quest: 'dw_supplies', verb: 'Recover', gives: { item: 'Supply Crate' },
+      text: 'You haul the crate out of the bracken. Still sealed.',
+      idleText: 'A crate from the outpost stores, dropped in the bracken.' })),
+    // Redberries on the creek bank, and a honeycake from the outpost stores —
+    // a goblin's price for what he knows.
+    ...[[-24, -18], [-30, -22], [-22, -28], [-33, -17]].map(([x, z], i) => ({
+      id: 'redberry_' + i, tag: 'redberry', name: 'Redberry Bush', m: 'Red_Berry_Bush', x, z, s: 1.0, c: 0.6, reach: 3.2,
+      verb: 'Pick', gives: { item: 'Redberry' }, respawn: 60,
+      text: 'Sharp red berries, three or four to a handful.' })),
+    { id: 'honeycake', tag: 'cake', name: 'Outpost Larder', m: 'props/Water_Barrel', x: -7, z: -34, s: 1.0, c: 0.6, once: true, reach: 3,
+      quest: 'dw_pib', verb: 'Take a honeycake', gives: { item: 'Honeycake' },
+      text: 'You take one honeycake from the larder. Tessa is counting, somewhere.',
+      idleText: "The outpost larder. Tessa's, and she counts it." },
+    // Rattlecap's signal fires on the ridge above the Wolf Den: three columns of
+    // smoke that call the other camps in.
+    ...[[56, 20], [66, 18], [61, 34]].map(([x, z], i) => ({
+      id: 'signal_' + i, tag: 'signalfire', name: 'Goblin Signal Fire', m: 'props/Campfire', x, z, s: 1.2, c: 0.8, once: true, reach: 3.5,
+      quest: 'dw_smoke', verb: 'Douse', doused: 'props/Unlit_Fire_Pit',
+      text: 'You kick the fire apart and smother the smoke.',
+      idleText: 'Green wood, banked to smoke rather than burn.' })),
+    { id: 'banner', tag: 'banner', name: 'Dark Woods Outpost Banner', m: 'Goblin_Banner', x: 63, z: 27, s: 1.1, c: 0.5, once: true, reach: 3.5,
+      quest: 'dw_rattlecap', verb: 'Take down', needDead: 'Chief Rattlecap',
+      text: 'You cut the outpost banner down and fold it under your arm.',
+      idleText: "The outpost's own banner, strung up as a goblin trophy." },
+    // Fenwick's mushrooms: two worth picking, one that is not.
+    ...[[-24, 10], [-18, 16], [-30, 6], [-14, 6], [-26, 20], [-20, 2]].map(([x, z], i) => ({
+      id: 'browncap_' + i, tag: 'browncap', name: 'Browncaps', m: 'cave/Brown_Mushrooms', x, z, s: 2.2, c: 0, reach: 3,
+      verb: 'Pick', gives: { item: 'Browncap' }, respawn: 60, text: 'Squat and brown. The safe one.' })),
+    ...[[-28, 16], [-16, 12], [-33, 14], [-22, 22], [-12, 18], [-31, 2]].map(([x, z], i) => ({
+      id: 'mooncap_' + i, tag: 'mooncap', name: 'Mooncaps', m: 'cave/Luminous_Mushrooms', x, z, s: 2.2, c: 0, reach: 3, light: 0x8ab4ff,
+      verb: 'Pick', gives: { item: 'Mooncap' }, respawn: 60, text: 'Pale blue, and cold to the touch.' })),
+    ...[[-21, 14], [-27, 12], [-17, 20]].map(([x, z], i) => ({
+      id: 'rotcap_' + i, tag: 'rotcap', name: 'Rotcaps', m: 'Poison_Mushrooms', x, z, s: 1.4, c: 0, reach: 3,
+      verb: 'Pick', gives: { item: 'Rotcap' }, respawn: 60, hurt: 6,
+      text: 'The mushroom releases a foul green cloud. Wrong mushroom.' })),
+    // Glowcaps: they grow in the shade of the old trees around the outpost and
+    // come back in their own time, so the road can always be relit.
+    ...[[-18, -28], [-22, -34], [-16, -44], [-4, -44], [2, -36], [4, -26], [-26, -20], [-8, -22], [10, -42], [-20, -48]]
+      .map(([x, z], i) => ({ id: 'glowcap_' + i, tag: 'glowcap', name: 'Glowcaps', m: 'cave/Luminous_Mushrooms', x, z, s: 2.6, c: 0, reach: 3,
+        verb: 'Gather', gives: { item: 'Glowcap' }, respawn: 45, light: 0x7fe8c8,
+        text: 'The mushroom gives off a faint blue-green glow.' })),
+  ],
+
   chests: [
     { id: 'watchtower', x: 52, z: -74, gold: 70,  item: 'Leather Body' },        // old soldier's kit at the Fallen Watchtower
     { id: 'rotfen',     x: 50, z: -32, gold: 110, item: 'Battered Iron Shield' }, // bandit stash in the Rotfen Thicket
@@ -196,6 +313,7 @@ export const darkwoods = {
     { id: 'cf_farm',   x: 20,  z: -80 },  // by the Entrance Clearing (early cooking)
     { id: 'cf_camp',   x: -49, z: 7 },    // Abandoned Camp (on the bank beside the merchant, not in the river)
     { id: 'cf_shrine', x: 10,  z: 3 },    // Shrine Grove
+    { id: 'cf_outpost', x: -10, z: -36 }, // Dark Woods Outpost — the warden's fire
   ],
 
   // No aggressive mob may spawn within this radius of `spawn` — the first
@@ -218,6 +336,60 @@ export const darkwoods = {
   scatterSeed: 4412,
   // NOTE: in generateScatter, `r` is the piece's COLLISION radius (0 = walk
   // through / pure decor) and `nearR` is how far it spreads around its anchor.
+  // Two trees the outpost was built around rather than cleared: one out past
+  // the stores, one up by the northern tents. Different sizes and turned to
+  // different angles, so they read as trees that were already there.
+  trees: [
+    { x: -11.62, z: -39.47, s: 1.05, r: 2.4 },
+    { x: -11.41, z: -32.13, s: 0.88, r: 5.1 },
+  ],
+  // Ground the camp has worn through: a bare patch under the whole of it, part
+  // of the same dirt field as the roads, so it blends into them instead of
+  // sitting on top as a separate disc.
+  dirt: [
+    { x: -10, z: -36, r: 7.6, fr: 4.0 },     // the camp floor, feathering out into the grass
+    { x: -10, z: -36, r: 2.4, fr: 1.4 },     // and a harder-trodden ring round the fire
+  ],
+  // ---------------------------------------------------------------------
+  // The Dark Woods Outpost, placed rather than sprinkled. Positions are
+  // offsets from the outpost POI at (-10, -36) and scale with the zone like
+  // everything else in this file; the models themselves stay native metres,
+  // so the layout was worked out in metres and divided back down by 1.7.
+  // ---------------------------------------------------------------------
+  props: [
+      // Four tents in an arc on the high side, each opening onto the fire.
+      { s: 1.45, m: 'Small_Canvas_Tent', x: -8.01, z: -31.74, yaw: 3.58, c: 1.0 },
+      { s: 1.45, m: 'Small_Canvas_Tent', x: -5.58, z: -34.39, yaw: 4.36, c: 1.0 },
+      { s: 1.45, m: 'Small_Canvas_Tent', x: -5.74, z: -37.99, yaw: 5.15, c: 1.0 },
+      { s: 1.45, m: 'Small_Canvas_Tent', x: -8.39, z: -40.42, yaw: 5.93, c: 1.0 },
+      // A bedroll inside each tent, laid along it on the same bearing, head to
+      // the back wall.
+      { s: 1.25, m: 'Bedroll', x: -7.92, z: -31.55, yaw: 3.58 },
+      { s: 1.25, m: 'Bedroll', x: -5.38, z: -34.32, yaw: 4.36 },
+      { s: 1.25, m: 'Bedroll', x: -5.55, z: -38.08, yaw: 5.15 },
+      { s: 1.25, m: 'Bedroll', x: -8.32, z: -40.62, yaw: 5.93 },
+      // The fire: a pot over it and stools pulled up round it.
+      { m: 'Cooking_Tripod', x: -10.00, z: -36.00, yaw: 0.00, c: 0.35 },
+      { m: 'Camp_Stool', x: -9.29, z: -34.78, yaw: 3.67 },
+      { m: 'Camp_Stool', x: -9.29, z: -37.22, yaw: 5.76 },
+      { m: 'Camp_Stool', x: -11.41, z: -36.00, yaw: 1.57 },
+      // Stores under the pavilion on the sheltered side, crates stacked against it.
+      { s: 1.35, m: 'Supply_Pavilion', x: -14.15, z: -37.51, yaw: 1.22 },
+      { m: 'Supply_Crate', x: -13.22, z: -38.17, yaw: 0.98, c: 0.5 },
+      { m: 'Supply_Crate', x: -14.86, z: -38.37, yaw: 1.12, c: 0.5 },
+      { m: 'Supply_Crate', x: -15.41, z: -37.15, yaw: 1.36, c: 0.5 },
+      { m: 'Supply_Crate', x: -13.99, z: -36.28, yaw: 1.50, c: 0.5 },
+      { m: 'Water_Barrel', x: -13.58, z: -39.23, yaw: 0.84, c: 0.4 },
+      { m: 'Water_Barrel', x: -15.06, z: -35.82, yaw: 1.61, c: 0.4 },
+      // A rough fence across the two open approaches, and a sign on the road.
+      { m: 'Rough_Fence', x: -11.28, z: -43.24, yaw: 0.17, c: 0.8 },
+      { m: 'Rough_Fence', x: -13.11, z: -42.66, yaw: 0.44, c: 0.8 },
+      { m: 'Rough_Fence', x: -14.73, z: -41.63, yaw: 0.70, c: 0.8 },
+      { m: 'Rough_Fence', x: -16.37, z: -32.32, yaw: 2.09, c: 0.8 },
+      { m: 'Rough_Fence', x: -15.20, z: -30.80, yaw: 2.36, c: 0.8 },
+      { m: 'Rough_Fence', x: -13.68, z: -29.63, yaw: 2.62, c: 0.8 },
+      { m: 'Warning_Sign', x: -10.00, z: -43.53, yaw: 0.00, c: 0.25 },
+  ],
   scatter: [
     // Surface ore veins (small mineable-node collision).
     // Ore is NOT scattered along the trail: it sits in three tight patches you
@@ -235,6 +407,12 @@ export const darkwoods = {
     { model: 'Supply_Crate',   count: 2, r: 0.8, scale: [0.9, 1.1], near: 'camp', nearR: 11 },
     { model: 'Water_Barrel',   count: 1, r: 0.7, scale: [1.0, 1.0], near: 'camp', nearR: 10 },
     { model: 'Rolled_Bedroll', count: 1, r: 0, scale: [1.0, 1.0], near: 'camp', nearR: 10 },
+
+    // (The Dark Woods Outpost is not scattered — it is laid out by hand in
+    // `props` below. Scattering a camp gave nine bedrolls, nine lanterns,
+    // three cooking pots and no tents at all: counts are multiplied by the
+    // zone's area, and the rejection sampler drops whatever has a footprint
+    // once the zero-radius clutter has filled the clearing.)
 
     // Goblin war-camp at the Wolf Den — tents, totem, banners, crude defenses.
     { model: 'Goblin_Hide_Tent', count: 2, r: 1.4, scale: [1.0, 1.1], near: 'wolfden', nearR: 14 },
@@ -347,10 +525,15 @@ export const darkwoods = {
     // --- Goblin miners have jumped Dorn's claim in the Root-Choked Ravine ---
     { type: 'goblin_miner', count: 4, cx: -36, cz: 44, r: 6,  level: 4, expect: 5, fixed: true, hint: 'Ravine dig (core)' },
     { type: 'goblin_miner', count: 2, cx: -36, cz: 44, r: 16, level: 4, expect: 5, roam: 20, fixed: true, hint: 'Ravine dig (roamers)' },
+    { type: 'goblin_shaman', count: 1, cx: -36, cz: 44, r: 7,  level: 4, expect: 5, fixed: true, hint: 'Ravine dig (shaman)' },
     // --- The goblin war camp at the Wolf Den: warriors with archers behind them ---
     { type: 'goblin_warrior', count: 4, cx: 62, cz: 28, r: 6,  level: 4, expect: 5, fixed: true, hint: 'Wolf Den camp (core)' },
     { type: 'goblin_archer',  count: 3, cx: 66, cz: 32, r: 7,  level: 5, expect: 5, fixed: true, hint: 'Wolf Den camp (archers)' },
+    { type: 'goblin_shaman',  count: 2, cx: 64, cz: 26, r: 5,  level: 5, expect: 6, fixed: true, hint: 'Wolf Den camp (shamans: heal the camp, interrupt them)' },
     { type: 'goblin_warrior', count: 2, cx: 62, cz: 28, r: 18, level: 4, expect: 5, roam: 22, fixed: true, hint: 'Wolf Den camp (roamers)' },
+    { type: 'goblin_chief',   count: 2, cx: 62, cz: 28, r: 7,  level: 5, expect: 6, fixed: true, hint: 'Wolf Den camp (Rattlecap\'s brutes)' },
+    // The band that jumped the supply cart, still on the thicket road with it.
+    { type: 'goblin', count: 6, cx: 40, cz: -38, r: 10, level: 3, expect: 3, fixed: true, hint: 'Supply road raiders (Woodfang goblins)' },
     // --- Hill ogres squatting on the South Gate approach ---
     { type: 'guard',   count: 3, cx: 10,  cz: 80,  r: 8,  level: 6, expect: 7, fixed: true, hint: 'Ogre hollow (core)' },
     { type: 'guard',   count: 1, cx: 10,  cz: 80,  r: 20, level: 5, expect: 6, roam: 24, fixed: true, hint: 'Ogre hollow (roamer)' },
@@ -359,6 +542,8 @@ export const darkwoods = {
   // A single low-level optional elite — the zone's capstone, nothing harder.
   elites: [
     { type: 'guard', name: 'The Rootbound Guardian', cx: 24, cz: 36, level: 6, expect: 6 },
+    // The chief who has been raiding the roads, in the middle of his own camp.
+    { type: 'goblin_chief', name: 'Chief Rattlecap', cx: 62, cz: 28, level: 6, expect: 6 },
   ],
 
   // The farmstead ringing the Entrance Clearing. Coords are pre-scale like the
@@ -427,7 +612,7 @@ export const darkwoods = {
     trees: [
       { x: -12, z: -90.5, s: 1.0 }, { x: 8, z: -90.5, s: 1.05 }, { x: 27.5, z: -88, s: 0.95 },
       { x: -39, z: -79, s: 0.9 }, { x: 28.5, z: -75, s: 1.0 }, { x: 3, z: -63.6, s: 0.85 }, { x: -36, z: -63.2, s: 0.8 },
-      { x: -2, z: -91.2, s: 0.8 }, { x: 22, z: -90.8, s: 0.9 }, { x: -30, z: -90.5, s: 0.85 }, { x: 29, z: -68, s: 0.85 },
+      { x: -2, z: -91.2, s: 0.8 }, { x: 22, z: -90.8, s: 0.9 }, { x: -30, z: -90.5, s: 0.85 }, { x: 33, z: -61, s: 0.85 },
       { x: -20, z: -63.6, s: 0.75 }, { x: 14, z: -63.6, s: 0.8 },
     ],
     plants: [

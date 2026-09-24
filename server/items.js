@@ -40,6 +40,27 @@ export const SLOTS = Object.keys(SLOT_INFO);
 // equipping picks the empty one. Rings and earrings come in twos.
 export const SLOT_PAIRS = { ring: ['ring_l', 'ring_r'], earring: ['earring_l', 'earring_r'] };
 export function slotsFor(slot) { return SLOT_PAIRS[slot] || [slot]; }
+// What piles up in one bag slot. Anything you wear or wield is its own thing —
+// two swords are two swords — but ore, fish, logs, food and the rest of the raw
+// material of the world stack, the way a pouch of ore should.
+export function stackable(name) {
+  const d = ITEMS[name];
+  return !!d && !d.slot;
+}
+// The bag as slots rather than loose items: identical stackables share one,
+// keeping the order things were picked up in.
+export function bagStacks(inventory) {
+  const out = [], at = new Map();
+  for (const name of inventory) {
+    if (stackable(name)) {
+      const i = at.get(name);
+      if (i != null) { out[i].qty++; continue; }
+      at.set(name, out.length);
+    }
+    out.push({ name, qty: 1 });
+  }
+  return out;
+}
 export function emptySlots() {
   const eq = {};
   for (const s of SLOTS) eq[s] = null;
@@ -98,14 +119,53 @@ const ARMOR_DESC = {
   Cloth:   ['Quilted militia padding.', 'Crimson duelling cloth, cut to move.', 'Sun-bleached sentinel cloth.', 'Azure battleguard cloth, silver-threaded.', 'A royal warcoat. Someone important lost it.'],
   Magic:   ['A hedge mage\'s homespun weave.', 'Arcanist blue, faintly humming.', 'Ember-red robes, warm to the touch.', 'Verdant oracle weave, alive with runes.', 'Astral robes. The runes move when you look away.'],
 };
+// What a suit of armour looks like: the wardrobe piece each family wears at
+// each tier, so putting a Steel Chevalier cuirass on actually shows steel
+// plate. Five slots line up with the wardrobe (chest/legs/helmet/boots/gloves,
+// plus the cape); shoulders and belts have no garment of their own and give
+// their defence without changing the silhouette.
+const WARDROBE_SLOT = { chest: 'shirt', legs: 'pants', helmet: 'hat', boots: 'boots', gloves: 'gloves', cape: 'cape' };
+const ARMOR_LOOK = {
+  // family: [tier1..tier5] × { shirt, pants, hat, boots, gloves, cape }
+  Leather: [
+    { shirt: 'Shirt_Jerkin_Brown',      pants: 'Pants_Trousers_Umber',  hat: 'Hat_Cap_Charcoal',    boots: 'Boots_Shoes_Brown',     gloves: 'Gloves_Leather_Brown',  cape: 'Cape_Scarf_Umber' },
+    { shirt: 'Shirt_Harness_Brown',     pants: 'Pants_Patched_Olive',   hat: 'Hat_Hood_Olive',      boots: 'Boots_Strapped_Brown',  gloves: 'Gloves_Bracers_Brown',  cape: 'Cape_Tattered_Charcoal' },
+    { shirt: 'Shirt_PaddedJack_Olive',  pants: 'Pants_Trousers_Forest', hat: 'Hat_Hood_Forest',     boots: 'Boots_Buckled_Brown',   gloves: 'Gloves_Fingerless_Olive', cape: 'Cape_Cloak_Forest' },
+    { shirt: 'Shirt_Brigandine_Navy',   pants: 'Pants_Banded_Charcoal', hat: 'Hat_Cowl_Charcoal',   boots: 'Boots_Tall_Black',      gloves: 'Gloves_Leather_Black',  cape: 'Cape_Cloak_Black' },
+    { shirt: 'Shirt_ScaleVest_Rust',    pants: 'Pants_ScaleLegs_Charcoal', hat: 'Hat_FurCap_Umber', boots: 'Boots_Fur_Umber',       gloves: 'Gloves_Spiked_Brown',   cape: 'Cape_FurMantle_Umber' },
+  ],
+  Plate: [
+    { shirt: 'Shirt_Mail_Brown',        pants: 'Pants_Wrapped_Umber',   hat: 'Hat_Coif_Iron',       boots: 'Boots_Greaves_Brown',   gloves: 'Gloves_Bracers_Umber',  cape: 'Cape_Short_Crimson' },
+    { shirt: 'Shirt_ScaleVest_Olive',   pants: 'Pants_ScaleLegs_Navy',  hat: 'Hat_Kettle_Iron',     boots: 'Boots_Greaves_Black',   gloves: 'Gloves_Mail_Olive',     cape: 'Cape_Half_Navy' },
+    { shirt: 'Shirt_HalfPlate_Charcoal', pants: 'Pants_ScaleLegs_Charcoal', hat: 'Hat_Barbute_Steel', boots: 'Boots_PlatedTall_Charcoal', gloves: 'Gloves_Gauntlet_Steel', cape: 'Cape_Half_Crimson' },
+    { shirt: 'Shirt_Cuirass_Gold',      pants: 'Pants_Plate_Charcoal',  hat: 'Hat_Sallet_Steel',    boots: 'Boots_PlatedTall_Black', gloves: 'Gloves_Gauntlet_Gold',  cape: 'Cape_Royal_Royal' },
+    { shirt: 'Shirt_Cuirass_Black',     pants: 'Pants_Plate_Black',     hat: 'Hat_SpikedHelm_BlackIron', boots: 'Boots_Spiked_Black', gloves: 'Gloves_Clawed_BlackIron', cape: 'Cape_ChainMantle_Iron' },
+  ],
+  Cloth: [
+    { shirt: 'Shirt_Tunic_Charcoal',    pants: 'Pants_Hose_Umber',      hat: 'Hat_Cap_Charcoal',    boots: 'Boots_Shoes_Umber',     gloves: 'Gloves_Cloth_Cream',    cape: 'Cape_Scarf_Grey' },
+    { shirt: 'Shirt_Doublet_Crimson',   pants: 'Pants_Breeches_Charcoal', hat: 'Hat_WideBrim_Charcoal', boots: 'Boots_Cuffed_Black', gloves: 'Gloves_Leather_Black', cape: 'Cape_Half_Crimson' },
+    { shirt: 'Shirt_Wrap_Sand',         pants: 'Pants_Baggy_Cream',     hat: 'Hat_Turban_Cream',    boots: 'Boots_Curled_Gold',     gloves: 'Gloves_Wraps_Tan',      cape: 'Cape_LongScarf_Cream' },
+    { shirt: 'Shirt_Doublet_Sky',       pants: 'Pants_Breeches_Sky',    hat: 'Hat_PlumedCap_Brass', boots: 'Boots_Tall_Black',      gloves: 'Gloves_Elbow_Black',    cape: 'Cape_Half_Violet' },
+    { shirt: 'Shirt_Surcoat_Wine',      pants: 'Pants_Puffed_Wine',     hat: 'Hat_Beret_Wine',      boots: 'Boots_Tall_Brown',      gloves: 'Gloves_Long_Black',     cape: 'Cape_Royal_Crimson' },
+  ],
+  Magic: [
+    { shirt: 'Shirt_Robe_Grey',         pants: 'Pants_Trousers_Charcoal', hat: 'Hat_Wizard_Grey',   boots: 'Boots_Moccasins_Umber', gloves: 'Gloves_Wraps_Grey',     cape: 'Cape_Shawl_Olive' },
+    { shirt: 'Shirt_Kimono_Indigo',     pants: 'Pants_Hakama_Charcoal', hat: 'Hat_Circlet_Gold',    boots: 'Boots_Moccasins_Olive', gloves: 'Gloves_Long_Grey',      cape: 'Cape_LongScarf_Violet' },
+    { shirt: 'Shirt_Robe_Orange',       pants: 'Pants_Trousers_Crimson', hat: 'Hat_Skullcap_Crimson', boots: 'Boots_Curled_Scarlet', gloves: 'Gloves_Cloth_Crimson', cape: 'Cape_Patterned_Mustard' },
+    { shirt: 'Shirt_Robe_Sand',         pants: 'Pants_Wrapped_Olive',   hat: 'Hat_Laurel_Emerald',  boots: 'Boots_Wraps_Sand',      gloves: 'Gloves_Armrings_Brass', cape: 'Cape_LeafMantle_Emerald' },
+    { shirt: 'Shirt_Robe_Charcoal',     pants: 'Pants_Striped_Violet',  hat: 'Hat_Cowl_Charcoal',   boots: 'Boots_ThighHigh_Black', gloves: 'Gloves_Bone_Charcoal',  cape: 'Cape_Patterned_Purple' },
+  ],
+};
 export const ARMOR_ITEMS = {};
 for (const [id, setName, fam, tier] of ARMOR_SETS) {
   for (const [packSlot, slot, share, names] of ARMOR_PIECES) {
     const F = ARMOR_FAMILY[fam], name = `${setName} ${names[fam]}`;
     const def = Math.max(1, Math.round(ARMOR_TIER_DEF[tier - 1] * share * F.def));
     const atk = F.atk ? Math.max(1, Math.round(F.atk * tier * (share >= 0.8 ? 1 : 0.5))) : 0;
+    const wslot = WARDROBE_SLOT[slot], piece = wslot ? ARMOR_LOOK[fam][tier - 1][wslot] : null;
     const d = { slot, def, level: ARMOR_TIER_LEVEL[tier - 1], value: Math.round(ARMOR_TIER_VALUE[tier - 1] * (0.4 + 0.6 * share)),
-      desc: ARMOR_DESC[fam][tier - 1], gear: `${id}__${packSlot}`, tier, family: fam, set: setName };
+      desc: ARMOR_DESC[fam][tier - 1], tier, family: fam, set: setName };
+    if (piece) d.wear = { slot: wslot, piece };   // what it looks like on the body
     if (atk) d.atk = atk;
     ARMOR_ITEMS[name] = d;
   }
@@ -267,6 +327,20 @@ export const ITEMS = {
   'Spider Silk':  { value: 18 },
   'Venom Sac':    { value: 26 },
   'Goblin Ear':   { value: 4 },
+  // --- Dark Woods Outpost ---------------------------------------------------
+  'Glowcap':      { value: 3,  desc: 'A mushroom that keeps a faint blue-green light of its own. Crushed into lantern oil it burns for days.' },
+  'Minor Healing Potion': { value: 30, heal: 45, desc: 'A small vial of red. Mira makes them by the crate and still runs out.' },
+  "Hunter's Rations": { value: 12, heal: 26, desc: 'Smoked meat and hard bread, wrapped in cloth. Brann swears by it.' },
+  'Supply Crate':  { value: 25, desc: "Outpost stores, prised back out of a goblin camp. Tessa will want to count it." },
+  'Redberry':      { value: 2,  heal: 4, desc: 'Sharp little berries from the creek bank. A goblin would trade for these.' },
+  'Honeycake':     { value: 14, heal: 20, desc: 'Dense, sticky and worth more than its weight to the right goblin.' },
+  'Browncap':      { value: 4,  heal: 8,  desc: 'The safe one. Fenwick says so, and he still has all his organs.' },
+  'Mooncap':       { value: 7,  heal: 12, desc: 'Pale blue and cold to the touch. Also safe, apparently.' },
+  'Rotcap':        { value: 1,  desc: 'Red, swollen, and it smells like a mistake.' },
+  'Mushroom Stew': { value: 20, heal: 38, desc: "Fenwick's stew. Better than it looks, which is not saying much." },
+  "Scout's Bandage": { value: 16, heal: 30, desc: "Lysa's field dressing — linen, pitch and no patience." },
+  "Rattlecap's Trophy": { slot: 'necklace', def: 2, atk: 1, level: 5, value: 260, rarity: 'Uncommon',
+    desc: "The chief's rattling charm of bones and stolen coins. It still rattles." },
   'Stolen Pendant': { value: 35 },
   'Kebab':        { value: 8, heal: 22 },
   'Chitin Fragment': { value: 12 },

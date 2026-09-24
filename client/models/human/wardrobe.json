@@ -1,0 +1,2462 @@
+{
+ "slots": [
+  "shirt",
+  "pants",
+  "hat",
+  "boots",
+  "gloves",
+  "cape"
+ ],
+ "outfits": [
+  {
+   "index": 1,
+   "id": "wardrobe_01",
+   "title": "Village Farmhand",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_Tunic_Tan",
+     "style": "tunic",
+     "colour": "Tan",
+     "trim": "Brown",
+     "metal": null
+    },
+    "pants": {
+     "object": "Pants_Trousers_Umber",
+     "style": "trousers",
+     "colour": "Umber",
+     "trim": null,
+     "metal": null
+    },
+    "hat": {
+     "object": "Hat_Straw_Brown",
+     "style": "straw",
+     "colour": "Brown",
+     "trim": null,
+     "metal": null
+    },
+    "boots": {
+     "object": "Boots_Shoes_Brown",
+     "style": "shoes",
+     "colour": "Brown",
+     "trim": null,
+     "metal": null
+    },
+    "gloves": {
+     "object": "Gloves_Fingerless_Tan",
+     "style": "fingerless",
+     "colour": "Tan",
+     "trim": null,
+     "metal": null
+    },
+    "cape": {
+     "object": "Cape_Scarf_Olive",
+     "style": "scarf",
+     "colour": "Olive",
+     "trim": null,
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 2,
+   "id": "wardrobe_02",
+   "title": "Crimson Duelist",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_Doublet_Crimson",
+     "style": "doublet",
+     "colour": "Crimson",
+     "trim": "Gold",
+     "metal": null
+    },
+    "pants": {
+     "object": "Pants_Breeches_Charcoal",
+     "style": "breeches",
+     "colour": "Charcoal",
+     "trim": "Crimson",
+     "metal": null
+    },
+    "hat": {
+     "object": "Hat_WideBrim_Charcoal",
+     "style": "wide_brim",
+     "colour": "Charcoal",
+     "trim": "Crimson",
+     "metal": null
+    },
+    "boots": {
+     "object": "Boots_Cuffed_Black",
+     "style": "cuffed",
+     "colour": "Black",
+     "trim": "Brown",
+     "metal": null
+    },
+    "gloves": {
+     "object": "Gloves_Leather_Black",
+     "style": "leather",
+     "colour": "Black",
+     "trim": null,
+     "metal": null
+    },
+    "cape": {
+     "object": "Cape_Half_Crimson",
+     "style": "half",
+     "colour": "Crimson",
+     "trim": "Gold",
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 3,
+   "id": "wardrobe_03",
+   "title": "Forest Ranger",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_Jerkin_Brown",
+     "style": "jerkin",
+     "colour": "Brown",
+     "trim": "Umber",
+     "metal": null
+    },
+    "pants": {
+     "object": "Pants_Trousers_Forest",
+     "style": "trousers",
+     "colour": "Forest",
+     "trim": null,
+     "metal": null
+    },
+    "hat": {
+     "object": "Hat_Hood_Forest",
+     "style": "hood",
+     "colour": "Forest",
+     "trim": null,
+     "metal": null
+    },
+    "boots": {
+     "object": "Boots_Tall_Brown",
+     "style": "tall",
+     "colour": "Brown",
+     "trim": null,
+     "metal": null
+    },
+    "gloves": {
+     "object": "Gloves_Bracers_Umber",
+     "style": "bracers",
+     "colour": "Umber",
+     "trim": "Brown",
+     "metal": null
+    },
+    "cape": {
+     "object": "Cape_Cloak_Forest",
+     "style": "cloak",
+     "colour": "Forest",
+     "trim": null,
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 4,
+   "id": "wardrobe_04",
+   "title": "Royal Knight",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_Cuirass_Royal",
+     "style": "cuirass",
+     "colour": "Royal",
+     "trim": "Gold",
+     "metal": "Steel"
+    },
+    "pants": {
+     "object": "Pants_Plate_Charcoal",
+     "style": "plate",
+     "colour": "Charcoal",
+     "trim": "Cream",
+     "metal": "Steel"
+    },
+    "hat": {
+     "object": "Hat_GreatHelm_Steel",
+     "style": "great_helm",
+     "colour": "Steel",
+     "trim": "Gold",
+     "metal": "Steel"
+    },
+    "boots": {
+     "object": "Boots_Sabatons_Steel",
+     "style": "sabatons",
+     "colour": "Steel",
+     "trim": "Cream",
+     "metal": "Steel"
+    },
+    "gloves": {
+     "object": "Gloves_Gauntlet_Steel",
+     "style": "gauntlet",
+     "colour": "Steel",
+     "trim": "Cream",
+     "metal": "Steel"
+    },
+    "cape": {
+     "object": "Cape_Royal_Royal",
+     "style": "royal",
+     "colour": "Royal",
+     "trim": "Gold",
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 5,
+   "id": "wardrobe_05",
+   "title": "Desert Nomad",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_Robe_Sand",
+     "style": "robe",
+     "colour": "Sand",
+     "trim": "Rust",
+     "metal": null
+    },
+    "pants": {
+     "object": "Pants_Baggy_Cream",
+     "style": "baggy",
+     "colour": "Cream",
+     "trim": null,
+     "metal": null
+    },
+    "hat": {
+     "object": "Hat_Turban_Cream",
+     "style": "turban",
+     "colour": "Cream",
+     "trim": "Rust",
+     "metal": null
+    },
+    "boots": {
+     "object": "Boots_Sandals_Brown",
+     "style": "sandals",
+     "colour": "Brown",
+     "trim": "Tan",
+     "metal": null
+    },
+    "gloves": {
+     "object": "Gloves_Wraps_Cream",
+     "style": "wraps",
+     "colour": "Cream",
+     "trim": null,
+     "metal": null
+    },
+    "cape": {
+     "object": "Cape_Scarf_Rust",
+     "style": "scarf",
+     "colour": "Rust",
+     "trim": null,
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 6,
+   "id": "wardrobe_06",
+   "title": "Sellsword",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_Brigandine_Plum",
+     "style": "brigandine",
+     "colour": "Plum",
+     "trim": "Cream",
+     "metal": "Brass"
+    },
+    "pants": {
+     "object": "Pants_Patched_Olive",
+     "style": "patched",
+     "colour": "Olive",
+     "trim": "Umber",
+     "metal": null
+    },
+    "hat": {
+     "object": "Hat_Kettle_Iron",
+     "style": "kettle",
+     "colour": "Iron",
+     "trim": null,
+     "metal": null
+    },
+    "boots": {
+     "object": "Boots_Strapped_Brown",
+     "style": "strapped",
+     "colour": "Brown",
+     "trim": "Umber",
+     "metal": null
+    },
+    "gloves": {
+     "object": "Gloves_Leather_Brown",
+     "style": "leather",
+     "colour": "Brown",
+     "trim": null,
+     "metal": null
+    },
+    "cape": {
+     "object": "Cape_Tattered_Charcoal",
+     "style": "tattered",
+     "colour": "Charcoal",
+     "trim": null,
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 7,
+   "id": "wardrobe_07",
+   "title": "Northern Raider",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_Mail_Brown",
+     "style": "mail",
+     "colour": "Brown",
+     "trim": "Cream",
+     "metal": "Iron"
+    },
+    "pants": {
+     "object": "Pants_Wrapped_Olive",
+     "style": "wrapped",
+     "colour": "Olive",
+     "trim": "Cream",
+     "metal": null
+    },
+    "hat": {
+     "object": "Hat_NasalHelm_Iron",
+     "style": "nasal_helm",
+     "colour": "Iron",
+     "trim": null,
+     "metal": null
+    },
+    "boots": {
+     "object": "Boots_Fur_Brown",
+     "style": "fur",
+     "colour": "Brown",
+     "trim": null,
+     "metal": null
+    },
+    "gloves": {
+     "object": "Gloves_Wraps_Tan",
+     "style": "wraps",
+     "colour": "Tan",
+     "trim": null,
+     "metal": null
+    },
+    "cape": {
+     "object": "Cape_FurCollar_Umber",
+     "style": "fur_collar",
+     "colour": "Umber",
+     "trim": null,
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 8,
+   "id": "wardrobe_08",
+   "title": "Court Noble",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_Doublet_Purple",
+     "style": "doublet",
+     "colour": "Purple",
+     "trim": "Gold",
+     "metal": null
+    },
+    "pants": {
+     "object": "Pants_Striped_Violet",
+     "style": "striped",
+     "colour": "Violet",
+     "trim": "Gold",
+     "metal": null
+    },
+    "hat": {
+     "object": "Hat_Beret_Purple",
+     "style": "beret",
+     "colour": "Purple",
+     "trim": "Gold",
+     "metal": null
+    },
+    "boots": {
+     "object": "Boots_Cuffed_Black",
+     "style": "cuffed",
+     "colour": "Black",
+     "trim": "Purple",
+     "metal": null
+    },
+    "gloves": {
+     "object": "Gloves_Cloth_White",
+     "style": "cloth",
+     "colour": "White",
+     "trim": null,
+     "metal": null
+    },
+    "cape": {
+     "object": "Cape_Half_Violet",
+     "style": "half",
+     "colour": "Violet",
+     "trim": "Gold",
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 9,
+   "id": "wardrobe_09",
+   "title": "Grey Wanderer",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_Robe_Grey",
+     "style": "robe",
+     "colour": "Grey",
+     "trim": "Charcoal",
+     "metal": null
+    },
+    "pants": {
+     "object": "Pants_Trousers_Charcoal",
+     "style": "trousers",
+     "colour": "Charcoal",
+     "trim": null,
+     "metal": null
+    },
+    "hat": {
+     "object": "Hat_Wizard_Grey",
+     "style": "wizard",
+     "colour": "Grey",
+     "trim": "Charcoal",
+     "metal": null
+    },
+    "boots": {
+     "object": "Boots_Shoes_Umber",
+     "style": "shoes",
+     "colour": "Umber",
+     "trim": null,
+     "metal": null
+    },
+    "gloves": {
+     "object": "Gloves_Fingerless_Charcoal",
+     "style": "fingerless",
+     "colour": "Charcoal",
+     "trim": null,
+     "metal": null
+    },
+    "cape": {
+     "object": "Cape_Cloak_Grey",
+     "style": "cloak",
+     "colour": "Grey",
+     "trim": null,
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 10,
+   "id": "wardrobe_10",
+   "title": "Harbour Sailor",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_Vest_Navy",
+     "style": "vest",
+     "colour": "Navy",
+     "trim": "Cream",
+     "metal": null
+    },
+    "pants": {
+     "object": "Pants_Striped_Cream",
+     "style": "striped",
+     "colour": "Cream",
+     "trim": "Navy",
+     "metal": null
+    },
+    "hat": {
+     "object": "Hat_Bandana_Scarlet",
+     "style": "bandana",
+     "colour": "Scarlet",
+     "trim": null,
+     "metal": null
+    },
+    "boots": {
+     "object": "Boots_Shoes_Black",
+     "style": "shoes",
+     "colour": "Black",
+     "trim": null,
+     "metal": null
+    },
+    "gloves": {
+     "object": "Gloves_Fingerless_Navy",
+     "style": "fingerless",
+     "colour": "Navy",
+     "trim": null,
+     "metal": null
+    },
+    "cape": {
+     "object": "Cape_Scarf_Scarlet",
+     "style": "scarf",
+     "colour": "Scarlet",
+     "trim": null,
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 11,
+   "id": "wardrobe_11",
+   "title": "Emerald Herald",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_Tabard_Emerald",
+     "style": "tabard",
+     "colour": "Emerald",
+     "trim": "Gold",
+     "metal": null
+    },
+    "pants": {
+     "object": "Pants_Trousers_Charcoal",
+     "style": "trousers",
+     "colour": "Charcoal",
+     "trim": null,
+     "metal": null
+    },
+    "hat": {
+     "object": "Hat_Cap_Emerald",
+     "style": "cap",
+     "colour": "Emerald",
+     "trim": "Gold",
+     "metal": null
+    },
+    "boots": {
+     "object": "Boots_Tall_Black",
+     "style": "tall",
+     "colour": "Black",
+     "trim": null,
+     "metal": null
+    },
+    "gloves": {
+     "object": "Gloves_Cloth_Cream",
+     "style": "cloth",
+     "colour": "Cream",
+     "trim": null,
+     "metal": null
+    },
+    "cape": {
+     "object": "Cape_Short_Emerald",
+     "style": "short",
+     "colour": "Emerald",
+     "trim": "Gold",
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 12,
+   "id": "wardrobe_12",
+   "title": "Highland Warrior",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_Vest_Umber",
+     "style": "vest",
+     "colour": "Umber",
+     "trim": "Brown",
+     "metal": null
+    },
+    "pants": {
+     "object": "Pants_Kilt_Forest",
+     "style": "kilt",
+     "colour": "Forest",
+     "trim": "Crimson",
+     "metal": null
+    },
+    "hat": {
+     "object": "Hat_Headband_Crimson",
+     "style": "headband",
+     "colour": "Crimson",
+     "trim": "Brass",
+     "metal": null
+    },
+    "boots": {
+     "object": "Boots_Wraps_Tan",
+     "style": "wraps",
+     "colour": "Tan",
+     "trim": null,
+     "metal": null
+    },
+    "gloves": {
+     "object": "Gloves_Bracers_Brown",
+     "style": "bracers",
+     "colour": "Brown",
+     "trim": "Umber",
+     "metal": null
+    },
+    "cape": {
+     "object": "Cape_Sash_Forest",
+     "style": "sash",
+     "colour": "Forest",
+     "trim": "Crimson",
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 13,
+   "id": "wardrobe_13",
+   "title": "Black Templar",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_Cuirass_Black",
+     "style": "cuirass",
+     "colour": "Black",
+     "trim": "Steel",
+     "metal": "BlackIron"
+    },
+    "pants": {
+     "object": "Pants_Plate_Black",
+     "style": "plate",
+     "colour": "Black",
+     "trim": "Cream",
+     "metal": "BlackIron"
+    },
+    "hat": {
+     "object": "Hat_Coif_Iron",
+     "style": "coif",
+     "colour": "Iron",
+     "trim": "Cream",
+     "metal": "Iron"
+    },
+    "boots": {
+     "object": "Boots_Sabatons_BlackIron",
+     "style": "sabatons",
+     "colour": "BlackIron",
+     "trim": "Cream",
+     "metal": "BlackIron"
+    },
+    "gloves": {
+     "object": "Gloves_Gauntlet_BlackIron",
+     "style": "gauntlet",
+     "colour": "BlackIron",
+     "trim": "Cream",
+     "metal": "BlackIron"
+    },
+    "cape": {
+     "object": "Cape_Tattered_Black",
+     "style": "tattered",
+     "colour": "Black",
+     "trim": null,
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 14,
+   "id": "wardrobe_14",
+   "title": "Sky Monk",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_Robe_Orange",
+     "style": "robe",
+     "colour": "Orange",
+     "trim": "Mustard",
+     "metal": null
+    },
+    "pants": {
+     "object": "Pants_Baggy_Mustard",
+     "style": "baggy",
+     "colour": "Mustard",
+     "trim": null,
+     "metal": null
+    },
+    "hat": {
+     "object": "Hat_Straw_Sand",
+     "style": "straw",
+     "colour": "Sand",
+     "trim": "Orange",
+     "metal": null
+    },
+    "boots": {
+     "object": "Boots_Sandals_Umber",
+     "style": "sandals",
+     "colour": "Umber",
+     "trim": "Brown",
+     "metal": null
+    },
+    "gloves": {
+     "object": "Gloves_Wraps_Mustard",
+     "style": "wraps",
+     "colour": "Mustard",
+     "trim": null,
+     "metal": null
+    },
+    "cape": {
+     "object": "Cape_Scarf_Orange",
+     "style": "scarf",
+     "colour": "Orange",
+     "trim": null,
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 15,
+   "id": "wardrobe_15",
+   "title": "Marsh Poacher",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_Poncho_Olive",
+     "style": "poncho",
+     "colour": "Olive",
+     "trim": "Umber",
+     "metal": null
+    },
+    "pants": {
+     "object": "Pants_Wrapped_Umber",
+     "style": "wrapped",
+     "colour": "Umber",
+     "trim": "Olive",
+     "metal": null
+    },
+    "hat": {
+     "object": "Hat_Hood_Olive",
+     "style": "hood",
+     "colour": "Olive",
+     "trim": null,
+     "metal": null
+    },
+    "boots": {
+     "object": "Boots_Tall_Umber",
+     "style": "tall",
+     "colour": "Umber",
+     "trim": null,
+     "metal": null
+    },
+    "gloves": {
+     "object": "Gloves_Fingerless_Olive",
+     "style": "fingerless",
+     "colour": "Olive",
+     "trim": null,
+     "metal": null
+    },
+    "cape": {
+     "object": "Cape_Scarf_Umber",
+     "style": "scarf",
+     "colour": "Umber",
+     "trim": null,
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 16,
+   "id": "wardrobe_16",
+   "title": "Golden Captain",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_Cuirass_Gold",
+     "style": "cuirass",
+     "colour": "Gold",
+     "trim": "Crimson",
+     "metal": "Gold"
+    },
+    "pants": {
+     "object": "Pants_Breeches_Crimson",
+     "style": "breeches",
+     "colour": "Crimson",
+     "trim": "Gold",
+     "metal": null
+    },
+    "hat": {
+     "object": "Hat_Morion_Crimson",
+     "style": "morion",
+     "colour": "Crimson",
+     "trim": "Gold",
+     "metal": "Gold"
+    },
+    "boots": {
+     "object": "Boots_Riding_Brown",
+     "style": "riding",
+     "colour": "Brown",
+     "trim": "Gold",
+     "metal": null
+    },
+    "gloves": {
+     "object": "Gloves_Gauntlet_Gold",
+     "style": "gauntlet",
+     "colour": "Gold",
+     "trim": "Cream",
+     "metal": "Gold"
+    },
+    "cape": {
+     "object": "Cape_Royal_Crimson",
+     "style": "royal",
+     "colour": "Crimson",
+     "trim": "Gold",
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 17,
+   "id": "wardrobe_17",
+   "title": "Winter Trapper",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_Coat_Umber",
+     "style": "coat",
+     "colour": "Umber",
+     "trim": "Cream",
+     "metal": null
+    },
+    "pants": {
+     "object": "Pants_Trousers_Charcoal",
+     "style": "trousers",
+     "colour": "Charcoal",
+     "trim": null,
+     "metal": null
+    },
+    "hat": {
+     "object": "Hat_FurCap_Umber",
+     "style": "fur_cap",
+     "colour": "Umber",
+     "trim": null,
+     "metal": null
+    },
+    "boots": {
+     "object": "Boots_Fur_Umber",
+     "style": "fur",
+     "colour": "Umber",
+     "trim": null,
+     "metal": null
+    },
+    "gloves": {
+     "object": "Gloves_Long_Brown",
+     "style": "long",
+     "colour": "Brown",
+     "trim": "Umber",
+     "metal": null
+    },
+    "cape": {
+     "object": "Cape_FurCollar_Charcoal",
+     "style": "fur_collar",
+     "colour": "Charcoal",
+     "trim": null,
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 18,
+   "id": "wardrobe_18",
+   "title": "Teal Corsair",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_Coat_Teal",
+     "style": "coat",
+     "colour": "Teal",
+     "trim": "Gold",
+     "metal": null
+    },
+    "pants": {
+     "object": "Pants_Striped_Charcoal",
+     "style": "striped",
+     "colour": "Charcoal",
+     "trim": "Cream",
+     "metal": null
+    },
+    "hat": {
+     "object": "Hat_WideBrim_Charcoal",
+     "style": "wide_brim",
+     "colour": "Charcoal",
+     "trim": "Teal",
+     "metal": null
+    },
+    "boots": {
+     "object": "Boots_Cuffed_Brown",
+     "style": "cuffed",
+     "colour": "Brown",
+     "trim": "Tan",
+     "metal": null
+    },
+    "gloves": {
+     "object": "Gloves_Leather_Umber",
+     "style": "leather",
+     "colour": "Umber",
+     "trim": null,
+     "metal": null
+    },
+    "cape": {
+     "object": "Cape_Sash_Teal",
+     "style": "sash",
+     "colour": "Teal",
+     "trim": "Gold",
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 19,
+   "id": "wardrobe_19",
+   "title": "Rose Bard",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_Doublet_Rose",
+     "style": "doublet",
+     "colour": "Rose",
+     "trim": "Cream",
+     "metal": null
+    },
+    "pants": {
+     "object": "Pants_Breeches_Sky",
+     "style": "breeches",
+     "colour": "Sky",
+     "trim": "Rose",
+     "metal": null
+    },
+    "hat": {
+     "object": "Hat_Cap_Rose",
+     "style": "cap",
+     "colour": "Rose",
+     "trim": "Cream",
+     "metal": null
+    },
+    "boots": {
+     "object": "Boots_Shoes_Tan",
+     "style": "shoes",
+     "colour": "Tan",
+     "trim": null,
+     "metal": null
+    },
+    "gloves": {
+     "object": "Gloves_Cloth_Cream",
+     "style": "cloth",
+     "colour": "Cream",
+     "trim": null,
+     "metal": null
+    },
+    "cape": {
+     "object": "Cape_Feathered_Sky",
+     "style": "feathered",
+     "colour": "Sky",
+     "trim": "White",
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 20,
+   "id": "wardrobe_20",
+   "title": "Ash Executioner",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_Tunic_Charcoal",
+     "style": "tunic",
+     "colour": "Charcoal",
+     "trim": "Black",
+     "metal": null
+    },
+    "pants": {
+     "object": "Pants_Trousers_Black",
+     "style": "trousers",
+     "colour": "Black",
+     "trim": null,
+     "metal": null
+    },
+    "hat": {
+     "object": "Hat_Hood_Black",
+     "style": "hood",
+     "colour": "Black",
+     "trim": null,
+     "metal": null
+    },
+    "boots": {
+     "object": "Boots_Strapped_Black",
+     "style": "strapped",
+     "colour": "Black",
+     "trim": "Charcoal",
+     "metal": null
+    },
+    "gloves": {
+     "object": "Gloves_Long_Black",
+     "style": "long",
+     "colour": "Black",
+     "trim": "Charcoal",
+     "metal": null
+    },
+    "cape": {
+     "object": "Cape_Tattered_Charcoal",
+     "style": "tattered",
+     "colour": "Charcoal",
+     "trim": null,
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 21,
+   "id": "wardrobe_21",
+   "title": "Bronze Legionary",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_ScaleVest_Rust",
+     "style": "scale_vest",
+     "colour": "Rust",
+     "trim": "Brass",
+     "metal": null
+    },
+    "pants": {
+     "object": "Pants_Loincloth_Crimson",
+     "style": "loincloth",
+     "colour": "Crimson",
+     "trim": "Crimson",
+     "metal": null
+    },
+    "hat": {
+     "object": "Hat_PlumedCap_Brass",
+     "style": "plumed_cap",
+     "colour": "Brass",
+     "trim": "Crimson",
+     "metal": "Brass"
+    },
+    "boots": {
+     "object": "Boots_Greaves_Brown",
+     "style": "greaves",
+     "colour": "Brown",
+     "trim": "Cream",
+     "metal": "Brass"
+    },
+    "gloves": {
+     "object": "Gloves_Armrings_Brass",
+     "style": "armrings",
+     "colour": "Brass",
+     "trim": "Cream",
+     "metal": "Brass"
+    },
+    "cape": {
+     "object": "Cape_Short_Crimson",
+     "style": "short",
+     "colour": "Crimson",
+     "trim": "Gold",
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 22,
+   "id": "wardrobe_22",
+   "title": "Swamp Witch Doctor",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_Harness_Umber",
+     "style": "harness",
+     "colour": "Umber",
+     "trim": "Bone",
+     "metal": null
+    },
+    "pants": {
+     "object": "Pants_Sarong_Olive",
+     "style": "sarong",
+     "colour": "Olive",
+     "trim": "Mustard",
+     "metal": null
+    },
+    "hat": {
+     "object": "Hat_SkullMask_Umber",
+     "style": "skull_mask",
+     "colour": "Umber",
+     "trim": null,
+     "metal": null
+    },
+    "boots": {
+     "object": "Boots_BoneShin_Umber",
+     "style": "bone_shin",
+     "colour": "Umber",
+     "trim": "Olive",
+     "metal": null
+    },
+    "gloves": {
+     "object": "Gloves_Bone_Umber",
+     "style": "bone",
+     "colour": "Umber",
+     "trim": null,
+     "metal": null
+    },
+    "cape": {
+     "object": "Cape_LeafMantle_Forest",
+     "style": "leaf_mantle",
+     "colour": "Forest",
+     "trim": "Emerald",
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 23,
+   "id": "wardrobe_23",
+   "title": "Pirate Captain",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_Coat_Navy",
+     "style": "coat",
+     "colour": "Navy",
+     "trim": "Gold",
+     "metal": null
+    },
+    "pants": {
+     "object": "Pants_Striped_Cream",
+     "style": "striped",
+     "colour": "Cream",
+     "trim": "Crimson",
+     "metal": null
+    },
+    "hat": {
+     "object": "Hat_Tricorne_Charcoal",
+     "style": "tricorne",
+     "colour": "Charcoal",
+     "trim": "Gold",
+     "metal": null
+    },
+    "boots": {
+     "object": "Boots_Buckled_Black",
+     "style": "buckled",
+     "colour": "Black",
+     "trim": "Brown",
+     "metal": "Brass"
+    },
+    "gloves": {
+     "object": "Gloves_Leather_Umber",
+     "style": "leather",
+     "colour": "Umber",
+     "trim": null,
+     "metal": null
+    },
+    "cape": {
+     "object": "Cape_Sash_Crimson",
+     "style": "sash",
+     "colour": "Crimson",
+     "trim": "Gold",
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 24,
+   "id": "wardrobe_24",
+   "title": "Eastern Swordsman",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_Kimono_Indigo",
+     "style": "kimono",
+     "colour": "Indigo",
+     "trim": "Cream",
+     "metal": null
+    },
+    "pants": {
+     "object": "Pants_Hakama_Charcoal",
+     "style": "hakama",
+     "colour": "Charcoal",
+     "trim": "Indigo",
+     "metal": null
+    },
+    "hat": {
+     "object": "Hat_Conical_Sand",
+     "style": "conical",
+     "colour": "Sand",
+     "trim": null,
+     "metal": null
+    },
+    "boots": {
+     "object": "Boots_Sandals_Umber",
+     "style": "sandals",
+     "colour": "Umber",
+     "trim": "Cream",
+     "metal": null
+    },
+    "gloves": {
+     "object": "Gloves_Wraps_Cream",
+     "style": "wraps",
+     "colour": "Cream",
+     "trim": null,
+     "metal": null
+    },
+    "cape": {
+     "object": "Cape_LongScarf_Cream",
+     "style": "long_scarf",
+     "colour": "Cream",
+     "trim": "Indigo",
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 25,
+   "id": "wardrobe_25",
+   "title": "Iron Sentinel",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_HalfPlate_Charcoal",
+     "style": "half_plate",
+     "colour": "Charcoal",
+     "trim": "Cream",
+     "metal": "Steel"
+    },
+    "pants": {
+     "object": "Pants_ScaleLegs_Charcoal",
+     "style": "scale_legs",
+     "colour": "Charcoal",
+     "trim": "Cream",
+     "metal": "Steel"
+    },
+    "hat": {
+     "object": "Hat_Barbute_Steel",
+     "style": "barbute",
+     "colour": "Steel",
+     "trim": "Crimson",
+     "metal": "Steel"
+    },
+    "boots": {
+     "object": "Boots_PlatedTall_Black",
+     "style": "plated_tall",
+     "colour": "Black",
+     "trim": "Cream",
+     "metal": "Steel"
+    },
+    "gloves": {
+     "object": "Gloves_WrappedGauntlet_Cream",
+     "style": "wrapped_gauntlet",
+     "colour": "Cream",
+     "trim": "Cream",
+     "metal": "Steel"
+    },
+    "cape": {
+     "object": "Cape_TornShort_Crimson",
+     "style": "torn_short",
+     "colour": "Crimson",
+     "trim": null,
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 26,
+   "id": "wardrobe_26",
+   "title": "Court Jester",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_Doublet_Scarlet",
+     "style": "doublet",
+     "colour": "Scarlet",
+     "trim": "Mustard",
+     "metal": null
+    },
+    "pants": {
+     "object": "Pants_Hose_Mustard",
+     "style": "hose",
+     "colour": "Mustard",
+     "trim": "Scarlet",
+     "metal": null
+    },
+    "hat": {
+     "object": "Hat_JesterCap_Scarlet",
+     "style": "jester_cap",
+     "colour": "Scarlet",
+     "trim": "Mustard",
+     "metal": "Gold"
+    },
+    "boots": {
+     "object": "Boots_Curled_Scarlet",
+     "style": "curled",
+     "colour": "Scarlet",
+     "trim": null,
+     "metal": null
+    },
+    "gloves": {
+     "object": "Gloves_Cloth_Mustard",
+     "style": "cloth",
+     "colour": "Mustard",
+     "trim": null,
+     "metal": null
+    },
+    "cape": {
+     "object": "Cape_Patterned_Mustard",
+     "style": "patterned",
+     "colour": "Mustard",
+     "trim": "Scarlet",
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 27,
+   "id": "wardrobe_27",
+   "title": "Dune Raider",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_Wrap_Sand",
+     "style": "wrap",
+     "colour": "Sand",
+     "trim": "Rust",
+     "metal": null
+    },
+    "pants": {
+     "object": "Pants_Baggy_Umber",
+     "style": "baggy",
+     "colour": "Umber",
+     "trim": null,
+     "metal": null
+    },
+    "hat": {
+     "object": "Hat_Cowl_Sand",
+     "style": "cowl",
+     "colour": "Sand",
+     "trim": "Rust",
+     "metal": null
+    },
+    "boots": {
+     "object": "Boots_Wraps_Sand",
+     "style": "wraps",
+     "colour": "Sand",
+     "trim": null,
+     "metal": null
+    },
+    "gloves": {
+     "object": "Gloves_Elbow_Umber",
+     "style": "elbow",
+     "colour": "Umber",
+     "trim": "Rust",
+     "metal": null
+    },
+    "cape": {
+     "object": "Cape_HoodedCloak_Sand",
+     "style": "hooded_cloak",
+     "colour": "Sand",
+     "trim": "Rust",
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 28,
+   "id": "wardrobe_28",
+   "title": "Bog Hermit",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_FurVest_Umber",
+     "style": "fur_vest",
+     "colour": "Umber",
+     "trim": null,
+     "metal": null
+    },
+    "pants": {
+     "object": "Pants_Torn_Olive",
+     "style": "torn",
+     "colour": "Olive",
+     "trim": null,
+     "metal": null
+    },
+    "hat": {
+     "object": "Hat_Laurel_Forest",
+     "style": "laurel",
+     "colour": "Forest",
+     "trim": "Cream",
+     "metal": "Brass"
+    },
+    "boots": {
+     "object": "Boots_Moccasins_Umber",
+     "style": "moccasins",
+     "colour": "Umber",
+     "trim": "Bone",
+     "metal": null
+    },
+    "gloves": {
+     "object": "Gloves_Fingerless_Umber",
+     "style": "fingerless",
+     "colour": "Umber",
+     "trim": null,
+     "metal": null
+    },
+    "cape": {
+     "object": "Cape_Shawl_Olive",
+     "style": "shawl",
+     "colour": "Olive",
+     "trim": "Umber",
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 29,
+   "id": "wardrobe_29",
+   "title": "Wine Merchant",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_Surcoat_Wine",
+     "style": "surcoat",
+     "colour": "Wine",
+     "trim": "Gold",
+     "metal": null
+    },
+    "pants": {
+     "object": "Pants_Puffed_Wine",
+     "style": "puffed",
+     "colour": "Wine",
+     "trim": "Cream",
+     "metal": null
+    },
+    "hat": {
+     "object": "Hat_Beret_Wine",
+     "style": "beret",
+     "colour": "Wine",
+     "trim": "Gold",
+     "metal": null
+    },
+    "boots": {
+     "object": "Boots_Cuffed_Brown",
+     "style": "cuffed",
+     "colour": "Brown",
+     "trim": "Tan",
+     "metal": null
+    },
+    "gloves": {
+     "object": "Gloves_Cloth_Cream",
+     "style": "cloth",
+     "colour": "Cream",
+     "trim": null,
+     "metal": null
+    },
+    "cape": {
+     "object": "Cape_Half_Wine",
+     "style": "half",
+     "colour": "Wine",
+     "trim": "Gold",
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 30,
+   "id": "wardrobe_30",
+   "title": "Dread Marauder",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_Harness_Black",
+     "style": "harness",
+     "colour": "Black",
+     "trim": "Iron",
+     "metal": null
+    },
+    "pants": {
+     "object": "Pants_Banded_Charcoal",
+     "style": "banded",
+     "colour": "Charcoal",
+     "trim": "Black",
+     "metal": null
+    },
+    "hat": {
+     "object": "Hat_SpikedHelm_BlackIron",
+     "style": "spiked_helm",
+     "colour": "BlackIron",
+     "trim": "Cream",
+     "metal": "BlackIron"
+    },
+    "boots": {
+     "object": "Boots_Spiked_Black",
+     "style": "spiked",
+     "colour": "Black",
+     "trim": "Cream",
+     "metal": "Iron"
+    },
+    "gloves": {
+     "object": "Gloves_Spiked_Black",
+     "style": "spiked",
+     "colour": "Black",
+     "trim": "Cream",
+     "metal": "Iron"
+    },
+    "cape": {
+     "object": "Cape_ChainMantle_Iron",
+     "style": "chain_mantle",
+     "colour": "Iron",
+     "trim": "Cream",
+     "metal": "Iron"
+    }
+   }
+  },
+  {
+   "index": 31,
+   "id": "wardrobe_31",
+   "title": "Temple Acolyte",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_LongTunic_White",
+     "style": "long_tunic",
+     "colour": "White",
+     "trim": "Gold",
+     "metal": null
+    },
+    "pants": {
+     "object": "Pants_Trousers_Cream",
+     "style": "trousers",
+     "colour": "Cream",
+     "trim": null,
+     "metal": null
+    },
+    "hat": {
+     "object": "Hat_Circlet_Gold",
+     "style": "circlet",
+     "colour": "Gold",
+     "trim": "Sky",
+     "metal": "Gold"
+    },
+    "boots": {
+     "object": "Boots_Sandals_Tan",
+     "style": "sandals",
+     "colour": "Tan",
+     "trim": "Cream",
+     "metal": null
+    },
+    "gloves": {
+     "object": "Gloves_Armrings_Gold",
+     "style": "armrings",
+     "colour": "Gold",
+     "trim": "Cream",
+     "metal": "Gold"
+    },
+    "cape": {
+     "object": "Cape_Shawl_Sky",
+     "style": "shawl",
+     "colour": "Sky",
+     "trim": "Gold",
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 32,
+   "id": "wardrobe_32",
+   "title": "Blacksmith",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_Apron_Cream",
+     "style": "apron",
+     "colour": "Cream",
+     "trim": "Umber",
+     "metal": null
+    },
+    "pants": {
+     "object": "Pants_Patched_Charcoal",
+     "style": "patched",
+     "colour": "Charcoal",
+     "trim": "Umber",
+     "metal": null
+    },
+    "hat": {
+     "object": "Hat_Headband_Rust",
+     "style": "headband",
+     "colour": "Rust",
+     "trim": "Iron",
+     "metal": null
+    },
+    "boots": {
+     "object": "Boots_Buckled_Umber",
+     "style": "buckled",
+     "colour": "Umber",
+     "trim": "Brown",
+     "metal": "Iron"
+    },
+    "gloves": {
+     "object": "Gloves_Long_Umber",
+     "style": "long",
+     "colour": "Umber",
+     "trim": "Brown",
+     "metal": null
+    },
+    "cape": {
+     "object": "Cape_Scarf_Grey",
+     "style": "scarf",
+     "colour": "Grey",
+     "trim": null,
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 33,
+   "id": "wardrobe_33",
+   "title": "Highwayman",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_Vest_Charcoal",
+     "style": "vest",
+     "colour": "Charcoal",
+     "trim": "Crimson",
+     "metal": null
+    },
+    "pants": {
+     "object": "Pants_Trousers_Black",
+     "style": "trousers",
+     "colour": "Black",
+     "trim": null,
+     "metal": null
+    },
+    "hat": {
+     "object": "Hat_DominoMask_Black",
+     "style": "domino_mask",
+     "colour": "Black",
+     "trim": null,
+     "metal": null
+    },
+    "boots": {
+     "object": "Boots_ThighHigh_Black",
+     "style": "thigh_high",
+     "colour": "Black",
+     "trim": "Charcoal",
+     "metal": null
+    },
+    "gloves": {
+     "object": "Gloves_Leather_Black",
+     "style": "leather",
+     "colour": "Black",
+     "trim": null,
+     "metal": null
+    },
+    "cape": {
+     "object": "Cape_Cloak_Charcoal",
+     "style": "cloak",
+     "colour": "Charcoal",
+     "trim": null,
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 34,
+   "id": "wardrobe_34",
+   "title": "Horse Archer",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_PaddedJack_Olive",
+     "style": "padded_jack",
+     "colour": "Olive",
+     "trim": "Umber",
+     "metal": null
+    },
+    "pants": {
+     "object": "Pants_Hose_Umber",
+     "style": "hose",
+     "colour": "Umber",
+     "trim": "Olive",
+     "metal": null
+    },
+    "hat": {
+     "object": "Hat_FurCap_Umber",
+     "style": "fur_cap",
+     "colour": "Umber",
+     "trim": null,
+     "metal": null
+    },
+    "boots": {
+     "object": "Boots_Riding_Brown",
+     "style": "riding",
+     "colour": "Brown",
+     "trim": "Umber",
+     "metal": null
+    },
+    "gloves": {
+     "object": "Gloves_Bracers_Umber",
+     "style": "bracers",
+     "colour": "Umber",
+     "trim": "Brown",
+     "metal": null
+    },
+    "cape": {
+     "object": "Cape_FurMantle_Umber",
+     "style": "fur_mantle",
+     "colour": "Umber",
+     "trim": null,
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 35,
+   "id": "wardrobe_35",
+   "title": "Emerald Warlord",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_Cuirass_Emerald",
+     "style": "cuirass",
+     "colour": "Emerald",
+     "trim": "Gold",
+     "metal": "Steel"
+    },
+    "pants": {
+     "object": "Pants_Plate_Forest",
+     "style": "plate",
+     "colour": "Forest",
+     "trim": "Cream",
+     "metal": "Steel"
+    },
+    "hat": {
+     "object": "Hat_HornedHelm_Iron",
+     "style": "horned_helm",
+     "colour": "Iron",
+     "trim": "Cream",
+     "metal": "Steel"
+    },
+    "boots": {
+     "object": "Boots_Greaves_Black",
+     "style": "greaves",
+     "colour": "Black",
+     "trim": "Cream",
+     "metal": "Steel"
+    },
+    "gloves": {
+     "object": "Gloves_Clawed_BlackIron",
+     "style": "clawed",
+     "colour": "BlackIron",
+     "trim": "Cream",
+     "metal": "Steel"
+    },
+    "cape": {
+     "object": "Cape_Banner_Emerald",
+     "style": "banner",
+     "colour": "Emerald",
+     "trim": "Gold",
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 36,
+   "id": "wardrobe_36",
+   "title": "Snow Scout",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_FurVest_White",
+     "style": "fur_vest",
+     "colour": "White",
+     "trim": null,
+     "metal": null
+    },
+    "pants": {
+     "object": "Pants_Wrapped_Grey",
+     "style": "wrapped",
+     "colour": "Grey",
+     "trim": "White",
+     "metal": null
+    },
+    "hat": {
+     "object": "Hat_Hood_White",
+     "style": "hood",
+     "colour": "White",
+     "trim": null,
+     "metal": null
+    },
+    "boots": {
+     "object": "Boots_Fur_Grey",
+     "style": "fur",
+     "colour": "Grey",
+     "trim": null,
+     "metal": null
+    },
+    "gloves": {
+     "object": "Gloves_Long_Grey",
+     "style": "long",
+     "colour": "Grey",
+     "trim": "White",
+     "metal": null
+    },
+    "cape": {
+     "object": "Cape_FurCollar_White",
+     "style": "fur_collar",
+     "colour": "White",
+     "trim": null,
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 37,
+   "id": "wardrobe_37",
+   "title": "Plague Doctor",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_Coat_Black",
+     "style": "coat",
+     "colour": "Black",
+     "trim": "Charcoal",
+     "metal": null
+    },
+    "pants": {
+     "object": "Pants_Trousers_Charcoal",
+     "style": "trousers",
+     "colour": "Charcoal",
+     "trim": null,
+     "metal": null
+    },
+    "hat": {
+     "object": "Hat_WideBrim_Black",
+     "style": "wide_brim",
+     "colour": "Black",
+     "trim": "Charcoal",
+     "metal": null
+    },
+    "boots": {
+     "object": "Boots_Tall_Black",
+     "style": "tall",
+     "colour": "Black",
+     "trim": null,
+     "metal": null
+    },
+    "gloves": {
+     "object": "Gloves_Elbow_Black",
+     "style": "elbow",
+     "colour": "Black",
+     "trim": "Charcoal",
+     "metal": null
+    },
+    "cape": {
+     "object": "Cape_Cloak_Black",
+     "style": "cloak",
+     "colour": "Black",
+     "trim": null,
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 38,
+   "id": "wardrobe_38",
+   "title": "Silk Dancer",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_Wrap_Rose",
+     "style": "wrap",
+     "colour": "Rose",
+     "trim": "Gold",
+     "metal": null
+    },
+    "pants": {
+     "object": "Pants_Sarong_Violet",
+     "style": "sarong",
+     "colour": "Violet",
+     "trim": "Gold",
+     "metal": null
+    },
+    "hat": {
+     "object": "Hat_Circlet_Gold",
+     "style": "circlet",
+     "colour": "Gold",
+     "trim": "Rose",
+     "metal": "Gold"
+    },
+    "boots": {
+     "object": "Boots_Sandals_Tan",
+     "style": "sandals",
+     "colour": "Tan",
+     "trim": "Gold",
+     "metal": null
+    },
+    "gloves": {
+     "object": "Gloves_Elbow_Rose",
+     "style": "elbow",
+     "colour": "Rose",
+     "trim": "Gold",
+     "metal": null
+    },
+    "cape": {
+     "object": "Cape_LongScarf_Violet",
+     "style": "long_scarf",
+     "colour": "Violet",
+     "trim": "Gold",
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 39,
+   "id": "wardrobe_39",
+   "title": "Grave Digger",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_LongTunic_Charcoal",
+     "style": "long_tunic",
+     "colour": "Charcoal",
+     "trim": "Grey",
+     "metal": null
+    },
+    "pants": {
+     "object": "Pants_Torn_Umber",
+     "style": "torn",
+     "colour": "Umber",
+     "trim": null,
+     "metal": null
+    },
+    "hat": {
+     "object": "Hat_Cowl_Charcoal",
+     "style": "cowl",
+     "colour": "Charcoal",
+     "trim": "Grey",
+     "metal": null
+    },
+    "boots": {
+     "object": "Boots_Wraps_Grey",
+     "style": "wraps",
+     "colour": "Grey",
+     "trim": null,
+     "metal": null
+    },
+    "gloves": {
+     "object": "Gloves_Wraps_Grey",
+     "style": "wraps",
+     "colour": "Grey",
+     "trim": null,
+     "metal": null
+    },
+    "cape": {
+     "object": "Cape_TornShort_Charcoal",
+     "style": "torn_short",
+     "colour": "Charcoal",
+     "trim": null,
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 40,
+   "id": "wardrobe_40",
+   "title": "River Fisherman",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_Vest_Teal",
+     "style": "vest",
+     "colour": "Teal",
+     "trim": "Cream",
+     "metal": null
+    },
+    "pants": {
+     "object": "Pants_Shorts_Sand",
+     "style": "shorts",
+     "colour": "Sand",
+     "trim": null,
+     "metal": null
+    },
+    "hat": {
+     "object": "Hat_Straw_Sand",
+     "style": "straw",
+     "colour": "Sand",
+     "trim": "Teal",
+     "metal": null
+    },
+    "boots": {
+     "object": "Boots_Sandals_Umber",
+     "style": "sandals",
+     "colour": "Umber",
+     "trim": "Tan",
+     "metal": null
+    },
+    "gloves": {
+     "object": "Gloves_Fingerless_Teal",
+     "style": "fingerless",
+     "colour": "Teal",
+     "trim": null,
+     "metal": null
+    },
+    "cape": {
+     "object": "Cape_Scarf_Cream",
+     "style": "scarf",
+     "colour": "Cream",
+     "trim": null,
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 41,
+   "id": "wardrobe_41",
+   "title": "Bronze Gladiator",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_Harness_Brown",
+     "style": "harness",
+     "colour": "Brown",
+     "trim": "Brass",
+     "metal": null
+    },
+    "pants": {
+     "object": "Pants_Loincloth_Umber",
+     "style": "loincloth",
+     "colour": "Umber",
+     "trim": "Crimson",
+     "metal": null
+    },
+    "hat": {
+     "object": "Hat_PlumedCap_Brass",
+     "style": "plumed_cap",
+     "colour": "Brass",
+     "trim": "Crimson",
+     "metal": "Brass"
+    },
+    "boots": {
+     "object": "Boots_Greaves_Umber",
+     "style": "greaves",
+     "colour": "Umber",
+     "trim": "Cream",
+     "metal": "Brass"
+    },
+    "gloves": {
+     "object": "Gloves_Spiked_Brown",
+     "style": "spiked",
+     "colour": "Brown",
+     "trim": "Cream",
+     "metal": "Brass"
+    },
+    "cape": {
+     "object": "Cape_Short_Crimson",
+     "style": "short",
+     "colour": "Crimson",
+     "trim": "Brass",
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 42,
+   "id": "wardrobe_42",
+   "title": "Crimson Cardinal",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_Robe_Crimson",
+     "style": "robe",
+     "colour": "Crimson",
+     "trim": "Gold",
+     "metal": null
+    },
+    "pants": {
+     "object": "Pants_Trousers_Crimson",
+     "style": "trousers",
+     "colour": "Crimson",
+     "trim": null,
+     "metal": null
+    },
+    "hat": {
+     "object": "Hat_Skullcap_Crimson",
+     "style": "skullcap",
+     "colour": "Crimson",
+     "trim": "Gold",
+     "metal": null
+    },
+    "boots": {
+     "object": "Boots_Shoes_Black",
+     "style": "shoes",
+     "colour": "Black",
+     "trim": null,
+     "metal": null
+    },
+    "gloves": {
+     "object": "Gloves_Cloth_Crimson",
+     "style": "cloth",
+     "colour": "Crimson",
+     "trim": null,
+     "metal": null
+    },
+    "cape": {
+     "object": "Cape_Royal_Crimson",
+     "style": "royal",
+     "colour": "Crimson",
+     "trim": "Gold",
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 43,
+   "id": "wardrobe_43",
+   "title": "Marsh Stalker",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_ScaleVest_Olive",
+     "style": "scale_vest",
+     "colour": "Olive",
+     "trim": "Teal",
+     "metal": null
+    },
+    "pants": {
+     "object": "Pants_Banded_Olive",
+     "style": "banded",
+     "colour": "Olive",
+     "trim": "Umber",
+     "metal": null
+    },
+    "hat": {
+     "object": "Hat_VeilHelm_Teal",
+     "style": "veil_helm",
+     "colour": "Teal",
+     "trim": "Cream",
+     "metal": "Iron"
+    },
+    "boots": {
+     "object": "Boots_Moccasins_Olive",
+     "style": "moccasins",
+     "colour": "Olive",
+     "trim": "Bone",
+     "metal": null
+    },
+    "gloves": {
+     "object": "Gloves_Mail_Olive",
+     "style": "mail",
+     "colour": "Olive",
+     "trim": "Cream",
+     "metal": "Iron"
+    },
+    "cape": {
+     "object": "Cape_LeafMantle_Olive",
+     "style": "leaf_mantle",
+     "colour": "Olive",
+     "trim": "Forest",
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 44,
+   "id": "wardrobe_44",
+   "title": "Sky Pirate",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_Doublet_Sky",
+     "style": "doublet",
+     "colour": "Sky",
+     "trim": "Cream",
+     "metal": null
+    },
+    "pants": {
+     "object": "Pants_Puffed_Navy",
+     "style": "puffed",
+     "colour": "Navy",
+     "trim": "Sky",
+     "metal": null
+    },
+    "hat": {
+     "object": "Hat_Tricorne_Navy",
+     "style": "tricorne",
+     "colour": "Navy",
+     "trim": "Sky",
+     "metal": null
+    },
+    "boots": {
+     "object": "Boots_Buckled_Brown",
+     "style": "buckled",
+     "colour": "Brown",
+     "trim": "Tan",
+     "metal": "Brass"
+    },
+    "gloves": {
+     "object": "Gloves_Fingerless_Navy",
+     "style": "fingerless",
+     "colour": "Navy",
+     "trim": null,
+     "metal": null
+    },
+    "cape": {
+     "object": "Cape_Feathered_Sky",
+     "style": "feathered",
+     "colour": "Sky",
+     "trim": "White",
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 45,
+   "id": "wardrobe_45",
+   "title": "Ashen Cultist",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_Robe_Charcoal",
+     "style": "robe",
+     "colour": "Charcoal",
+     "trim": "Crimson",
+     "metal": null
+    },
+    "pants": {
+     "object": "Pants_Trousers_Black",
+     "style": "trousers",
+     "colour": "Black",
+     "trim": null,
+     "metal": null
+    },
+    "hat": {
+     "object": "Hat_SkullMask_Charcoal",
+     "style": "skull_mask",
+     "colour": "Charcoal",
+     "trim": null,
+     "metal": null
+    },
+    "boots": {
+     "object": "Boots_Wraps_Charcoal",
+     "style": "wraps",
+     "colour": "Charcoal",
+     "trim": null,
+     "metal": null
+    },
+    "gloves": {
+     "object": "Gloves_Bone_Charcoal",
+     "style": "bone",
+     "colour": "Charcoal",
+     "trim": null,
+     "metal": null
+    },
+    "cape": {
+     "object": "Cape_HoodedCloak_Charcoal",
+     "style": "hooded_cloak",
+     "colour": "Charcoal",
+     "trim": "Crimson",
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 46,
+   "id": "wardrobe_46",
+   "title": "Golden Sultan",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_Kimono_Purple",
+     "style": "kimono",
+     "colour": "Purple",
+     "trim": "Gold",
+     "metal": null
+    },
+    "pants": {
+     "object": "Pants_Baggy_Cream",
+     "style": "baggy",
+     "colour": "Cream",
+     "trim": null,
+     "metal": null
+    },
+    "hat": {
+     "object": "Hat_Turban_Purple",
+     "style": "turban",
+     "colour": "Purple",
+     "trim": "Gold",
+     "metal": null
+    },
+    "boots": {
+     "object": "Boots_Curled_Gold",
+     "style": "curled",
+     "colour": "Gold",
+     "trim": null,
+     "metal": null
+    },
+    "gloves": {
+     "object": "Gloves_Armrings_Gold",
+     "style": "armrings",
+     "colour": "Gold",
+     "trim": "Cream",
+     "metal": "Gold"
+    },
+    "cape": {
+     "object": "Cape_Patterned_Purple",
+     "style": "patterned",
+     "colour": "Purple",
+     "trim": "Gold",
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 47,
+   "id": "wardrobe_47",
+   "title": "Steel Vanguard",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_Brigandine_Navy",
+     "style": "brigandine",
+     "colour": "Navy",
+     "trim": "Cream",
+     "metal": "Steel"
+    },
+    "pants": {
+     "object": "Pants_ScaleLegs_Navy",
+     "style": "scale_legs",
+     "colour": "Navy",
+     "trim": "Cream",
+     "metal": "Steel"
+    },
+    "hat": {
+     "object": "Hat_Sallet_Steel",
+     "style": "sallet",
+     "colour": "Steel",
+     "trim": "Navy",
+     "metal": "Steel"
+    },
+    "boots": {
+     "object": "Boots_PlatedTall_Charcoal",
+     "style": "plated_tall",
+     "colour": "Charcoal",
+     "trim": "Cream",
+     "metal": "Steel"
+    },
+    "gloves": {
+     "object": "Gloves_Gauntlet_Steel",
+     "style": "gauntlet",
+     "colour": "Steel",
+     "trim": "Cream",
+     "metal": "Steel"
+    },
+    "cape": {
+     "object": "Cape_Half_Navy",
+     "style": "half",
+     "colour": "Navy",
+     "trim": "Cream",
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 48,
+   "id": "wardrobe_48",
+   "title": "Wild Druid",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_Wrap_Forest",
+     "style": "wrap",
+     "colour": "Forest",
+     "trim": "Umber",
+     "metal": null
+    },
+    "pants": {
+     "object": "Pants_Torn_Umber",
+     "style": "torn",
+     "colour": "Umber",
+     "trim": null,
+     "metal": null
+    },
+    "hat": {
+     "object": "Hat_Laurel_Emerald",
+     "style": "laurel",
+     "colour": "Emerald",
+     "trim": "Cream",
+     "metal": "Brass"
+    },
+    "boots": {
+     "object": "Boots_Moccasins_Umber",
+     "style": "moccasins",
+     "colour": "Umber",
+     "trim": "Forest",
+     "metal": null
+    },
+    "gloves": {
+     "object": "Gloves_Bone_Umber",
+     "style": "bone",
+     "colour": "Umber",
+     "trim": null,
+     "metal": null
+    },
+    "cape": {
+     "object": "Cape_LeafMantle_Emerald",
+     "style": "leaf_mantle",
+     "colour": "Emerald",
+     "trim": "Forest",
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 49,
+   "id": "wardrobe_49",
+   "title": "Lamplighter",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_PaddedJack_Charcoal",
+     "style": "padded_jack",
+     "colour": "Charcoal",
+     "trim": "Mustard",
+     "metal": null
+    },
+    "pants": {
+     "object": "Pants_Hose_Charcoal",
+     "style": "hose",
+     "colour": "Charcoal",
+     "trim": "Mustard",
+     "metal": null
+    },
+    "hat": {
+     "object": "Hat_Cap_Charcoal",
+     "style": "cap",
+     "colour": "Charcoal",
+     "trim": "Mustard",
+     "metal": null
+    },
+    "boots": {
+     "object": "Boots_Shoes_Umber",
+     "style": "shoes",
+     "colour": "Umber",
+     "trim": null,
+     "metal": null
+    },
+    "gloves": {
+     "object": "Gloves_WrappedGauntlet_Grey",
+     "style": "wrapped_gauntlet",
+     "colour": "Grey",
+     "trim": "Cream",
+     "metal": "Iron"
+    },
+    "cape": {
+     "object": "Cape_LongScarf_Mustard",
+     "style": "long_scarf",
+     "colour": "Mustard",
+     "trim": "Charcoal",
+     "metal": null
+    }
+   }
+  },
+  {
+   "index": 50,
+   "id": "wardrobe_50",
+   "title": "Tundra Chieftain",
+   "pieces": {
+    "shirt": {
+     "object": "Shirt_FurVest_Grey",
+     "style": "fur_vest",
+     "colour": "Grey",
+     "trim": null,
+     "metal": null
+    },
+    "pants": {
+     "object": "Pants_Banded_Umber",
+     "style": "banded",
+     "colour": "Umber",
+     "trim": "Grey",
+     "metal": null
+    },
+    "hat": {
+     "object": "Hat_HornedHelm_Iron",
+     "style": "horned_helm",
+     "colour": "Iron",
+     "trim": "Cream",
+     "metal": "Iron"
+    },
+    "boots": {
+     "object": "Boots_Fur_Umber",
+     "style": "fur",
+     "colour": "Umber",
+     "trim": null,
+     "metal": null
+    },
+    "gloves": {
+     "object": "Gloves_Bracers_Umber",
+     "style": "bracers",
+     "colour": "Umber",
+     "trim": "Grey",
+     "metal": null
+    },
+    "cape": {
+     "object": "Cape_FurMantle_Grey",
+     "style": "fur_mantle",
+     "colour": "Grey",
+     "trim": null,
+     "metal": null
+    }
+   }
+  }
+ ]
+}

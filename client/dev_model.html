@@ -1,0 +1,31 @@
+<!doctype html>
+<!-- Throwaway model viewer: load a GLB, list its skeleton, and look at it.
+     ?m=models/human/Fighter.glb -->
+<html><head><meta charset="utf-8"><title>Model check</title>
+<style>body{margin:0;background:#15181d;color:#ddd;font:12px system-ui} #info{position:fixed;left:8px;top:8px;max-height:96vh;overflow:auto;white-space:pre;background:#0009;padding:8px;border-radius:6px}</style>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+</head><body><div id="info">loading…</div>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+const url = new URLSearchParams(location.search).get('m') || 'models/human/Fighter.glb';
+const renderer = new THREE.WebGLRenderer({ antialias: true }); renderer.setSize(innerWidth, innerHeight); document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x20242b);
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 100); camera.position.set(2.2, 1.6, 3.2);
+const controls = new OrbitControls(camera, renderer.domElement); controls.target.set(0, 1.0, 0);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x404050, 1.6));
+const d = new THREE.DirectionalLight(0xffffff, 1.4); d.position.set(3, 6, 4); scene.add(d);
+scene.add(new THREE.GridHelper(6, 12, 0x445, 0x334));
+new GLTFLoader().load(url, (g) => {
+  scene.add(g.scene);
+  const box = new THREE.Box3().setFromObject(g.scene), size = box.getSize(new THREE.Vector3());
+  const bones = []; let meshes = 0, verts = 0;
+  g.scene.traverse(o => { if (o.isBone) bones.push(o.name); if (o.isMesh || o.isSkinnedMesh) { meshes++; verts += o.geometry.attributes.position.count; } });
+  const hands = bones.filter(n => /Hand|Index|Thumb/.test(n));
+  document.getElementById('info').textContent =
+    `${url}\nsize ${size.x.toFixed(2)} x ${size.y.toFixed(2)} x ${size.z.toFixed(2)} m\nmeshes ${meshes}  verts ${verts}  bones ${bones.length}\nanimations: ${g.animations.map(a => a.name + ' (' + a.duration.toFixed(1) + 's)').join(', ') || 'none'}\n\nhand chain:\n  ${hands.join('\n  ')}\n\nall bones:\n  ${bones.join('\n  ')}`;
+  window.__model = g;
+}, undefined, (e) => { document.getElementById('info').textContent = 'FAILED: ' + e; });
+renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+</script></body></html>

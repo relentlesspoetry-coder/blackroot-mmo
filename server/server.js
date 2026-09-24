@@ -5,6 +5,7 @@
 
 import http from 'http';
 import fs from 'fs';
+import crypto from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { WebSocketServer } from 'ws';
@@ -13,17 +14,19 @@ import { hiddencave } from './zones/hiddencave.js';
 import { killingfields } from './zones/killingfields.js';
 import {
   PLAYER, ELITE, MONSTER_TEMPLATES,
-  xpForLevel, xpTotalForLevel, levelForXp, MAX_LEVEL, attackRoll, defenceRoll, hitChance, scaledMonster, rollLoot, REGEN,
-  TICK, DEFAULT_ATTACK_SPEED, CLASSES, DEFAULT_CLASS, classDef, classStats, abilityCost,
-  maxHit, rollSwing, rollMonsterSwing, MEDITATION, meditationHealPerTick, rollGear } from './balance.js';
-import { ITEMS, SLOTS, SLOT_INFO, DOLL, itemDef, slotOf, valueOf, equipStats, slotsFor, emptySlots } from './items.js';
+  xpForLevel, xpTotalForLevel, levelForXp, xpForKill, MAX_LEVEL, attackRoll, defenceRoll, hitChance, scaledMonster, rollLoot, REGEN,
+  TICK, CLASSES, DEFAULT_CLASS, classDef, classStats, abilityCost,
+  maxHit, MEDITATION, meditationHealPerTick, rollGear } from './balance.js';
+import { ITEMS, SLOTS, SLOT_INFO, DOLL, itemDef, slotOf, valueOf, equipStats, slotsFor, emptySlots, stackable, bagStacks } from './items.js';
+import { weaponProfile, swingSeconds, weaponRange, swingBand, resolveAttack, facing,
+         MOB_ARCH, MOB_DEF, archOf, addThreat, threatOf, dropThreat, clearThreat, taunt, topThreat, decayThreat } from './combat.js';
 import { BOSS_TEMPLATES, BOSS_ITEMS, maybeSpawnCluckifer, stepCluckifer, stepMinion, stepHazards, hazardList, onMinionKilled, onBossKilled } from './cluckifer.js';
 import { isSpell, checkCast, castSpell, costOf, hymnTick, mitigate, onLethal, afterHit, resistsDot, monsterDmgMult, fleeStep, stepHots, stepSanctuaries, sanctuaryList } from './cleric.js';
 import { isBardSpell, checkBardCast, castBard, spendSongCharges, songAmp, atkSpeedMult, castTimeMult, meditationMult, manaRegenMult, controlMult, hasBardDebuff,
   bardMonsterDmgMult, bardMonsterDefMult, bardMonsterTakenMult, bardMonsterSpeedMult, bardMonsterAtkSpeedMult, stepSongs } from './bard.js';
 import {
   dist2, closestOnPolyline, mulberry32, pointInPoly, polyCentroid, generateTrees, generateScatter, generateHanging,
-  mergeOutlines, roughenOutline, generateEdgeForest,
+  mergeOutlines, roughenOutline, generateEdgeForest, inHouse,
   caveOutline,
 } from './worldgen.js';
 import {
@@ -41,22 +44,23 @@ function rand(min, max) { return min + Math.random() * (max - min); }
 // A player's chosen appearance (see HAIR_STYLES / OUTFITS in the client): hair
 // style and outfit as indices, colours as '#rrggbb'. Anything off is dropped.
 function sanitizeLook(raw) {
+  // A look is a body colour and what they are wearing: one of the wardrobe's
+  // 50 outfits, with optional per-slot overrides by piece name (0 = bare).
   const o = raw && typeof raw === 'object' ? raw : {};
-  const idx = (v, max, d) => { const n = Math.floor(Number(v)); return Number.isFinite(n) && n >= 0 && n <= max ? n : d; };
   const col = (v, d) => (typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v)) ? v.toLowerCase() : d;
-  const look = { hair: idx(o.hair, 30, 9), hairColor: col(o.hairColor, '#4a2e1a'), skin: col(o.skin, '#cba281'), outfit: idx(o.outfit, 34, 31) };
-  // Per-slot overrides (the class starting kits): an outfit number or a
-  // wardrobe-armour piece id per slot, and a recolour per slot.
-  const SLOTS = ['top', 'trousers', 'boots', 'belt', 'accessory', 'gloves', 'helmet', 'shoulders', 'overlayer'];
-  if (o.slots && typeof o.slots === 'object') {
-    const slots = {};
-    for (const k of SLOTS) { const v = o.slots[k]; if (typeof v === 'string' && /^\d\d_[A-Za-z_]+__[A-Za-z]+$/.test(v)) slots[k] = v; else if (v != null) { const n = idx(v, 34, -1); if (n >= 0) slots[k] = n; } }
-    if (Object.keys(slots).length) look.slots = slots;
-  }
-  if (o.colors && typeof o.colors === 'object') {
-    const colors = {};
-    for (const k of SLOTS) { const v = col(o.colors[k], null); if (v) colors[k] = v; }
-    if (Object.keys(colors).length) look.colors = colors;
+  const look = { hairColor: col(o.hairColor, '#4a2e1a'), skin: col(o.skin, '#cba281') };
+  const n = Math.floor(Number(o.outfit));
+  if (Number.isFinite(n) && n >= 1 && n <= 50) look.outfit = n;
+  if (typeof o.hair === 'string' && /^(Hair_[A-Za-z]+|Bald)$/.test(o.hair)) look.hair = o.hair;
+  if (typeof o.beard === 'string' && /^(Beard_[A-Za-z]+|None)$/.test(o.beard)) look.beard = o.beard;
+  if (o.wear && typeof o.wear === 'object') {
+    const wear = {};
+    for (const slot of ['shirt', 'pants', 'hat', 'boots', 'gloves', 'cape']) {
+      const v = o.wear[slot];
+      if (v === 0 || v === null) wear[slot] = 0;
+      else if (typeof v === 'string' && /^[A-Za-z]+_[A-Za-z0-9]+_[A-Za-z]+$/.test(v)) wear[slot] = v;
+    }
+    if (Object.keys(wear).length) look.wear = wear;
   }
   return look;
 }
@@ -64,11 +68,14 @@ function sanitizeLook(raw) {
 // What the character visibly wears from their equipment: pack item ids by
 // wardrobe slot (top/trousers/helmet/shoulders/boots/gloves/overlayer/belt),
 // drawn over the base outfit by the client. Only armour pieces carry `gear`.
+// What the player's worn armour looks like: the wardrobe piece for each slot
+// they have armour in. It overrides whatever their outfit puts there, so a
+// Steel Chevalier cuirass really does replace the shirt they walked in wearing.
 function gearOf(equipment) {
   const g = {};
   for (const name of Object.values(equipment || {})) {
-    const d = name && ITEMS[name]; if (!d || !d.gear) continue;
-    g[d.gear.split('__')[1].toLowerCase()] = d.gear;
+    const d = name && ITEMS[name]; if (!d || !d.wear) continue;
+    g[d.wear.slot] = d.wear.piece;
   }
   return g;
 }
@@ -77,7 +84,7 @@ function lookOf(p) { return Object.keys(p.gear || {}).length ? { ...p.look, gear
 function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
 import {
   QUESTS, questPayload, questProgress, canStart, recordKill, recordReach,
-  consumeQuestItems,
+  consumeQuestItems, recordUse, recordTalk, objectiveProgress,
 } from './quests.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -108,6 +115,10 @@ function scaleZone(zone, k) {
   (zone.rocks || []).forEach(sp);
   (zone.pools || []).forEach(sp);
   (zone.chests || []).forEach(sp);
+  (zone.objects || []).forEach(sp);   // quest objects: positions scale, model sizes stay native
+  (zone.props || []).forEach(sp);     // hand-placed camp dressing: same rule, sizes stay in metres
+  (zone.trees || []).forEach(sp);     // and trees planted by hand inside a clearing
+  (zone.dirt || []).forEach(d => { sp(d); if (d.fr != null) d.fr *= k; });   // worn ground: the fringe grows with the patch
   (zone.fishingSpots || []).forEach(sp);
   (zone.campfires || []).forEach(sp);
   if (zone.safeSpawnRadius) zone.safeSpawnRadius *= k;
@@ -175,10 +186,17 @@ function buildSeamlessWorld() {
   for (const z of [darkwoods, killingfields]) {
     z._trees = generateTrees(z);
     z._scatter = generateScatter(z);
+    // Anything the zone places by hand goes down after the scatter and is not
+    // rejection-sampled: a camp that was laid out is a camp, not a suggestion.
+    for (const pr of (z.props || [])) z._scatter.push({ i: z._scatter.length, m: pr.m, x: pr.x, z: pr.z, s: pr.s || 1, r: pr.yaw || 0, c: pr.c || 0 });
+    // Trees the zone asks for by hand -- ones inside a clearing the forest was
+    // told to keep out of -- join the generated forest, so they get the same
+    // trunk collision and the same species-for-a-position as any other tree.
+    for (const tr of (z.trees || [])) z._trees.push({ x: tr.x, z: tr.z, s: tr.s || 1, r: tr.r != null ? tr.r : +(Math.random() * 6).toFixed(2) });
   }
   const w = darkwoods, kf = killingfields;
   const cat = (k) => { w[k] = (w[k] || []).concat(kf[k] || []); };
-  ['pois', 'npcs', 'rocks', 'pools', 'chests', 'hazards', 'spawns', 'elites', '_trees', '_scatter'].forEach(cat);
+  ['pois', 'npcs', 'rocks', 'pools', 'chests', 'hazards', 'spawns', 'elites', 'objects', 'props', 'dirt', 'trees', '_trees', '_scatter'].forEach(cat);
   // Multiple paths/rivers now — keep each so the client can draw them all.
   w.paths = [w.path, kf.path].filter(Boolean);
   w.rivers = [w.river, kf.river].filter(Boolean);
@@ -630,6 +648,8 @@ function makeMonster(spec) {
     // OSRS combat stats (accuracy rolls + max hit).
     atkLevel: stats.atkLevel, defLevel: stats.defLevel, atkBonus: stats.atkBonus,
     defBonus: stats.defBonus, maxHit: stats.maxHit, attackSpeed: stats.attackSpeed,
+    arch: archOf(spec.type),   // how it fights: warrior, archer, caster, brute...
+    threat: new Map(), abilityCd: rand(2, 6),
     respawn: spec.respawn != null ? spec.respawn : Math.round((MONSTER_TEMPLATES[spec.type].respawn || RESPAWN_TIME) * (zone.respawnMult || 1)),
     alive: true, state: 'idle', targetId: null, atkTimer: 0,
     wanderTimer: rand(1, 4), wanderDir: { x: 0, z: 0 }, respawnTimer: 0,
@@ -755,7 +775,13 @@ function buildFarm(zone) {
   for (const p of (F.props || [])) scat.push({ i: scat.length, m: p.m, x: p.x, z: p.z, s: p.s || 1, r: p.yaw || 0, c: p.c || 0 });
   // Hand-placed nature inside the fence (worldgen keeps the wild forest out).
   zone._trees = zone._trees || [];
-  for (const tr of (F.trees || [])) zone._trees.push({ x: tr.x, z: tr.z, s: tr.s || 1, r: tr.r != null ? tr.r : +(Math.random() * 6).toFixed(2) });
+  // Hand-placed trees skip the generators, so they skip the generators' rules
+  // too -- which is how one ended up standing in the guard hut. Same keep-out
+  // here, and it says so rather than quietly dropping authored scenery.
+  for (const tr of (F.trees || [])) {
+    if (inHouse(zone, tr.x, tr.z, 2.5)) { console.warn(`[worldgen] ${zone.id}: tree at ${tr.x},${tr.z} stands inside a house — skipped`); continue; }
+    zone._trees.push({ x: tr.x, z: tr.z, s: tr.s || 1, r: tr.r != null ? tr.r : +(Math.random() * 6).toFixed(2) });
+  }
   for (const pl of (F.plants || [])) scat.push({ i: scat.length, m: pl.m, x: pl.x, z: pl.z, s: pl.s || 1, r: pl.r != null ? pl.r : +(Math.random() * 6).toFixed(2), c: 0 });
   // Enterable houses: each wall is a solid segment; the door side is split in
   // two around a DOOR_W gap so you can walk in. Furniture is a round solid.
@@ -771,6 +797,14 @@ function buildFarm(zone) {
     side('north', x0, z0, x1, z0); side('south', x0, z1, x1, z1);
     side('west', x0, z0, x0, z1);  side('east', x1, z0, x1, z1);
     for (const f of (h.furn || [])) {
+      // Somewhere to sit or lie down. The stool is sat on from where it stands;
+      // a bed is lain on along its length, head at the pillow end, so you stop
+      // beside it and end up on top of it rather than standing in the frame.
+      if (f.k === 'stool' || f.k === 'bed') {
+        const seats = zoneSeats(zone);
+        seats.push({ id: `${h.key}:${f.k}:${seats.length}`, k: f.k,
+          x: h.x + f.dx, z: h.z + f.dz, yaw: f.yaw || 0, house: h.key });
+      }
       const r = FURN_R[f.k]; if (!r) continue;
       zone._solids.push({ x: h.x + f.dx, z: h.z + f.dz, r });
       // A hearth is a cooking station like the campfires outside.
@@ -821,7 +855,23 @@ function stepGates() {
 // (?edit=<key> on the client). Rendered as individual meshes client-side so they
 // can be moved/deleted one at a time.
 // ---------------------------------------------------------------------------
-const EDIT_KEY = process.env.BLACKROOT_EDIT_KEY || 'letmebuild';
+// No default. These commands hand out any item in the game, set your level,
+// teleport you and write zone files to disk -- a key checked into the repo is
+// no key at all, and with accounts and trading an injected item is permanent
+// and can be passed to anybody. Unset means the editor simply is not there.
+const EDIT_KEY = process.env.BLACKROOT_EDIT_KEY || null;
+// Constant-time-ish and null-safe: an absent key matches nothing, including a
+// client that sends no key at all or sends the string "null".
+const EDIT_KEY_BUF = EDIT_KEY ? Buffer.from(EDIT_KEY) : null;
+function editAllowed(key) {
+  if (!EDIT_KEY_BUF || typeof key !== 'string') return false;
+  const buf = Buffer.from(key);
+  // Compare byte lengths, not string lengths: two strings of equal UTF-16
+  // length can encode to different byte counts, and timingSafeEqual throws on
+  // a mismatch rather than returning false.
+  if (buf.length !== EDIT_KEY_BUF.length) return false;
+  return crypto.timingSafeEqual(buf, EDIT_KEY_BUF);
+}
 let editSeq = 1;
 function overridesPath(zone) { return path.join(__dirname, 'zones', zone.id + '.overrides.json'); }
 function loadOverrides(zone) {
@@ -940,11 +990,15 @@ function broadcast(obj) {
   for (const p of players.values()) if (p.ws.readyState === p.ws.OPEN) p.ws.send(s);
 }
 function systemChat(msg) { broadcast({ t: 'chat', from: 'System', msg, sys: true }); }
+// One line of yellow text to one person. The six local `notice`/`no` closures
+// that used to rebuild this payload each delegate here instead.
+function notice(p, text) { if (p && p.ws) send(p.ws, { t: 'event', kind: 'notice', text }); }
 
 // ---------------------------------------------------------------------------
 // Combat & progression
 // ---------------------------------------------------------------------------
 function grantXp(p, amount) {
+  if (!(amount > 0)) return;   // a creature you have long outgrown: no xp, and no "+0" to explain
   p.xp += amount; // running total; the level is read off the shared 1..99 table
   send(p.ws, { t: 'event', kind: 'xp', amount });
   let leveled = false;
@@ -957,6 +1011,584 @@ function grantXp(p, amount) {
   if (leveled) { sendSkills(p); sendAbilities(p); }
 }
 
+// ---------------------------------------------------------------------------
+// Accounts
+//
+// A name plus a password. The password is never stored and never logged: what
+// goes on disk is a scrypt hash of it with its own random salt per account, and
+// checking one is a constant-time compare so a wrong guess tells an attacker
+// nothing by how long it took. Logging in with a name nobody has taken creates
+// the account; logging in with one that exists has to match.
+//
+// NOTE: the websocket is plain ws://. On this machine that is fine, but the
+// password crosses the wire in the clear, so put this behind wss:// (TLS)
+// before letting anyone reach it over a network.
+// ---------------------------------------------------------------------------
+const ACCOUNT_DIR = path.join(__dirname, '..', 'accounts');
+const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 64 };
+const PASS_MIN = 6, PASS_MAX = 128;
+const LOGIN_TRIES = 6;                 // wrong guesses before a name goes quiet
+const LOGIN_LOCK_MS = 60 * 1000;
+const loginFails = new Map();          // account slug -> { n, until }
+
+const accountPath = (name) => path.join(ACCOUNT_DIR, saveSlug(name) + '.json');
+function hashPass(pass, salt) { return crypto.scryptSync(pass, salt, SCRYPT.keylen, SCRYPT).toString('hex'); }
+function readAccount(name) {
+  try { const a = JSON.parse(fs.readFileSync(accountPath(name), 'utf8')); return a && a.salt && a.hash ? a : null; }
+  catch (e) { return null; }
+}
+function writeAccount(a) {
+  fs.mkdirSync(ACCOUNT_DIR, { recursive: true });
+  fs.writeFileSync(accountPath(a.name), JSON.stringify(a));
+}
+// Returns { ok: true } or { error } -- never anything derived from the stored
+// password, and the same wording whether the name or the password was wrong.
+function authenticate(name, pass) {
+  const slug = saveSlug(name);
+  const lock = loginFails.get(slug);
+  if (lock && lock.until > Date.now()) {
+    return { error: `Too many attempts. Try again in ${Math.ceil((lock.until - Date.now()) / 1000)}s.` };
+  }
+  if (typeof pass !== 'string' || pass.length < PASS_MIN) return { error: `Password must be at least ${PASS_MIN} characters.` };
+  if (pass.length > PASS_MAX) return { error: 'That password is too long.' };
+  const acct = readAccount(name);
+  // saveSlug is lossy: "Bob Smith", "Bob-Smith" and "bob_smith" all key the
+  // same file. Whoever registered the slug owns it, and a different spelling of
+  // it is a different person -- refuse before the password is even weighed, or
+  // one player's password opens another player's character.
+  if (acct && acct.name !== name) {
+    return { error: 'That name is too close to an existing character. Pick another.' };
+  }
+  if (!acct) {
+    const salt = crypto.randomBytes(16).toString('hex');
+    writeAccount({ v: 1, name, salt, hash: hashPass(pass, salt), created: Date.now() });
+    return { ok: true, created: true };
+  }
+  const got = Buffer.from(hashPass(pass, acct.salt), 'hex');
+  const want = Buffer.from(acct.hash, 'hex');
+  const good = got.length === want.length && crypto.timingSafeEqual(got, want);
+  if (!good) {
+    const f = loginFails.get(slug) || { n: 0, until: 0 };
+    f.n++; if (f.n >= LOGIN_TRIES) { f.until = Date.now() + LOGIN_LOCK_MS; f.n = 0; }
+    loginFails.set(slug, f);
+    return { error: 'That name is taken, and the password does not match it.' };
+  }
+  loginFails.delete(slug);
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Saved characters
+//
+// A character is its name. Log in with a name that has been here before and
+// you get that character back -- where you stood, what you carried, what you
+// had learned and how far through every errand you were. There are no
+// passwords, so a name is all that identifies anyone; that is fine for a world
+// you run yourself and would not be for one you opened to strangers.
+//
+// Only durable things are written. Buffs, cooldowns, the swing in progress,
+// the party you were in and the trade you were half way through are all
+// deliberately dropped: they belong to a session, not to a character.
+// ---------------------------------------------------------------------------
+// Beside the repo, not beside whatever directory the process happens to have
+// been started from -- the same anchor CLIENT_DIR uses.
+const SAVE_DIR = path.join(__dirname, '..', 'saves');
+const SAVE_EVERY = 45;                 // seconds between background saves
+const saveSlug = (name) => String(name).toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 24) || 'adventurer';
+const savePath = (name) => path.join(SAVE_DIR, saveSlug(name) + '.json');
+
+function serialisePlayer(p) {
+  return {
+    v: 1, name: p.name, cls: p.cls, look: p.look,
+    zoneId: p.zoneId, x: +p.x.toFixed(2), z: +p.z.toFixed(2), y: p.y || 0, yaw: +p.yaw.toFixed(2),
+    level: p.level, xp: p.xp, gold: p.gold,
+    hp: Math.round(p.hp), mana: Math.round(p.mana || 0),
+    inventory: p.inventory.slice(), equipment: { ...p.equipment },
+    known: [...p.known],
+    miningXp: p.miningXp, fishingXp: p.fishingXp, cookingXp: p.cookingXp,
+    meditation: { ...p.meditation },
+    // Quests: the live map of progress, plus everything already finished and
+    // every flag and kill tally the objectives read from.
+    quests: [...p.quests.entries()],
+    questDone: [...p.questDone], questKills: p.questKills,
+    questFlags: [...p.questFlags], questAnnounced: [...p.questAnnounced],
+    openedChests: [...p.openedChests], usedObjects: [...p.usedObjects],
+    savedAt: Date.now(),
+  };
+}
+function savePlayer(p) {
+  if (!p || !p.name) return;
+  try {
+    fs.mkdirSync(SAVE_DIR, { recursive: true });
+    fs.writeFileSync(savePath(p.name), JSON.stringify(serialisePlayer(p)));
+  } catch (e) { console.warn('[save] could not write', p.name, 'to', SAVE_DIR, '-', e.message); }
+}
+function loadSave(name) {
+  try {
+    const raw = fs.readFileSync(savePath(name), 'utf8');
+    const d = JSON.parse(raw);
+    return (d && d.v === 1 && d.name === name) ? d : null;   // exact name, not just the same slug
+  } catch (e) { return null; }   // no save, or one we cannot read: start fresh
+}
+// Put a loaded save onto a freshly built player. The player is built first with
+// all its defaults so anything a save predates simply keeps the new default.
+function applySave(p, d) {
+  const zone = ZONES[d.zoneId] ? d.zoneId : START_ZONE;
+  p.cls = CLASSES[d.cls] ? d.cls : p.cls;
+  if (d.look) p.look = sanitizeLook(d.look);
+  p.zoneId = zone;
+  p.level = Math.max(1, Math.min(MAX_LEVEL, d.level | 0 || 1));
+  p.xp = Math.max(0, +d.xp || 0);
+  p.gold = Math.max(0, d.gold | 0);
+  const cs = classStats(p.cls, p.level);
+  p.maxHp = cs.hp; p.manaMax = cs.mana; p.rageMax = cs.rage;
+  // Somebody who logged out dead comes back on their feet at the zone's spawn
+  // rather than face down where they fell.
+  const dead = !(d.hp > 0);
+  p.hp = dead ? p.maxHp : Math.min(p.maxHp, d.hp);
+  p.mana = Math.min(p.manaMax || 0, Math.max(0, d.mana | 0));
+  const sp = ZONES[zone].spawn;
+  p.x = dead ? sp.x : (+d.x || sp.x); p.z = dead ? sp.z : (+d.z || sp.z);
+  p.y = dead ? 0 : (+d.y || 0); p.yaw = +d.yaw || sp.yaw;
+  p.inventory = Array.isArray(d.inventory) ? d.inventory.filter(n => ITEMS[n]) : p.inventory;
+  if (d.equipment) { p.equipment = Object.assign(emptySlots(), d.equipment); p.gear = gearOf(p.equipment); }
+  // Abilities are re-derived from the class and level, then anything bought is
+  // added back: a save from before a class was rebalanced still ends up with a
+  // legal spellbook.
+  p.known = new Set(classDef(p.cls).abilities.filter(a => a.level <= p.level).map(a => a.id));
+  for (const id of (d.known || [])) if (classDef(p.cls).abilities.some(a => a.id === id)) p.known.add(id);
+  p.miningXp = +d.miningXp || 0; p.fishingXp = +d.fishingXp || 0; p.cookingXp = +d.cookingXp || 0;
+  if (d.meditation) p.meditation = { level: d.meditation.level | 0 || 1, xp: +d.meditation.xp || 0 };
+  p.quests = new Map((d.quests || []).filter(([id]) => QUESTS[id]));
+  p.questDone = new Set((d.questDone || []).filter(id => QUESTS[id]));
+  p.questKills = d.questKills && typeof d.questKills === 'object' ? d.questKills : {};
+  p.questFlags = new Set(d.questFlags || []);
+  p.questAnnounced = new Set(d.questAnnounced || []);
+  p.openedChests = new Set(d.openedChests || []);
+  p.usedObjects = new Set(d.usedObjects || []);
+}
+
+// ---------------------------------------------------------------------------
+// Trading
+//
+// Two people, two offers, and nothing moves until both have said yes. What an
+// offer holds has actually left the bag -- it sits in escrow on the trade and
+// comes straight back if anything goes wrong -- so the same sword cannot be
+// offered to two people, or sold out from under a trade half way through.
+//
+// Changing either offer clears both acceptances. That is the old rule from
+// every game that ever had a trade window, and it exists because the alternative
+// is somebody swapping the gold for a rock while your finger is over the button.
+// ---------------------------------------------------------------------------
+const trades = new Map();              // id -> { id, a, b, items: {}, gold: {}, ok: {} }
+let nextTradeId = 1;
+const TRADE_REQUEST_TTL = 30;
+const TRADE_START_RANGE = 12;          // how close you must be to ask
+const TRADE_BREAK_RANGE = 16;          // how far apart calls it off
+
+function tradeOf(p) { return (p && p.tradeId && trades.get(p.tradeId)) || null; }
+function tradePair(t) { return [players.get(t.a), players.get(t.b)]; }
+function tradePayload(t, forId) {
+  const other = t.a === forId ? t.b : t.a;
+  const who = players.get(other);
+  return { t: 'trade', with: other, name: who ? who.name : '',
+    mine: bagStacks(t.items[forId] || []), theirs: bagStacks(t.items[other] || []),
+    myGold: t.gold[forId] || 0, theirGold: t.gold[other] || 0,
+    myOk: !!t.ok[forId], theirOk: !!t.ok[other] };
+}
+function sendTrade(t) { for (const q of tradePair(t)) if (q && q.ws.readyState === q.ws.OPEN) send(q.ws, tradePayload(t, q.id)); }
+// Any change to what is on the table puts both acceptances back to nothing.
+function tradeTouched(t) { t.ok[t.a] = false; t.ok[t.b] = false; }
+
+function tradeRequest(from, toId) {
+  const to = players.get(Number(toId));
+  const no = (text) => notice(from, text);
+  if (!to || to === from) return no('There is nobody there to trade with.');
+  if (to.zoneId !== from.zoneId) return no(`${to.name} is not in this zone.`);
+  if (!from.alive || !to.alive) return no('Not while one of you is dead.');
+  if (tradeOf(from) || tradeOf(to)) return no('One of you is already trading.');
+  if (duelOf(from) || duelOf(to)) return no('Not in the middle of a duel.');
+  if (dist2(from.x, from.z, to.x, to.z) > TRADE_START_RANGE * TRADE_START_RANGE) return no(`${to.name} is too far away.`);
+  if (to.tradeRequest && to.tradeRequest.t > 0) return no(`${to.name} is already being asked.`);
+  to.tradeRequest = { from: from.id, name: from.name, t: TRADE_REQUEST_TTL };
+  send(to.ws, { t: 'trade:request', from: from.id, name: from.name, seconds: TRADE_REQUEST_TTL });
+  no(`You ask ${to.name} to trade.`);
+}
+function tradeAccept(p) {
+  const rq = p.tradeRequest; p.tradeRequest = null;
+  if (!rq || rq.t <= 0) return send(p.ws, { t: 'event', kind: 'notice', text: 'That offer to trade has lapsed.' });
+  const from = players.get(rq.from);
+  if (!from || !from.alive || !p.alive) return send(p.ws, { t: 'event', kind: 'notice', text: 'They are in no state to trade.' });
+  if (tradeOf(from) || tradeOf(p)) return send(p.ws, { t: 'event', kind: 'notice', text: 'One of you is already trading.' });
+  const t = { id: nextTradeId++, a: from.id, b: p.id, items: { [from.id]: [], [p.id]: [] }, gold: { [from.id]: 0, [p.id]: 0 }, ok: {} };
+  trades.set(t.id, t); from.tradeId = t.id; p.tradeId = t.id;
+  sendTrade(t);
+}
+function tradeDecline(p) {
+  const rq = p.tradeRequest; p.tradeRequest = null;
+  if (!rq) return;
+  const from = players.get(rq.from);
+  if (from) send(from.ws, { t: 'event', kind: 'notice', text: `${p.name} does not want to trade.` });
+}
+// Put one of something on the table: it leaves the bag now, not at the end.
+function tradeAdd(p, name) {
+  const t = tradeOf(p); if (!t) return;
+  const i = p.inventory.indexOf(String(name)); if (i < 0) return;
+  p.inventory.splice(i, 1);
+  t.items[p.id].push(String(name));
+  tradeTouched(t); sendBag(p); sendTrade(t);
+}
+function tradeTake(p, name) {
+  const t = tradeOf(p); if (!t) return;
+  const i = t.items[p.id].indexOf(String(name)); if (i < 0) return;
+  t.items[p.id].splice(i, 1);
+  p.inventory.push(String(name));
+  tradeTouched(t); sendBag(p); sendTrade(t);
+}
+function tradeGold(p, n) {
+  const t = tradeOf(p); if (!t) return;
+  const want = Math.max(0, Math.floor(Number(n) || 0));
+  const pool = (t.gold[p.id] || 0) + p.gold;          // what is on the table plus what is in the purse
+  const set = Math.min(want, pool);
+  p.gold = pool - set; t.gold[p.id] = set;
+  tradeTouched(t); sendBag(p); sendTrade(t);
+}
+function tradeOk(p, on) {
+  const t = tradeOf(p); if (!t) return;
+  t.ok[p.id] = !!on;
+  if (t.ok[t.a] && t.ok[t.b]) return tradeCommit(t);
+  sendTrade(t);
+}
+// Both said yes. Everything is already in escrow, so this is just handing each
+// pile to the other person -- there is nothing left that can fail half way.
+function tradeCommit(t) {
+  const [a, b] = tradePair(t);
+  if (!a || !b) return tradeCancel(t, 'The trade fell through.');
+  for (const [from, to] of [[a, b], [b, a]]) {
+    for (const name of t.items[from.id]) to.inventory.push(name);
+    to.gold += t.gold[from.id] || 0;
+  }
+  trades.delete(t.id);
+  for (const q of [a, b]) { q.tradeId = null; send(q.ws, { t: 'trade', closed: true }); sendBag(q); send(q.ws, { t: 'event', kind: 'notice', text: 'The trade is done.' }); }
+}
+// However it ends short, everything goes back where it came from.
+function tradeCancel(t, why) {
+  if (!t || !trades.has(t.id)) return;
+  trades.delete(t.id);
+  for (const q of tradePair(t)) {
+    if (!q) continue;
+    q.tradeId = null;
+    for (const name of (t.items[q.id] || [])) q.inventory.push(name);
+    q.gold += t.gold[q.id] || 0;
+    send(q.ws, { t: 'trade', closed: true }); sendBag(q);
+    send(q.ws, { t: 'event', kind: 'notice', text: why || 'The trade is off.' });
+  }
+}
+function tradeAbort(p, why) { const t = tradeOf(p); if (t) tradeCancel(t, why || `${p.name} called the trade off.`); }
+function stepTrades() {
+  for (const t of [...trades.values()]) {
+    const [a, b] = tradePair(t);
+    if (!a || !b) { tradeCancel(t, 'The trade fell through.'); continue; }
+    if (!a.alive || !b.alive) { tradeCancel(t, 'The trade is off.'); continue; }
+    if (a.zoneId !== b.zoneId || dist2(a.x, a.z, b.x, b.z) > TRADE_BREAK_RANGE * TRADE_BREAK_RANGE) {
+      tradeCancel(t, 'You are too far apart to trade.');
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Duels
+//
+// A duel is a fight between two players that nobody dies in. It borrows the
+// whole of the existing combat path -- weapon speed, the attack table, the
+// swing and its impact frame, every single-target ability -- by letting an
+// opponent stand in wherever that code expects a monster. The two places that
+// had to know the difference are applyHit, which is the one door all player
+// damage goes through, and the target lookup, which used to read straight out
+// of the monsters map.
+//
+// Nobody dies: at a tenth of their health the loser yields, both are put back
+// to full, and neither drops so much as a copper.
+// ---------------------------------------------------------------------------
+const duels = new Map();               // id -> { id, a, b, state, t, zoneId }
+let nextDuelId = 1;
+const DUEL_YIELD = 0.10;               // yield at a tenth of your health
+const DUEL_COUNTDOWN = 3;              // seconds of salute before it starts
+const DUEL_CHALLENGE_TTL = 30;
+const DUEL_START_RANGE = 20;           // how close you must be to challenge
+const DUEL_BREAK_RANGE = 50;           // how far apart ends it
+
+function duelOf(p) { return (p && p.duelId && duels.get(p.duelId)) || null; }
+function duelFoe(p) {
+  const d = duelOf(p); if (!d || d.state !== 'fighting') return null;
+  return players.get(d.a === p.id ? d.b : d.a) || null;
+}
+// The thing this player is fighting, whether it breathes fire or pays tax.
+function combatTargetOf(p) {
+  if (p.combatId == null) return null;
+  const m = monsters.get(p.combatId);
+  if (m) return m;
+  const foe = duelFoe(p);
+  return foe && foe.id === p.combatId ? foe : null;
+}
+function duelPair(d) { return [players.get(d.a), players.get(d.b)]; }
+function duelSay(d, text) { for (const q of duelPair(d)) if (q) send(q.ws, { t: 'event', kind: 'notice', text }); }
+
+function duelChallenge(from, toId) {
+  const to = players.get(Number(toId));
+  const no = (text) => notice(from, text);
+  if (!to || to === from) return no('There is nobody there to challenge.');
+  if (to.zoneId !== from.zoneId) return no(`${to.name} is not in this zone.`);
+  if (!from.alive || !to.alive) return no('Not while one of you is dead.');
+  if (duelOf(from) || duelOf(to)) return no('One of you is already in a duel.');
+  if (from.combatId != null || to.combatId != null) return no('Not in the middle of a fight.');
+  if (dist2(from.x, from.z, to.x, to.z) > DUEL_START_RANGE * DUEL_START_RANGE) return no(`${to.name} is too far away.`);
+  if (to.duelChallenge && to.duelChallenge.t > 0) return no(`${to.name} has already been challenged.`);
+  to.duelChallenge = { from: from.id, name: from.name, t: DUEL_CHALLENGE_TTL };
+  send(to.ws, { t: 'duel:challenge', from: from.id, name: from.name, seconds: DUEL_CHALLENGE_TTL });
+  no(`You challenge ${to.name} to a duel.`);
+}
+function duelAccept(p) {
+  const ch = p.duelChallenge; p.duelChallenge = null;
+  if (!ch || ch.t <= 0) return send(p.ws, { t: 'event', kind: 'notice', text: 'That challenge has lapsed.' });
+  const from = players.get(ch.from);
+  if (!from || !from.alive || !p.alive) return send(p.ws, { t: 'event', kind: 'notice', text: 'They are in no state to duel.' });
+  if (duelOf(from) || duelOf(p)) return send(p.ws, { t: 'event', kind: 'notice', text: 'One of you is already in a duel.' });
+  const d = { id: nextDuelId++, a: from.id, b: p.id, state: 'countdown', t: DUEL_COUNTDOWN, zoneId: p.zoneId };
+  duels.set(d.id, d); from.duelId = d.id; p.duelId = d.id;
+  for (const q of duelPair(d)) if (q) { q.combatId = null; q.swing = null; q.queued = null; }
+  broadcast({ t: 'event', kind: 'duelstart', a: d.a, b: d.b, names: [from.name, p.name], seconds: DUEL_COUNTDOWN });
+  duelSay(d, `${from.name} and ${p.name} step up to duel.`);
+}
+function duelDecline(p) {
+  const ch = p.duelChallenge; p.duelChallenge = null;
+  if (!ch) return;
+  const from = players.get(ch.from);
+  if (from) send(from.ws, { t: 'event', kind: 'notice', text: `${p.name} declined your challenge.` });
+}
+// However it ends -- yielded, walked away, logged out -- it ends the same way:
+// both of them whole, and nothing changed hands.
+function duelEnd(d, winnerId, how) {
+  if (!duels.has(d.id)) return;
+  duels.delete(d.id);
+  const [a, b] = duelPair(d);
+  for (const q of [a, b]) {
+    if (!q) continue;
+    q.duelId = null; q.swing = null; q.queued = null;
+    if (q.combatId != null && (q.combatId === d.a || q.combatId === d.b)) q.combatId = null;
+    if (q.alive) { q.hp = q.maxHp; if (q.manaMax) q.mana = q.manaMax; q.rage = 0; q.combatTimer = 0; sendStatus(q); }
+  }
+  const win = winnerId != null ? players.get(winnerId) : null;
+  const lose = win ? (win.id === d.a ? b : a) : null;
+  if (win && lose) systemChat(`${win.name} wins the duel against ${lose.name}.`);
+  else systemChat(how || 'The duel is over.');
+  broadcast({ t: 'event', kind: 'duelend', a: d.a, b: d.b, winner: winnerId != null ? winnerId : undefined });
+}
+function duelForfeit(p, how) {
+  const d = duelOf(p); if (!d) return;
+  const other = d.a === p.id ? d.b : d.a;
+  duelEnd(d, d.state === 'fighting' ? other : null, how || `${p.name} withdraws from the duel.`);
+}
+// A duelling opponent's defensive sheet: their own kit and class, not a
+// monster archetype. A shield in the off hand is a shield in a duel too.
+function playerDefence(t, from) {
+  const eq = equipStats(t.equipment), cs = classStats(t.cls, t.level);
+  const shield = !!(t.equipment && t.equipment.offhand);
+  return {
+    level: cs.def || t.level,
+    dodge: 0.05, parry: 0.06, block: shield ? 0.22 : 0,
+    blockAmt: shield ? Math.round(3 + t.level * 1.4) : 0,
+    armour: eq.def || 0,
+    facing: from ? facing(t.x, t.z, t.yaw, from.x, from.z) : true,
+  };
+}
+// A blow landed on a duelling opponent. Never lethal: the moment it would take
+// them under the yield line the duel is over and they are put back together.
+function duelHit(p, t, dmg, crit, kind, res) {
+  const d = duelOf(p);
+  if (!d || d.state !== 'fighting') return;
+  p.lastCombat = Date.now(); p.combatTimer = REGEN.combatLockout;
+  const floor = Math.max(1, Math.round(t.maxHp * DUEL_YIELD));
+  let done = false;
+  if (dmg > 0) {
+    if (t.hp - dmg <= floor) { dmg = Math.max(0, t.hp - floor); done = true; }
+    t.hp -= dmg;
+    t.combatTimer = REGEN.combatLockout; t.lastCombat = Date.now();
+    if (classDef(t.cls).rage) addRage(t, dmg * classDef(t.cls).rage.damageTaken);
+    if (classDef(p.cls).rage) addRage(p, (classDef(p.cls).rage || {}).autoHit || 0);
+  }
+  broadcast({ t: 'event', kind: 'hit', by: p.id, target: t.id, dmg, crit: !!crit, targetKind: 'player',
+              hitKind: kind || null, res: res ? res.outcome : (dmg > 0 ? 'hit' : 'miss'), blocked: (res && res.blocked) || 0, duel: 1 });
+  if (crit) { savageTrigger(p); procOnCrit(p); }
+  if (done) duelEnd(d, p.id);
+}
+function stepDuels(dt) {
+  for (const d of [...duels.values()]) {
+    const [a, b] = duelPair(d);
+    if (!a || !b) { duelEnd(d, null, 'The duel is called off.'); continue; }
+    if (!a.alive || !b.alive) { duelEnd(d, a.alive ? a.id : b.id, null); continue; }
+    if (a.zoneId !== b.zoneId) { duelEnd(d, null, `${a.name} and ${b.name} part without a winner.`); continue; }
+    if (dist2(a.x, a.z, b.x, b.z) > DUEL_BREAK_RANGE * DUEL_BREAK_RANGE) { duelEnd(d, null, `${a.name} and ${b.name} lose each other, and the duel with it.`); continue; }
+    if (d.state === 'countdown') {
+      d.t -= dt;
+      if (d.t <= 0) { d.state = 'fighting'; duelSay(d, 'Fight!'); broadcast({ t: 'event', kind: 'duelgo', a: d.a, b: d.b }); }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Sitting down
+//
+// A stool is sat on, a bed is lain on. The server owns it so that everyone in
+// the room sees you in the chair, and so that the first thing you do -- move,
+// swing, cast, get hit -- puts you back on your feet.
+// ---------------------------------------------------------------------------
+const SEAT_REACH = 1.9;
+// Every seat in a zone: the stools and beds inside houses, and the bedrolls
+// laid out in the camps. A bedroll is a bed on the floor, so it gets the same
+// treatment with a different lift.
+function zoneSeats(zone) {
+  if (zone._seats) return zone._seats;
+  zone._seats = [];
+  const SEAT_PROP = { Bedroll: 'bedroll', 'props/Bedroll': 'bedroll', Camp_Stool: 'stool', 'props/Camp_Stool': 'stool' };
+  for (const pr of (zone.props || [])) {
+    const k = SEAT_PROP[pr.m]; if (!k) continue;
+    zone._seats.push({ id: `${k}:${zone._seats.length}`, k, x: pr.x, z: pr.z, yaw: pr.yaw || 0 });
+  }
+  return zone._seats;
+}
+function seatById(zone, id) { return zoneSeats(zone).find(s => s.id === id) || null; }
+// Where you stand to use it: on the stool itself, or beside the bed at the
+// foot end so lying down does not walk you through the headboard.
+function seatApproach(seat) {
+  if (seat.k === 'stool') return { x: seat.x, z: seat.z };
+  return { x: seat.x + Math.sin(seat.yaw) * 1.25, z: seat.z + Math.cos(seat.yaw) * 1.25 };
+}
+function sitDown(p, seat) {
+  p.seat = { id: seat.id, k: seat.k, x: seat.x, z: seat.z, yaw: seat.yaw };
+  p.x = seat.x; p.z = seat.z;
+  // A bed is lain along its length, so the body turns a quarter across the
+  // furniture's own facing to put the head on the pillow.
+  p.yaw = seat.k === 'stool' ? seat.yaw : seat.yaw + Math.PI / 2;
+  p.moveTo = null; p._nav = null; p.combatId = null;
+  send(p.ws, { t: 'event', kind: 'notice', text: seat.k === 'stool' ? 'You sit down.' : 'You lie down.' });
+}
+function standUp(p, quiet) {
+  if (!p.seat) return;
+  const was = p.seat; p.seat = null; p.pendingSeat = null;
+  if (was.k !== 'stool') { p.x = was.x + Math.sin(was.yaw) * 1.25; p.z = was.z + Math.cos(was.yaw) * 1.25; }
+  if (!quiet) send(p.ws, { t: 'event', kind: 'notice', text: 'You get up.' });
+}
+
+// ---------------------------------------------------------------------------
+// Parties
+//
+// A party is a handful of players who share what they kill. It is deliberately
+// thin: a leader, a member list, and an invite that expires if nobody answers.
+// Everything else -- who can see whose health, who gets the xp -- reads off
+// those three facts.
+// ---------------------------------------------------------------------------
+const parties = new Map();            // id -> { id, leader, members: [playerId] }
+let nextPartyId = 1;
+const PARTY_MAX = 5;
+const PARTY_INVITE_TTL = 30;          // seconds before an unanswered invite lapses
+const PARTY_SHARE_RANGE = 80;         // how far a member can be and still share a kill
+
+function partyOf(p) { return (p && p.partyId && parties.get(p.partyId)) || null; }
+function partyMembers(party) { return (party ? party.members : []).map(id => players.get(id)).filter(Boolean); }
+// Everything a client needs to draw the party: who is in it, in what order, and
+// how each of them is doing. Sent to every member whenever any of that changes.
+function partyPayload(party) {
+  if (!party) return { t: 'party', members: [] };
+  return { t: 'party', leader: party.leader, members: partyMembers(party).map(m => ({
+    id: m.id, name: m.name, cls: m.cls, level: m.level, hp: Math.round(m.hp), maxHp: m.maxHp,
+    mana: m.manaMax ? Math.round(m.mana || 0) : undefined, manaMax: m.manaMax || undefined,
+    alive: m.alive, zoneId: m.zoneId })) };
+}
+// One payload, sent raw to each member -- send() would stringify it a second
+// time and the client would parse a string with no message type on it.
+function sendParty(party) {
+  const pay = JSON.stringify(partyPayload(party));
+  for (const m of partyMembers(party)) if (m.ws.readyState === m.ws.OPEN) m.ws.send(pay);
+}
+function partyNotice(party, text) { for (const m of partyMembers(party)) send(m.ws, { t: 'event', kind: 'notice', text }); }
+
+function partyInvite(from, toId) {
+  const to = players.get(Number(toId));
+  if (!to || to === from) return send(from.ws, { t: 'event', kind: 'notice', text: 'There is nobody there to invite.' });
+  if (to.zoneId !== from.zoneId) return send(from.ws, { t: 'event', kind: 'notice', text: `${to.name} is not in this zone.` });
+  if (partyOf(to)) return send(from.ws, { t: 'event', kind: 'notice', text: `${to.name} is already in a party.` });
+  const mine = partyOf(from);
+  if (mine && mine.leader !== from.id) return send(from.ws, { t: 'event', kind: 'notice', text: 'Only the party leader can invite.' });
+  if (mine && mine.members.length >= PARTY_MAX) return send(from.ws, { t: 'event', kind: 'notice', text: 'Your party is full.' });
+  if (to.partyInvite && to.partyInvite.t > 0) return send(from.ws, { t: 'event', kind: 'notice', text: `${to.name} already has an invitation pending.` });
+  to.partyInvite = { from: from.id, name: from.name, t: PARTY_INVITE_TTL };
+  send(to.ws, { t: 'party:invite', from: from.id, name: from.name, seconds: PARTY_INVITE_TTL });
+  send(from.ws, { t: 'event', kind: 'notice', text: `You invite ${to.name} to your party.` });
+}
+function partyAccept(p) {
+  const inv = p.partyInvite; p.partyInvite = null;
+  if (!inv || inv.t <= 0) return send(p.ws, { t: 'event', kind: 'notice', text: 'That invitation has lapsed.' });
+  const from = players.get(inv.from);
+  if (!from) return send(p.ws, { t: 'event', kind: 'notice', text: 'They are no longer here.' });
+  if (partyOf(p)) return send(p.ws, { t: 'event', kind: 'notice', text: 'You are already in a party.' });
+  let party = partyOf(from);
+  if (!party) {   // the inviter's party starts the moment someone says yes
+    party = { id: nextPartyId++, leader: from.id, members: [from.id] };
+    parties.set(party.id, party); from.partyId = party.id;
+  }
+  if (party.members.length >= PARTY_MAX) return send(p.ws, { t: 'event', kind: 'notice', text: 'That party is full.' });
+  party.members.push(p.id); p.partyId = party.id;
+  partyNotice(party, `${p.name} has joined the party.`);
+  sendParty(party);
+}
+function partyDecline(p) {
+  const inv = p.partyInvite; p.partyInvite = null;
+  if (!inv) return;
+  const from = players.get(inv.from);
+  if (from) send(from.ws, { t: 'event', kind: 'notice', text: `${p.name} declined your invitation.` });
+}
+// Leaving, being kicked and disconnecting all come through here, because they
+// all mean the same thing to everyone still in the party.
+function partyRemove(p, why) {
+  const party = partyOf(p); if (!party) return;
+  party.members = party.members.filter(id => id !== p.id);
+  p.partyId = null;
+  send(p.ws, partyPayload(null));
+  if (party.members.length < 2) {            // a party of one is just a person
+    for (const m of partyMembers(party)) { m.partyId = null; send(m.ws, partyPayload(null)); send(m.ws, { t: 'event', kind: 'notice', text: 'The party has disbanded.' }); }
+    parties.delete(party.id);
+    return;
+  }
+  if (party.leader === p.id) {               // the next one along takes over
+    party.leader = party.members[0];
+    const lead = players.get(party.leader);
+    if (lead) partyNotice(party, `${lead.name} now leads the party.`);
+  }
+  partyNotice(party, why || `${p.name} has left the party.`);
+  sendParty(party);
+}
+function partyKick(leader, id) {
+  const party = partyOf(leader);
+  if (!party || party.leader !== leader.id) return send(leader.ws, { t: 'event', kind: 'notice', text: 'Only the party leader can remove members.' });
+  const t = players.get(Number(id)); if (!t || t.partyId !== party.id || t === leader) return;
+  send(t.ws, { t: 'event', kind: 'notice', text: 'You have been removed from the party.' });
+  partyRemove(t, `${t.name} was removed from the party.`);
+}
+// Who shares a kill: everyone in the party who is alive, in the same zone and
+// near enough to have been part of it. The killer always counts.
+function killShare(killer) {
+  const party = partyOf(killer);
+  if (!party) return [killer];
+  const share = partyMembers(party).filter(m => m.alive && m.zoneId === killer.zoneId
+    && dist2(m.x, m.z, killer.x, killer.z) < PARTY_SHARE_RANGE * PARTY_SHARE_RANGE);
+  return share.length ? share : [killer];
+}
+// Splitting a kill costs the group a little, but grouping pays it back: each
+// extra pair of hands adds a tenth, so a full party of five is earning 1.4x
+// what one of them would alone, spread between them.
+function partyXpSplit(n) { return n <= 1 ? 1 : (1 + 0.1 * (n - 1)) / n; }
+
 function killMonster(m, killer) {
   m.alive = false; m.state = 'dead'; m.provoked = false; m.debuffs = null; m.stagger = 0;
   if (m.minion) onMinionKilled(bossCtx, m);
@@ -966,7 +1598,11 @@ function killMonster(m, killer) {
   m.respawnTimer = m.elite ? Math.max(90, m.respawn * 2) : m.respawn;
   m.hp = 0;
   if (killer) {
-    grantXp(killer, m.xp);
+    // Everyone who shares the kill is paid against their own level, so the
+    // veteran carrying a friend earns what a veteran earns and the friend
+    // earns what the fight was actually worth to them.
+    const share = killShare(killer), split = partyXpSplit(share.length);
+    for (const m2 of share) grantXp(m2, Math.round(xpForKill(m2.level, m.level, m.xp) * split));
     notifyQuestProgress(killer, recordKill(killer, m));
   }
 
@@ -1009,13 +1645,24 @@ function pickupItem(p, itemId) {
 }
 
 // What every item is, for bag tooltips / Examine: sent once on join.
-const ITEM_CATALOG = Object.fromEntries(Object.entries(ITEMS).map(([n, d]) => [n, {
-  slot: d.slot || null, atk: d.atk || 0, def: d.def || 0, level: d.level || 1, value: d.value || 0,
-  heal: d.heal || 0, desc: d.desc || null, gear: d.gear || null, model: d.model || null, len: d.len || null, tier: d.tier || 0, set: d.set || null, rarity: d.rarity || null,
-}]));
+// Weapons carry their combat profile to the client as well as their bonus:
+// how often they swing, what kind of damage they do and whether they need two
+// hands is the difference between two weapons with the same +atk.
+const ITEM_CATALOG = Object.fromEntries(Object.entries(ITEMS).map(([n, d]) => {
+  const w = d.slot === 'weapon' ? weaponProfile(n) : null;
+  return [n, {
+    slot: d.slot || null, atk: d.atk || 0, def: d.def || 0, level: d.level || 1, value: d.value || 0,
+    heal: d.heal || 0, desc: d.desc || null, gear: d.gear || null, model: d.model || null, len: d.len || null, tier: d.tier || 0, set: d.set || null, rarity: d.rarity || null,
+    spd: w ? +swingSeconds(w).toFixed(1) : undefined, dmgType: w ? w.type : undefined,
+    hands: w ? w.hands : undefined, reach: w && w.reach ? w.reach : undefined, rangedAt: w && w.range ? w.range : undefined, arch: w ? w.arch : undefined,
+  }];
+}));
 function sendBag(p) {
-  send(p.ws, { t: 'bag', items: p.inventory, gold: p.gold,
-    equipment: p.equipment, stats: equipStats(p.equipment), slots: SLOT_INFO, doll: DOLL });
+  const w = weaponOf(p), cs = classStats(p.cls, p.level), eq = equipStats(p.equipment);
+  const [lo, hi] = swingBand(w, cs.str, eq.atk || 0);
+  send(p.ws, { t: 'bag', items: p.inventory, stacks: bagStacks(p.inventory), gold: p.gold,
+    equipment: p.equipment, stats: eq, slots: SLOT_INFO, doll: DOLL,
+    swing: { sec: +swingSeconds(w).toFixed(1), type: w.type, lo, hi, reach: +reachOf(p).toFixed(1), hands: w.hands } });
   // A 'collect' objective reads straight off the inventory, so any bag change
   // can complete (or un-complete) a quest.
   sendQuests(p);
@@ -1058,16 +1705,21 @@ function unequipItem(p, slot) {
 }
 
 // Sell to a merchant NPC you're standing next to. Equipped gear is never sold.
-function sellItem(p, name) {
+// Sell one, or the whole stack — nobody wants to click thirty times to empty
+// a mining run into a merchant's hands.
+function sellItem(p, name, all) {
   const merchant = (zoneOf(p).npcs || []).find(n => n.trade);
   if (!merchant) return;
   if (dist2(p.x, p.z, merchant.x, merchant.z) > NPC_TALK_RADIUS * NPC_TALK_RADIUS) return;
-  const idx = p.inventory.indexOf(name);
-  if (idx < 0) return;
-  p.inventory.splice(idx, 1);
-  const paid = Math.max(1, Math.round(valueOf(name) * 0.4)); // merchants buy low
-  p.gold += paid;
-  send(p.ws, { t: 'event', kind: 'sold', text: `Sold ${name} for ${paid} gold.`, gold: p.gold });
+  const each = Math.max(1, Math.round(valueOf(name) * 0.4));   // merchants buy low
+  let n = 0;
+  do {
+    const idx = p.inventory.indexOf(name);
+    if (idx < 0) break;
+    p.inventory.splice(idx, 1); p.gold += each; n++;
+  } while (all && stackable(name));
+  if (!n) return;
+  send(p.ws, { t: 'event', kind: 'sold', text: `Sold ${n > 1 ? n + ' × ' : ''}${name} for ${each * n} gold.`, gold: p.gold });
   sendBag(p);
 }
 
@@ -1278,6 +1930,16 @@ function sendQuests(p) {
   }
 }
 
+// Optional objectives pay their own bonus when you hand the quest in.
+function questBonus(p, q) {
+  let gold = 0, xp = 0;
+  for (const o of (q.objectives || [])) {
+    if (!o.optional || !o.bonus) continue;
+    if (!objectiveProgress(p, q, o).done) continue;
+    gold += o.bonus.gold || 0; xp += o.bonus.xp || 0;
+  }
+  return { gold, xp };
+}
 function notifyQuestProgress(p, ids) {
   if (!ids || !ids.length) return;
   for (const id of new Set(ids)) {
@@ -1312,9 +1974,13 @@ function acceptQuest(p, id) {
 
 function turnInQuest(p, id) {
   const q = QUESTS[id];
-  if (!q || !p.quests.has(id) || !nearGiver(p, q)) return;
-  if (!questProgress(p, q).complete) return;
+  if (!q || !p.quests.has(id)) return;
+  // Say why, rather than doing nothing: "walk back to them" is a fair thing
+  // for the game to tell you.
+  if (!nearGiver(p, q)) return send(p.ws, { t: 'event', kind: 'notice', text: `You need to speak to ${q.giver} in person.` });
+  if (!questProgress(p, q).complete) return send(p.ws, { t: 'event', kind: 'notice', text: `"${q.name}" is not finished yet.` });
 
+  const bonus = questBonus(p, q);      // read before the tallies are cleared
   consumeQuestItems(p, q);
   p.quests.delete(id);
   p.questDone.add(id);
@@ -1322,11 +1988,12 @@ function turnInQuest(p, id) {
   delete p.questKills[id];
 
   const r = q.reward || {};
-  if (r.gold) p.gold += r.gold;
+  const gold = (r.gold || 0) + bonus.gold, xp = (r.xp || 0) + bonus.xp;
+  if (gold) p.gold += gold;
   for (const it of (r.items || [])) p.inventory.push(it);
   send(p.ws, { t: 'event', kind: 'questcomplete', id, name: q.name,
-    text: q.done, xp: r.xp || 0, gold: r.gold || 0, items: r.items || [] });
-  if (r.xp) grantXp(p, r.xp);          // may level the player up
+    text: q.done, xp, gold, items: r.items || [], bonus: (bonus.gold || bonus.xp) ? bonus : undefined });
+  if (xp) grantXp(p, xp);              // may level the player up
   systemChat(`${p.name} completed "${q.name}".`);
   sendBag(p);                           // also re-sends the quest payload
 }
@@ -1343,17 +2010,40 @@ function checkQuestReach(p) {
 }
 
 // Called from the movement state machine once the player is in melee range.
-// Per-weapon attack speed (ticks). Fast blades swing more often; heavy weapons
-// hit harder but slower. Anything not listed uses the default (4 ticks).
-const WEAPON_SPEED = {
-  'Bronze Dagger': 3, 'Spiderfang Dagger': 3, 'Rusty Dagger': 3,
-  'Iron Sword': 4, 'Goblin Shortbow': 3,
-  'Ogre Club': 6, "Giant's Stone Maul": 7,
-};
+// The weapon in the player's hand, as combat sees it: speed, damage type,
+// reach and grip all come from the item itself (see server/combat.js), so
+// swapping a dagger for a maul changes the whole rhythm of the fight.
+function weaponOf(p) { return weaponProfile(p.equipment && p.equipment.weapon); }
 function playerAttackSpeed(p) {
-  const w = p.equipment && p.equipment.weapon;
   const mo = classDef(p.cls).momentum, k = mo ? 1 - mo.atkSpeedPerStack * (p.momentum || 0) : 1;
-  return (WEAPON_SPEED[w] || DEFAULT_ATTACK_SPEED) * TICK * k * atkSpeedMult(p);
+  return swingSeconds(weaponOf(p)) * k * atkSpeedMult(p);
+}
+// How far this player can reach their target: a spear fights from a step back,
+// a bow from across the clearing.
+function reachOf(p) { return weaponRange(weaponOf(p), ATTACK_RANGE); }
+// The player's defensive sheet. Dodging comes from keeping your feet, parrying
+// needs something in your hand, blocking needs a shield on your arm — so what
+// you wear decides which lines of the attack table you ever see.
+function defenceProfile(p, srcX, srcZ) {
+  const eq = equipStats(p.equipment), cs = classStats(p.cls, p.level);
+  const shield = p.equipment && p.equipment.offhand && (itemDef(p.equipment.offhand) || {});
+  const armed = !weaponOf(p).unarmed;
+  return {
+    level: cs.def,
+    dodge: 0.03 + cs.def * 0.0012 + buffStat(p, 'dodge'),
+    parry: (armed ? 0.04 + cs.def * 0.0010 : 0) + buffStat(p, 'parry'),
+    block: shield && shield.def ? 0.14 + cs.def * 0.0015 + buffStat(p, 'block') : 0,
+    blockAmt: shield && shield.def ? Math.round(shield.def * 1.8 + p.level * 0.8) : 0,
+    armour: eq.def || 0,
+    facing: srcX == null ? true : facing(p.x, p.z, p.yaw, srcX, srcZ),
+  };
+}
+// Sum one defensive stat across the player's active buffs (Shield Wall and
+// friends push dodge/parry/block up for their duration).
+function buffStat(p, key) {
+  let v = 0;
+  for (const b of Object.values(p.buffs || {})) if (b.t > 0 && b[key]) v += b[key] * songAmp(p, b);
+  return v;
 }
 // Meditation trains as you rest to heal: xp scales with HP recovered.
 function addMeditationXp(p, amount) {
@@ -1508,9 +2198,99 @@ function navStep(zone, ent, tx, tz, stopDist, speed) {
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// NPC routes -- the village walks about.
+//
+// An NPC without a hand-written route gets a small one built on first tick: a
+// ring of points around wherever it was placed, keeping only those that are
+// walkable and that it can reach from its post in a straight line, so nobody
+// strolls into the river or through a wall. The stops are walked in order with
+// a dwell at each, which reads as a beat rather than a wander, and the post
+// itself is one of them and the longest -- a merchant is never far from the
+// stall and a quest giver is where the map says.
+//
+// They move by the same navStep the monsters use, so n.x/n.z stay live and
+// every proximity check in the game (talk, trade, train) keeps working.
+// ---------------------------------------------------------------------------
+const NPC_SPEED = PLAYER_SPEED * 0.4;      // unhurried: they are not going anywhere
+function npcStrollRadius(n) {
+  if (n.stroll != null) return n.stroll;
+  if (n.trade || n.trainer) return 3.0;    // they have a post to keep
+  return 6.5;
+}
+function buildNpcRoute(zone, n) {
+  n._yaw0 = n.yaw || 0;
+  // Somebody placed inside a crate or half through a tent wall can go nowhere,
+  // because every direction out of a solid cell is solid. Step them to the
+  // nearest clear ground first -- it is a nudge of a metre or two, and without
+  // it they stand frozen while the rest of the village walks about.
+  if (navBlocked(zone, n.x, n.z)) {
+    outer: for (let r = 0.6; r <= 3.0; r += 0.6) {
+      for (let i = 0; i < 12; i++) {
+        const a = i * Math.PI / 6, x = n.x + Math.sin(a) * r, z = n.z + Math.cos(a) * r;
+        if (!navBlocked(zone, x, z)) { n.x = x; n.z = z; break outer; }
+      }
+    }
+  }
+  const home = { x: n.x, z: n.z, wait: [8, 16] };
+  const stops = [home];
+  if (!n.static) {
+    if (Array.isArray(n.route) && n.route.length) {
+      for (const w of n.route) stops.push({ x: w.x, z: w.z, wait: w.wait || [3, 9] });
+    } else {
+      // Try the full radius first, then draw in: someone posted in a doorway or
+      // penned between a cart and a fence should still shift their feet rather
+      // than stand frozen while the rest of the village walks about.
+      const R0 = npcStrollRadius(n), turn = Math.PI * 2 / 12, start = Math.random() * Math.PI * 2;
+      for (const scale of [1, 0.55, 0.3]) {
+        for (let i = 0; i < 12 && stops.length < 4; i++) {
+          const a = start + i * turn, r = R0 * scale * (0.55 + Math.random() * 0.45);
+          const x = home.x + Math.sin(a) * r, z = home.z + Math.cos(a) * r;
+          if (navBlocked(zone, x, z)) continue;                      // a wall, a tree, the water
+          if (!lineClear(zone, home.x, home.z, x, z)) continue;      // and it has to be able to get back
+          stops.push({ x, z, wait: [3, 9] });
+        }
+        if (stops.length > 1) break;
+      }
+    }
+  }
+  return { stops, i: 0, wait: Math.random() * 8, speed: NPC_SPEED * (0.85 + Math.random() * 0.3) };
+}
+function stepNpc(zone, n, dt) {
+  const r = n._route || (n._route = buildNpcRoute(zone, n));
+  if (r.stops.length < 2) { n.moving = false; return; }            // nowhere safe to go: stay put
+  if (r.wait > 0) {
+    r.wait -= dt; n.moving = false;
+    // Standing about, they settle back to the way they were facing.
+    const d = Math.atan2(Math.sin(n._yaw0 - n.yaw), Math.cos(n._yaw0 - n.yaw));
+    n.yaw += d * Math.min(1, dt * 1.5);
+    return;
+  }
+  const s = r.stops[r.i];
+  n.moving = navStep(zone, n, s.x, s.z, 0.4, r.speed);
+  if (!n.moving) {                                                  // arrived: dwell, then on to the next
+    r.i = (r.i + 1) % r.stops.length;
+    r.wait = s.wait[0] + Math.random() * (s.wait[1] - s.wait[0]);
+    n._nav = null;
+  }
+}
+
+// A swing is two moments, not one: the wind-up the client animates, and the
+// impact where the damage actually happens. Splitting them is what stops the
+// game showing a number before the axe has reached anybody. IMPACT_AT is how
+// far through the swing the blow lands.
+const IMPACT_AT = 0.42;
+function impactDelay(p) { return Math.max(0.2, Math.min(0.75, playerAttackSpeed(p) * IMPACT_AT)); }
 function doPlayerAttack(p, m) {
-  if (p.atkTimer > 0) return;
+  if (p.atkTimer > 0 || p.swing) return;
   if (m.untargetable) return;   // out of reach mid-leap
+  if (m.kind === 'player') {    // a duel: no threat table, nothing to provoke
+    const w2 = weaponOf(p), delay2 = impactDelay(p);
+    p.atkTimer = playerAttackSpeed(p);
+    p.swing = { id: m.id, t: delay2 };
+    broadcast({ t: 'event', kind: 'swing', by: p.id, target: m.id, dur: delay2, arch: w2.arch, type: w2.type, ranged: !!w2.range });
+    return;
+  }
   if (engagedElsewhere(p, m)) {
     const other = monsters.get(p.engagedWith);
     if (other && other.alive) {
@@ -1519,21 +2299,52 @@ function doPlayerAttack(p, m) {
     }
     p.engagedWith = null; // the other one is gone
   }
+  const w = weaponOf(p), delay = impactDelay(p);
   p.atkTimer = playerAttackSpeed(p);
-  m.state = 'combat'; m.targetId = p.id; m.provoked = true; // monster fights back even on a miss
+  p.swing = { id: m.id, t: delay };
+  m.state = 'combat'; m.provoked = true;               // it fights back even on a miss
+  addThreat(m, p.id, 1); retarget(m);
   engage(p, m);
-  // OSRS accuracy: our attack roll vs the monster's defence roll; damage 0..maxHit.
-  // A flat competence (+6 effective) keeps early, gear-less combat from being a
-  // miss-fest against low-level foes while still scaling with skills and gear.
+  broadcast({ t: 'event', kind: 'swing', by: p.id, target: m.id, dur: delay, arch: w.arch, type: w.type, ranged: !!w.range });
+}
+// The impact frame: resolve the attack table and land the blow.
+function landPlayerSwing(p) {
+  const sw = p.swing; p.swing = null;
+  const foe = duelFoe(p);
+  const m = monsters.get(sw.id) || (foe && foe.id === sw.id ? foe : null);
+  if (!p.alive || !m || !m.alive || m.zoneId !== p.zoneId) return;
+  const w = weaponOf(p);
+  if (dist2(p.x, p.z, m.x, m.z) > (weaponRange(w, ATTACK_RANGE) + 1.5) ** 2) return;   // they broke away mid-swing
   playerSwing(p, m, 1);
 }
-// One swing of the player at a monster with the class's rolls. Returns the damage.
+// One swing of the player at a monster, rolled on the attack table.
 function playerSwing(p, m, dmgMult) {
-  const eq = equipStats(p.equipment), bonus = eq.atk || 0, cs = classStats(p.cls, p.level);
-  const dmg = rollSwing(cs.atk, cs.str, bonus, bonus, monsterDef(m), m.defBonus || 0, dmgMult * (1 + dmgBuff(p, false)) * takenMult(m));
-  applyHit(p, m, dmg, false);
-  if (dmg > 0) { addRage(p, (classDef(p.cls).rage || {}).autoHit || 0); spendSongCharges(clericCtx, p, 'weapon'); }   // landing a blow feeds the rage (and spends Blade Rhythm)
-  return dmg;
+  const eq = equipStats(p.equipment), bonus = eq.atk || 0, cs = classStats(p.cls, p.level), w = weaponOf(p);
+  const res = resolveAttack({
+    level: cs.atk, hitBonus: bonus * 0.004, type: w.type,
+    crit: critChance(p) + (w.crit || 0), critMult: classDef(p.cls).critMult || 2.0,
+    band: swingBand(w, cs.str, bonus),
+    mult: dmgMult * (1 + dmgBuff(p, false)) * takenMult(m),
+  }, monsterDefence(m, p));
+  applyHit(p, m, res.dmg, res.outcome === 'crit', w.type, res);
+  if (res.dmg > 0) { addRage(p, (classDef(p.cls).rage || {}).autoHit || 0); spendSongCharges(clericCtx, p, 'weapon'); }   // landing a blow feeds the rage (and spends Blade Rhythm)
+  return res.dmg;
+}
+// A monster's defensive sheet. Archetypes decide which lines it gets: a
+// shielded defender blocks, a scuttling spider dodges, a beast does neither.
+function monsterDefence(m, from) {
+  if (m.kind === 'player') return playerDefence(m, from);
+  const a = MOB_DEF[m.arch] || MOB_DEF.beast;
+  // A defender that has just raised its shield is much harder to get through.
+  const wall = (m.debuffs && m.debuffs.mob_shield_wall > 0) ? 0.25 : 0;
+  return {
+    level: monsterDef(m),
+    dodge: a.dodge * ((m.debuffs && m.debuffs.crushed_armor > 0) ? 0.8 : 1),
+    parry: a.parry, block: a.block + wall,
+    blockAmt: Math.round((a.block ? 3 + (m.level || 1) * 1.4 : 0)),
+    armour: m.defBonus || 0,
+    facing: from ? facing(m.x, m.z, m.yaw, from.x, from.z) : true,
+  };
 }
 function addRage(p, n) { const R = classDef(p.cls).rage; if (!R || !n) return; p.rage = Math.min(R.max, (p.rage || 0) + n); p.rageIdle = 0; }
 // The class resource on the bar: rage for the Fighter, mana for the Cleric.
@@ -1542,7 +2353,7 @@ function spendRes(p, n) { if (classDef(p.cls).mana) p.mana = Math.max(0, (p.mana
 function refundRes(p, n) { if (classDef(p.cls).mana) p.mana = Math.min(p.manaMax || 0, (p.mana || 0) + n); else p.rage = Math.min(p.rageMax || 0, (p.rage || 0) + n); }
 // Monster effective defence, with Crushed Armour.
 function monsterDef(m) { return (m.defLevel || 1) * ((m.debuffs && m.debuffs.crushed_armor > 0) ? 0.92 : 1) * bardMonsterDefMult(m); }
-function takenMult(m) { return ((m.debuffs && m.debuffs.split_guard > 0) ? 1.08 : 1) * bardMonsterTakenMult(m); }
+function takenMult(m) { if (m.kind === 'player') return 1; return ((m.debuffs && m.debuffs.split_guard > 0) ? 1.08 : 1) * bardMonsterTakenMult(m); }
 // Damage bonus from the player's active buffs (heavy: the ability spends
 // Weapon Flow; spell: a cast, which weapon-only songs don't help).
 function dmgBuff(p, heavy, spell) {
@@ -1564,17 +2375,79 @@ function moveMult(p) {
 }
 function addBuff(p, spec) { p.buffs[spec.id] = { ...spec, t: spec.dur, charges: spec.charges || 0, since: 0 }; if (p.ws) sendStatus(p); }
 // A landed hit: damage, xp, splat, kill; momentum / savage triggers.
-function applyHit(p, m, dmg, crit, kind) {
+function applyHit(p, m, dmg, crit, kind, res) {
+  if (m.kind === 'player') return duelHit(p, m, dmg, crit, kind, res);   // a duel: same blow, nobody dies
   p.lastCombat = Date.now(); p.combatTimer = REGEN.combatLockout;
   if (m.vulnerable > 0 && dmg > 0) dmg = Math.round(dmg * 1.5);   // a stunned boss takes it hard
-  if (dmg > 0) { m.hp -= dmg; m.provoked = true; if (!m.boss) { m.targetId = p.id; m.state = 'combat'; } if (m.debuffs && m.debuffs.asleep) delete m.debuffs.asleep; spendSongCharges(clericCtx, p, 'offensive'); } // class xp comes with the kill (killMonster), not per hit; a blow wakes a lullaby
-  broadcast({ t: 'event', kind: 'hit', by: p.id, target: m.id, dmg, crit: !!crit, targetKind: 'monster', hitKind: kind || null });
-  if (crit) savageTrigger(p);
+  if (dmg > 0) {
+    m.hp -= dmg; m.provoked = true;
+    if (m.debuffs && m.debuffs.asleep) delete m.debuffs.asleep;   // a blow wakes a lullaby
+    addThreat(m, p.id, dmg * (res && res.threat != null ? res.threat : threatMult(p)));
+    if (!m.boss) { m.state = 'combat'; retarget(m); }
+    spendSongCharges(clericCtx, p, 'offensive');
+  }
+  broadcast({ t: 'event', kind: 'hit', by: p.id, target: m.id, dmg, crit: !!crit, targetKind: 'monster',
+              hitKind: kind || null, res: res ? res.outcome : (dmg > 0 ? 'hit' : 'miss'), blocked: res && res.blocked || 0 });
+  if (crit) { savageTrigger(p); procOnCrit(p); }
   if (m.hp <= 0) killMonster(m, p);
+}
+// How loudly this player's damage registers on a threat table. Defensive
+// stances shout; the abilities that drop threat whisper.
+function threatMult(p) {
+  let k = 1;
+  for (const b of Object.values(p.buffs || {})) if (b.t > 0 && b.threat) k *= b.threat;
+  return k;
+}
+// Healing is loud. Every monster already fighting the person you patched up
+// hears about it, which is why a healer needs a tank standing in front of them.
+function healThreat(by, healed, amount) {
+  for (const m of monsters.values()) {
+    if (!m.alive || m.zoneId !== by.zoneId) continue;
+    if (m.targetId !== healed.id && !threatOf(m, healed.id)) continue;
+    if (dist2(m.x, m.z, by.x, by.z) > 40 ** 2) continue;
+    addThreat(m, by.id, amount * 0.5);
+    retarget(m);
+  }
+}
+// Pick the monster's target off its threat table and turn it on them.
+function retarget(m) {
+  const id = topThreat(m,
+    (pid) => { const t = players.get(pid); return !!(t && t.alive && t.zoneId === m.zoneId); },
+    (pid) => { const t = players.get(pid); return !!t && dist2(t.x, t.z, m.x, m.z) <= (ATTACK_RANGE + 2) ** 2; });
+  if (id == null || id === m.targetId) return;
+  const was = m.targetId;
+  m.targetId = id; m.state = 'combat';
+  // Announce a pull so whoever just lost (or took) aggro can see it happen.
+  if (was != null) broadcast({ t: 'event', kind: 'aggro', monster: m.id, target: id, from: was });
 }
 function addMomentum(p, n) {
   const mo = classDef(p.cls).momentum; if (!mo || !p.known.has('momentum')) return; // the passive has to be learned too
   p.momentum = Math.min(mo.max, (p.momentum || 0) + n); p.momentumT = mo.dur;
+}
+// A crit can open a window: the classic "your next one is free" flash that
+// makes a rotation react to luck instead of running on rails. Each class gets
+// one, and it is spent by the ability it lights up (see spendCharges / the
+// free-cost check in useAbility).
+const CRIT_PROCS = {
+  fighter: { id: 'opening', chance: 0.25, dur: 8,  name: 'Opening', dmg: 0.30, charges: 1, text: 'An opening! Your next ability strikes for +30%.' },
+  cleric:  { id: 'blessed_hands',   chance: 0.20, dur: 10, name: 'Blessed Hands', heal: 0.30, charges: 1, text: 'Your hands blaze with light!' },
+  bard:    { id: 'encore',          chance: 0.22, dur: 10, name: 'Encore', free: true, charges: 1, text: 'Encore! Your next song is free.' },
+};
+function procOnCrit(p) {
+  const d = CRIT_PROCS[p.cls];
+  if (!d || Math.random() >= d.chance) return;
+  const have = p.buffs[d.id];
+  if (have && have.t > 0) { have.t = d.dur; return; }   // already lit: just refresh it
+  addBuff(p, { id: d.id, dur: d.dur, charges: d.charges, dmg: d.dmg || 0, heal: d.heal || 0, free: !!d.free, proc: true, vis: 'proc' });
+  send(p.ws, { t: 'event', kind: 'proc', id: d.id, name: d.name, text: d.text });
+}
+// The global cooldown: the deliberate beat classic combat is built on. Most
+// abilities set it; interrupts, emergency buttons and pure reactions are off
+// it, so the thing you need in a hurry is never locked behind the last thing
+// you pressed. Haste shortens it, but never below three quarters of a second.
+function gcdFor(p, a) {
+  if (a.offGcd || a.passive) return 0;
+  return Math.max(0.75, (classDef(p.cls).gcd || 1.5) * castTimeMult(p));
 }
 function savageTrigger(p) {
   const w = p.buffs.savage_watcher; if (!w || !(w.t > 0) || (p.savageCd || 0) > 0) return;
@@ -1631,14 +2504,14 @@ function abilityList(p) {
 }
 // Buy an ability from the class trainer standing nearby.
 function learnAbility(p, id) {
-  const notice = (text) => send(p.ws, { t: 'event', kind: 'notice', text });
+  const say = (text) => notice(p, text);
   const a = classDef(p.cls).abilities.find(x => x.id === id); if (!a) return;
   const trainer = (zoneOf(p).npcs || []).find(n => n.trainer === p.cls && dist2(n.x, n.z, p.x, p.z) < 8 * 8);
-  if (!trainer) return notice('Find your class trainer to learn that.');
-  if (p.known.has(id)) return notice(`You already know ${a.name}.`);
-  if (p.level < a.level) return notice(`${a.name} needs level ${a.level}.`);
+  if (!trainer) return say('Find your class trainer to learn that.');
+  if (p.known.has(id)) return say(`You already know ${a.name}.`);
+  if (p.level < a.level) return say(`${a.name} needs level ${a.level}.`);
   const price = abilityCost(a);
-  if (p.gold < price) return notice(`${a.name} costs ${price} gp — you have ${p.gold}.`);
+  if (p.gold < price) return say(`${a.name} costs ${price} gp — you have ${p.gold}.`);
   p.gold -= price; p.known.add(id);
   send(p.ws, { t: 'event', kind: 'learned', id, name: a.name, price });
   sendBag(p); sendAbilities(p);
@@ -1651,35 +2524,52 @@ function sendStatus(p) { // buffs / momentum / rage, for the HUD
   const buffs = Object.entries(p.buffs).filter(([, b]) => b.t > 0).map(([id, b]) => ({ id, t: Math.round(b.t), charges: b.charges || 0 }));
   send(p.ws, { t: 'status', momentum: p.momentum || 0, buffs, riposte: !!(p.buffs.riposte_ready && p.buffs.riposte_ready.t > 0) });
 }
-function useAbility(p, id) {
+// A press that lands just before you're free shouldn't be thrown away — the
+// difference between combat that feels deliberate and combat that feels
+// broken. Anything inside this window waits its turn instead of being lost.
+const QUEUE_WINDOW = 0.75;
+function queueAbility(p, id) { p.queued = { id, t: QUEUE_WINDOW + 0.25 }; send(p.ws, { t: 'event', kind: 'queued', id }); }
+function stepQueue(p) {
+  const q = p.queued; if (!q) return;
+  q.t -= DT;
+  if (q.t <= 0) { p.queued = null; send(p.ws, { t: 'event', kind: 'queued', id: null }); return; }
+  if ((p.gcd || 0) > 0 || p.windup || p.channel) return;
+  p.queued = null; send(p.ws, { t: 'event', kind: 'queued', id: null });
+  useAbility(p, q.id, true);
+}
+function useAbility(p, id, fromQueue) {
   const c = classDef(p.cls), a = c.abilities.find(x => x.id === id);
-  const notice = (text) => send(p.ws, { t: 'event', kind: 'notice', text });
+  const say = (text) => notice(p, text);
   if (!a || !p.alive || a.passive) return;
-  if (!p.known.has(id)) return notice(`You haven't learned ${a.name}.`);
-  if (p.level < a.level) return notice(`${a.name} unlocks at level ${a.level}.`);
-  if ((p.cooldowns[id] || 0) > 0) return notice(`${a.name} is not ready.`);
-  if (p.channel || p.windup) return notice('You are busy.');
+  if (!p.known.has(id)) return say(`You haven't learned ${a.name}.`);
+  if (p.level < a.level) return say(`${a.name} unlocks at level ${a.level}.`);
+  // Busy, but nearly free: hold the press instead of dropping it.
+  const busy = Math.max(p.gcd || 0, p.windup ? p.windup.t : 0, p.channel ? 0.2 : 0);
+  if (!fromQueue && busy > 0 && busy <= QUEUE_WINDOW && (p.cooldowns[id] || 0) <= busy) return queueAbility(p, id);
+  if ((p.cooldowns[id] || 0) > 0) return say(`${a.name} is not ready.`);
+  if (p.channel || p.windup) return say('You are busy.');
   if ((p.gcd || 0) > 0) return;
-  if (a.requires && !(p.buffs[a.requires] && p.buffs[a.requires].t > 0)) return notice(`${a.name} needs an enemy to have just missed you.`);
-  const cost = isSpell(a) ? costOf(p, a) : (a.cost || 0);
-  if (resOf(p) < cost) return notice(`Not enough ${(c.resource || 'rage').toLowerCase()}.`);
-  if (isSpell(a)) { const err = checkCast(clericCtx, p, a); if (err) return notice(err); }
-  if (isBardSpell(a)) { const err = checkBardCast(clericCtx, p, a); if (err) return notice(err); }
-  const target = p.combatId != null ? monsters.get(p.combatId) : null;
-  const inReach = target && target.alive && dist2(p.x, p.z, target.x, target.z) <= ATTACK_RANGE * ATTACK_RANGE;
+  if (a.requires && !(p.buffs[a.requires] && p.buffs[a.requires].t > 0)) return say(`${a.name} needs an enemy to have just missed you.`);
+  const freeProc = Object.values(p.buffs).find(b => b.t > 0 && b.free && b.charges > 0);
+  const cost = freeProc ? 0 : (isSpell(a) ? costOf(p, a) : (a.cost || 0));
+  if (resOf(p) < cost) return say(`Not enough ${(c.resource || 'rage').toLowerCase()}.`);
+  if (isSpell(a)) { const err = checkCast(clericCtx, p, a); if (err) return say(err); }
+  if (isBardSpell(a)) { const err = checkBardCast(clericCtx, p, a); if (err) return say(err); }
+  const target = combatTargetOf(p);
+  const inReach = target && target.alive && dist2(p.x, p.z, target.x, target.z) <= reachOf(p) ** 2;
   const needTarget = ['melee', 'execute', 'cone', 'rush'].includes(a.kind);
-  if (needTarget && !(target && target.alive)) return notice('You need a target.');
-  if (needTarget && target.untargetable) return notice(`${target.name} is out of reach!`);
-  if (['melee', 'execute', 'cone'].includes(a.kind) && !inReach) return notice('You need to be in reach.');
-  if (a.kind === 'execute' && target.hp > target.maxHp * 0.3) return notice(`${a.name} needs the target at 30% health or less.`);
-  if (a.kind === 'rush' && dist2(p.x, p.z, target.x, target.z) > a.range * a.range) return notice('Too far to rush.');
-  if (a.kind === 'rush' && !lineClear(zoneOf(p), p.x, p.z, target.x, target.z)) return notice('No clear path to rush.');
+  if (needTarget && !(target && target.alive)) return say('You need a target.');
+  if (needTarget && target.untargetable) return say(`${target.name} is out of reach!`);
+  if (['melee', 'execute', 'cone'].includes(a.kind) && !inReach) return say('You need to be in reach.');
+  if (a.kind === 'execute' && target.hp > target.maxHp * 0.3) return say(`${a.name} needs the target at 30% health or less.`);
+  if (a.kind === 'rush' && dist2(p.x, p.z, target.x, target.z) > a.range * a.range) return say('Too far to rush.');
+  if (a.kind === 'rush' && !lineClear(zoneOf(p), p.x, p.z, target.x, target.z)) return say('No clear path to rush.');
 
   const fire = () => {
     if (isSpell(a)) { castSpell(clericCtx, p, a); sendStatus(p); return; }
     if (isBardSpell(a)) { castBard(clericCtx, p, a); sendStatus(p); return; }
-    const t = p.combatId != null ? monsters.get(p.combatId) : null;
-    if (['melee', 'execute'].includes(a.kind) && !(t && t.alive && dist2(p.x, p.z, t.x, t.z) <= ATTACK_RANGE * ATTACK_RANGE)) return;
+    const t = combatTargetOf(p);
+    if (['melee', 'execute'].includes(a.kind) && !(t && t.alive && dist2(p.x, p.z, t.x, t.z) <= reachOf(p) ** 2)) return;
     switch (a.kind) {
       case 'melee': {
         const extra = {};
@@ -1689,6 +2579,7 @@ function useAbility(p, id) {
           const n = p.momentum || 0; extra.flat = a.spendMomentum.flat * n; extra.wd = a.spendMomentum.wd * n; p.momentum = 0;
           if (t.debuffs && t.debuffs.split_guard > 0) extra.mult = 1.15;
         }
+        if (a.interrupt) interruptMonster(t, p);
         const before = t.hp, dmg = abilityHit(p, t, a, extra);
         if (a.debuff && dmg > 0) { t.debuffs = t.debuffs || {}; t.debuffs[a.debuff.id] = a.debuff.dur; if (a.debuff.id === 'bonebreak') t.debuffs.bonebreak_atk = 8; }
         if (a.selfDebuff) addBuff(p, a.selfDebuff);
@@ -1715,6 +2606,7 @@ function useAbility(p, id) {
         let landed = 0;
         for (const m of hits) {
           const extra = (m.debuffs && m.debuffs.crushed_armor > 0) ? { mult: 1.1 } : {};
+          if (a.interrupt || a.stagger) interruptMonster(m, p);   // a stagger breaks concentration
           if (abilityHit(p, m, a, extra) > 0) { landed++; if (a.stagger && !m.elite) m.stagger = Math.max(m.stagger || 0, a.stagger); else if (a.stagger) m.stagger = Math.max(m.stagger || 0, 0.3); }
         }
         if (a.momentumIf2 && landed >= 2) addMomentum(p, a.momentumIf2);
@@ -1725,6 +2617,8 @@ function useAbility(p, id) {
         break;
       }
       case 'rush': {
+        if (a.interrupt) interruptMonster(t, p);   // a shoulder in the chest stops a spell dead
+        if (a.threatSpike) { addThreat(t, p.id, a.threatSpike); retarget(t); }
         // Charge: land just short of the target, facing it, and take it as the fight.
         const d = Math.hypot(t.x - p.x, t.z - p.z); if (d > 1.6) { const k = (d - 1.4) / d; p.x += (t.x - p.x) * k; p.z += (t.z - p.z) * k; }
         p.yaw = Math.atan2(t.x - p.x, t.z - p.z); p.combatId = t.id; p.moveTo = null;
@@ -1733,17 +2627,28 @@ function useAbility(p, id) {
       }
       case 'self': {
         if (a.buff) addBuff(p, a.buff);
+        // A roar that everything in earshot takes personally.
+        if (a.taunt) {
+          for (const m of monstersNear(p, p.x, p.z, a.taunt, 12)) { taunt(m, p.id); m.provoked = true; retarget(m); }
+          broadcast({ t: 'event', kind: 'taunt', by: p.id, r: a.taunt });
+        }
         break;
       }
     }
     if (['melee', 'execute', 'cone', 'aoe'].includes(a.kind)) spendCharges(p, a);
   };
   spendRes(p, cost);
-  p.cooldowns[id] = a.cd || 0; p.gcd = c.gcd || 0;
+  // Spending a proc: only an ability that would actually have cost something
+  // burns the free cast, so a free cantrip can't eat the window.
+  if (freeProc && (isSpell(a) ? costOf(p, a) : (a.cost || 0)) > 0) {
+    freeProc.charges--; if (freeProc.charges <= 0) delete p.buffs[freeProc.id];
+  }
+  p.cooldowns[id] = a.cd || 0; p.gcd = gcdFor(p, a);
+  const gcd = p.gcd;
   let windup = a.windup || a.cast || 0;
   if (windup && a.cast) windup = Math.max(Math.min(windup, 1), windup * castTimeMult(p));   // Battle Hymn quickens casts, never under a second
-  if (windup) { p.windup = { id, t: windup, dur: windup, cost, fire }; broadcast({ t: 'event', kind: 'ability', by: p.id, id, name: a.name, windup }); }
-  else { broadcast({ t: 'event', kind: 'ability', by: p.id, id, name: a.name }); fire(); }
+  if (windup) { p.windup = { id, t: windup, dur: windup, cost, fire }; broadcast({ t: 'event', kind: 'ability', by: p.id, id, name: a.name, windup, gcd }); }
+  else { broadcast({ t: 'event', kind: 'ability', by: p.id, id, name: a.name, gcd }); fire(); }
   sendAbilities(p); sendStatus(p);
 }
 // Per-tick class upkeep: rage, cooldowns, buffs, momentum, wind-ups, channels.
@@ -1765,6 +2670,7 @@ function stepClass(p, inCombat) {
   }
   stepHots(clericCtx, p, DT); stepSongs(clericCtx, p, DT);
   p.gcd = Math.max(0, (p.gcd || 0) - DT);
+  stepQueue(p);
   p.savageCd = Math.max(0, (p.savageCd || 0) - DT);
   if (p.slow && p.slow.t > 0) p.slow.t -= DT;
   if (p.dots) for (const [k, d] of Object.entries(p.dots)) {   // bleeds / burns tick every 1.5 s
@@ -1816,7 +2722,110 @@ function stepClass(p, inCombat) {
 // health, combat lockout, rage, the hit splat, and death.
 const LOGOUT_COMBAT_WAIT = 30;   // seconds out of combat before a player may log out
 const VIS_BUFFS = new Set(['renewing_prayer', 'prayer_of_mending', 'divine_intervention', 'guardian_prayer', 'avatar_of_mercy']);   // buffs the client draws on the body
-function hurtPlayer(p, dmg, m, kind) {
+
+// A monster reaching for its trick. Returns true if it started something and
+// the ordinary step should stand down this tick.
+function tryMonsterAbility(m, target, d, arch) {
+  // Cornered and bleeding: some things find a second wind rather than a trick.
+  if (arch.enrage && !m.enraged && m.hp <= m.maxHp * arch.enrage) {
+    m.enraged = true; m.dmgMult = (m.dmgMult || 1) * 1.5; m.attackSpeed = Math.max(2, (m.attackSpeed || 4) * 0.7);
+    broadcast({ t: 'event', kind: 'enrage', monster: m.id, name: m.name });
+    systemChat(`${m.elite ? m.name : 'The ' + m.name} goes berserk!`);
+  }
+  m.abilityCd = Math.max(0, (m.abilityCd || 0) - DT);
+  if (m.abilityCd > 0 || (m.debuffs && m.debuffs.silenced > 0)) return false;
+  // A healer that sees a hurt friend fixes that before anything else.
+  let ab = arch.ability;
+  if (ab && ab.heal && !woundedAlly(m)) ab = arch.ability2;
+  else if (arch.ability2 && Math.random() < 0.4) ab = arch.ability2;
+  if (!ab) return false;
+  m.abilityCd = ab.cd;
+  if (!ab.cast) { fireMonsterAbility(m, ab, target); return false; }
+  m.cast = { ab, t: ab.cast, dur: ab.cast, targetId: target.id };
+  broadcast({ t: 'event', kind: 'mobcast', by: m.id, name: ab.name, dur: ab.cast, interruptible: !!ab.interruptible, telegraph: ab.telegraph || null });
+  return true;
+}
+// The most wounded friend within earshot of a healer, if any.
+function woundedAlly(m) {
+  let best = null, worst = 0.85;
+  for (const o of monsters.values()) {
+    if (!o.alive || o.zoneId !== m.zoneId || o.passive) continue;
+    if (dist2(o.x, o.z, m.x, m.z) > 18 ** 2) continue;
+    const frac = o.hp / o.maxHp;
+    if (frac < worst) { worst = frac; best = o; }
+  }
+  return best;
+}
+function stepMonsterCast(m) {
+  const c = m.cast;
+  c.t -= DT;
+  const t = players.get(c.targetId);
+  if (!t || !t.alive || t.zoneId !== m.zoneId) { m.cast = null; broadcast({ t: 'event', kind: 'mobcast', by: m.id, cancel: true }); return; }
+  m.yaw = Math.atan2(t.x - m.x, t.z - m.z);
+  if (c.t <= 0) { m.cast = null; fireMonsterAbility(m, c.ab, t); }
+}
+// Break a monster's cast. Any stun, sleep, fear or dedicated interrupt does
+// it; the monster is then locked out of that trick for a few seconds, which is
+// what makes an interrupt worth holding a cooldown for.
+function interruptMonster(m, by, lockout = 5) {
+  if (!m || !m.cast) return false;
+  const name = m.cast.ab.name;
+  m.cast = null; m.abilityCd = Math.max(m.abilityCd || 0, lockout);
+  broadcast({ t: 'event', kind: 'mobcast', by: m.id, cancel: true, interrupted: true, name });
+  if (by && by.ws) send(by.ws, { t: 'event', kind: 'notice', text: `Interrupted ${m.elite ? m.name : 'the ' + m.name}'s ${name}!` });
+  return true;
+}
+function fireMonsterAbility(m, ab, target) {
+  const arch = MOB_ARCH[m.arch] || MOB_ARCH.warrior;
+  if (ab.self) { m.debuffs = m.debuffs || {}; m.debuffs[ab.self.id] = ab.self.dur; broadcast({ t: 'event', kind: 'mobbuff', by: m.id, id: ab.self.id, name: ab.name, dur: ab.self.dur }); return; }
+  if (ab.heal) {
+    const friend = woundedAlly(m) || m;
+    const amt = Math.round(friend.maxHp * ab.heal);
+    friend.hp = Math.min(friend.maxHp, friend.hp + amt);
+    broadcast({ t: 'event', kind: 'mobheal', by: m.id, target: friend.id, amount: amt, name: ab.name });
+    return;
+  }
+  if (!target || !target.alive || target.zoneId !== m.zoneId) return;
+  monsterStrike(m, target, { mult: ab.mult || 1, poison: ab.poison, name: ab.name, type: arch.dmgType });
+}
+
+// One monster blow landing on a player, rolled on the same attack table the
+// player's own swings use — so a shield or a well-timed dodge reads the same
+// from either side of the fight.
+function monsterStrike(m, target, o = {}) {
+  const arch = MOB_ARCH[m.arch] || MOB_ARCH.warrior;
+  const mid = (m.maxHit || 1) * 0.5 * (o.mult || 1) * (m.dmgMult || 1);
+  const res = resolveAttack({
+    level: m.atkLevel || 1, hitBonus: (m.atkBonus || 0) * 0.004, type: o.type || arch.dmgType,
+    crit: m.elite ? 0.08 : 0.05, critMult: 1.8,
+    band: [Math.max(1, Math.round(mid * 0.72)), Math.max(2, Math.round(mid * 1.28))],
+    mult: incomingMult(target),
+  }, defenceProfile(target, m.x, m.z));
+  target.lastCombat = Date.now();
+  // A swing that goes nowhere is an opening — Heavy Riposte reads this.
+  if (res.dmg <= 0) addBuff(target, { id: 'riposte_ready', dur: 300 });
+  if (res.dmg > 0) {
+    hurtPlayer(target, res.dmg, m, o.kind || o.type || arch.dmgType, res);
+    if (o.poison) { target.dots = target.dots || []; target.dots.push({ kind: 'poison', dmg: o.poison, t: 12, period: 3, next: 3 }); }
+  } else {
+    engage(target, m);
+    broadcast({ t: 'event', kind: 'hit', by: m.id, target: target.id, dmg: 0, targetKind: 'player', res: res.outcome, spell: o.name || null });
+  }
+  // Auto-retaliate: if the player isn't already fighting, strike back.
+  if (target.alive && target.combatId == null && !target.pendingMine) { target.combatId = m.id; target.moveTo = null; }
+  return res;
+}
+// The impact frame of a monster's ordinary swing.
+function landMonsterSwing(m) {
+  const sw = m.swing; m.swing = null;
+  const t = players.get(sw.id);
+  const arch = MOB_ARCH[m.arch] || MOB_ARCH.warrior;
+  const reach = (arch.range || ATTACK_RANGE) + 1.5;
+  if (!t || !t.alive || t.zoneId !== m.zoneId || dist2(t.x, t.z, m.x, m.z) > reach ** 2) return;
+  monsterStrike(m, t);
+}
+
+function hurtPlayer(p, dmg, m, kind, res) {
   if (!p.alive || dmg <= 0) return;
   if (m && m.debuffs) dmg = Math.max(1, Math.round(dmg * monsterDmgMult(m) * bardMonsterDmgMult(m)));
   const mit = mitigate(clericCtx, p, dmg, m, kind); dmg = mit.dmg;
@@ -1824,7 +2833,8 @@ function hurtPlayer(p, dmg, m, kind) {
   p.hp -= dmg; p.combatTimer = REGEN.combatLockout; p.lastCombat = Date.now();
   if (classDef(p.cls).rage) addRage(p, (dmg + mit.absorbed) * classDef(p.cls).rage.damageTaken);
   if (m) engage(p, m);
-  broadcast({ t: 'event', kind: 'hit', by: m ? m.id : null, target: p.id, dmg, absorbed: mit.absorbed || undefined, targetKind: 'player', hitKind: kind || null });
+  broadcast({ t: 'event', kind: 'hit', by: m ? m.id : null, target: p.id, dmg, absorbed: mit.absorbed || undefined, targetKind: 'player',
+              hitKind: kind || null, res: res ? res.outcome : (dmg > 0 ? 'hit' : 'miss'), blocked: (res && res.blocked) || 0, spell: (res && res.spell) || undefined });
   if (p.alive && p.hp > 0) afterHit(clericCtx, p, dmg + mit.absorbed, kind);
   if (mit.changed) sendStatus(p);
   if (p.hp <= 0) {
@@ -1838,6 +2848,8 @@ const GRAVE_TTL = 120;
 const graves = new Map();
 function killPlayer(p, how) {
   p.hp = 0; p.alive = false; p.deathTimer = RESPAWN_TIME; p.engagedWith = null;
+  p.swing = null; p.queued = null;
+  for (const m of monsters.values()) if (m.zoneId === p.zoneId) { dropThreat(m, p.id); if (m.targetId === p.id) { m.targetId = null; retarget(m); } }
   systemChat(`${p.name} ${how}.`);
   const items = p.inventory.slice(), equipment = { ...p.equipment };
   const hasGear = items.length || Object.values(equipment).some(Boolean);
@@ -1862,9 +2874,9 @@ function stepGraves() {
 }
 function lootGrave(p, id) {
   const g = graves.get(id); if (!g || g.zoneId !== p.zoneId) return;
-  const notice = (text) => send(p.ws, { t: 'event', kind: 'notice', text });
-  if (dist2(p.x, p.z, g.x, g.z) > 3.5 * 3.5) return notice('You need to be at the grave.');
-  if (g.owner !== p.id && g.name !== p.name) return notice(`This is ${g.name}'s grave. It is not yours to open.`);
+  const say = (text) => notice(p, text);
+  if (dist2(p.x, p.z, g.x, g.z) > 3.5 * 3.5) return say('You need to be at the grave.');
+  if (g.owner !== p.id && g.name !== p.name) return say(`This is ${g.name}'s grave. It is not yours to open.`);
   let n = 0;
   for (const [slot, name] of Object.entries(g.equipment)) { if (!name) continue; if (!p.equipment[slot]) p.equipment[slot] = name; else p.inventory.push(name); n++; }
   for (const name of g.items) { p.inventory.push(name); n++; }
@@ -1882,7 +2894,7 @@ function addSlow(p, t, k) { const ck = controlMult(p); if (ck < 1) spendSongChar
 function addDot(p, kind, t, dps) { if (resistsDot(clericCtx, p)) return; p.dots = p.dots || {}; p.dots[kind] = { t, dps, acc: 0 }; }
 // What the Cleric module needs from the world.
 const clericCtx = {
-  players, monsters, send, broadcast, systemChat, zoneOf, addBuff, applyHit, critChance, sendStatus, dmgBuff,
+  players, monsters, send, broadcast, systemChat, zoneOf, addBuff, applyHit, critChance, sendStatus, dmgBuff, interruptMonster, addThreat, healThreat,
   nextId: () => nextId++,
 };
 const bossCtx = {
@@ -1899,6 +2911,7 @@ function stepMonster(m) {
       const pos = spawnInRegion(zone, m.spec.region, { passive: m.passive });
       m.x = pos.x; m.z = pos.z; m.home = { x: pos.x, z: pos.z }; m._nav = null;
       m.hp = m.maxHp; m.alive = true; m.state = 'idle'; m.targetId = null; m.atkTimer = 0;
+      m.swing = null; m.cast = null; m.enraged = false; m.dmgMult = 1; m.abilityCd = rand(2, 6); clearThreat(m);
       // A respawn is a new creature: give it a new id, or the client would
       // interpolate the old corpse sliding over to the spawn point.
       monsters.delete(m.id); m.id = nextId++; monsters.set(m.id, m);
@@ -1906,24 +2919,30 @@ function stepMonster(m) {
     return;
   }
   m.atkTimer = Math.max(0, m.atkTimer - DT);
+  if (m.swing) { m.swing.t -= DT; if (m.swing.t <= 0) landMonsterSwing(m); }   // the blow arrives
+  // Debuffs wind down before anything branches. Boss, minion and ordinary
+  // monsters each used to carry their own copy of this line; they are mutually
+  // exclusive, so hoisting it changes nothing except the number of copies.
+  if (m.debuffs) for (const k of Object.keys(m.debuffs)) { m.debuffs[k] -= DT; if (m.debuffs[k] <= 0) delete m.debuffs[k]; }
   if (m.boss === 'cluckifer') {
-    if (m.debuffs) for (const k of Object.keys(m.debuffs)) { m.debuffs[k] -= DT; if (m.debuffs[k] <= 0) delete m.debuffs[k]; }
     stepCluckifer(bossCtx, m, DT); resolveCollision(zone, m, 1.2); return;
   }
   if (m.minion) {
-    if (m.debuffs) for (const k of Object.keys(m.debuffs)) { m.debuffs[k] -= DT; if (m.debuffs[k] <= 0) delete m.debuffs[k]; }
     if (fleeStep(clericCtx, zone, m, DT)) { resolveCollision(zone, m, 0.5); return; }
     if (m.debuffs && m.debuffs.asleep > 0) return;
     stepMinion(bossCtx, m, DT); if (m.alive && m.speed > 0) resolveCollision(zone, m, 0.5); return;
   }
-  if (m.debuffs) for (const k of Object.keys(m.debuffs)) { m.debuffs[k] -= DT; if (m.debuffs[k] <= 0) delete m.debuffs[k]; }
   if ((m.stagger || 0) > 0) { m.stagger -= DT; return; }   // staggered: can't move or swing
   if (fleeStep(clericCtx, zone, m, DT)) { resolveCollision(zone, m, PLAYER_RADIUS); return; }   // turned by a Cleric: running
   if (m.debuffs && m.debuffs.asleep > 0) { m.targetId = null; m.state = 'idle'; return; }   // a Bard's lullaby: out cold until struck
   const slowK = ((m.debuffs && m.debuffs.bonebreak > 0) ? 0.6 : 1) * bardMonsterSpeedMult(m);
 
+  decayThreat(m, DT);
+  if (m.cast) { stepMonsterCast(m); if (m.cast) { resolveCollision(zone, m, PLAYER_RADIUS); return; } }   // mid-cast: rooted to the spot
+
+  retarget(m);   // whoever is top of the threat table is who it wants
   let target = m.targetId ? players.get(m.targetId) : null;
-  if (target && (!target.alive || target.zoneId !== m.zoneId)) { target = null; m.targetId = null; }
+  if (target && (!target.alive || target.zoneId !== m.zoneId)) { target = null; m.targetId = null; dropThreat(m, m.targetId); }
   if (!target && !m.passive) { // passive mobs only fight when attacked
     let best = null, bestD = m.aggro ** 2;
     for (const p of players.values()) {
@@ -1932,7 +2951,7 @@ function stepMonster(m) {
       const d = dist2(m.x, m.z, p.x, p.z);
       if (d < bestD) { bestD = d; best = p; }
     }
-    if (best) { target = best; m.targetId = best.id; m.state = 'combat'; }
+    if (best) { target = best; m.targetId = best.id; m.state = 'combat'; addThreat(m, best.id, 1); }
   }
 
   if (target) {
@@ -1952,22 +2971,24 @@ function stepMonster(m) {
       m.targetId = null; m.provoked = false; m.state = 'idle';   // someone else has them; wait our turn
     } else {
       m.yaw = Math.atan2(target.x - m.x, target.z - m.z);
-      const los = d <= ATTACK_RANGE - 0.5 && hasLos(zone, m.x, m.z, target.x, target.z);
-      if (d > ATTACK_RANGE - 0.5 || !los) {
-        navStep(zone, m, target.x, target.z, los ? ATTACK_RANGE - 0.5 : 0.9, m.speed * slowK); // round fences, not through them
-      } else if (m.atkTimer <= 0) {
+      const arch = MOB_ARCH[m.arch] || MOB_ARCH.warrior;
+      const reach = arch.range || (ATTACK_RANGE - 0.5);
+      const los = d <= reach && hasLos(zone, m.x, m.z, target.x, target.z);
+      // Its own trick first: a shaman heals, an archer backs off, a berserker
+      // works itself up. Only then does it fall back on swinging.
+      if (los && tryMonsterAbility(m, target, d, arch)) { resolveCollision(zone, m, PLAYER_RADIUS); return; }
+      if (arch.range && los && d < arch.kite) {
+        // Archers and casters give ground rather than trade blows up close.
+        const a = Math.atan2(m.x - target.x, m.z - target.z);
+        const nx = m.x + Math.sin(a) * m.speed * slowK * DT, nz = m.z + Math.cos(a) * m.speed * slowK * DT;
+        if (dist2(nx, nz, m.home.x, m.home.z) < (m.roam || 15) ** 2) { m.x = nx; m.z = nz; }
+      } else if (d > reach || !los) {
+        navStep(zone, m, target.x, target.z, los ? reach : 0.9, m.speed * slowK); // round fences, not through them
+      } else if (m.atkTimer <= 0 && !m.swing) {
         m.atkTimer = (m.attackSpeed || 4) * TICK * ((m.debuffs && m.debuffs.bonebreak_atk > 0) ? 1.15 : 1) * bardMonsterAtkSpeedMult(m);
-        // OSRS accuracy: monster attack roll vs the player's defence roll (level
-        // + armour), damage 0..monster maxHit.
-        const eq = equipStats(target.equipment), tcs = classStats(target.cls, target.level);
-        let dmg = rollMonsterSwing(m.atkLevel || 1, m.atkBonus || 0, m.maxHit || 1, tcs.def, eq.def || 0);
-        if (dmg > 0) dmg = Math.max(1, Math.round(dmg * incomingMult(target)));
-        else addBuff(target, { id: 'riposte_ready', dur: 300 }); // a miss is a dodge: Heavy Riposte opens up
-        target.lastCombat = Date.now();
-        if (dmg > 0) hurtPlayer(target, dmg, m);   // wards, prayers, rage, the splat, death
-        else { engage(target, m); broadcast({ t: 'event', kind: 'hit', by: m.id, target: target.id, dmg: 0, targetKind: 'player' }); }
-        // Auto-retaliate: if the player isn't already fighting, strike back.
-        if (target.alive && target.combatId == null && !target.pendingMine) { target.combatId = m.id; target.moveTo = null; }
+        const delay = Math.max(0.2, Math.min(0.7, m.atkTimer * IMPACT_AT));
+        m.swing = { id: target.id, t: delay };
+        broadcast({ t: 'event', kind: 'swing', by: m.id, target: target.id, dur: delay, arch: m.arch || 'warrior', type: arch.dmgType || 'crush', ranged: !!arch.range });
       }
       resolveCollision(zone, m, PLAYER_RADIUS);
       return;
@@ -1997,11 +3018,24 @@ function stepPlayer(p) {
   if (!p.alive) { p.deathTimer -= DT; return; }
   const zone = zoneOf(p);
   p.atkTimer = Math.max(0, p.atkTimer - DT);
+  if (p.swing) { p.swing.t -= DT; if (p.swing.t <= 0) landPlayerSwing(p); }   // the axe reaches the target
   if (p.portalCd > 0) p.portalCd -= DT;
   let moved = false;
   const inp = p.input;
   // Meditating ends the moment the player wants to act (move / fight / interact)
   // or gets hit — you can't rest in the middle of a scrap.
+  // Sitting ends the same way meditating does: the first thing you want to do
+  // that is not sitting puts you back on your feet.
+  if (p.seat) {
+    const up = (inp && (inp.f !== 0 || inp.r !== 0)) || p.moveTo || p.combatId != null ||
+      p.pendingChest || p.pendingPickup != null || p.pendingMine != null || p.pendingGate ||
+      p.pendingFish != null || p.pendingCook != null || p.pendingUse || (p.combatTimer || 0) > 0 || !p.alive;
+    if (up) standUp(p, true);
+    // On a stool he swivels: the input packet carries the way the camera is
+    // looking, so he turns with it and you are always seeing his front. A bed
+    // keeps the yaw it was lain down with -- you do not pivot on a mattress.
+    else if (p.seat.k === 'stool' && inp && typeof inp.yaw === 'number') p.yaw = inp.yaw;
+  }
   if (p.resting) {
     const wantsAction = (inp && (inp.f !== 0 || inp.r !== 0)) || p.moveTo || p.combatId != null ||
       p.pendingChest || p.pendingPickup != null || p.pendingMine != null || p.pendingGate ||
@@ -2009,6 +3043,16 @@ function stepPlayer(p) {
     if (wantsAction || (p.combatTimer || 0) > 0) { p.resting = false; sendSkills(p); }
   }
   const step = (tx, tz, stopDist) => navStep(zone, p, tx, tz, stopDist, PLAYER_SPEED * moveMult(p));
+  // Heading for a chair: walk to it, then sit when you arrive.
+  if (p.pendingSeat && !p.seat) {
+    const seat = seatById(zone, p.pendingSeat);
+    if (!seat) p.pendingSeat = null;
+    else {
+      const a = seatApproach(seat);
+      if (dist2(p.x, p.z, a.x, a.z) > SEAT_REACH * SEAT_REACH) { moved = step(a.x, a.z, SEAT_REACH * 0.8) || moved; }
+      else { p.pendingSeat = null; sitDown(p, seat); }
+    }
+  }
   // A shut gate on the way swings open as you reach it.
   if (p._nav && zone._gate && zone._gate.t < 0.55 && zone._gate.target < 0.5 && dist2(p.x, p.z, zone._gate.cx, zone._gate.cz) < GATE_REACH * GATE_REACH) toggleGate(zone._gate, p);
 
@@ -2026,15 +3070,22 @@ function stepPlayer(p) {
       p.yaw = Math.atan2(mx, mz); moved = true;
     }
   } else if (p.combatId != null) {
-    const m = monsters.get(p.combatId);
+    const m = combatTargetOf(p);
     if (!m || !m.alive || m.zoneId !== p.zoneId) { p.combatId = null; }
     else {
       // Walk into range AND into line of sight — no swinging through a fence;
       // the route goes round (through the gate) instead.
-      const inRange = dist2(p.x, p.z, m.x, m.z) <= (ATTACK_RANGE - 0.4) ** 2, los = inRange && hasLos(zone, p.x, p.z, m.x, m.z);
-      if (!inRange || !los) { if (p.windup || p.channel) p.yaw = Math.atan2(m.x - p.x, m.z - p.z); /* casting: hold here */ else if (step(m.x, m.z, los ? ATTACK_RANGE - 0.4 : 0.9)) moved = true; }
+      const reach = reachOf(p) - 0.4;
+      const inRange = dist2(p.x, p.z, m.x, m.z) <= reach ** 2, los = inRange && hasLos(zone, p.x, p.z, m.x, m.z);
+      if (!inRange || !los) { if (p.windup || p.channel || p.swing) p.yaw = Math.atan2(m.x - p.x, m.z - p.z); /* casting: hold here */ else if (step(m.x, m.z, los ? reach : 0.9)) moved = true; }
       else { p._nav = null; p.yaw = Math.atan2(m.x - p.x, m.z - p.z); doPlayerAttack(p, m); }
     }
+  } else if (p.pendingUse) {
+    // Walk to the thing, then put your hands on it.
+    const o = worldObject(zone, p.pendingUse);
+    if (!o) { p.pendingUse = null; }
+    else if (step(o.x, o.z, Math.max(1.2, (o.reach || 3.5) - 1.2))) { moved = true; }
+    else { p.yaw = Math.atan2(o.x - p.x, o.z - p.z); const id = p.pendingUse; p.pendingUse = null; useWorldObject(p, id); }
   } else if (p.pendingChest) {
     const ch = (zone.chests || []).find(c => c.id === p.pendingChest);
     if (!ch) { p.pendingChest = null; }
@@ -2136,6 +3187,7 @@ function stepPlayer(p) {
 
 function respawnPlayer(p) {
   const zone = zoneOf(p);
+  p.swing = null; p.queued = null;
   p.x = zone.spawn.x; p.z = zone.spawn.z; p.hp = p.maxHp; p.rage = 0; p.mana = Math.round((p.manaMax || 0) * 0.5); p.buffs = {}; p.dots = null; p.slow = null; p.channel = null; p.windup = null; p.alive = true; p.moving = false; p.resting = false;
   p.moveTo = null; p.combatId = null; p.pendingChest = null; p.pendingPickup = null;
   send(p.ws, { t: 'event', kind: 'respawned' });
@@ -2150,9 +3202,62 @@ function transitionPlayer(p, toId, spawn) {
   p.moveTo = null; p.combatId = null; p.pendingChest = null; p.pendingPickup = null; p.pendingMine = null;
   p.portalCd = 2; // don't immediately re-trigger the return portal
   send(p.ws, { t: 'transition', zone: zoneForClient(to) });
+  sendObjects(p);
   sendQuests(p); // giver markers are per-zone
   systemChat(`${p.name} entered ${to.name}.`);
 }
+
+// ---------------------------------------------------------------------------
+// World objects: the things a quest asks you to put your hands on — a trail
+// lantern to light, tracks to read, a signal fire to douse, a growth to cut
+// back. Some are one-shot per player and stay done; the gathering ones (a
+// clump of glowcaps) give an item and grow back for everyone after a while.
+// ---------------------------------------------------------------------------
+function worldObject(zone, id) { return (zone.objects || []).find(o => o.id === id); }
+function objectReady(zone, o) { return !o._until || o._until <= Date.now(); }
+function useWorldObject(p, id) {
+  const zone = zoneOf(p), o = worldObject(zone, id);
+  const say = (text) => notice(p, text);
+  if (!o) return;
+  if (dist2(p.x, p.z, o.x, o.z) > (o.reach || 3.5) ** 2) return say(`You need to be closer to the ${o.name.toLowerCase()}.`);
+  // A toggle is world state, not yours: everyone standing there sees it go on
+  // and off, and it does not care whose quest is running.
+  if (o.toggle) {
+    o._on = !o._on;
+    send(p.ws, { t: 'event', kind: 'used', id: o.id, tag: o.tag || null,
+      text: o._on ? (o.textOn || `You light the ${o.name.toLowerCase()}.`) : (o.textOff || `You put the ${o.name.toLowerCase()} out.`) });
+    broadcastObjects(zone);
+    return;
+  }
+  if (o.once && p.usedObjects.has(o.id)) return say(`You have already dealt with the ${o.name.toLowerCase()}.`);
+  if (!objectReady(zone, o)) return say(`There is nothing left to take here yet.`);
+  // Some things only make sense while you are on the errand that asked for them.
+  if (o.quest && !p.quests.has(o.quest)) return say(o.idleText || 'You have no reason to touch that.');
+  if (o.needDead && !((p.questKills[o.quest] || {})['★' + o.needDead] > 0)) return say(`${o.needDead} is still standing.`);
+  if (o.need) {
+    const have = p.inventory.filter(n => n === o.need.item).length;
+    if (have < (o.need.count || 1)) return say(`You need ${o.need.count || 1} × ${o.need.item}.`);
+    for (let i = 0; i < (o.need.count || 1); i++) p.inventory.splice(p.inventory.indexOf(o.need.item), 1);
+  }
+  if (o.gives) { for (let i = 0; i < (o.gives.count || 1); i++) p.inventory.push(o.gives.item); }
+  if (o.hurt) hurtPlayer(p, o.hurt, null, 'poison');   // the red ones bite back
+  if (o.respawn) o._until = Date.now() + o.respawn * 1000;
+  if (o.once) { /* recorded below */ }
+  const moved = recordUse(p, o);
+  send(p.ws, { t: 'event', kind: 'used', id: o.id, tag: o.tag || null, text: o.text || null, item: o.gives ? o.gives.item : null });
+  if (o.gives || o.need) sendBag(p);
+  if (moved.length) notifyQuestProgress(p, moved);
+  else sendQuests(p);
+  broadcastObjects(zone);
+}
+// The world's shared view of these: which gathering nodes are picked clean.
+function sendObjects(p) {
+  const zone = zoneOf(p);
+  const spent = (zone.objects || []).filter(o => !objectReady(zone, o)).map(o => o.id);
+  const lit = (zone.objects || []).filter(o => o._on).map(o => o.id);   // shared: lanterns anyone has lit
+  send(p.ws, { t: 'objects', spent, lit, used: [...p.usedObjects] });
+}
+function broadcastObjects(zone) { for (const q of players.values()) if (q.zoneId === zone.id) sendObjects(q); }
 
 function openChest(p, chestId) {
   const zone = zoneOf(p);
@@ -2183,6 +3288,42 @@ let weatherTimer = 120;
 
 // Main loop
 let lastSnap = 0;
+let saveTimer = 0;
+// Stopping the server should not cost anybody their evening.
+let shuttingDown = false;
+function saveEveryoneAndExit(sig, code = 0) {
+  if (shuttingDown) return; shuttingDown = true;
+  let n = 0;
+  for (const p of [...players.values()]) {
+    // Hand back anything sitting in escrow first, or the save writes it away.
+    try { tradeAbort(p, 'The server is closing. The trade is off.'); } catch { /* keep saving */ }
+    try { savePlayer(p); n++; } catch (e) { console.error(`[save] ${p.name} failed:`, e && e.message); }
+  }
+  console.log(`[save] ${sig}: wrote ${n} character${n === 1 ? '' : 's'}`);
+  process.exit(code);
+}
+for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => saveEveryoneAndExit(sig));
+// Last line of defence. A throw that reaches here has already left the game in
+// an unknown state, so the only safe thing is to write everybody out and stop
+// -- but nobody should lose their evening to a bug we did not foresee.
+process.on('uncaughtException', (err) => { console.error('[fatal]', err); saveEveryoneAndExit('uncaughtException', 1); });
+process.on('unhandledRejection', (err) => { console.error('[fatal] unhandled rejection', err); saveEveryoneAndExit('unhandledRejection', 1); });
+// Taking somebody out of the world, the only way it should be done.
+//
+// Order matters and used to be wrong: anything a player has on a trade table
+// has already left their bag, so unwinding the trade has to happen BEFORE the
+// save or the escrowed items and gold are written out of existence. The duel
+// and the party come off first for the same reason -- what they hand back
+// belongs in the file.
+function leaveWorld(p) {
+  tradeAbort(p, `${p.name} leaves. The trade is off.`);
+  duelForfeit(p, `${p.name} leaves the duel.`);
+  partyRemove(p, `${p.name} has left the party.`);
+  savePlayer(p);
+  players.delete(p.id);
+  systemChat(`${p.name} has left the world.`);
+}
+
 setInterval(() => {
   if (DAY_NIGHT_CYCLE) dayTime = (dayTime + DT / DAY_LENGTH) % 1;
   weatherTimer -= DT;
@@ -2194,14 +3335,42 @@ setInterval(() => {
   stepGates();
   for (const m of monsters.values()) stepMonster(m);
   for (const zone of Object.values(ZONES)) { stepHazards(bossCtx, zone, DT); stepSanctuaries(zone, DT); }
+  for (const zone of Object.values(ZONES)) {          // only where somebody is around to see it
+    let watched = false; for (const p of players.values()) if (p.zoneId === zone.id) { watched = true; break; }
+    if (watched) for (const n of (zone.npcs || [])) stepNpc(zone, n, DT);
+  }
   stepGraves();
   for (const p of players.values()) stepPlayer(p);
   for (const [id, p] of players) {   // bodies left behind by a mid-fight disconnect
     if (p.lingerT == null) continue;
     p.lingerT -= DT;
-    if (p.lingerT <= 0 || !p.alive) { players.delete(id); systemChat(`${p.name} has left the world.`); }
+    if (p.lingerT <= 0 || !p.alive) leaveWorld(p);
   }
   for (const [id, it] of groundItems) { it.ttl -= DT; if (it.ttl <= 0) groundItems.delete(id); }
+  for (const p of players.values()) {
+    if (p.partyInvite) {
+      p.partyInvite.t -= DT;
+      if (p.partyInvite.t <= 0) { p.partyInvite = null; send(p.ws, { t: 'party:invite', expired: true }); }
+    }
+    if (p.duelChallenge) {
+      p.duelChallenge.t -= DT;
+      if (p.duelChallenge.t <= 0) { p.duelChallenge = null; send(p.ws, { t: 'duel:challenge', expired: true }); }
+    }
+    if (p.tradeRequest) {
+      p.tradeRequest.t -= DT;
+      if (p.tradeRequest.t <= 0) { p.tradeRequest = null; send(p.ws, { t: 'trade:request', expired: true }); }
+    }
+  }
+  stepDuels(DT);
+  stepTrades();
+  // A background save, staggered by id so thirty players are not all written
+  // in the same tick. A crash then costs the last three-quarters of a minute.
+  saveTimer += DT;
+  if (saveTimer >= 1) {
+    saveTimer = 0;
+    const slot = Math.floor(Date.now() / 1000) % SAVE_EVERY;
+    for (const p of players.values()) if (p.alive && p.id % SAVE_EVERY === slot) savePlayer(p);
+  }
 
   const now = Date.now();
   if (now - lastSnap >= 1000 / SNAPSHOT_HZ) {
@@ -2223,7 +3392,11 @@ setInterval(() => {
           castT: p.windup ? p.windup.dur : p.channel ? p.channel.dur : undefined,
           ward: (() => { let a = 0; for (const b of Object.values(p.buffs)) if (b.t > 0 && b.absorb > 0) a += b.absorb; return Math.round(a) || undefined; })(),
           fx: (() => { const o = []; for (const [k, b] of Object.entries(p.buffs)) if (b.t > 0 && (b.vis || VIS_BUFFS.has(k))) o.push(k); return o.length ? o : undefined; })(),
-          moving: p.moving, inSafe: !!p.inSafe, resting: !!p.resting,
+          swing: p.atkTimer > 0 ? { t: +p.atkTimer.toFixed(2), d: +playerAttackSpeed(p).toFixed(2) } : undefined,
+          tgt: p.combatId != null ? p.combatId : undefined,   // who they are actually fighting
+          seat: p.seat ? { k: p.seat.k, yaw: +p.seat.yaw.toFixed(2) } : undefined,
+          duel: (() => { const d = duelOf(p); return d ? { foe: d.a === p.id ? d.b : d.a, ready: d.state === 'fighting' } : undefined; })(),
+          moving: p.moving, inSafe: !!p.inSafe, resting: !!p.resting, inCombat: (p.combatTimer || 0) > 0 || p.combatId != null,
           combatWait: p.lastCombat ? Math.max(0, Math.ceil(LOGOUT_COMBAT_WAIT - (Date.now() - p.lastCombat) / 1000)) : 0,
           weapon: p.equipment.weapon || null,     // held item for the paperdoll
           look: lookOf(p) });                        // hair / outfit / colours + worn armour
@@ -2234,7 +3407,9 @@ setInterval(() => {
           x: +m.x.toFixed(2), z: +m.z.toFixed(2), yaw: +m.yaw.toFixed(2), y: +(m.y || 0).toFixed(2), cave: m.cave || undefined,
           hp: Math.round(m.hp), maxHp: m.maxHp, alive: m.alive,
           boss: m.boss || undefined, phase: m.phase || undefined, stun: m.stunT > 0 || undefined, hidden: m.untargetable || undefined, grow: m.grow != null ? +m.grow.toFixed(2) : undefined,
-          asleep: (m.debuffs && m.debuffs.asleep > 0) || undefined, deb: hasBardDebuff(m) || undefined });
+          asleep: (m.debuffs && m.debuffs.asleep > 0) || undefined, deb: hasBardDebuff(m) || undefined,
+          arch: m.arch || undefined, enraged: m.enraged || undefined, tgt: m.targetId || undefined,
+          cast: m.cast ? { n: m.cast.ab.name, t: +m.cast.t.toFixed(2), d: m.cast.dur, i: !!m.cast.ab.interruptible } : undefined });
       }
       const items = [];
       for (const it of groundItems.values()) {
@@ -2242,7 +3417,12 @@ setInterval(() => {
         items.push({ id: it.id, name: it.name, qty: it.qty, x: +it.x.toFixed(2), z: +it.z.toFixed(2) });
       }
       const gate = ZONES[zid]._gate;
-      return (byZone[zid] = JSON.stringify({ t: 'snapshot', now, players: ps, monsters: ms, items,
+      const npcs = [];   // only the ones with somewhere to be; the rest never left their mark
+      for (const n of (ZONES[zid].npcs || [])) {
+        if (!n._route || n._route.stops.length < 2) continue;
+        npcs.push({ id: n.id, x: +n.x.toFixed(2), z: +n.z.toFixed(2), yaw: +(n.yaw || 0).toFixed(2), m: n.moving ? 1 : undefined });
+      }
+      return (byZone[zid] = JSON.stringify({ t: 'snapshot', now, players: ps, monsters: ms, items, npcs,
         depleted: depletedIds(ZONES[zid]),
         hazards: hazardList(ZONES[zid]),
         sanct: sanctuaryList(ZONES[zid]),
@@ -2253,6 +3433,9 @@ setInterval(() => {
     for (const p of players.values()) {
       if (p.ws.readyState === p.ws.OPEN) p.ws.send(zoneSnap(p.zoneId));
     }
+    // Party frames show health, so they ride along with the snapshot. One
+    // payload per party, not per member.
+    for (const party of parties.values()) sendParty(party);
   }
 }, 1000 / TICK_HZ);
 
@@ -2265,7 +3448,12 @@ setInterval(() => {
 // ---------------------------------------------------------------------------
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.glb': 'model/gltf-binary', '.png': 'image/png', '.jpg': 'image/jpeg' };
 const httpServer = http.createServer((req, res) => {
-  let urlPath = decodeURIComponent(req.url.split('?')[0]);
+  // decodeURIComponent throws on a malformed escape (GET /%zz). That throw used
+  // to come straight out of the request listener and take the whole world down,
+  // so a bad URL is answered rather than raised.
+  let urlPath;
+  try { urlPath = decodeURIComponent(req.url.split('?')[0]); }
+  catch { res.writeHead(400); res.end('Bad request'); return; }
   if (urlPath === '/') urlPath = '/index.html';
   const filePath = path.join(CLIENT_DIR, path.normalize(urlPath).replace(/^(\.\.[/\\])+/, ''));
   if (!filePath.startsWith(CLIENT_DIR)) { res.writeHead(403); res.end('Forbidden'); return; }
@@ -2281,14 +3469,16 @@ function zoneForClient(zone) {
     id: zone.id, name: zone.name, subtitle: zone.subtitle, spawn: zone.spawn,
     bounds: zone.bounds, boundary: zone.boundary, pois: zone.pois, path: zone.path, river: zone.river,
     paths: zone.paths || (zone.path ? [zone.path] : []), rivers: zone.rivers || (zone.river ? [zone.river] : []),
-    rocks: zone.rocks, hazards: zone.hazards, pools: zone.pools, chests: zone.chests,
+    rocks: zone.rocks, hazards: zone.hazards, pools: zone.pools, chests: zone.chests, objects: zone.objects,
     fishingSpots: zone.fishingSpots || [], campfires: zone.campfires || [],
     caves: (zone.caves || []).map(c => ({ boundary: c.boundary, rooms: c.rooms, tunnels: c.tunnels, floorY: c.floorY, ceilingY: c.ceilingY,
       scatter: c.scatter || [], hanging: c.hanging || [], env: c.env, entrance: c.entrance })),
     tunnel: zone.tunnel || null,
     regions: zone.regions || null,
     env: zone.env, enclosed: !!zone.enclosed, ceilingY: zone.ceilingY,
-    npcs: zone.npcs || [],
+    // Without the walk state: the route, its cached path and the live moving
+    // flag are the server's business, and snapshots carry the positions.
+    npcs: (zone.npcs || []).map(({ _route, _nav, _yaw0, moving, ...n }) => n),
     trees: zone._trees || [],
     scatter: zone._scatter || [],
     hanging: zone._hanging || [],
@@ -2300,21 +3490,59 @@ function zoneForClient(zone) {
     mines: zone._minePits || [],
     gate: zone.farm && zone.farm.gate ? (g => ({ x: g.x, z: g.z, yaw: g.yaw || 0, s: g.s || 1, double: !!g.double,
       gap: g.seg ? Math.hypot(g.seg.x2 - g.seg.x1, g.seg.z2 - g.seg.z1) : 2.4 }))(zone.farm.gate) : null,
+    seats: zoneSeats(zone),
+    dirt: zone.dirt || [],
     editObjects: zone._editObjects || [],
     editSpawns: zone._editSpawns || [],
   };
 }
 
-const wss = new WebSocketServer({ server: httpServer });
+// 16 KB is a couple of orders of magnitude more than the largest thing a client
+// ever legitimately sends (a chat line, an edit command); ws otherwise defaults
+// to 100 MB per frame, which an unauthenticated socket can make us allocate.
+const MAX_MSG_BYTES = 16 * 1024;
+// A client sends input at the tick rate plus whatever the person clicks. This
+// allows far more than that and still stops a socket spinning the whole server
+// on chat or ability spam. Over the limit the frames are dropped, not the
+// connection -- a laggy burst should not boot somebody mid-fight.
+const MSG_BURST = 120, MSG_WINDOW_MS = 1000;
+
+const wss = new WebSocketServer({ server: httpServer, maxPayload: MAX_MSG_BYTES });
+// ws raises 'error' on the socket for a protocol fault -- an oversized frame,
+// a bad opcode, a truncated close. Node turns an unhandled 'error' event into a
+// thrown exception, so a socket without this listener is a crash waiting for a
+// malformed packet. One listener per socket, and one for the server itself.
+wss.on('error', (e) => console.warn('[ws] server error:', e && e.message));
+httpServer.on('clientError', (e, socket) => { try { socket.destroy(); } catch { /* already gone */ } });
+
 wss.on('connection', (ws) => {
   let player = null;
+  let msgCount = 0, msgWindow = Date.now(), floodNoted = 0;
+  ws.on('error', (e) => {
+    console.warn(`[ws] ${player ? player.name : 'a socket'}: ${e && e.message}`);
+    try { ws.terminate(); } catch { /* already gone */ }   // the 'close' handler does the cleanup
+  });
   ws.on('message', (raw) => {
+    const now = Date.now();
+    if (now - msgWindow >= MSG_WINDOW_MS) { msgCount = 0; msgWindow = now; }
+    if (++msgCount > MSG_BURST) {
+      if (now - floodNoted > 5000) { floodNoted = now; console.warn(`[flood] dropping messages from ${player ? player.name : 'a socket'}`); }
+      return;
+    }
     let msg; try { msg = JSON.parse(raw); } catch { return; }
     if (!msg || typeof msg !== 'object') return;
     switch (msg.t) {
       case 'join': {
         if (player) return;
-        const name = String(msg.name || 'Adventurer').slice(0, 16).replace(/[^\w \-]/g, '') || 'Adventurer';
+        const name = String(msg.name || '').slice(0, 16).replace(/[^\w \-]/g, '').replace(/\s+/g, ' ').trim();
+        if (!name) { send(ws, { t: 'loginfail', text: 'Pick a name.' }); break; }
+        // Already in the world: refuse rather than have two of the same person
+        // walking about writing over each other's save.
+        if ([...players.values()].some(q => saveSlug(q.name) === saveSlug(name))) {
+          send(ws, { t: 'loginfail', text: `${name} is already logged in.` }); break;
+        }
+        const auth = authenticate(name, msg.pass);
+        if (!auth.ok) { send(ws, { t: 'loginfail', text: auth.error }); break; }
         const id = nextId++;
         const look = sanitizeLook(msg.look);
         const cls = CLASSES[msg.cls] ? String(msg.cls) : DEFAULT_CLASS;
@@ -2323,10 +3551,11 @@ wss.on('connection', (ws) => {
           id, ws, kind: 'player', name, look, zoneId: START_ZONE,
           x: start.spawn.x, z: start.spawn.z, y: 0, yaw: start.spawn.yaw, moving: false,
           // One class, one class level: `level`/`xp` ARE the class (see CLASSES).
-          cls, level: 1, xp: 0, gold: 0, openedChests: new Set(),
+          cls, level: 1, xp: 0, gold: 0, openedChests: new Set(), usedObjects: new Set(),
           known: new Set(classDef(cls).abilities.filter(a => a.level <= 1).map(a => a.id)), // learned abilities
           cooldowns: {}, buffs: {}, gcd: 0, momentum: 0, momentumT: 0, rage: 0, rageMax: classStats(cls, 1).rage, rageIdle: 0,
           mana: classStats(cls, 1).mana, manaMax: classStats(cls, 1).mana, friendId: null,
+          partyId: null, partyInvite: null, duelId: null, duelChallenge: null, tradeId: null, tradeRequest: null,
           meditation: { level: 1, xp: 0 }, resting: false,
           // Everyone starts able to mine and fish; better tools are earned. The
           // pickaxe rides in the bag (it counts for mining from there); the
@@ -2342,12 +3571,21 @@ wss.on('connection', (ws) => {
           atkTimer: 0, regen: 0, combatTimer: 0, deathTimer: 0, portalCd: 0, inSafe: true,
           moveTo: null, combatId: null, pendingChest: null, pendingPickup: null, pendingGate: false, input: { f: 0, r: 0, yaw: 0 },
         };
+        // A name that has been here before picks its character back up: the
+        // class and look on the save win over whatever the login screen was
+        // showing, because the character is the thing being resumed.
+        const saved = loadSave(name);
+        if (saved) applySave(player, saved);
         players.set(id, player);
-        send(ws, { t: 'welcome', id, tickRate: SNAPSHOT_HZ, zone: zoneForClient(start), items: ITEM_CATALOG });
+        const here = ZONES[player.zoneId] || start;
+        send(ws, { t: 'welcome', id, tickRate: SNAPSHOT_HZ, zone: zoneForClient(here), items: ITEM_CATALOG });
         sendBag(player); // sends the quest payload too
         sendSkills(player);
         sendAbilities(player); sendStatus(player);
-        systemChat(`${name} has entered ${start.name}.`);
+        sendObjects(player);
+        if (auth.created) send(ws, { t: 'event', kind: 'notice', text: `Account created for ${player.name}. Use the same password next time.` });
+        else if (saved) send(ws, { t: 'event', kind: 'notice', text: `Welcome back, ${player.name}.` });
+        systemChat(`${name} has entered ${here.name}.`);
         break;
       }
       case 'input': {
@@ -2355,13 +3593,16 @@ wss.on('connection', (ws) => {
         player.input = {
           f: clamp(Number(msg.f) || 0, -1, 1),
           r: clamp(Number(msg.r) || 0, -1, 1),
-          yaw: Number(msg.yaw) || 0,
+          yaw: Number.isFinite(+msg.yaw) ? +msg.yaw : 0,   // 1e999 parses to Infinity, and sin(Infinity) is NaN
         };
         break;
       }
       case 'attack': {
         if (!player || !player.alive) break;
-        const m = monsters.get(Number(msg.target));
+        // A person can be a target, but only the one you are duelling -- this
+        // is the whole of the game's PvP and it stays inside the ropes.
+        const foe = duelFoe(player);
+        const m = monsters.get(Number(msg.target)) || (foe && foe.id === Number(msg.target) ? foe : null);
         if (m && m.alive && m.zoneId === player.zoneId) {
           player.combatId = m.id; player.moveTo = null; player.pendingChest = null; player.pendingPickup = null; player.pendingMine = null;
         }
@@ -2373,6 +3614,48 @@ wss.on('connection', (ws) => {
         break;
       }
       case 'learn': { if (player && player.alive) learnAbility(player, String(msg.id || '')); break; }
+      case 'sit': {
+        if (!player || !player.alive) break;
+        const seat = seatById(zoneOf(player), String(msg.id || ''));
+        if (!seat) break;
+        // The seat you are already on gets you off it; any other one gets you
+        // up and walking over to that one instead.
+        if (player.seat) { const same = player.seat.id === seat.id; standUp(player, !same); if (same) break; }
+        player.pendingSeat = seat.id; player.moveTo = null; player.combatId = null; player._nav = null;
+        break;
+      }
+      case 'stand': { if (player) standUp(player); break; }
+      // Looking someone over: the same sheet you see of your own kit, for
+      // theirs. Read-only, and it says nothing their character is not wearing
+      // in plain sight.
+      case 'inspect': {
+        if (!player) break;
+        const t = players.get(Number(msg.id));
+        if (!t || t.zoneId !== player.zoneId) break;
+        const w = weaponOf(t), cs = classStats(t.cls, t.level), eq = equipStats(t.equipment);
+        const [lo, hi] = swingBand(w, cs.str, eq.atk || 0);
+        send(player.ws, { t: 'inspect', id: t.id, name: t.name, cls: t.cls, level: t.level,
+          equipment: t.equipment, stats: eq, slots: SLOT_INFO, doll: DOLL,
+          swing: { sec: +swingSeconds(w).toFixed(1), type: w.type, lo, hi } });
+        break;
+      }
+      case 'trade:request': { if (player) tradeRequest(player, msg.id); break; }
+      case 'trade:accept':  { if (player) tradeAccept(player); break; }
+      case 'trade:decline': { if (player) tradeDecline(player); break; }
+      case 'trade:add':     { if (player) tradeAdd(player, msg.item); break; }
+      case 'trade:take':    { if (player) tradeTake(player, msg.item); break; }
+      case 'trade:gold':    { if (player) tradeGold(player, msg.gold); break; }
+      case 'trade:ok':      { if (player) tradeOk(player, msg.on); break; }
+      case 'trade:cancel':  { if (player) tradeAbort(player); break; }
+      case 'duel:challenge': { if (player) duelChallenge(player, msg.id); break; }
+      case 'duel:accept':    { if (player) duelAccept(player); break; }
+      case 'duel:decline':   { if (player) duelDecline(player); break; }
+      case 'duel:yield':     { if (player) duelForfeit(player, `${player.name} yields.`); break; }
+      case 'party:invite': { if (player) partyInvite(player, msg.id); break; }
+      case 'party:accept': { if (player) partyAccept(player); break; }
+      case 'party:decline': { if (player) partyDecline(player); break; }
+      case 'party:leave':  { if (player) partyRemove(player); break; }
+      case 'party:kick':   { if (player) partyKick(player, msg.id); break; }
       case 'target': {   // a friendly target for the Cleric's spells (null = yourself)
         if (!player) break;
         const t = msg.id != null ? players.get(Number(msg.id)) : null;
@@ -2395,6 +3678,17 @@ wss.on('connection', (ws) => {
         const b = zoneOf(player).bounds;
         player.moveTo = { x: clamp(Number(msg.x) || 0, b.minX, b.maxX), z: clamp(Number(msg.z) || 0, b.minZ, b.maxZ) };
         player.combatId = null; player.pendingChest = null; player.pendingPickup = null; player.pendingMine = null;
+        break;
+      }
+      case 'talk': {
+        if (!player) break;
+        const moved = recordTalk(player, String(msg.npc || ''));   // may also hand over what you were asked to bring
+        if (moved.length) { sendBag(player); notifyQuestProgress(player, moved); }
+        break;
+      }
+      case 'useobject': {
+        if (!player || !player.alive) break;
+        player.pendingUse = String(msg.id || ''); player.combatId = null; player.moveTo = null; player.pendingChest = null; player.pendingPickup = null; player.pendingMine = null;
         break;
       }
       case 'openchest': {
@@ -2449,29 +3743,36 @@ wss.on('connection', (ws) => {
       }
       // --- World editor (gated by EDIT_KEY) ---
       case 'spawnboss': {   // editor tool: summon Cluckifer beside the player / set his health, to test the fight
-        if (!player || msg.key !== EDIT_KEY) break;
+        if (!player || !editAllowed(msg.key)) break;
         if (msg.god) { player.maxHp = 100000; player.hp = 100000; break; }   // an observer that survives the fight
         if (msg.hp != null) __test.setBossHp(+msg.hp); else __test.forceCluckifer();
         break;
       }
       case 'give': {   // editor tool: hand the player any item, to test gear without grinding for it
-        if (!player || msg.key !== EDIT_KEY || !ITEMS[msg.item]) break;
+        if (!player || !editAllowed(msg.key) || !ITEMS[msg.item]) break;
         for (let i = 0; i < Math.min(28, Math.max(1, msg.qty | 0)); i++) player.inventory.push(String(msg.item));
         sendBag(player); break;
       }
+      case 'tp': {   // editor tool: stand somewhere, to test a fight without the walk
+        if (!player || !editAllowed(msg.key)) break;
+        const b = zoneOf(player).bounds;
+        player.x = clamp(Number(msg.x) || 0, b.minX, b.maxX); player.z = clamp(Number(msg.z) || 0, b.minZ, b.maxZ);
+        player.moveTo = null; player._nav = null; player.combatId = null;
+        break;
+      }
       case 'setlevel': {   // editor tool: jump to a class level with every ability learned, to test a class
-        if (!player || msg.key !== EDIT_KEY) break;
+        if (!player || !editAllowed(msg.key)) break;
         const L = Math.max(1, Math.min(MAX_LEVEL, msg.level | 0)); player.level = L; player.xp = xpTotalForLevel(L);
         const cs = classStats(player.cls, L); player.maxHp = cs.hp; player.hp = cs.hp; player.manaMax = cs.mana; player.mana = cs.mana;
         for (const a of classDef(player.cls).abilities) if (a.level <= L) player.known.add(a.id);
         sendAbilities(player); sendBag(player); break;
       }
       case 'edit:list': {
-        if (msg.key === EDIT_KEY) send(ws, { t: 'models', models: MODEL_MANIFEST, mobs: MOB_TYPES, items: LOOT_ITEMS, loot: allLootTables() });
+        if (editAllowed(msg.key)) send(ws, { t: 'models', models: MODEL_MANIFEST, mobs: MOB_TYPES, items: LOOT_ITEMS, loot: allLootTables() });
         break;
       }
       case 'edit:loot:set': {
-        if (msg.key !== EDIT_KEY || !MONSTER_TEMPLATES[msg.type] || !Array.isArray(msg.table)) break;
+        if (!editAllowed(msg.key) || !MONSTER_TEMPLATES[msg.type] || !Array.isArray(msg.table)) break;
         const table = msg.table.filter(e => e && lootItemOk(e.item)).map(e => ({
           item: String(e.item), min: Math.max(0, Math.min(9999, (+e.min | 0) || 1)),
           max: Math.max(1, Math.min(9999, (+e.max | 0) || 1)), chance: Math.max(1, Math.min(100000, (+e.chance | 0) || 1)),
@@ -2481,7 +3782,7 @@ wss.on('connection', (ws) => {
         break;
       }
       case 'edit:spawn:place': {
-        if (!player || msg.key !== EDIT_KEY || !MONSTER_TEMPLATES[msg.type]) break;
+        if (!player || !editAllowed(msg.key) || !MONSTER_TEMPLATES[msg.type]) break;
         const z = zoneOf(player);
         const sp = { id: 's' + (editSeq++), type: String(msg.type), cx: +(+msg.x).toFixed(2), cz: +(+msg.z).toFixed(2),
           r: +(+(msg.r || 8)).toFixed(1), count: Math.max(1, Math.min(20, +(msg.count || 3) | 0)),
@@ -2491,7 +3792,7 @@ wss.on('connection', (ws) => {
         break;
       }
       case 'edit:spawn:update': {
-        if (!player || msg.key !== EDIT_KEY) break;
+        if (!player || !editAllowed(msg.key)) break;
         const z = zoneOf(player); const sp = (z._editSpawns || []).find(s => s.id === msg.id); if (!sp) break;
         if (msg.type != null && MONSTER_TEMPLATES[msg.type]) sp.type = String(msg.type);
         if (msg.cx != null) sp.cx = +(+msg.cx).toFixed(2);
@@ -2505,14 +3806,14 @@ wss.on('connection', (ws) => {
         break;
       }
       case 'edit:spawn:delete': {
-        if (!player || msg.key !== EDIT_KEY) break;
+        if (!player || !editAllowed(msg.key)) break;
         const z = zoneOf(player); const i = (z._editSpawns || []).findIndex(s => s.id === msg.id); if (i < 0) break;
         const [sp] = z._editSpawns.splice(i, 1); despawnEditorRegion(sp.id);
         saveOverrides(z); broadcastZone(player.zoneId, { t: 'edit', op: 'spawn:delete', id: sp.id });
         break;
       }
       case 'edit:place': {
-        if (!player || msg.key !== EDIT_KEY || !msg.m) break;
+        if (!player || !editAllowed(msg.key) || !msg.m) break;
         const z = zoneOf(player);
         const o = { id: 'e' + (editSeq++), m: String(msg.m), x: +(+msg.x).toFixed(2), z: +(+msg.z).toFixed(2),
           yaw: +(+(msg.yaw || 0)).toFixed(3), s: +(+(msg.s || 1)).toFixed(3), c: +(+(msg.c || 0)).toFixed(2) };
@@ -2523,7 +3824,7 @@ wss.on('connection', (ws) => {
         break;
       }
       case 'edit:update': {
-        if (!player || msg.key !== EDIT_KEY) break;
+        if (!player || !editAllowed(msg.key)) break;
         const z = zoneOf(player); const o = (z._editObjects || []).find(o => o.id === msg.id); if (!o) break;
         if (msg.x != null) o.x = +(+msg.x).toFixed(2);
         if (msg.z != null) o.z = +(+msg.z).toFixed(2);
@@ -2538,14 +3839,14 @@ wss.on('connection', (ws) => {
         break;
       }
       case 'edit:delete': {
-        if (!player || msg.key !== EDIT_KEY) break;
+        if (!player || !editAllowed(msg.key)) break;
         const z = zoneOf(player); const i = (z._editObjects || []).findIndex(o => o.id === msg.id); if (i < 0) break;
         z._editObjects.splice(i, 1); saveOverrides(z); broadcastZone(player.zoneId, { t: 'edit', op: 'delete', id: msg.id });
         break;
       }
       case 'equip': if (player && player.alive) equipItem(player, String(msg.item || ''), msg.slot ? String(msg.slot) : null); break;
       case 'unequip': if (player && player.alive) unequipItem(player, String(msg.slot || '')); break;
-      case 'sell': if (player && player.alive) sellItem(player, String(msg.item || '')); break;
+      case 'sell': if (player && player.alive) sellItem(player, String(msg.item || ''), !!msg.all); break;
       case 'mine': {
         if (!player || !player.alive) break;
         const mz = zoneOf(player);
@@ -2571,13 +3872,13 @@ wss.on('connection', (ws) => {
       }
       case 'questaccept': if (player && player.alive) acceptQuest(player, String(msg.id || '')); break;
       case 'questturnin': if (player && player.alive) turnInQuest(player, String(msg.id || '')); break;
-      case 'questsync': if (player) sendQuests(player); break;
+      case 'questsync': if (player) { sendQuests(player); sendObjects(player); } break;
       case 'respawn': if (player && !player.alive && player.deathTimer <= 0) respawnPlayer(player); break;
       case 'logout': {
         if (!player) return;
         const wait = player.lastCombat ? LOGOUT_COMBAT_WAIT - (Date.now() - player.lastCombat) / 1000 : 0;
         if (player.alive && wait > 0) { send(ws, { t: 'event', kind: 'notice', text: `You can't log out in combat. Wait ${Math.ceil(wait)}s.` }); break; }
-        send(ws, { t: 'logout' }); players.delete(player.id); systemChat(`${player.name} has left the world.`); player = null;
+        send(ws, { t: 'logout' }); leaveWorld(player); player = null;
         break;
       }
       case 'chat': {
@@ -2598,7 +3899,7 @@ wss.on('connection', (ws) => {
       systemChat(`${player.name} tried to flee the fight — their body lingers.`);
       return;
     }
-    players.delete(player.id); systemChat(`${player.name} has left the world.`);
+    leaveWorld(player);
   });
 });
 
