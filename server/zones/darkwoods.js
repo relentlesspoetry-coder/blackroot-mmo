@@ -327,6 +327,13 @@ export const darkwoods = {
   scatterSeed: 4412,
   // NOTE: in generateScatter, `r` is the piece's COLLISION radius (0 = walk
   // through / pure decor) and `nearR` is how far it spreads around its anchor.
+  // Two trees the outpost was built around rather than cleared: one out past
+  // the stores, one up by the northern tents. Different sizes and turned to
+  // different angles, so they read as trees that were already there.
+  trees: [
+    { x: -11.62, z: -39.47, s: 1.05, r: 2.4 },
+    { x: -11.41, z: -32.13, s: 0.88, r: 5.1 },
+  ],
   // Ground the camp has worn through: a bare patch under the whole of it, part
   // of the same dirt field as the roads, so it blends into them instead of
   // sitting on top as a separate disc.
@@ -348,10 +355,10 @@ export const darkwoods = {
       { s: 1.45, m: 'Small_Canvas_Tent', x: -8.39, z: -40.42, yaw: 5.93 },
       // A bedroll inside each tent, laid along it on the same bearing, head to
       // the back wall.
-      { m: 'Bedroll', x: -7.92, z: -31.55, yaw: 3.58 },
-      { m: 'Bedroll', x: -5.38, z: -34.32, yaw: 4.36 },
-      { m: 'Bedroll', x: -5.55, z: -38.08, yaw: 5.15 },
-      { m: 'Bedroll', x: -8.32, z: -40.62, yaw: 5.93 },
+      { s: 1.25, m: 'Bedroll', x: -7.92, z: -31.55, yaw: 3.58 },
+      { s: 1.25, m: 'Bedroll', x: -5.38, z: -34.32, yaw: 4.36 },
+      { s: 1.25, m: 'Bedroll', x: -5.55, z: -38.08, yaw: 5.15 },
+      { s: 1.25, m: 'Bedroll', x: -8.32, z: -40.62, yaw: 5.93 },
       // The fire: a pot over it and stools pulled up round it.
       { m: 'Cooking_Tripod', x: -10.00, z: -36.00, yaw: 0.00 },
       { m: 'Camp_Stool', x: -9.29, z: -34.78, yaw: 3.67 },

@@ -116,6 +116,7 @@ function scaleZone(zone, k) {
   (zone.chests || []).forEach(sp);
   (zone.objects || []).forEach(sp);   // quest objects: positions scale, model sizes stay native
   (zone.props || []).forEach(sp);     // hand-placed camp dressing: same rule, sizes stay in metres
+  (zone.trees || []).forEach(sp);     // and trees planted by hand inside a clearing
   (zone.dirt || []).forEach(d => { sp(d); if (d.fr != null) d.fr *= k; });   // worn ground: the fringe grows with the patch
   (zone.fishingSpots || []).forEach(sp);
   (zone.campfires || []).forEach(sp);
@@ -187,10 +188,14 @@ function buildSeamlessWorld() {
     // Anything the zone places by hand goes down after the scatter and is not
     // rejection-sampled: a camp that was laid out is a camp, not a suggestion.
     for (const pr of (z.props || [])) z._scatter.push({ i: z._scatter.length, m: pr.m, x: pr.x, z: pr.z, s: pr.s || 1, r: pr.yaw || 0, c: pr.c || 0 });
+    // Trees the zone asks for by hand -- ones inside a clearing the forest was
+    // told to keep out of -- join the generated forest, so they get the same
+    // trunk collision and the same species-for-a-position as any other tree.
+    for (const tr of (z.trees || [])) z._trees.push({ x: tr.x, z: tr.z, s: tr.s || 1, r: tr.r != null ? tr.r : +(Math.random() * 6).toFixed(2) });
   }
   const w = darkwoods, kf = killingfields;
   const cat = (k) => { w[k] = (w[k] || []).concat(kf[k] || []); };
-  ['pois', 'npcs', 'rocks', 'pools', 'chests', 'hazards', 'spawns', 'elites', 'objects', 'props', 'dirt', '_trees', '_scatter'].forEach(cat);
+  ['pois', 'npcs', 'rocks', 'pools', 'chests', 'hazards', 'spawns', 'elites', 'objects', 'props', 'dirt', 'trees', '_trees', '_scatter'].forEach(cat);
   // Multiple paths/rivers now — keep each so the client can draw them all.
   w.paths = [w.path, kf.path].filter(Boolean);
   w.rivers = [w.river, kf.river].filter(Boolean);
