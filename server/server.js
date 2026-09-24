@@ -115,6 +115,7 @@ function scaleZone(zone, k) {
   (zone.pools || []).forEach(sp);
   (zone.chests || []).forEach(sp);
   (zone.objects || []).forEach(sp);   // quest objects: positions scale, model sizes stay native
+  (zone.props || []).forEach(sp);     // hand-placed camp dressing: same rule, sizes stay in metres
   (zone.fishingSpots || []).forEach(sp);
   (zone.campfires || []).forEach(sp);
   if (zone.safeSpawnRadius) zone.safeSpawnRadius *= k;
@@ -182,10 +183,13 @@ function buildSeamlessWorld() {
   for (const z of [darkwoods, killingfields]) {
     z._trees = generateTrees(z);
     z._scatter = generateScatter(z);
+    // Anything the zone places by hand goes down after the scatter and is not
+    // rejection-sampled: a camp that was laid out is a camp, not a suggestion.
+    for (const pr of (z.props || [])) z._scatter.push({ i: z._scatter.length, m: pr.m, x: pr.x, z: pr.z, s: pr.s || 1, r: pr.yaw || 0, c: pr.c || 0 });
   }
   const w = darkwoods, kf = killingfields;
   const cat = (k) => { w[k] = (w[k] || []).concat(kf[k] || []); };
-  ['pois', 'npcs', 'rocks', 'pools', 'chests', 'hazards', 'spawns', 'elites', 'objects', '_trees', '_scatter'].forEach(cat);
+  ['pois', 'npcs', 'rocks', 'pools', 'chests', 'hazards', 'spawns', 'elites', 'objects', 'props', '_trees', '_scatter'].forEach(cat);
   // Multiple paths/rivers now — keep each so the client can draw them all.
   w.paths = [w.path, kf.path].filter(Boolean);
   w.rivers = [w.river, kf.river].filter(Boolean);

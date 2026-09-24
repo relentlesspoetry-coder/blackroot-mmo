@@ -327,6 +327,50 @@ export const darkwoods = {
   scatterSeed: 4412,
   // NOTE: in generateScatter, `r` is the piece's COLLISION radius (0 = walk
   // through / pure decor) and `nearR` is how far it spreads around its anchor.
+  // ---------------------------------------------------------------------
+  // The Dark Woods Outpost, placed rather than sprinkled. Positions are
+  // offsets from the outpost POI at (-10, -36) and scale with the zone like
+  // everything else in this file; the models themselves stay native metres,
+  // so the layout was worked out in metres and divided back down by 1.7.
+  // ---------------------------------------------------------------------
+  props: [
+      // Four tents in an arc on the high side, each opening onto the fire.
+      { m: 'Small_Canvas_Tent', x: -8.01, z: -31.74, yaw: 3.58 },
+      { m: 'Small_Canvas_Tent', x: -5.58, z: -34.39, yaw: 4.36 },
+      { m: 'Small_Canvas_Tent', x: -5.74, z: -37.99, yaw: 5.15 },
+      { m: 'Small_Canvas_Tent', x: -8.39, z: -40.42, yaw: 5.93 },
+      // Two spare bedrolls between the tents, for the watch coming off duty.
+      { m: 'Bedroll', x: -7.33, z: -33.51, yaw: 3.96 },
+      { m: 'Bedroll', x: -7.51, z: -38.67, yaw: 5.53 },
+      // The fire: a pot over it and stools pulled up round it.
+      { m: 'Cooking_Tripod', x: -10.00, z: -36.00, yaw: 0.00 },
+      { m: 'Camp_Stool', x: -9.29, z: -34.78, yaw: 3.67 },
+      { m: 'Camp_Stool', x: -9.29, z: -37.22, yaw: 5.76 },
+      { m: 'Camp_Stool', x: -11.41, z: -36.00, yaw: 1.57 },
+      // Stores under the pavilion on the sheltered side, crates stacked against it.
+      { m: 'Supply_Pavilion', x: -14.15, z: -37.51, yaw: 1.22 },
+      { m: 'Supply_Crate', x: -13.22, z: -38.17, yaw: 0.98 },
+      { m: 'Supply_Crate', x: -14.86, z: -38.37, yaw: 1.12 },
+      { m: 'Supply_Crate', x: -15.41, z: -37.15, yaw: 1.36 },
+      { m: 'Supply_Crate', x: -13.99, z: -36.28, yaw: 1.50 },
+      { m: 'Water_Barrel', x: -13.58, z: -39.23, yaw: 0.84 },
+      { m: 'Water_Barrel', x: -15.06, z: -35.82, yaw: 1.61 },
+      // Lanterns ring the camp: this is where the light stops.
+      { m: 'Camp_Lantern', x: -10.00, z: -29.24, yaw: 0.00 },
+      { m: 'Camp_Lantern', x: -4.14, z: -32.62, yaw: 0.00 },
+      { m: 'Camp_Lantern', x: -4.14, z: -39.38, yaw: 0.00 },
+      { m: 'Camp_Lantern', x: -10.00, z: -42.76, yaw: 0.00 },
+      { m: 'Camp_Lantern', x: -15.86, z: -39.38, yaw: 0.00 },
+      { m: 'Camp_Lantern', x: -15.86, z: -32.62, yaw: 0.00 },
+      // A rough fence across the two open approaches, and a sign on the road.
+      { m: 'Rough_Fence', x: -11.28, z: -43.24, yaw: 0.17 },
+      { m: 'Rough_Fence', x: -13.11, z: -42.66, yaw: 0.44 },
+      { m: 'Rough_Fence', x: -14.73, z: -41.63, yaw: 0.70 },
+      { m: 'Rough_Fence', x: -16.37, z: -32.32, yaw: 2.09 },
+      { m: 'Rough_Fence', x: -15.20, z: -30.80, yaw: 2.36 },
+      { m: 'Rough_Fence', x: -13.68, z: -29.63, yaw: 2.62 },
+      { m: 'Warning_Sign', x: -10.00, z: -43.53, yaw: 0.00 },
+  ],
   scatter: [
     // Surface ore veins (small mineable-node collision).
     // Ore is NOT scattered along the trail: it sits in three tight patches you
@@ -345,18 +389,11 @@ export const darkwoods = {
     { model: 'Water_Barrel',   count: 1, r: 0.7, scale: [1.0, 1.0], near: 'camp', nearR: 10 },
     { model: 'Rolled_Bedroll', count: 1, r: 0, scale: [1.0, 1.0], near: 'camp', nearR: 10 },
 
-    // The Dark Woods Outpost — the warden's camp: tents around a fire, a
-    // supply pavilion, crates and barrels, lanterns on poles at the edge.
-    { model: 'Supply_Pavilion',  count: 1, r: 2.0, scale: [1.0, 1.0], near: 'outpost', nearR: 9 },
-    { model: 'Small_Canvas_Tent',count: 3, r: 1.4, scale: [1.0, 1.1], near: 'outpost', nearR: 11 },
-    { model: 'Cooking_Tripod',   count: 1, r: 0,   scale: [1.0, 1.0], near: 'outpost', nearR: 7 },
-    { model: 'Bedroll',          count: 3, r: 0,   scale: [1.0, 1.0], near: 'outpost', nearR: 11 },
-    { model: 'Camp_Stool',       count: 3, r: 0,   scale: [1.0, 1.0], near: 'outpost', nearR: 9 },
-    { model: 'Camp_Lantern',     count: 3, r: 0,   scale: [1.0, 1.0], near: 'outpost', nearR: 12 },
-    { model: 'Supply_Crate',     count: 4, r: 0.8, scale: [0.9, 1.1], near: 'outpost', nearR: 12 },
-    { model: 'Water_Barrel',     count: 2, r: 0.7, scale: [1.0, 1.0], near: 'outpost', nearR: 11 },
-    { model: 'Rough_Fence',      count: 6, r: 0.6, scale: [1.0, 1.0], near: 'outpost', nearR: 13 },
-    { model: 'Warning_Sign',     count: 1, r: 0.4, scale: [1.0, 1.0], near: 'outpost', nearR: 13 },
+    // (The Dark Woods Outpost is not scattered — it is laid out by hand in
+    // `props` below. Scattering a camp gave nine bedrolls, nine lanterns,
+    // three cooking pots and no tents at all: counts are multiplied by the
+    // zone's area, and the rejection sampler drops whatever has a footprint
+    // once the zero-radius clutter has filled the clearing.)
 
     // Goblin war-camp at the Wolf Den — tents, totem, banners, crude defenses.
     { model: 'Goblin_Hide_Tent', count: 2, r: 1.4, scale: [1.0, 1.1], near: 'wolfden', nearR: 14 },
