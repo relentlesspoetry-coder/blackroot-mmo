@@ -2485,6 +2485,7 @@ function buildSpoilBank(mine) {
 
   // Quest objects: lanterns to light, glowcaps to gather, fires to douse.
   buildWorldObjects();
+  buildSeatTargets();
 
   // Fishing spots + cooking campfires (clickable)
   buildFishingSpots();
@@ -4523,6 +4524,25 @@ function animateNpcs(dt) {
 // ---------------------------------------------------------------------------
 const worldObjects = new Map();   // id -> { def, group, light, used, spent }
 let litObjects = new Set();       // ids of toggled-on lights, shared by everyone in the zone
+// Seats out in the world -- the camp's bedrolls and stools -- are instanced
+// scatter props, and an InstancedMesh cannot be picked apart by a raycast.
+// Each one gets an invisible box standing on it instead, which is what the
+// click actually hits. House furniture is built mesh by mesh and tags itself.
+function buildSeatTargets() {
+  for (const st of (zone.seats || [])) {
+    if (st.house) continue;                       // indoor furniture already carries its own tag
+    const h = st.k === 'stool' ? 0.6 : 0.4;
+    // Fully transparent rather than material.visible = false: an invisible
+    // material is not reliably raycast, and this box exists only to be hit.
+    const box = new THREE.Mesh(new THREE.BoxGeometry(st.k === 'stool' ? 0.9 : 2.2, h, st.k === 'stool' ? 0.9 : 1.1),
+      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+    box.position.set(st.x, groundY(st.x, st.z) + h / 2, st.z);
+    box.rotation.y = st.yaw || 0;
+    const tag = { pickKind: 'seat', seatId: st.id, seatKind: st.k, seatX: st.x, seatZ: st.z };
+    Object.assign(box.userData, tag);
+    scene.add(box);
+  }
+}
 function buildWorldObjects() {
   for (const o of (zone.objects || [])) {
     const group = new THREE.Group();
@@ -6873,28 +6893,42 @@ function walkTo(point) { ws?.send(JSON.stringify({ t: 'move', x: +point.x.toFixe
 // Walk over, then open the dialogue once we're actually standing there — the
 // server refuses accepts and hand-ins from across the map, so the UI shouldn't
 // pretend otherwise.
-let pendingTalk = null;
+let pendingTalk = null, talkAim = null;   // where we last aimed for, so a walking NPC can be re-followed
 function talkNpc(pk) {
   if (!pk.npcId) return;
   const rec = npcMeshes.get(pk.npcId);
   if (!rec) return;
   const selfRec = entityMeshes.get(myId);
-  const near = selfRec && Math.hypot(selfRec.mesh.position.x - pk.x, selfRec.mesh.position.z - pk.z) < 8;
+  // Only skip the walk if you are already standing with them. This used to
+  // be 8 metres, which is most of a clearing: you would click someone across
+  // the camp and simply start talking to them from where you stood.
+  const near = selfRec && Math.hypot(selfRec.mesh.position.x - pk.x, selfRec.mesh.position.z - pk.z) < 3.2;
   if (near) { openDialogue(pk.npcId); return; }
   pendingTalk = pk.npcId;
+  talkAim = { x: pk.x, z: pk.z };
   walkTo({ x: pk.x + 1.6, z: pk.z + 1.6 });
 }
+// Every distance here is to where the NPC is standing now, not to the spot on
+// the map they were placed at: they walk their rounds, so measuring against
+// def.x/def.z meant you could arrive at an empty patch of grass and never be
+// close enough to anyone to start talking.
 function updatePendingTalk() {
+  const selfRec = entityMeshes.get(myId); if (!selfRec) return;
+  const gap = (rec) => Math.hypot(selfRec.mesh.position.x - rec.mesh.position.x, selfRec.mesh.position.z - rec.mesh.position.z);
   // Walking off from whoever you're talking to ends the conversation.
   if (dialogueNpc) {
-    const rec = npcMeshes.get(dialogueNpc), selfRec = entityMeshes.get(myId);
-    if (rec && selfRec && Math.hypot(selfRec.mesh.position.x - rec.def.x, selfRec.mesh.position.z - rec.def.z) > 9) closeDialogue();
+    const rec = npcMeshes.get(dialogueNpc);
+    if (rec && gap(rec) > 9) closeDialogue();
   }
   if (!pendingTalk) return;
-  const rec = npcMeshes.get(pendingTalk), selfRec = entityMeshes.get(myId);
-  if (!rec || !selfRec) { pendingTalk = null; return; }
-  if (Math.hypot(selfRec.mesh.position.x - rec.def.x, selfRec.mesh.position.z - rec.def.z) < 8) {
-    openDialogue(pendingTalk); pendingTalk = null;
+  const rec = npcMeshes.get(pendingTalk);
+  if (!rec) { pendingTalk = null; return; }
+  if (gap(rec) < 3.2) { openDialogue(pendingTalk); pendingTalk = null; return; }   // arrived: close enough to speak
+  // They are still walking: follow them rather than the spot they left.
+  const p = rec.mesh.position;
+  if (!talkAim || Math.hypot(talkAim.x - p.x, talkAim.z - p.z) > 2.5) {
+    talkAim = { x: p.x, z: p.z };
+    walkTo({ x: p.x + 1.6, z: p.z + 1.6 });
   }
 }
 function examineText(txt) { addChat('', txt, true); }

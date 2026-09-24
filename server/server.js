@@ -1273,9 +1273,10 @@ const SEAT_REACH = 1.9;
 function zoneSeats(zone) {
   if (zone._seats) return zone._seats;
   zone._seats = [];
+  const SEAT_PROP = { Bedroll: 'bedroll', 'props/Bedroll': 'bedroll', Camp_Stool: 'stool', 'props/Camp_Stool': 'stool' };
   for (const pr of (zone.props || [])) {
-    if (pr.m !== 'Bedroll' && pr.m !== 'props/Bedroll') continue;
-    zone._seats.push({ id: `bedroll:${zone._seats.length}`, k: 'bedroll', x: pr.x, z: pr.z, yaw: pr.yaw || 0 });
+    const k = SEAT_PROP[pr.m]; if (!k) continue;
+    zone._seats.push({ id: `${k}:${zone._seats.length}`, k, x: pr.x, z: pr.z, yaw: pr.yaw || 0 });
   }
   return zone._seats;
 }

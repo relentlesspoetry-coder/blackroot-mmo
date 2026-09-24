@@ -358,10 +358,10 @@ export const darkwoods = {
   // ---------------------------------------------------------------------
   props: [
       // Four tents in an arc on the high side, each opening onto the fire.
-      { s: 1.45, m: 'Small_Canvas_Tent', x: -8.01, z: -31.74, yaw: 3.58 },
-      { s: 1.45, m: 'Small_Canvas_Tent', x: -5.58, z: -34.39, yaw: 4.36 },
-      { s: 1.45, m: 'Small_Canvas_Tent', x: -5.74, z: -37.99, yaw: 5.15 },
-      { s: 1.45, m: 'Small_Canvas_Tent', x: -8.39, z: -40.42, yaw: 5.93 },
+      { s: 1.45, m: 'Small_Canvas_Tent', x: -8.01, z: -31.74, yaw: 3.58, c: 1.0 },
+      { s: 1.45, m: 'Small_Canvas_Tent', x: -5.58, z: -34.39, yaw: 4.36, c: 1.0 },
+      { s: 1.45, m: 'Small_Canvas_Tent', x: -5.74, z: -37.99, yaw: 5.15, c: 1.0 },
+      { s: 1.45, m: 'Small_Canvas_Tent', x: -8.39, z: -40.42, yaw: 5.93, c: 1.0 },
       // A bedroll inside each tent, laid along it on the same bearing, head to
       // the back wall.
       { s: 1.25, m: 'Bedroll', x: -7.92, z: -31.55, yaw: 3.58 },
@@ -369,26 +369,26 @@ export const darkwoods = {
       { s: 1.25, m: 'Bedroll', x: -5.55, z: -38.08, yaw: 5.15 },
       { s: 1.25, m: 'Bedroll', x: -8.32, z: -40.62, yaw: 5.93 },
       // The fire: a pot over it and stools pulled up round it.
-      { m: 'Cooking_Tripod', x: -10.00, z: -36.00, yaw: 0.00 },
+      { m: 'Cooking_Tripod', x: -10.00, z: -36.00, yaw: 0.00, c: 0.35 },
       { m: 'Camp_Stool', x: -9.29, z: -34.78, yaw: 3.67 },
       { m: 'Camp_Stool', x: -9.29, z: -37.22, yaw: 5.76 },
       { m: 'Camp_Stool', x: -11.41, z: -36.00, yaw: 1.57 },
       // Stores under the pavilion on the sheltered side, crates stacked against it.
       { s: 1.35, m: 'Supply_Pavilion', x: -14.15, z: -37.51, yaw: 1.22 },
-      { m: 'Supply_Crate', x: -13.22, z: -38.17, yaw: 0.98 },
-      { m: 'Supply_Crate', x: -14.86, z: -38.37, yaw: 1.12 },
-      { m: 'Supply_Crate', x: -15.41, z: -37.15, yaw: 1.36 },
-      { m: 'Supply_Crate', x: -13.99, z: -36.28, yaw: 1.50 },
-      { m: 'Water_Barrel', x: -13.58, z: -39.23, yaw: 0.84 },
-      { m: 'Water_Barrel', x: -15.06, z: -35.82, yaw: 1.61 },
+      { m: 'Supply_Crate', x: -13.22, z: -38.17, yaw: 0.98, c: 0.5 },
+      { m: 'Supply_Crate', x: -14.86, z: -38.37, yaw: 1.12, c: 0.5 },
+      { m: 'Supply_Crate', x: -15.41, z: -37.15, yaw: 1.36, c: 0.5 },
+      { m: 'Supply_Crate', x: -13.99, z: -36.28, yaw: 1.50, c: 0.5 },
+      { m: 'Water_Barrel', x: -13.58, z: -39.23, yaw: 0.84, c: 0.4 },
+      { m: 'Water_Barrel', x: -15.06, z: -35.82, yaw: 1.61, c: 0.4 },
       // A rough fence across the two open approaches, and a sign on the road.
-      { m: 'Rough_Fence', x: -11.28, z: -43.24, yaw: 0.17 },
-      { m: 'Rough_Fence', x: -13.11, z: -42.66, yaw: 0.44 },
-      { m: 'Rough_Fence', x: -14.73, z: -41.63, yaw: 0.70 },
-      { m: 'Rough_Fence', x: -16.37, z: -32.32, yaw: 2.09 },
-      { m: 'Rough_Fence', x: -15.20, z: -30.80, yaw: 2.36 },
-      { m: 'Rough_Fence', x: -13.68, z: -29.63, yaw: 2.62 },
-      { m: 'Warning_Sign', x: -10.00, z: -43.53, yaw: 0.00 },
+      { m: 'Rough_Fence', x: -11.28, z: -43.24, yaw: 0.17, c: 0.8 },
+      { m: 'Rough_Fence', x: -13.11, z: -42.66, yaw: 0.44, c: 0.8 },
+      { m: 'Rough_Fence', x: -14.73, z: -41.63, yaw: 0.70, c: 0.8 },
+      { m: 'Rough_Fence', x: -16.37, z: -32.32, yaw: 2.09, c: 0.8 },
+      { m: 'Rough_Fence', x: -15.20, z: -30.80, yaw: 2.36, c: 0.8 },
+      { m: 'Rough_Fence', x: -13.68, z: -29.63, yaw: 2.62, c: 0.8 },
+      { m: 'Warning_Sign', x: -10.00, z: -43.53, yaw: 0.00, c: 0.25 },
   ],
   scatter: [
     // Surface ore veins (small mineable-node collision).
