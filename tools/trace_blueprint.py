@@ -15,7 +15,7 @@ import os
 IMG=os.path.join(os.path.dirname(__file__), 'blueprints', 'dark_woods.webp')
 X0,Y0,X1,Y1=300,18,1440,972
 PANELS=[(0,0,302,1086),(0,0,1448,16),(0,972,1448,1086),(1266,816,1448,980),(513,996,907,1086),(1323,326,1448,427)]
-ZW=270.0; CELL=2.5
+ZW=270.0; CELL=1.5
 
 im=Image.open(IMG).convert('RGB')
 hsv=np.asarray(im.filter(ImageFilter.GaussianBlur(5)).convert('HSV')).astype(np.float32)

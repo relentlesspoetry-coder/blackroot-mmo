@@ -2245,6 +2245,38 @@ function buildStripRibbon(points, width, y, material, tile, feather, cutRiver, e
 // carved to, so it lies flush on the ground (real dirt bank, not a floating
 // layer), and its outer rim feathers to transparent so the dirt melts into the
 // surrounding grass.
+// The blue of the blueprint, as an actual surface. One quad per water cell,
+// merged into a single sheet per kind; the waterline is where the terrain's
+// own carve brings the ground up past it, so the edge follows the drawing.
+function buildTerrainWater() {
+  const T = zone && zone.terrain; if (!T) return;
+  for (const [cls, y, colour, opacity] of [['W', RIVER_WATER_Y, 0x2a6b96, 0.97], ['w', RIVER_WATER_Y - 0.25, 0x4d87a8, 0.8]]) {
+    const pos = [], uv = [], idx = [];
+    const h = T.cell / 2 + 0.05;                 // a hair of overlap, so no seams
+    for (let gz = 0; gz < T.h; gz++) for (let gx = 0; gx < T.w; gx++) {
+      if (T.rows[gz][gx] !== cls) continue;
+      const cx = T.minX + (gx + 0.5) * T.cell, cz = T.minZ + (gz + 0.5) * T.cell;
+      const b = pos.length / 3;
+      for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+        pos.push(cx + sx * h, y, cz + sz * h);
+        uv.push((cx + sx * h) / 8, (cz + sz * h) / 8);   // world UVs: one continuous sheet
+      }
+      idx.push(b, b + 2, b + 1, b, b + 3, b + 2);
+    }
+    if (!idx.length) continue;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setIndex(idx); g.computeVertexNormals();
+    const tex = makeWaterTexture();
+    const mat = detailize(new THREE.MeshStandardMaterial({ map: tex, color: colour,
+      roughness: 0.3, metalness: 0.25, transparent: true, opacity, side: THREE.DoubleSide,
+      emissive: 0x11364f, emissiveIntensity: 0.9 }), 'water', { scale: 4, strength: 0.6 });
+    const m = new THREE.Mesh(g, mat); m.receiveShadow = true; scene.add(m);
+    if (!riverMesh) { riverMesh = m; riverTex = tex; }   // drives the shared flow animation
+  }
+}
+
 function buildRiverShore(points, half) {
   const pts = smoothPoly(points, 8);
   const H = half + RIVER_LIP, W = RIVER_WATER_Y, FR = 2.0;
@@ -2442,6 +2474,11 @@ function buildSpoilBank(mine) {
 }
 
 // Rivers — deep flowing water sitting in the carved channel, one per river.
+  // Water over every traced cell the drawing paints blue. The terrain is
+  // already carved down for them, so this is the surface that fills the hollow:
+  // one sheet for deep water and a paler, shallower one for the fen.
+  buildTerrainWater();
+
   for (const river of worldRivers()) {
     const rtex = makeWaterTexture();
     const waterMat = detailize(new THREE.MeshStandardMaterial({ map: rtex, color: 0x2f74a0, roughness: 0.3, metalness: 0.25, transparent: true, opacity: 0.96, side: THREE.DoubleSide,
@@ -2596,7 +2633,9 @@ function fbm2(x, z, seed) {
 }
 
 function buildLowPolyGround(W, D, cx, cz) {
-  const seg = Math.max(24, Math.round(Math.max(W, D) / (zone.enclosed ? 6 : 4)));
+  // A vertex every 2.5 m in the open air: the terrain grid is traced at 1.5
+  // zone units (~2.5 m), and a coarser mesh cannot show a cliff edge that fine.
+  const seg = Math.max(24, Math.round(Math.max(W, D) / (zone.enclosed ? 6 : 2.5)));
   const geo = new THREE.PlaneGeometry(W, D, seg, seg);
   geo.rotateX(-Math.PI / 2);
   const rng = mulberry32(9), c = new THREE.Color();
