@@ -992,6 +992,97 @@ function grantXp(p, amount) {
 }
 
 // ---------------------------------------------------------------------------
+// Saved characters
+//
+// A character is its name. Log in with a name that has been here before and
+// you get that character back -- where you stood, what you carried, what you
+// had learned and how far through every errand you were. There are no
+// passwords, so a name is all that identifies anyone; that is fine for a world
+// you run yourself and would not be for one you opened to strangers.
+//
+// Only durable things are written. Buffs, cooldowns, the swing in progress,
+// the party you were in and the trade you were half way through are all
+// deliberately dropped: they belong to a session, not to a character.
+// ---------------------------------------------------------------------------
+// Beside the repo, not beside whatever directory the process happens to have
+// been started from -- the same anchor CLIENT_DIR uses.
+const SAVE_DIR = path.join(__dirname, '..', 'saves');
+const SAVE_EVERY = 45;                 // seconds between background saves
+const saveSlug = (name) => String(name).toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 24) || 'adventurer';
+const savePath = (name) => path.join(SAVE_DIR, saveSlug(name) + '.json');
+
+function serialisePlayer(p) {
+  return {
+    v: 1, name: p.name, cls: p.cls, look: p.look,
+    zoneId: p.zoneId, x: +p.x.toFixed(2), z: +p.z.toFixed(2), y: p.y || 0, yaw: +p.yaw.toFixed(2),
+    level: p.level, xp: p.xp, gold: p.gold,
+    hp: Math.round(p.hp), mana: Math.round(p.mana || 0),
+    inventory: p.inventory.slice(), equipment: { ...p.equipment },
+    known: [...p.known],
+    miningXp: p.miningXp, fishingXp: p.fishingXp, cookingXp: p.cookingXp,
+    meditation: { ...p.meditation },
+    // Quests: the live map of progress, plus everything already finished and
+    // every flag and kill tally the objectives read from.
+    quests: [...p.quests.entries()],
+    questDone: [...p.questDone], questKills: p.questKills,
+    questFlags: [...p.questFlags], questAnnounced: [...p.questAnnounced],
+    openedChests: [...p.openedChests], usedObjects: [...p.usedObjects],
+    savedAt: Date.now(),
+  };
+}
+function savePlayer(p) {
+  if (!p || !p.name) return;
+  try {
+    fs.mkdirSync(SAVE_DIR, { recursive: true });
+    fs.writeFileSync(savePath(p.name), JSON.stringify(serialisePlayer(p)));
+  } catch (e) { console.warn('[save] could not write', p.name, 'to', SAVE_DIR, '-', e.message); }
+}
+function loadSave(name) {
+  try {
+    const raw = fs.readFileSync(savePath(name), 'utf8');
+    const d = JSON.parse(raw);
+    return (d && d.v === 1 && saveSlug(d.name) === saveSlug(name)) ? d : null;
+  } catch (e) { return null; }   // no save, or one we cannot read: start fresh
+}
+// Put a loaded save onto a freshly built player. The player is built first with
+// all its defaults so anything a save predates simply keeps the new default.
+function applySave(p, d) {
+  const zone = ZONES[d.zoneId] ? d.zoneId : START_ZONE;
+  p.cls = CLASSES[d.cls] ? d.cls : p.cls;
+  if (d.look) p.look = sanitizeLook(d.look);
+  p.zoneId = zone;
+  p.level = Math.max(1, Math.min(MAX_LEVEL, d.level | 0 || 1));
+  p.xp = Math.max(0, +d.xp || 0);
+  p.gold = Math.max(0, d.gold | 0);
+  const cs = classStats(p.cls, p.level);
+  p.maxHp = cs.hp; p.manaMax = cs.mana; p.rageMax = cs.rage;
+  // Somebody who logged out dead comes back on their feet at the zone's spawn
+  // rather than face down where they fell.
+  const dead = !(d.hp > 0);
+  p.hp = dead ? p.maxHp : Math.min(p.maxHp, d.hp);
+  p.mana = Math.min(p.manaMax || 0, Math.max(0, d.mana | 0));
+  const sp = ZONES[zone].spawn;
+  p.x = dead ? sp.x : (+d.x || sp.x); p.z = dead ? sp.z : (+d.z || sp.z);
+  p.y = dead ? 0 : (+d.y || 0); p.yaw = +d.yaw || sp.yaw;
+  p.inventory = Array.isArray(d.inventory) ? d.inventory.filter(n => ITEMS[n]) : p.inventory;
+  if (d.equipment) { p.equipment = Object.assign(emptySlots(), d.equipment); p.gear = gearOf(p.equipment); }
+  // Abilities are re-derived from the class and level, then anything bought is
+  // added back: a save from before a class was rebalanced still ends up with a
+  // legal spellbook.
+  p.known = new Set(classDef(p.cls).abilities.filter(a => a.level <= p.level).map(a => a.id));
+  for (const id of (d.known || [])) if (classDef(p.cls).abilities.some(a => a.id === id)) p.known.add(id);
+  p.miningXp = +d.miningXp || 0; p.fishingXp = +d.fishingXp || 0; p.cookingXp = +d.cookingXp || 0;
+  if (d.meditation) p.meditation = { level: d.meditation.level | 0 || 1, xp: +d.meditation.xp || 0 };
+  p.quests = new Map((d.quests || []).filter(([id]) => QUESTS[id]));
+  p.questDone = new Set((d.questDone || []).filter(id => QUESTS[id]));
+  p.questKills = d.questKills && typeof d.questKills === 'object' ? d.questKills : {};
+  p.questFlags = new Set(d.questFlags || []);
+  p.questAnnounced = new Set(d.questAnnounced || []);
+  p.openedChests = new Set(d.openedChests || []);
+  p.usedObjects = new Set(d.usedObjects || []);
+}
+
+// ---------------------------------------------------------------------------
 // Trading
 //
 // Two people, two offers, and nothing moves until both have said yes. What an
@@ -3110,6 +3201,16 @@ let weatherTimer = 120;
 
 // Main loop
 let lastSnap = 0;
+let saveTimer = 0;
+// Stopping the server should not cost anybody their evening.
+let shuttingDown = false;
+function saveEveryoneAndExit(sig) {
+  if (shuttingDown) return; shuttingDown = true;
+  let n = 0; for (const p of players.values()) { savePlayer(p); n++; }
+  console.log(`[save] ${sig}: wrote ${n} character${n === 1 ? '' : 's'}`);
+  process.exit(0);
+}
+for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => saveEveryoneAndExit(sig));
 setInterval(() => {
   if (DAY_NIGHT_CYCLE) dayTime = (dayTime + DT / DAY_LENGTH) % 1;
   weatherTimer -= DT;
@@ -3130,7 +3231,7 @@ setInterval(() => {
   for (const [id, p] of players) {   // bodies left behind by a mid-fight disconnect
     if (p.lingerT == null) continue;
     p.lingerT -= DT;
-    if (p.lingerT <= 0 || !p.alive) { tradeAbort(p, `${p.name} leaves. The trade is off.`); duelForfeit(p, `${p.name} leaves the duel.`); partyRemove(p, `${p.name} has left the party.`); players.delete(id); systemChat(`${p.name} has left the world.`); }
+    if (p.lingerT <= 0 || !p.alive) { savePlayer(p); tradeAbort(p, `${p.name} leaves. The trade is off.`); duelForfeit(p, `${p.name} leaves the duel.`); partyRemove(p, `${p.name} has left the party.`); players.delete(id); systemChat(`${p.name} has left the world.`); }
   }
   for (const [id, it] of groundItems) { it.ttl -= DT; if (it.ttl <= 0) groundItems.delete(id); }
   for (const p of players.values()) {
@@ -3149,6 +3250,14 @@ setInterval(() => {
   }
   stepDuels(DT);
   stepTrades();
+  // A background save, staggered by id so thirty players are not all written
+  // in the same tick. A crash then costs the last three-quarters of a minute.
+  saveTimer += DT;
+  if (saveTimer >= 1) {
+    saveTimer = 0;
+    const slot = Math.floor(Date.now() / 1000) % SAVE_EVERY;
+    for (const p of players.values()) if (p.alive && p.id % SAVE_EVERY === slot) savePlayer(p);
+  }
 
   const now = Date.now();
   if (now - lastSnap >= 1000 / SNAPSHOT_HZ) {
@@ -3308,12 +3417,20 @@ wss.on('connection', (ws) => {
           atkTimer: 0, regen: 0, combatTimer: 0, deathTimer: 0, portalCd: 0, inSafe: true,
           moveTo: null, combatId: null, pendingChest: null, pendingPickup: null, pendingGate: false, input: { f: 0, r: 0, yaw: 0 },
         };
+        // A name that has been here before picks its character back up: the
+        // class and look on the save win over whatever the login screen was
+        // showing, because the character is the thing being resumed.
+        const saved = loadSave(name);
+        if (saved) applySave(player, saved);
         players.set(id, player);
-        send(ws, { t: 'welcome', id, tickRate: SNAPSHOT_HZ, zone: zoneForClient(start), items: ITEM_CATALOG });
+        const here = ZONES[player.zoneId] || start;
+        send(ws, { t: 'welcome', id, tickRate: SNAPSHOT_HZ, zone: zoneForClient(here), items: ITEM_CATALOG });
         sendBag(player); // sends the quest payload too
         sendSkills(player);
         sendAbilities(player); sendStatus(player);
-        systemChat(`${name} has entered ${start.name}.`);
+        sendObjects(player);
+        if (saved) send(ws, { t: 'event', kind: 'notice', text: `Welcome back, ${player.name}.` });
+        systemChat(`${name} has entered ${here.name}.`);
         break;
       }
       case 'input': {
@@ -3606,7 +3723,7 @@ wss.on('connection', (ws) => {
         if (!player) return;
         const wait = player.lastCombat ? LOGOUT_COMBAT_WAIT - (Date.now() - player.lastCombat) / 1000 : 0;
         if (player.alive && wait > 0) { send(ws, { t: 'event', kind: 'notice', text: `You can't log out in combat. Wait ${Math.ceil(wait)}s.` }); break; }
-        send(ws, { t: 'logout' }); tradeAbort(player, `${player.name} leaves. The trade is off.`); duelForfeit(player, `${player.name} leaves the duel.`); partyRemove(player); players.delete(player.id); systemChat(`${player.name} has left the world.`); player = null;
+        send(ws, { t: 'logout' }); savePlayer(player); tradeAbort(player, `${player.name} leaves. The trade is off.`); duelForfeit(player, `${player.name} leaves the duel.`); partyRemove(player); players.delete(player.id); systemChat(`${player.name} has left the world.`); player = null;
         break;
       }
       case 'chat': {
@@ -3627,7 +3744,7 @@ wss.on('connection', (ws) => {
       systemChat(`${player.name} tried to flee the fight — their body lingers.`);
       return;
     }
-    tradeAbort(player, `${player.name} leaves. The trade is off.`); duelForfeit(player, `${player.name} leaves the duel.`); partyRemove(player); players.delete(player.id); systemChat(`${player.name} has left the world.`);
+    savePlayer(player); tradeAbort(player, `${player.name} leaves. The trade is off.`); duelForfeit(player, `${player.name} leaves the duel.`); partyRemove(player); players.delete(player.id); systemChat(`${player.name} has left the world.`);
   });
 });
 
