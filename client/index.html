@@ -1432,6 +1432,9 @@ function handle(m) {
     // picked clean (shared) — the server owns both.
     case 'objects': {
       const used = new Set(m.used || []), spent = new Set(m.spent || []);
+      // `used` is yours; `lit` is the world's -- a lantern anybody lit is lit
+      // for everybody standing there.
+      litObjects = new Set(m.lit || []);
       for (const [id, rec] of worldObjects) { rec.used = used.has(id); rec.spent = spent.has(id); applyObjectState(rec); }
       break;
     }
@@ -2044,7 +2047,7 @@ function buildDirtField(shapes, discs, material, y, T, polys = []) {
     const x = mnx + i * CELL, z = mnz + j * CELL;
     // shades of brown drifting across the ground, the way the grass does
     const hueN = fbm2(x + 57, z - 211, 41), ligN = fbm2(x - 389, z + 133, 43), satN = fbm2(x + 907, z + 619, 47);
-    dirtCol.setHSL(0.055 + hueN * 0.05, 0.26 + satN * 0.32, 0.17 + ligN * 0.2);
+    dirtCol.setHSL(0.05 + hueN * 0.065, 0.22 + satN * 0.40, 0.14 + ligN * 0.26);
     vid[k] = pos.length / 3; pos.push(x, y, z); uv.push(x / T, z / T); col.push(dirtCol.r, dirtCol.g, dirtCol.b, A[k]); return vid[k];
   };
   for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
@@ -2059,7 +2062,45 @@ function buildDirtField(shapes, discs, material, y, T, polys = []) {
   g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
   g.setIndex(idx); g.computeVertexNormals();
-  const m = new THREE.Mesh(g, material); m.receiveShadow = true; scene.add(m); return m;
+  const m = new THREE.Mesh(g, material); m.receiveShadow = true; scene.add(m);
+  m.userData.alphaAt = alphaAt;   // how much dirt is at a spot: the pebbles ask the same question
+  return m;
+}
+// Loose stones on bare ground. The grass gets blades, so the dirt gets grit:
+// the same instanced scatter, sown only where the dirt field is actually
+// opaque, each stone its own shade of brown.
+function buildDirtStones(dirtMesh) {
+  const alphaAt = dirtMesh && dirtMesh.userData.alphaAt; if (!alphaAt) return;
+  const b = zone.bounds, rng = mulberry32((zone.treeSeed || 1) + 613);
+  const geo = new THREE.DodecahedronGeometry(0.5, 0);
+  // No vertexColors here: a dodecahedron has no colour attribute, and asking
+  // for one makes the shader read zero and paint every stone black however
+  // pale the per-instance colour is. The instance colour alone does it.
+  const mat = new THREE.MeshStandardMaterial({ roughness: 1, flatShading: true });
+  const areaK = Math.min(3.2, ((b.maxX - b.minX) * (b.maxZ - b.minZ)) / 37800);
+  const spots = [];
+  let want = Math.round(26000 * areaK), guard = 0;
+  while (want > 0 && guard++ < want * 8) {
+    const x = b.minX + 2 + rng() * (b.maxX - b.minX - 4), z = b.minZ + 2 + rng() * (b.maxZ - b.minZ - 4);
+    // Thicker where the dirt is bare, thinning out through the fringe, so the
+    // grit fades into the grass exactly as the dirt does.
+    const a = alphaAt(x, z);
+    if (a < 0.12 || rng() > a * 0.9) continue;
+    spots.push({ x, z }); want--;
+  }
+  if (!spots.length) return;
+  const mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), col = new THREE.Color();
+  chunkedInstances(geo, mat, spots, (p, i, im) => {
+    q.setFromEuler(new THREE.Euler(rng() * 6.28, rng() * 6.28, rng() * 6.28));
+    const s = 0.03 + rng() * 0.07;
+    sc.set(s * (0.7 + rng() * 0.6), s * (0.5 + rng() * 0.5), s * (0.7 + rng() * 0.6));   // squat, never marbles
+    mtx.compose(new THREE.Vector3(p.x, 0.055 + s * 0.25, p.z), q, sc); im.setMatrixAt(i, mtx);
+    // Pale grit, a shade either side of the ground it lies on. The first cut
+    // of this sat at 0.16-0.42 lightness against dirt that renders far paler
+    // than that, and read as a scatter of black specks.
+    col.setHSL(0.055 + rng() * 0.05, 0.10 + rng() * 0.18, 0.44 + rng() * 0.22);
+    im.setColorAt(i, col);
+  }, { castShadow: false });
 }
 // A soft round patch of dirt: opaque out to `r`, fading to nothing by r+feather.
 function buildRoundPatch(x, z, r, feather, material) {
@@ -2253,7 +2294,7 @@ function buildZone() {
   // into a camp the two are one piece of dirt rather than two overlapping ones.
   for (const d of (zone.dirt || [])) discs.push({ x: d.x, z: d.z, r: d.r, fr: d.fr != null ? d.fr : 3 });
   const polys = (zone.mines || []).map(m => ({ pts: m.outline, fr: 6.5 }));   // the mining pits' bare scrapes (the fringe runs out under the bank's fade)
-  buildDirtField(shapes, discs, dirtMat, 0.05, 3, polys);
+  buildDirtStones(buildDirtField(shapes, discs, dirtMat, 0.05, 3, polys));
   for (const m of (zone.mines || [])) buildSpoilBank(m);
 
   // The spoil bank around a mining pit: earth heaped along the outline (except
@@ -4462,6 +4503,7 @@ function animateNpcs(dt) {
 // that are finished (a lit lantern keeps its flame) and makes them clickable.
 // ---------------------------------------------------------------------------
 const worldObjects = new Map();   // id -> { def, group, light, used, spent }
+let litObjects = new Set();       // ids of toggled-on lights, shared by everyone in the zone
 function buildWorldObjects() {
   for (const o of (zone.objects || [])) {
     const group = new THREE.Group();
@@ -4496,7 +4538,7 @@ function applyObjectState(rec) {
       rec.group.add(g);
     });
   }
-  const lit = o.tag === 'lantern' ? rec.used : false;
+  const lit = o.tag === 'lantern' ? (o.toggle ? litObjects.has(o.id) : rec.used) : false;
   rec.group.visible = !rec.spent;
   if (o.light || lit) {
     if (!rec.light && (lit || o.light)) {
@@ -5688,17 +5730,16 @@ function animateEntity(rec, e, kind, dt) {
       rec.guardK = 0; rec.holdLute = false;
       torsoX = 0; torsoY = 0; torsoZ = 0;
       b.rotation.z = 0;
-      if (seat.k === 'bed') {
+      if (seat.k !== 'stool') {
         b.rotation.x = -Math.PI / 2;                  // over onto the back
-        // Turning the body about its own root lays it on its centre line, so
-        // half of him would be inside the mattress: the lift is the top of the
-        // bed plus half his depth, not just the top of the bed.
         // The body turns about its own root, which sits at the feet, so laying
-        // it flat leaves it hanging off the head end and half inside the
-        // mattress. These three are measured, not guessed: with them the body
-        // box lands within 4cm of the bed's centre along its length and rests
-        // at 0.78, two centimetres proud of the mattress at 0.76.
-        b.position.set(rig.home.x + 0.10, rig.home.y + 1.02, rig.home.z + 1.18);
+        // it flat leaves it hanging off the head end and half inside whatever
+        // he is on. The lift is the sleeping surface plus half his depth, and
+        // the slide down its length was measured: the body box lands within
+        // 4cm of the bed's centre and rests two centimetres proud of it.
+        // A bed stands 0.76 off the floor; a bedroll lies on the floor.
+        const surface = seat.k === 'bedroll' ? 0.10 : 0.76;
+        b.position.set(rig.home.x + 0.10, rig.home.y + surface + 0.26, rig.home.z + 1.18);
         lLeg = 0.10; rLeg = -0.10; lShin = 0.06; rShin = 0.06;
         lArm = 0.16; rArm = -0.16; lArmZ = 0.22; rArmZ = -0.22;
         lFore = [-0.25, 0, 0]; rFore = [-0.25, 0, 0];  // hands resting on the chest
@@ -6440,12 +6481,15 @@ function optionsFor(pk) {
     ];
   }
   if (pk.kind === 'seat') {
-    const bed = pk.seatKind === 'bed', me = selfEnt();
-    const on = me && me.seat;
+    const k = pk.seatKind, me = selfEnt(), on = me && me.seat;
+    const what = k === 'bed' ? 'the bed' : k === 'bedroll' ? 'the bedroll' : 'the stool';
+    const look = k === 'bed' ? 'A straw mattress under a worn blanket. It has seen better nights.'
+      : k === 'bedroll' ? 'A roll of blanket over canvas. Whoever had the last watch left it turned down.'
+      : 'A three-legged stool, worn smooth on top.';
     return [
       on ? { label: 'Stand up', act: () => ws?.send(JSON.stringify({ t: 'stand' })) }
-         : { label: bed ? 'Lie on <b>the bed</b>' : 'Sit on <b>the stool</b>', act: () => ws?.send(JSON.stringify({ t: 'sit', id: pk.id })) },
-      { label: 'Examine', act: () => examineText(bed ? 'A straw mattress under a worn blanket. It has seen better nights.' : 'A three-legged stool, worn smooth on top.') },
+         : { label: `${k === 'stool' ? 'Sit on' : 'Lie on'} <b>${what}</b>`, act: () => ws?.send(JSON.stringify({ t: 'sit', id: pk.id })) },
+      { label: 'Examine', act: () => examineText(look) },
     ];
   }
   if (pk.kind === 'chest') return [
@@ -6453,7 +6497,8 @@ function optionsFor(pk) {
     { label: 'Examine Chest', act: () => examineText('A sturdy chest. Wonder what’s inside.') },
   ];
   if (pk.kind === 'object') return [
-    { label: `${escapeHtml(pk.def.verb || 'Use')} <b>${escapeHtml(pk.def.name)}</b>`, act: () => useWorldObject(pk.id) },
+    { label: `${escapeHtml(pk.def.toggle ? (litObjects.has(pk.id) ? (pk.def.verbOff || 'Put out') : (pk.def.verb || 'Light'))
+        : (pk.def.verb || 'Use'))} <b>${escapeHtml(pk.def.name)}</b>`, act: () => useWorldObject(pk.id) },
     { label: 'Examine', act: () => examineText(pk.def.examine || pk.def.idleText || pk.def.name) },
   ];
   if (pk.kind === 'item') return [

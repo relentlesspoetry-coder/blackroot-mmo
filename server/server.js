@@ -800,8 +800,8 @@ function buildFarm(zone) {
       // a bed is lain on along its length, head at the pillow end, so you stop
       // beside it and end up on top of it rather than standing in the frame.
       if (f.k === 'stool' || f.k === 'bed') {
-        zone._seats = zone._seats || [];
-        zone._seats.push({ id: `${h.key}:${f.k}:${zone._seats.length}`, k: f.k,
+        const seats = zoneSeats(zone);
+        seats.push({ id: `${h.key}:${f.k}:${seats.length}`, k: f.k,
           x: h.x + f.dx, z: h.z + f.dz, yaw: f.yaw || 0, house: h.key });
       }
       const r = FURN_R[f.k]; if (!r) continue;
@@ -1267,11 +1267,23 @@ function stepDuels(dt) {
 // swing, cast, get hit -- puts you back on your feet.
 // ---------------------------------------------------------------------------
 const SEAT_REACH = 1.9;
-function seatById(zone, id) { return (zone._seats || []).find(s => s.id === id) || null; }
+// Every seat in a zone: the stools and beds inside houses, and the bedrolls
+// laid out in the camps. A bedroll is a bed on the floor, so it gets the same
+// treatment with a different lift.
+function zoneSeats(zone) {
+  if (zone._seats) return zone._seats;
+  zone._seats = [];
+  for (const pr of (zone.props || [])) {
+    if (pr.m !== 'Bedroll' && pr.m !== 'props/Bedroll') continue;
+    zone._seats.push({ id: `bedroll:${zone._seats.length}`, k: 'bedroll', x: pr.x, z: pr.z, yaw: pr.yaw || 0 });
+  }
+  return zone._seats;
+}
+function seatById(zone, id) { return zoneSeats(zone).find(s => s.id === id) || null; }
 // Where you stand to use it: on the stool itself, or beside the bed at the
 // foot end so lying down does not walk you through the headboard.
 function seatApproach(seat) {
-  if (seat.k !== 'bed') return { x: seat.x, z: seat.z };
+  if (seat.k === 'stool') return { x: seat.x, z: seat.z };
   return { x: seat.x + Math.sin(seat.yaw) * 1.25, z: seat.z + Math.cos(seat.yaw) * 1.25 };
 }
 function sitDown(p, seat) {
@@ -1279,14 +1291,14 @@ function sitDown(p, seat) {
   p.x = seat.x; p.z = seat.z;
   // A bed is lain along its length, so the body turns a quarter across the
   // furniture's own facing to put the head on the pillow.
-  p.yaw = seat.k === 'bed' ? seat.yaw + Math.PI / 2 : seat.yaw;
+  p.yaw = seat.k === 'stool' ? seat.yaw : seat.yaw + Math.PI / 2;
   p.moveTo = null; p._nav = null; p.combatId = null;
-  send(p.ws, { t: 'event', kind: 'notice', text: seat.k === 'bed' ? 'You lie down.' : 'You sit down.' });
+  send(p.ws, { t: 'event', kind: 'notice', text: seat.k === 'stool' ? 'You sit down.' : 'You lie down.' });
 }
 function standUp(p, quiet) {
   if (!p.seat) return;
   const was = p.seat; p.seat = null; p.pendingSeat = null;
-  if (was.k === 'bed') { p.x = was.x + Math.sin(was.yaw) * 1.25; p.z = was.z + Math.cos(was.yaw) * 1.25; }
+  if (was.k !== 'stool') { p.x = was.x + Math.sin(was.yaw) * 1.25; p.z = was.z + Math.cos(was.yaw) * 1.25; }
   if (!quiet) send(p.ws, { t: 'event', kind: 'notice', text: 'You get up.' });
 }
 
@@ -3029,6 +3041,15 @@ function useWorldObject(p, id) {
   const notice = (text) => send(p.ws, { t: 'event', kind: 'notice', text });
   if (!o) return;
   if (dist2(p.x, p.z, o.x, o.z) > (o.reach || 3.5) ** 2) return notice(`You need to be closer to the ${o.name.toLowerCase()}.`);
+  // A toggle is world state, not yours: everyone standing there sees it go on
+  // and off, and it does not care whose quest is running.
+  if (o.toggle) {
+    o._on = !o._on;
+    send(p.ws, { t: 'event', kind: 'used', id: o.id, tag: o.tag || null,
+      text: o._on ? (o.textOn || `You light the ${o.name.toLowerCase()}.`) : (o.textOff || `You put the ${o.name.toLowerCase()} out.`) });
+    broadcastObjects(zone);
+    return;
+  }
   if (o.once && p.usedObjects.has(o.id)) return notice(`You have already dealt with the ${o.name.toLowerCase()}.`);
   if (!objectReady(zone, o)) return notice(`There is nothing left to take here yet.`);
   // Some things only make sense while you are on the errand that asked for them.
@@ -3054,7 +3075,8 @@ function useWorldObject(p, id) {
 function sendObjects(p) {
   const zone = zoneOf(p);
   const spent = (zone.objects || []).filter(o => !objectReady(zone, o)).map(o => o.id);
-  send(p.ws, { t: 'objects', spent, used: [...p.usedObjects] });
+  const lit = (zone.objects || []).filter(o => o._on).map(o => o.id);   // shared: lanterns anyone has lit
+  send(p.ws, { t: 'objects', spent, lit, used: [...p.usedObjects] });
 }
 function broadcastObjects(zone) { for (const q of players.values()) if (q.zoneId === zone.id) sendObjects(q); }
 
@@ -3240,7 +3262,7 @@ function zoneForClient(zone) {
     mines: zone._minePits || [],
     gate: zone.farm && zone.farm.gate ? (g => ({ x: g.x, z: g.z, yaw: g.yaw || 0, s: g.s || 1, double: !!g.double,
       gap: g.seg ? Math.hypot(g.seg.x2 - g.seg.x1, g.seg.z2 - g.seg.z1) : 2.4 }))(zone.farm.gate) : null,
-    seats: zone._seats || [],
+    seats: zoneSeats(zone),
     dirt: zone.dirt || [],
     editObjects: zone._editObjects || [],
     editSpawns: zone._editSpawns || [],

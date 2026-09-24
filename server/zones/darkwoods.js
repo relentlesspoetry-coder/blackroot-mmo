@@ -209,6 +209,15 @@ export const darkwoods = {
   // that player; `respawn` makes it a gathering node that grows back.
   //   m/yaw/s/c behave like props; `reach` is how close you must stand.
   objects: [
+    // The outpost's own lanterns, on poles round the edge of the camp. Anyone
+    // can light one or put it out again, and everyone standing there sees it:
+    // this is world state, not a quest.
+    { id: 'camp_lantern_1', tag: 'lantern', toggle: true, name: 'Camp Lantern', m: 'props/Camp_Lantern', x: -10.00, z: -29.24, s: 1.35, c: 0.5, reach: 3.0, verb: 'Light', verbOff: 'Put out', examine: 'A lantern on a pole at the edge of the camp.' },
+    { id: 'camp_lantern_2', tag: 'lantern', toggle: true, name: 'Camp Lantern', m: 'props/Camp_Lantern', x: -4.14, z: -32.62, s: 1.35, c: 0.5, reach: 3.0, verb: 'Light', verbOff: 'Put out', examine: 'A lantern on a pole at the edge of the camp.' },
+    { id: 'camp_lantern_3', tag: 'lantern', toggle: true, name: 'Camp Lantern', m: 'props/Camp_Lantern', x: -4.14, z: -39.38, s: 1.35, c: 0.5, reach: 3.0, verb: 'Light', verbOff: 'Put out', examine: 'A lantern on a pole at the edge of the camp.' },
+    { id: 'camp_lantern_4', tag: 'lantern', toggle: true, name: 'Camp Lantern', m: 'props/Camp_Lantern', x: -10.00, z: -42.76, s: 1.35, c: 0.5, reach: 3.0, verb: 'Light', verbOff: 'Put out', examine: 'A lantern on a pole at the edge of the camp.' },
+    { id: 'camp_lantern_5', tag: 'lantern', toggle: true, name: 'Camp Lantern', m: 'props/Camp_Lantern', x: -15.86, z: -39.38, s: 1.35, c: 0.5, reach: 3.0, verb: 'Light', verbOff: 'Put out', examine: 'A lantern on a pole at the edge of the camp.' },
+    { id: 'camp_lantern_6', tag: 'lantern', toggle: true, name: 'Camp Lantern', m: 'props/Camp_Lantern', x: -15.86, z: -32.62, s: 1.35, c: 0.5, reach: 3.0, verb: 'Light', verbOff: 'Put out', examine: 'A lantern on a pole at the edge of the camp.' },
     // Warden Rowan's trail lanterns. Dark until someone crushes glowcaps into
     // the oil — the first thing the outpost asks of a newcomer.
     { id: 'lantern_east',  tag: 'lantern', name: 'Eastern Trail Lantern',  m: 'props/Camp_Lantern', x: 16,  z: -34, s: 1.6, c: 0.5, once: true,
@@ -372,13 +381,6 @@ export const darkwoods = {
       { m: 'Supply_Crate', x: -13.99, z: -36.28, yaw: 1.50 },
       { m: 'Water_Barrel', x: -13.58, z: -39.23, yaw: 0.84 },
       { m: 'Water_Barrel', x: -15.06, z: -35.82, yaw: 1.61 },
-      // Lanterns ring the camp: this is where the light stops.
-      { m: 'Camp_Lantern', x: -10.00, z: -29.24, yaw: 0.00 },
-      { m: 'Camp_Lantern', x: -4.14, z: -32.62, yaw: 0.00 },
-      { m: 'Camp_Lantern', x: -4.14, z: -39.38, yaw: 0.00 },
-      { m: 'Camp_Lantern', x: -10.00, z: -42.76, yaw: 0.00 },
-      { m: 'Camp_Lantern', x: -15.86, z: -39.38, yaw: 0.00 },
-      { m: 'Camp_Lantern', x: -15.86, z: -32.62, yaw: 0.00 },
       // A rough fence across the two open approaches, and a sign on the road.
       { m: 'Rough_Fence', x: -11.28, z: -43.24, yaw: 0.17 },
       { m: 'Rough_Fence', x: -13.11, z: -42.66, yaw: 0.44 },
