@@ -73,8 +73,23 @@ def stripes(size, count, wobble, rng, axis=0):
 
 # ---------------------------------------------------------------- the tiles
 def t_grass(rng):
-    fine = fbm(S, 32, 3, rng); blades = stripes(S, 48, 0.06, rng, axis=1) * 0.35 + stripes(S, 40, 0.08, rng, axis=0) * 0.2
-    return centre(fine * 0.7 + blades * 0.6 + fbm(S, 6, 2, rng) * 0.5, 0.61)
+    """Turf as clumps, not cloth.
+
+    The old tile crossed two sets of straight stripes, which at ground level
+    read as woven fabric. This builds it the way turf actually looks: worley
+    cells for the tufts, each clump given its own tone so the sward is patchy,
+    a heavily wobbled fine grain for the blades themselves (wavy, never a
+    grid), speckle for what you see underfoot and a couple of broad octaves
+    that still read from across a field.
+    """
+    d1, _d2, idx = worley(S, 44, rng)
+    tuft = 1.0 - norm(d1)                                  # bright at each tuft's crown
+    tone = rng.random(44)[idx] * 0.55                      # every clump its own value
+    blades = stripes(S, 165, 0.30, rng, axis=1) * 0.16     # wavy blade grain
+    blades += stripes(S, 140, 0.34, rng, axis=0) * 0.07    # a hint the other way, far weaker than the old crosshatch
+    speck = value_noise(S, 110, rng, smooth=False) * 0.20
+    broad = fbm(S, 5, 3, rng) * 0.60
+    return centre(tuft * 0.80 + tone + blades + speck + broad, 0.66)
 def t_dirt(rng):
     d1, d2, _ = worley(S, 40, rng); clods = norm(d1) * 0.5; cracks = np.clip((d2 - d1) / 9, 0, 1) * 0.6
     return centre(fbm(S, 6, 4, rng) * 0.9 + clods * 0.6 + cracks + value_noise(S, 64, rng, smooth=False) * 0.3, 0.9)

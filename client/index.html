@@ -2587,7 +2587,10 @@ function buildLowPolyGround(W, D, cx, cz) {
     // ~18m, mottling ~7m), each channel on its own field so hue, lightness and
     // saturation drift independently: yellow-green meadow, deep forest green,
     // cool blue-green and pale sun-bleached patches all blending into each other.
-    const hueN = fbm2(wx, wz, 11), ligN = fbm2(wx + 311, wz - 97, 23), satN = fbm2(wx - 173, wz + 421, 37);
+    // Scaled up before the noise so the sward changes over a few paces rather
+    // than only across a whole field -- at 1:1 its octaves sit at 6, 16 and 45
+    // metres and a screenful of grass was very nearly one colour.
+    const hueN = fbm2(wx * 2.2, wz * 2.2, 11), ligN = fbm2((wx + 311) * 2.2, (wz - 97) * 2.2, 23), satN = fbm2((wx - 173) * 2.2, (wz + 421) * 2.2, 37);
     let onBed = false;
     for (const r of worldRivers()) { if (distToPolyline(wx, wz, r.points) < riverWaterHalf(r.width) + 0.5) { onBed = true; break; } }
     if (onBed) c.setHSL(0.09, 0.34, 0.15 + (ligN - 0.5) * 0.04);            // muddy riverbed
@@ -2602,7 +2605,9 @@ function buildLowPolyGround(W, D, cx, cz) {
   pos.needsUpdate = true;
   geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
   geo.computeVertexNormals(); // shared vertices -> smooth shading, no triangle facets
-  ground = new THREE.Mesh(geo, detailize(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }), 'grass', { scale: 2.2, strength: 1.0 }));
+  // Grain damped, as with the dirt: at full strength the tile multiplies the
+  // ground by up to 2x and the greens bleach out of it.
+  ground = new THREE.Mesh(geo, detailize(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }), 'grass', { scale: 2.6, strength: 0.8 }));
   ground.position.set(cx, 0, cz); ground.receiveShadow = true; ground.userData.isGround = true; scene.add(ground);
 }
 
