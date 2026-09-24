@@ -51,7 +51,7 @@ export const killingfields = {
 
   portals: [
     // North Road back up into the Dark Woods (arrive near its South Gate).
-    { x: 0, z: -160, r: 6, to: 'darkwoods', spawn: { x: 10, z: 150, yaw: 0 } },
+    { x: 0, z: -160, r: 6, to: 'darkwoods', spawn: { x: 46, z: 82, yaw: 0 } },   // back through the South Track
     // South Marsh Gate down into the Gloom Wood Swamp.
     { x: 6, z: 160, r: 6, to: 'gloomwood', spawn: { x: 0, z: -150, yaw: 0 } },
   ],

@@ -26,7 +26,7 @@ import { isBardSpell, checkBardCast, castBard, spendSongCharges, songAmp, atkSpe
   bardMonsterDmgMult, bardMonsterDefMult, bardMonsterTakenMult, bardMonsterSpeedMult, bardMonsterAtkSpeedMult, stepSongs } from './bard.js';
 import {
   dist2, closestOnPolyline, mulberry32, pointInPoly, polyCentroid, generateTrees, generateScatter, generateHanging,
-  mergeOutlines, roughenOutline, generateEdgeForest, inHouse,
+  mergeOutlines, roughenOutline, generateEdgeForest, inHouse, riversOf, bridgesOf, pathsOf, closestOnPaths,
   caveOutline,
 } from './worldgen.js';
 import {
@@ -110,8 +110,11 @@ function scaleZone(zone, k) {
   (zone.portals || []).forEach(sp);
   (zone.pois || []).forEach(sp);
   (zone.npcs || []).forEach(sp);
-  (zone.path || []).forEach(sp);
-  if (zone.river) { zone.river.width *= k; (zone.river.points || []).forEach(sp); if (zone.river.bridge) { zone.river.bridge.x *= k; zone.river.bridge.z *= k; zone.river.bridge.halfWidth *= k; } }
+  pathsOf(zone).forEach(pp => pp.forEach(sp));
+  for (const r of riversOf(zone)) {
+    r.width *= k; (r.points || []).forEach(sp);
+    for (const br of bridgesOf(r)) { br.x *= k; br.z *= k; if (br.halfWidth != null) br.halfWidth *= k; }
+  }
   (zone.rocks || []).forEach(sp);
   (zone.pools || []).forEach(sp);
   (zone.chests || []).forEach(sp);
@@ -165,8 +168,11 @@ function offsetZone(zone, dx, dz) {
   if (zone.spawn) { zone.spawn.x += dx; zone.spawn.z += dz; }
   (zone.pois || []).forEach(sp);
   (zone.npcs || []).forEach(sp);
-  (zone.path || []).forEach(sp);
-  if (zone.river) { (zone.river.points || []).forEach(sp); if (zone.river.bridge) { zone.river.bridge.x += dx; zone.river.bridge.z += dz; } }
+  pathsOf(zone).forEach(pp => pp.forEach(sp));
+  for (const r of riversOf(zone)) {
+    (r.points || []).forEach(sp);
+    for (const br of bridgesOf(r)) { br.x += dx; br.z += dz; }
+  }
   (zone.rocks || []).forEach(sp);
   (zone.pools || []).forEach(sp);
   (zone.chests || []).forEach(sp);
@@ -179,8 +185,11 @@ function offsetZone(zone, dx, dz) {
 }
 
 function buildSeamlessWorld() {
-  // Place the Killing Fields directly south of the Dark Woods so their edges meet.
-  offsetZone(killingfields, 0, 340);
+  // Place the Killing Fields directly south of the Dark Woods so their edges
+  // meet. Derived rather than hard-coded: the Dark Woods can be resized and the
+  // seam still lands, with a few metres of overlap so there is no bare strip.
+  const SEAM_OVERLAP = 4;
+  offsetZone(killingfields, 0, darkwoods.bounds.maxZ - killingfields.bounds.minZ - SEAM_OVERLAP);
   // Generate each zone's forest/scatter in its own coordinate space up front, so
   // worldgen still avoids that zone's single path & river before we fuse them.
   for (const z of [darkwoods, killingfields]) {
@@ -198,8 +207,8 @@ function buildSeamlessWorld() {
   const cat = (k) => { w[k] = (w[k] || []).concat(kf[k] || []); };
   ['pois', 'npcs', 'rocks', 'pools', 'chests', 'hazards', 'spawns', 'elites', 'objects', 'props', 'dirt', 'trees', '_trees', '_scatter'].forEach(cat);
   // Multiple paths/rivers now — keep each so the client can draw them all.
-  w.paths = [w.path, kf.path].filter(Boolean);
-  w.rivers = [w.river, kf.river].filter(Boolean);
+  w.paths = [...pathsOf(w), ...pathsOf(kf)];
+  w.rivers = [...riversOf(w), ...riversOf(kf)];
   // Union bounds + one rectangular boundary wall around the whole world (no
   // interior wall at the seam, so you walk straight from one zone to the next).
   const b = w.bounds, kb = kf.bounds;
@@ -428,6 +437,23 @@ function floorHeightAt(zone, x, z, fromY) {
 // Collision: keep an entity inside bounds, out of rocks, and out of the river
 // (except at the bridge, where solid rails keep it on the deck).
 // ---------------------------------------------------------------------------
+// Is (x,z) somewhere a person can actually stand? Inside the world, out of the
+// rock and out of any river. Used when loading a save written against an older
+// version of the map.
+function standableAt(zone, x, z) {
+  const b = zone.bounds;
+  if (x < b.minX || x > b.maxX || z < b.minZ || z > b.maxZ) return false;
+  if (zone.boundary && !pointInPoly(x, z, zone.boundary)) return false;
+  for (const o of (zone.rocks || [])) if (dist2(x, z, o.x, o.z) < o.r * o.r) return false;
+  for (const r of riversOf(zone)) {
+    if (closestOnPolyline(x, z, r.points).dist < r.width / 2 + RIVER_BANK) {
+      // standing on a bridge deck is fine
+      if (!bridgesOf(r).some(br => dist2(x, z, br.x, br.z) < 12 * 12)) return false;
+    }
+  }
+  return true;
+}
+
 function resolveCollision(zone, ent, radius) {
   const b = zone.bounds;
   ent.x = clamp(ent.x, b.minX + radius, b.maxX - radius);
@@ -442,23 +468,25 @@ function resolveCollision(zone, ent, radius) {
 
   // Every river is solid (with a passable bridge deck). The fused world can hold
   // several, each with its own bridge frame cached on the river object.
-  const rivers = zone.rivers || (zone.river ? [zone.river] : []);
-  const paths = zone.paths || (zone.path ? [zone.path] : []);
+  const rivers = riversOf(zone);
+  const paths = pathsOf(zone);
   for (const r of rivers) {
-    // Bridge frame (path-aligned deck), computed once: matches how the client
-    // builds and orients the arched bridge.
-    if (r.bridge && !r._bridge) {
-      const nearPath = paths.slice().sort((a, b) => closestOnPolyline(r.bridge.x, r.bridge.z, a).dist - closestOnPolyline(r.bridge.x, r.bridge.z, b).dist)[0] || r.points;
-      const pd = segDirAt(nearPath, r.bridge.x, r.bridge.z);
-      const rd = segDirAt(r.points, r.bridge.x, r.bridge.z);
-      const pl = Math.hypot(pd.dx, pd.dz) || 1, rl = Math.hypot(rd.dx, rd.dz) || 1;
-      const sinA = Math.min(1, Math.abs((pd.dx / pl) * (rd.dz / rl) - (pd.dz / pl) * (rd.dx / rl)));
-      const L = (r.width + 2 * RIVER_BANK) / Math.max(0.5, sinA) + 9;
-      r._bridge = { cx: r.bridge.x, cz: r.bridge.z, dx: pd.dx / pl, dz: pd.dz / pl, L, deckW: 6, railHalf: 2.5 };
+    // Bridge frames (path-aligned decks), computed once each: matches how the
+    // client builds and orients every arched bridge on this water.
+    if (!r._bridges) {
+      r._bridges = bridgesOf(r).map((bridge) => {
+        const nearPath = paths.slice().sort((a, b) => closestOnPolyline(bridge.x, bridge.z, a).dist - closestOnPolyline(bridge.x, bridge.z, b).dist)[0] || r.points;
+        const pd = segDirAt(nearPath, bridge.x, bridge.z);
+        const rd = segDirAt(r.points, bridge.x, bridge.z);
+        const pl = Math.hypot(pd.dx, pd.dz) || 1, rl = Math.hypot(rd.dx, rd.dz) || 1;
+        const sinA = Math.min(1, Math.abs((pd.dx / pl) * (rd.dz / rl) - (pd.dz / pl) * (rd.dx / rl)));
+        const L = (r.width + 2 * RIVER_BANK) / Math.max(0.5, sinA) + 9;
+        return { cx: bridge.x, cz: bridge.z, dx: pd.dx / pl, dz: pd.dz / pl, L, deckW: 6, railHalf: 2.5 };
+      });
     }
-    const B = r._bridge;
     let onDeck = false;
-    if (B) {
+    for (const B of r._bridges) {
+      if (onDeck) break;
       const ex = ent.x - B.cx, ez = ent.z - B.cz;
       const along = ex * B.dx + ez * B.dz;   // along the deck (path direction)
       const across = ex * -B.dz + ez * B.dx;  // across the deck (rail axis)
@@ -613,7 +641,7 @@ function spawnInRegion(zone, region, opts = {}) {
     if (!opts.passive && inSafeZone(zone, x, z)) continue;   // pens sit inside the safe village
     if (keepOut && dist2(x, z, zone.spawn.x, zone.spawn.z) < keepOut * keepOut) continue;
     if ((zone.rocks || []).some(o => dist2(x, z, o.x, o.z) < (o.r + 2) ** 2)) continue;
-    if (zone.river && closestOnPolyline(x, z, zone.river.points).dist < zone.river.width / 2 + RIVER_BANK + 1) continue;
+    if (riversOf(zone).some(r => closestOnPolyline(x, z, r.points).dist < r.width / 2 + RIVER_BANK + 1)) continue;
     return { x, z };
   }
   // Fallback: the region centre, pushed clear of the keep-out ring if needed.
@@ -734,7 +762,7 @@ function buildMines(zone) {
       radii.push(r); outline.push({ x: +(cx + Math.cos(th) * r).toFixed(2), z: +(cz + Math.sin(th) * r).toFixed(2) });
     }
     // the opening faces the road; the bank and the fences leave it clear
-    const near = zone.path && zone.path.length > 1 ? closestOnPolyline(cx, cz, zone.path) : null;
+    const near = closestOnPaths(cx, cz, zone);
     const gapDir = near ? Math.atan2(near.z - cz, near.x - cx) : 0, gapHalf = 0.4;
     const edgeAngle = (i) => wrap(((i + 0.5) / N) * Math.PI * 2 - gapDir);
     for (let i = 0; i < N; i++) {
@@ -817,12 +845,12 @@ function buildFarm(zone) {
   // Thin dirt trails from each doorstep to the nearest point on the road, with
   // a bend part-way so they don't read as ruler-straight.
   zone._trails = (F.trails || []).map(tr => tr.map(p => ({ x: p.x, z: p.z })));
-  const road = zone.path || [];
-  if (!zone._trails.length && road.length > 1) {
+  const roads = pathsOf(zone).filter(r => r.length > 1);
+  if (!zone._trails.length && roads.length) {
     for (const h of (F.houses || [])) {
       const off = h.door === 'south' ? [0, h.d / 2] : h.door === 'north' ? [0, -h.d / 2] : h.door === 'east' ? [h.w / 2, 0] : [-h.w / 2, 0];
       const step = { x: h.x + off[0] + Math.sign(off[0]) * 1.2, z: h.z + off[1] + Math.sign(off[1]) * 1.2 };
-      const c = closestOnPolyline(step.x, step.z, road);
+      const c = closestOnPaths(step.x, step.z, zone);
       const mid = { x: (step.x + c.x) / 2 + (c.z - step.z) * 0.12, z: (step.z + c.z) / 2 - (c.x - step.x) * 0.12 };
       zone._trails.push([step, mid, { x: c.x, z: c.z }]);
     }
@@ -1150,6 +1178,14 @@ function applySave(p, d) {
   const sp = ZONES[zone].spawn;
   p.x = dead ? sp.x : (+d.x || sp.x); p.z = dead ? sp.z : (+d.z || sp.z);
   p.y = dead ? 0 : (+d.y || 0); p.yaw = +d.yaw || sp.yaw;
+  // A save holds where you stood on the map as it was. Redraw the map -- move a
+  // river, raise a cliff, change the coastline -- and that spot may now be open
+  // water, solid rock or outside the world. Rather than drop somebody into it,
+  // put them back at the zone's arrival point.
+  if (!dead && !standableAt(ZONES[zone], p.x, p.z)) {
+    p.x = sp.x; p.z = sp.z; p.y = 0; p.yaw = sp.yaw || 0;
+    p._movedByRevamp = true;
+  }
   p.inventory = Array.isArray(d.inventory) ? d.inventory.filter(n => ITEMS[n]) : p.inventory;
   if (d.equipment) { p.equipment = Object.assign(emptySlots(), d.equipment); p.gear = gearOf(p.equipment); }
   // Abilities are re-derived from the class and level, then anything bought is
@@ -3468,7 +3504,7 @@ function zoneForClient(zone) {
   return {
     id: zone.id, name: zone.name, subtitle: zone.subtitle, spawn: zone.spawn,
     bounds: zone.bounds, boundary: zone.boundary, pois: zone.pois, path: zone.path, river: zone.river,
-    paths: zone.paths || (zone.path ? [zone.path] : []), rivers: zone.rivers || (zone.river ? [zone.river] : []),
+    paths: pathsOf(zone), rivers: riversOf(zone),
     rocks: zone.rocks, hazards: zone.hazards, pools: zone.pools, chests: zone.chests, objects: zone.objects,
     fishingSpots: zone.fishingSpots || [], campfires: zone.campfires || [],
     caves: (zone.caves || []).map(c => ({ boundary: c.boundary, rooms: c.rooms, tunnels: c.tunnels, floorY: c.floorY, ceilingY: c.ceilingY,
@@ -3585,6 +3621,11 @@ wss.on('connection', (ws) => {
         sendObjects(player);
         if (auth.created) send(ws, { t: 'event', kind: 'notice', text: `Account created for ${player.name}. Use the same password next time.` });
         else if (saved) send(ws, { t: 'event', kind: 'notice', text: `Welcome back, ${player.name}.` });
+        // Say so rather than let somebody wonder why they woke up somewhere else.
+        if (player._movedByRevamp) {
+          delete player._movedByRevamp;
+          send(ws, { t: 'event', kind: 'notice', text: 'The woods have changed since you were last here. You have been set back on the road.' });
+        }
         systemChat(`${name} has entered ${here.name}.`);
         break;
       }

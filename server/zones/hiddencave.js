@@ -102,7 +102,7 @@ export const hiddencave = {
   ],
 
   portals: [
-    { x: 0, z: -170, r: 6, to: 'darkwoods', spawn: { x: -54, z: 52, yaw: 1.2 } },
+    { x: 0, z: -170, r: 6, to: 'darkwoods', spawn: { x: 4, z: 74, yaw: 1.2 } },   // out of the Spider Den, on the south road
   ],
 
   pools: [

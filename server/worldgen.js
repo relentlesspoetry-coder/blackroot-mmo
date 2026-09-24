@@ -15,6 +15,35 @@ function inFarm(zone, x, z, m = 0) {
   return x > b.minX - m && x < b.maxX + m && z > b.minZ - m && z < b.maxZ + m;
 }
 export function dist2(ax, az, bx, bz) { const dx = ax - bx, dz = az - bz; return dx * dx + dz * dz; }
+
+// A zone may hold several bodies of water, each with several crossings. `river`
+// (one) is the old single-channel form and still works; `rivers` (many) is what
+// a zone with a lake, a creek and a fen authors. Everything downstream reads
+// through these two so neither form needs a special case.
+export function riversOf(zone) {
+  if (!zone) return [];
+  return zone.rivers || (zone.river ? [zone.river] : []);
+}
+export function bridgesOf(river) {
+  if (!river) return [];
+  return river.bridges || (river.bridge ? [river.bridge] : []);
+}
+// The same one-or-many rule for roads: `path` is a single route, `paths` is a
+// network (a main road with spurs to each of the zone's exits).
+export function pathsOf(zone) {
+  if (!zone) return [];
+  return zone.paths || (zone.path ? [zone.path] : []);
+}
+// Nearest point on ANY of a zone's roads.
+export function closestOnPaths(x, z, zone) {
+  let best = null;
+  for (const p of pathsOf(zone)) {
+    if (!p || p.length < 2) continue;
+    const c = closestOnPolyline(x, z, p);
+    if (!best || c.dist < best.dist) best = c;
+  }
+  return best;
+}
 // The mining pits (zone.mines, each at the POI of its key), as circles to keep
 // the forest and scatter out of, with a margin for the fence and dirt fringe.
 export function mineAreas(zone) {
@@ -91,9 +120,9 @@ export function generateTrees(zone) {
     const x = b.minX + 3 + rng() * (b.maxX - b.minX - 6);
     const z = b.minZ + 3 + rng() * (b.maxZ - b.minZ - 6);
     if (zone.boundary && !pointInPoly(x, z, zone.boundary)) continue;
-    if (closestOnPolyline(x, z, zone.path).dist < 6) continue;
-    if (zone.river && closestOnPolyline(x, z, zone.river.points).dist < zone.river.width / 2 + RIVER_BANK + 3) continue;
-    if (zone.river && zone.river.bridge && dist2(x, z, zone.river.bridge.x, zone.river.bridge.z) < 15 * 15) continue;
+    if (pathsOf(zone).some(p => closestOnPolyline(x, z, p).dist < 6)) continue;
+    if (riversOf(zone).some(r => closestOnPolyline(x, z, r.points).dist < r.width / 2 + RIVER_BANK + 3)) continue;
+    if (riversOf(zone).some(r => bridgesOf(r).some(b => dist2(x, z, b.x, b.z) < 15 * 15))) continue;
     if (inFarm(zone, x, z, 3)) continue;
     if (inHouse(zone, x, z, 2.5)) continue;
     if (inMine(zone, x, z, 4)) continue;
@@ -132,11 +161,11 @@ export function generateScatter(zone) {
       // round to one tenth outside it.
       x = +x.toFixed(1); z = +z.toFixed(1);
       if (zone.boundary && !pointInPoly(x, z, zone.boundary)) continue;
-      if (zone.path && closestOnPolyline(x, z, zone.path).dist < (spec.r > 0 ? 4.5 : 2.2)) continue;
+      if (pathsOf(zone).some(p => closestOnPolyline(x, z, p).dist < (spec.r > 0 ? 4.5 : 2.2))) continue;
       // Keep dressing out of the water. A solid piece in a river is worse than
       // useless: an ore vein there is unreachable, because the river is the one
       // thing the player cannot walk through.
-      if (zone.river && closestOnPolyline(x, z, zone.river.points).dist < zone.river.width / 2 + RIVER_BANK + 2.5) continue;
+      if (riversOf(zone).some(r => closestOnPolyline(x, z, r.points).dist < r.width / 2 + RIVER_BANK + 2.5)) continue;
       if (inFarm(zone, x, z, 2)) continue;
       if (inHouse(zone, x, z, 1.5)) continue;
       // a pit's own dressing (crates, barricades at the ravine dig) may sit in it; nothing else may
@@ -463,8 +492,8 @@ export function generateEdgeForest(zone, innerPolys, seed, band = 32) {
     const inside = innerPolys.some(pg => pointInPoly(x, z, pg));
     if (inside && dEdge > band) continue;                   // deep interior already has its forest
     if (dEdge < 2.5) continue;                              // not in the rock
-    if ((zone.paths || []).some(p => closestOnPolyline(x, z, p).dist < 6)) continue;
-    if ((zone.rivers || []).some(r => closestOnPolyline(x, z, r.points).dist < r.width / 2 + RIVER_BANK + 3)) continue;
+    if (pathsOf(zone).some(p => closestOnPolyline(x, z, p).dist < 6)) continue;
+    if (riversOf(zone).some(r => closestOnPolyline(x, z, r.points).dist < r.width / 2 + RIVER_BANK + 3)) continue;
     if (inFarm(zone, x, z, 3) || inMine(zone, x, z, 4) || inHouse(zone, x, z, 2.5)) continue;
     if ((zone.pois || []).some(p => dist2(x, z, p.x, p.z) < clearRadiusS(p) ** 2)) continue;
     const near = (t) => dist2(x, z, t.x, t.z) < minSpace * minSpace;
