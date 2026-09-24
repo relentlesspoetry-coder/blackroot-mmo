@@ -1525,12 +1525,47 @@ function riverHeightAt1(river, x, z) {
   const t = d / half;
   return RIVER_BED_Y + (RIVER_WATER_Y - RIVER_BED_Y) * (t * t * t);
 }
+// ---- Relief ------------------------------------------------------------
+// The blueprint is a hilly woodland: 40 m at the fen up to 340 m on Crow Hill.
+// The zone authors that as a handful of broad domes (`hills`), summed and
+// smoothed. Held at about a quarter of the blueprint's true relief -- at 1:1
+// the slopes are a wall to a third-person camera -- so the land rolls and the
+// high ground still reads as high ground.
+function worldHills() { return (zone && zone.hills) || []; }
+// How much a hill is allowed to lift the ground here. Water has to stay level,
+// so the relief fades out as it approaches any channel or shore.
+const HILL_WATER_FADE = 16;
+function hillDamp(x, z) {
+  let w = 1;
+  for (const r of worldRivers()) {
+    const d = distToPolyline(x, z, r.points) - riverWaterHalf(r.width);
+    w = Math.min(w, Math.max(0, Math.min(1, d / HILL_WATER_FADE)));
+    if (w <= 0) return 0;
+  }
+  for (const l of worldLakes()) {
+    w = Math.min(w, Math.max(0, Math.min(1, lakeEdgeDist(l, x, z) / HILL_WATER_FADE)));
+    if (w <= 0) return 0;
+  }
+  return w;
+}
+function landHeight(x, z) {
+  let h = 0;
+  for (const k of worldHills()) {
+    const d = Math.hypot(x - k.x, z - k.z);
+    if (d >= k.r) continue;
+    const t = 1 - d / k.r;
+    h += k.h * t * t * (3 - 2 * t);          // smoothstep dome, flat at the top and the foot
+  }
+  return h;
+}
 function terrainHeight(x, z) {
   if (!zone || zone.enclosed) return 0;
-  // Deepest carve wins where rivers overlap; grass (0) everywhere else.
-  let y = 0;
-  for (const r of worldRivers()) { const h = riverHeightAt1(r, x, z); if (h < y) y = h; }
-  for (const l of worldLakes()) { const h = lakeHeightAt1(l, x, z); if (h < y) y = h; }
+  // The land rises to the hills; water then cuts down through it. The carve
+  // functions return 0 to mean "no water here", which is NOT a height to take
+  // the minimum with -- doing that flattens every hill back to zero.
+  let y = landHeight(x, z) * hillDamp(x, z);
+  for (const r of worldRivers()) { const h = riverHeightAt1(r, x, z); if (h < 0 && h < y) y = h; }
+  for (const l of worldLakes()) { const h = lakeHeightAt1(l, x, z); if (h < 0 && h < y) y = h; }
   return y;
 }
 // Height an entity should stand at: on a bridge use its deck, else the terrain.
@@ -10035,6 +10070,7 @@ respawnBtn.onclick = () => ws?.send(JSON.stringify({ t: 'respawn' }));
 if (location.search.includes('debug')) {
   window.__bk = {
     THREE,
+    terrainHeight, landHeight, hillDamp, groundY,   // terrain probes, for checking relief
     get scene() { return scene; },
     get camera() { return camera; },
     get renderer() { return renderer; },

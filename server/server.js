@@ -116,6 +116,7 @@ function scaleZone(zone, k) {
     for (const br of bridgesOf(r)) { br.x *= k; br.z *= k; if (br.halfWidth != null) br.halfWidth *= k; }
   }
   for (const l of lakesOf(zone)) { (l.points || []).forEach(sp); l._ring = null; }
+  (zone.hills || []).forEach(h => { h.x *= k; h.z *= k; h.r *= k; });   // `h.h` is authored in world metres, so it does not scale
   (zone.rocks || []).forEach(sp);
   (zone.pools || []).forEach(sp);
   (zone.chests || []).forEach(sp);
@@ -175,6 +176,7 @@ function offsetZone(zone, dx, dz) {
     for (const br of bridgesOf(r)) { br.x += dx; br.z += dz; }
   }
   for (const l of lakesOf(zone)) { (l.points || []).forEach(sp); l._ring = null; }
+  (zone.hills || []).forEach(h => { h.x += dx; h.z += dz; });
   (zone.rocks || []).forEach(sp);
   (zone.pools || []).forEach(sp);
   (zone.chests || []).forEach(sp);
@@ -3519,7 +3521,7 @@ function zoneForClient(zone) {
   return {
     id: zone.id, name: zone.name, subtitle: zone.subtitle, spawn: zone.spawn,
     bounds: zone.bounds, boundary: zone.boundary, pois: zone.pois, path: zone.path, river: zone.river,
-    paths: pathsOf(zone), rivers: riversOf(zone), lakes: lakesOf(zone),
+    paths: pathsOf(zone), rivers: riversOf(zone), lakes: lakesOf(zone), hills: zone.hills || [],
     rocks: zone.rocks, hazards: zone.hazards, pools: zone.pools, chests: zone.chests, objects: zone.objects,
     fishingSpots: zone.fishingSpots || [], campfires: zone.campfires || [],
     caves: (zone.caves || []).map(c => ({ boundary: c.boundary, rooms: c.rooms, tunnels: c.tunnels, floorY: c.floorY, ceilingY: c.ceilingY,

@@ -113,13 +113,13 @@ export const darkwoods = {
     { key: 'entrance',   name: 'Hearthstead Farm',      x: -26, z: -86, kind: 'safe', r: 26 },
     { key: 'hunter',     name: "Old Hunter's Trail",    x: -40, z: -58, kind: 'landmark' },
     // --- North: the pool, the chapel, the cursed thicket ---
-    { key: 'ravenwater', name: 'Ravenwater Pool',       x: -86, z: -80, kind: 'landmark' },   // marked from the quiet north shore
+    { key: 'ravenwater', name: 'Ravenwater Pool',       x: -48, z: -30, kind: 'landmark' },   // marked from the quiet north shore
     { key: 'shrine',     name: 'Fallen Chapel',         x: 34,  z: -78, kind: 'safe', r: 12 },
     { key: 'stones',     name: 'Grimroot Thicket',      x: 91,  z: -68, kind: 'boss', optional: true },
     // --- The main road west to east ---
     { key: 'westroad',   name: 'West Road',             x: -128, z: 2,  kind: 'landmark' },
     { key: 'wolfsnag',   name: 'Wolfsnag Pass',         x: -84, z: -20, kind: 'landmark' },
-    { key: 'ravine',     name: 'Root-Choked Ravine',    x: -104, z: -56, kind: 'mine', art: 'mine', optional: true },
+    { key: 'ravine',     name: 'Root-Choked Ravine',    x: -114, z: -16, kind: 'mine', art: 'mine', optional: true },
     { key: 'creek',      name: 'Blackroot Creek',       x: -30, z: -24, kind: 'landmark' },   // the ford, south bank
     { key: 'outpost',    name: 'Witchlight Camp',       x: 1,   z: -6,  kind: 'safe', r: 14 },
     { key: 'rotfen',     name: 'Murkfen',               x: 88,  z: 3,   kind: 'landmark', optional: true },
@@ -187,7 +187,7 @@ export const darkwoods = {
     { id: 'sela',     name: 'Ranger Sela',         x: -86.0,   z: 28.0, poi: 'watchtower', model: 'Female', yaw: 2.2,
       look: { hairColor: '#2e1d12', skin: '#c99a74', outfit: 3, hair: 'Hair_Braids' },   // Forest Ranger
       idle: 'From the old tower you can see their fires. The Wolf Den grows bolder every night.' },
-    { id: 'dorn',     name: 'Prospector Dorn',     x: -108.0, z: -54.0,  poi: 'ravine',   model: 'Male', yaw: 5.0,
+    { id: 'dorn',     name: 'Prospector Dorn',     x: -112.0, z: -11.0,  poi: 'ravine',   model: 'Male', yaw: 5.0,
       look: { hairColor: '#b9b2a4', skin: '#b98f6a', outfit: 32, hair: 'Hair_Crop', beard: 'Beard_Full' },   // Blacksmith — apron and headband
       idle: 'That iron seam is mine by right — but the goblins dig it faster than I can chase them off.' },
     { id: 'hermit',   name: 'Hermit of the Grove', x: 37.0,    z: -76.0,   poi: 'shrine',   model: 'Male',
@@ -259,15 +259,37 @@ export const darkwoods = {
   // A shallow one is a fen: you wade it, and it slows nothing but your nerve.
   lakes: [
     { name: 'Ravenwater Pool', points: [
-      { x: -92, z: -60 }, { x: -87, z: -69 }, { x: -78, z: -74 }, { x: -68, z: -74 },
-      { x: -58, z: -69 }, { x: -50, z: -62 }, { x: -49, z: -53 }, { x: -56, z: -45 },
-      { x: -66, z: -41 }, { x: -78, z: -43 }, { x: -88, z: -50 },
+      { x: -118, z: -54 }, { x: -114, z: -66 }, { x: -104, z: -75 }, { x: -90, z: -80 },
+      { x: -76, z: -80 }, { x: -68, z: -77 }, { x: -58, z: -62 }, { x: -54, z: -52 },
+      { x: -58, z: -45 }, { x: -68, z: -38 }, { x: -82, z: -35 }, { x: -96, z: -38 },
+      { x: -110, z: -45 },
     ] },
     { name: 'Murkfen', shallow: true, points: [
-      { x: 62, z: -8 }, { x: 68, z: -19 }, { x: 78, z: -24 }, { x: 90, z: -22 },
-      { x: 100, z: -15 }, { x: 105, z: -4 }, { x: 103, z: 7 }, { x: 95, z: 15 },
-      { x: 84, z: 18 }, { x: 72, z: 14 }, { x: 64, z: 5 },
+      { x: 40, z: -6 }, { x: 46, z: -18 }, { x: 58, z: -26 }, { x: 74, z: -30 },
+      { x: 92, z: -29 }, { x: 108, z: -24 }, { x: 120, z: -14 }, { x: 124, z: -1 },
+      { x: 120, z: 11 }, { x: 108, z: 19 }, { x: 92, z: 22 }, { x: 74, z: 20 },
+      { x: 56, z: 14 }, { x: 44, z: 5 },
     ] },
+  ],
+
+  // ------------------------------------------------------------------
+  // Relief. The blueprint labels its contours from 60 m in the fen up to
+  // 340 m on Crow Hill; these are those readings as broad domes, at about a
+  // quarter of true scale so the slopes stay walkable under this camera.
+  // The land falls away east into Murkfen and north-west into the pool.
+  // ------------------------------------------------------------------
+  hills: [
+    { x: -84, z: 26,  r: 62, h: 22 },   // Crow Hill -- 340 m, the zone's high point
+    { x: -99, z: 14,  r: 40, h: 7 },    // its western shoulder (150 m)
+    { x: -92, z: 48,  r: 44, h: 9 },    // and the ridge running south off it
+    { x: 23,  z: -83, r: 52, h: 16 },   // the chapel's rise (280 m)
+    { x: -108, z: -24, r: 46, h: 13 },  // the ground above Wolfsnag Pass (220 m)
+    { x: 89,  z: -50, r: 46, h: 12 },   // east of Grimroot (240 m)
+    { x: 59,  z: -62, r: 42, h: 9 },    // the thicket's shoulder (180 m)
+    { x: 0,   z: -46, r: 48, h: 9 },    // the rise between creek and chapel (200 m)
+    { x: -27, z: 67,  r: 46, h: 8 },    // above the Spider Den (190 m)
+    { x: 78,  z: 58,  r: 44, h: 7 },    // behind Briar Camp (160 m)
+    { x: 127, z: 9,   r: 34, h: 5 },    // the eastern rim (150 m)
   ],
 
   // Impassable rock (collision). Trees are visual-only.
@@ -386,7 +408,7 @@ export const darkwoods = {
     { id: 'fs_shr1', tier: 'Shrimp', x: -59, z: -38 },   // Ravenwater Pool, south bank
     { id: 'fs_shr2', tier: 'Shrimp', x: -30, z: -25 },   // the creek below the ford
     { id: 'fs_tro1', tier: 'Trout',  x: 14,  z: -14 },
-    { id: 'fs_sal1', tier: 'Salmon', x: 62,  z: -8 },    // where the creek slows into the fen
+    { id: 'fs_sal1', tier: 'Salmon', x: 33,  z: -4 },    // where the creek slows into the fen
   ],
 
   // Campfire cooking stations. Stand near one to cook raw meat/fish.
@@ -620,9 +642,9 @@ export const darkwoods = {
     { type: 'bandit',  count: 4, cx: -40, cz: 34, r: 6,  level: 3, expect: 4, fixed: true, hint: 'Bandit hideout (core)' },
     { type: 'bandit',  count: 3, cx: -40, cz: 34, r: 20, level: 4, expect: 4, roam: 24, fixed: true, hint: 'Bandit hideout (roamers)' },
     // --- Goblin miners have jumped Dorn's claim in the Root-Choked Ravine ---
-    { type: 'goblin_miner', count: 4, cx: -104, cz: -56, r: 6,  level: 4, expect: 5, fixed: true, hint: 'Ravine dig (core)' },
-    { type: 'goblin_miner', count: 2, cx: -104, cz: -56, r: 16, level: 4, expect: 5, roam: 20, fixed: true, hint: 'Ravine dig (roamers)' },
-    { type: 'goblin_shaman', count: 1, cx: -104, cz: -56, r: 7,  level: 4, expect: 5, fixed: true, hint: 'Ravine dig (shaman)' },
+    { type: 'goblin_miner', count: 4, cx: -114, cz: -16, r: 6,  level: 4, expect: 5, fixed: true, hint: 'Ravine dig (core)' },
+    { type: 'goblin_miner', count: 2, cx: -114, cz: -16, r: 16, level: 4, expect: 5, roam: 20, fixed: true, hint: 'Ravine dig (roamers)' },
+    { type: 'goblin_shaman', count: 1, cx: -114, cz: -16, r: 7,  level: 4, expect: 5, fixed: true, hint: 'Ravine dig (shaman)' },
     // --- The goblin war camp at Briar Camp: warriors with archers behind them ---
     { type: 'goblin_warrior', count: 4, cx: 63, cz: 35, r: 6,  level: 4, expect: 5, fixed: true, hint: 'Briar Camp (core)' },
     { type: 'goblin_archer',  count: 3, cx: 67, cz: 39, r: 7,  level: 5, expect: 5, fixed: true, hint: 'Briar Camp (archers)' },
