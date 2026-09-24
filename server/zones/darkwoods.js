@@ -299,15 +299,15 @@ export const darkwoods = {
     { key: 'ravine',     name: 'Root-Choked Ravine',    x: -114, z: -16, kind: 'mine', art: 'mine', optional: true },
     { key: 'creek',      name: 'Blackroot Creek',       x: -30, z: -21.5, kind: 'landmark' },   // the ford, south bank
     { key: 'outpost',    name: 'Witchlight Camp',       x: 1,   z: -6,  kind: 'safe', r: 14 },
-    { key: 'rotfen',     name: 'Murkfen',               x: 88,  z: 3,   kind: 'landmark', optional: true },
+    { key: 'rotfen',     name: 'Murkfen',               x: 90.2,  z: 4.3,   kind: 'landmark', optional: true },
     { key: 'eastpath',   name: 'East Path',             x: 108.2, z: -45.2, kind: 'landmark' },
     // --- South: the lookout, the war camp, the den ---
     { key: 'watchtower', name: 'Crow Hill',             x: -84, z: 26,  kind: 'landmark', optional: true },
     { key: 'bridge',     name: 'Mossy Ford',              x: 24.4,  z: 29.3,  kind: 'landmark' },
     { key: 'wolfden',    name: 'Briar Camp',            x: 63,  z: 35,  kind: 'landmark' },
-    { key: 'camp',       name: 'Wayside Camp',          x: -14, z: 56,  kind: 'safe', r: 9, merchant: true, optional: true },
+    { key: 'camp',       name: 'Wayside Camp',          x: -15.8, z: 60.7,  kind: 'safe', r: 9, merchant: true, optional: true },
     { key: 'cave',       name: 'Spider Den',            x: 1,   z: 71.5,  kind: 'cave' },
-    { key: 'southgate',  name: 'South Track',           x: 50.5,  z: 86,  kind: 'gate', exit: true },
+    { key: 'southgate',  name: 'South Track',           x: 53.3,  z: 81.9,  kind: 'gate', exit: true },
     // --- Mining scrapes, off the road and worth the walk ---
     { key: 'copperhollow', name: 'Copper Hollow',       x: 106.5, z: -46, kind: 'mine', art: 'mine', optional: true },
     { key: 'tinscrape',    name: 'Tin Scrape',          x: -122, z: -14, kind: 'mine', art: 'mine', optional: true },
@@ -355,7 +355,7 @@ export const darkwoods = {
     { id: 'alden',    name: 'Brother Alden',       x: -2.0,  z: -11.0, poi: 'outpost', model: 'Male', yaw: 0.2,
       look: { hairColor: '#8a8276', skin: '#c7a081', outfit: 42, hair: 'Hair_Receding', beard: 'Beard_Full' },   // Crimson Cardinal — the priest
       idle: 'Have you heard the bell? It has been abandoned twenty years, and still it rings.' },
-    { id: 'fenwick',  name: 'Old Fenwick',         x: 9,   z: -11.5, poi: 'outpost', model: 'Male', yaw: 4.2,
+    { id: 'fenwick',  name: 'Old Fenwick',         x: 9,   z: -9, poi: 'outpost', model: 'Male', yaw: 4.2,
       look: { hairColor: '#b9b2a4', skin: '#b98f6a', outfit: 28, hair: 'Hair_Mane', beard: 'Beard_Full' },   // Bog Hermit — the old woodsman
       idle: 'Brown ones are safe. Blue ones are safe. Red ones depend on how attached you are to your organs.' },
     // Far enough from his own camp's roamers that a level-3 errand isn't a fight.
@@ -370,120 +370,177 @@ export const darkwoods = {
     { id: 'hermit',   name: 'Hermit of the Grove', x: 37.0,    z: -76.0,   poi: 'shrine',   model: 'Male',
       look: { hairColor: '#9a9a90', skin: '#c9a07c', outfit: 28, wear: { boots: 0 } },   // Bog Hermit, barefoot
       idle: 'The shrine holds. Not much else out here does.' },
-    { id: 'merchant', name: 'Wandering Merchant',  x: -15.5, z: 55.5,  poi: 'camp',     model: 'Female', trade: true,
+    { id: 'merchant', name: 'Wandering Merchant',  x: -19.2, z: 58.8,  poi: 'camp',     model: 'Female', trade: true,
       look: { hairColor: '#4a2e1a', skin: '#d0a57e', outfit: 29, hair: 'Hair_Topknot' },   // Wine Merchant
       idle: 'Wares? Aye, soon enough, traveller. Mind the woods.' },
   ],
 
-  // The road network. Two kinds, as the legend names them: a major path (road)
-  // and a minor path (trail). Every route is A*-routed over the traced terrain
-  // between its landmarks, so a road goes where the ground actually allows --
-  // through Wolfsnag Pass rather than into the cliff beside it.
+  // Routed landmark to landmark over the traced terrain: around deep water and
+  // rock, and over a channel only where a bridge stands. Two kinds, as the
+  // legend names them: road and trail.
   paths: [
-    // West Road -> Wolfsnag Pass -> Witchlight Camp -> Murkfen -> East Path
     { kind: 'road', points: [
-      { x: -123.8, z: -4.5 }, { x: -123.8, z: -9 }, { x: -120.8, z: -12 }, { x: -120.8, z: -13.5 },
-      { x: -114.8, z: -13.5 }, { x: -113.3, z: -15 }, { x: -105.8, z: -18 }, { x: -107.3, z: -18 },
-      { x: -110.3, z: -21 }, { x: -110.3, z: -30 }, { x: -107.3, z: -33 }, { x: -102.8, z: -33 },
-      { x: -101.3, z: -31.5 }, { x: -99.8, z: -31.5 }, { x: -93.8, z: -25.5 }, { x: -92.3, z: -25.5 },
-      { x: -86.3, z: -21 }, { x: -84.8, z: -21 }, { x: -84.8, z: -22.5 }, { x: -83.3, z: -24 },
-      { x: -80.3, z: -24 }, { x: -75.8, z: -27 }, { x: -69.8, z: -27 }, { x: -62.3, z: -21 },
-      { x: -59.3, z: -21 }, { x: -56.3, z: -18 }, { x: -51.8, z: -18 }, { x: -50.3, z: -16.5 },
-      { x: -29.3, z: -16.5 }, { x: -21.8, z: -12 }, { x: -11.3, z: -12 }, { x: -0.8, z: -6 },
-      { x: 23.3, z: -6 }, { x: 24.8, z: -4.5 }, { x: 24.8, z: -6 }, { x: 21.8, z: -9 },
-      { x: 11.3, z: -9 }, { x: 5.3, z: -15 }, { x: -9.8, z: -15 }, { x: -17.3, z: -22.5 },
-      { x: -17.3, z: -28.5 }, { x: -21.8, z: -33 }, { x: -21.8, z: -39 }, { x: -20.3, z: -39 },
-      { x: -20.3, z: -40.5 }, { x: -18.8, z: -40.5 }, { x: -18.8, z: -42 }, { x: -14.3, z: -42 },
-      { x: -11.3, z: -39 }, { x: -8.3, z: -39 }, { x: -6.8, z: -37.5 }, { x: -2.3, z: -37.5 },
-      { x: -0.8, z: -36 }, { x: 5.3, z: -36 }, { x: 9.8, z: -33 }, { x: 23.3, z: -33 },
-      { x: 26.3, z: -30 }, { x: 29.3, z: -30 }, { x: 33.8, z: -27 }, { x: 38.3, z: -27 },
-      { x: 39.8, z: -25.5 }, { x: 41.3, z: -25.5 }, { x: 41.3, z: -24 }, { x: 42.8, z: -22.5 },
-      { x: 42.8, z: -18 }, { x: 47.3, z: -13.5 }, { x: 48.8, z: -9 }, { x: 50.3, z: -10.5 },
-      { x: 50.3, z: -13.5 }, { x: 60.8, z: -25.5 }, { x: 66.8, z: -25.5 }, { x: 68.3, z: -27 },
-      { x: 75.8, z: -27 }, { x: 77.3, z: -25.5 }, { x: 78.8, z: -25.5 }, { x: 92.3, z: -12 },
-      { x: 92.3, z: -10.5 }, { x: 93.8, z: -9 }, { x: 93.8, z: -6 }, { x: 83.3, z: 4.5 },
-      { x: 81.8, z: 4.5 }, { x: 78.8, z: 7.5 }, { x: 75.8, z: 7.5 }, { x: 68.3, z: 0 },
-      { x: 65.3, z: 0 }, { x: 65.3, z: -1.5 }, { x: 65.3, z: 0 }, { x: 68.3, z: 0 },
-      { x: 75.8, z: 7.5 }, { x: 78.8, z: 7.5 }, { x: 90.8, z: -4.5 }, { x: 90.8, z: -9 },
-      { x: 89.3, z: -9 }, { x: 90.8, z: -9 }, { x: 98.3, z: -16.5 }, { x: 102.8, z: -18 },
-      { x: 102.8, z: -21 }, { x: 104.3, z: -22.5 }, { x: 104.3, z: -40.5 }, { x: 107.3, z: -43.5 },
-      { x: 111.8, z: -45 },
+      { x: -120.8, z: 4.5 }, { x: -119.3, z: 3 }, { x: -117.8, z: 3 }, { x: -111.8, z: -3 },
+      { x: -111.8, z: -27 }, { x: -110.3, z: -28.5 }, { x: -110.3, z: -30 }, { x: -107.3, z: -33 },
+      { x: -102.8, z: -33 }, { x: -101.3, z: -31.5 }, { x: -99.8, z: -31.5 }, { x: -93.8, z: -25.5 },
+      { x: -92.3, z: -25.5 }, { x: -90.8, z: -24 }, { x: -80.3, z: -24 }, { x: -77.3, z: -27 },
+      { x: -68.3, z: -27 }, { x: -66.8, z: -25.5 }, { x: -63.8, z: -25.5 }, { x: -56.3, z: -18 },
+      { x: -51.8, z: -18 }, { x: -50.3, z: -16.5 }, { x: -21.8, z: -16.5 }, { x: -20.3, z: -15 },
+      { x: -18.8, z: -15 }, { x: -17.3, z: -13.5 }, { x: -15.8, z: -13.5 }, { x: -12.8, z: -10.5 },
+      { x: -11.3, z: -10.5 }, { x: -9.8, z: -9 }, { x: -8.3, z: -9 }, { x: -6.8, z: -7.5 },
+      { x: -5.3, z: -7.5 }, { x: -3.8, z: -6 }, { x: 12.8, z: -6 }, { x: 21.8, z: 3 },
+      { x: 47.3, z: 3 }, { x: 36.8, z: 3 }, { x: 35.3, z: 4.5 }, { x: 35.3, z: 15 },
+      { x: 33.8, z: 16.5 }, { x: 33.8, z: 21 }, { x: 36.8, z: 24 }, { x: 39.8, z: 24 },
+      { x: 42.8, z: 27 }, { x: 69.8, z: 27 }, { x: 71.3, z: 28.5 }, { x: 72.8, z: 28.5 },
+      { x: 74.3, z: 30 }, { x: 78.8, z: 30 }, { x: 84.8, z: 24 }, { x: 93.8, z: 24 },
+      { x: 95.3, z: 22.5 }, { x: 98.3, z: 22.5 }, { x: 101.3, z: 19.5 }, { x: 101.3, z: 16.5 },
+      { x: 98.3, z: 13.5 }, { x: 98.3, z: 12 }, { x: 92.3, z: 6 }, { x: 89.3, z: 6 },
+      { x: 87.8, z: 4.5 }, { x: 71.3, z: 4.5 }, { x: 68.3, z: 7.5 }, { x: 62.3, z: 7.5 },
+      { x: 63.8, z: 6 }, { x: 63.8, z: 4.5 }, { x: 66.8, z: 1.5 }, { x: 69.8, z: 1.5 },
+      { x: 71.3, z: 3 }, { x: 72.8, z: 3 }, { x: 72.8, z: 4.5 }, { x: 74.3, z: 4.5 },
+      { x: 74.3, z: 6 }, { x: 81.8, z: 6 }, { x: 83.3, z: 4.5 }, { x: 90.8, z: 4.5 },
+      { x: 92.3, z: 3 }, { x: 92.3, z: -4.5 }, { x: 93.8, z: -6 }, { x: 93.8, z: -10.5 },
+      { x: 101.3, z: -18 }, { x: 101.3, z: -19.5 }, { x: 104.3, z: -22.5 }, { x: 104.3, z: -40.5 },
+      { x: 108.8, z: -45 },
     ] },
-    // North Trail -> south to Witchlight Camp
     { kind: 'road', points: [
-      { x: -39.8, z: -100.5 }, { x: -39.8, z: -99 }, { x: -44.3, z: -93 }, { x: -44.3, z: -79.5 },
-      { x: -45.8, z: -78 }, { x: -45.8, z: -75 }, { x: -41.3, z: -70.5 }, { x: -41.3, z: -61.5 },
-      { x: -30.8, z: -61.5 }, { x: -24.8, z: -55.5 }, { x: -21.8, z: -55.5 }, { x: -17.3, z: -49.5 },
-      { x: -17.3, z: -46.5 }, { x: -18.8, z: -45 }, { x: -18.8, z: -40.5 }, { x: -26.3, z: -40.5 },
-      { x: -30.8, z: -45 }, { x: -33.8, z: -45 }, { x: -33.8, z: -46.5 }, { x: -36.8, z: -46.5 },
-      { x: -38.3, z: -48 }, { x: -36.8, z: -46.5 }, { x: -33.8, z: -46.5 }, { x: -33.8, z: -43.5 },
-      { x: -27.8, z: -37.5 }, { x: -27.8, z: -31.5 }, { x: -15.8, z: -19.5 }, { x: -15.8, z: -18 },
-      { x: -14.3, z: -16.5 }, { x: -12.8, z: -16.5 }, { x: -3.8, z: -7.5 }, { x: 0.8, z: -6 },
+      { x: -47.3, z: -97.5 }, { x: -44.3, z: -97.5 }, { x: -29.3, z: -82.5 }, { x: -6.8, z: -82.5 },
+      { x: -5.3, z: -81 }, { x: 27.8, z: -81 }, { x: 30.8, z: -78 }, { x: 33.8, z: -78 },
+      { x: 32.3, z: -76.5 }, { x: 32.3, z: -75 }, { x: 29.3, z: -72 }, { x: 29.3, z: -70.5 },
+      { x: 27.8, z: -69 }, { x: 27.8, z: -67.5 }, { x: 26.3, z: -66 }, { x: 26.3, z: -64.5 },
+      { x: 24.8, z: -63 }, { x: 24.8, z: -49.5 }, { x: 18.8, z: -43.5 }, { x: 18.8, z: -24 },
+      { x: 17.3, z: -22.5 }, { x: 18.8, z: -22.5 }, { x: 20.3, z: -21 }, { x: 20.3, z: -16.5 },
+      { x: 18.8, z: -16.5 }, { x: 18.8, z: -15 }, { x: 17.3, z: -13.5 }, { x: 11.3, z: -13.5 },
+      { x: 9.8, z: -15 }, { x: 5.3, z: -10.5 }, { x: 8.3, z: -13.5 }, { x: 17.3, z: -13.5 },
+      { x: 18.8, z: -15 }, { x: 18.8, z: -16.5 }, { x: 20.3, z: -16.5 }, { x: 20.3, z: -22.5 },
+      { x: 18.8, z: -24 }, { x: 18.8, z: -28.5 }, { x: 18.8, z: -22.5 }, { x: 20.3, z: -21 },
+      { x: 20.3, z: -16.5 }, { x: 18.8, z: -16.5 }, { x: 18.8, z: -15 }, { x: 17.3, z: -13.5 },
+      { x: 15.8, z: -13.5 }, { x: 14.3, z: -12 }, { x: 12.8, z: -12 }, { x: 11.3, z: -10.5 },
+      { x: 9.8, z: -10.5 }, { x: 8.3, z: -9 }, { x: 6.8, z: -9 }, { x: 5.3, z: -7.5 },
+      { x: 3.8, z: -7.5 }, { x: 2.3, z: -6 }, { x: 0.8, z: -6 },
     ] },
-    // Witchlight Camp -> Mossy Bridge -> Spider Den -> South Track
     { kind: 'road', points: [
-      { x: 1, z: -6 }, { x: -0.8, z: -4.5 }, { x: -12.8, z: -4.5 }, { x: -18.8, z: 1.5 },
-      { x: -18.8, z: 4.5 }, { x: -14.3, z: 9 }, { x: -9.8, z: 9 }, { x: -8.3, z: 10.5 },
-      { x: 5.3, z: 10.5 }, { x: 5.3, z: 9 }, { x: 5.3, z: 19.5 }, { x: 2.3, z: 24 },
-      { x: 2.3, z: 31.5 }, { x: -2.3, z: 36 }, { x: -2.3, z: 42 }, { x: -3.8, z: 43.5 },
-      { x: -17.3, z: 43.5 }, { x: -20.3, z: 46.5 }, { x: -20.3, z: 51 }, { x: -15.8, z: 55.5 },
-      { x: -9.8, z: 55.5 }, { x: -8.3, z: 57 }, { x: -6.8, z: 57 }, { x: -5.3, z: 58.5 },
-      { x: -5.3, z: 66 }, { x: -2.3, z: 69 }, { x: 0.8, z: 69 }, { x: 0.8, z: 70.5 },
-      { x: 8.3, z: 73.5 }, { x: 12.8, z: 76.5 }, { x: 14.3, z: 76.5 }, { x: 14.3, z: 79.5 },
-      { x: 26.3, z: 79.5 }, { x: 29.3, z: 82.5 }, { x: 30.8, z: 82.5 }, { x: 29.3, z: 82.5 },
-      { x: 26.3, z: 79.5 }, { x: 14.3, z: 79.5 }, { x: 14.3, z: 76.5 }, { x: 8.3, z: 66 },
-      { x: 8.3, z: 61.5 }, { x: 6.8, z: 61.5 }, { x: 6.8, z: 60 }, { x: 5.3, z: 58.5 },
-      { x: 5.3, z: 52.5 }, { x: 3.8, z: 52.5 }, { x: 3.8, z: 46.5 }, { x: 2.3, z: 45 },
-      { x: 2.3, z: 37.5 }, { x: 5.3, z: 37.5 }, { x: 6.8, z: 36 }, { x: 15.8, z: 36 },
-      { x: 17.3, z: 37.5 }, { x: 18.8, z: 37.5 }, { x: 26.3, z: 45 }, { x: 44.3, z: 64.5 },
-      { x: 44.3, z: 76.5 }, { x: 45.8, z: 78 }, { x: 48.8, z: 85.5 },
+      { x: 0.8, z: -6 }, { x: 2.3, z: -4.5 }, { x: 9.8, z: -4.5 }, { x: 15.8, z: 1.5 },
+      { x: 15.8, z: 3 }, { x: 18.8, z: 6 }, { x: 18.8, z: 18 }, { x: 23.3, z: 22.5 },
+      { x: 23.3, z: 27 }, { x: 24.8, z: 28.5 }, { x: 24.8, z: 30 }, { x: 21.8, z: 30 },
+      { x: 17.3, z: 34.5 }, { x: 17.3, z: 48 }, { x: 15.8, z: 49.5 }, { x: 15.8, z: 51 },
+      { x: 8.3, z: 58.5 }, { x: 8.3, z: 60 }, { x: 6.8, z: 60 }, { x: 8.3, z: 61.5 },
+      { x: 8.3, z: 66 }, { x: 6.8, z: 67.5 }, { x: 6.8, z: 69 }, { x: 5.3, z: 70.5 },
+      { x: 3.8, z: 70.5 }, { x: 2.3, z: 72 }, { x: 0.8, z: 72 }, { x: 11.3, z: 72 },
+      { x: 12.8, z: 70.5 }, { x: 14.3, z: 70.5 }, { x: 18.8, z: 66 }, { x: 24.8, z: 66 },
+      { x: 27.8, z: 69 }, { x: 33.8, z: 69 }, { x: 36.8, z: 72 }, { x: 38.3, z: 72 },
+      { x: 45.8, z: 79.5 }, { x: 47.3, z: 79.5 }, { x: 48.8, z: 81 }, { x: 50.3, z: 81 },
+      { x: 51.8, z: 82.5 }, { x: 53.3, z: 82.5 },
     ] },
-    // Chapel spur
     { kind: 'trail', points: [
-      { x: -40, z: -58 }, { x: -39.8, z: -60 }, { x: -38.3, z: -61.5 }, { x: -32.3, z: -61.5 },
-      { x: -27.8, z: -66 }, { x: -9.8, z: -66 }, { x: 0.8, z: -72 }, { x: 11.3, z: -72 },
-      { x: 18.8, z: -76.5 }, { x: 30.8, z: -76.5 }, { x: 32.3, z: -78 }, { x: 33.8, z: -78 },
+      { x: 0.8, z: -6 }, { x: -3.8, z: -10.5 }, { x: -5.3, z: -10.5 }, { x: -6.8, z: -12 },
+      { x: -8.3, z: -12 }, { x: -9.8, z: -13.5 }, { x: -14.3, z: -13.5 }, { x: -18.8, z: -18 },
+      { x: -27.8, z: -18 }, { x: -29.3, z: -19.5 }, { x: -29.3, z: -21 }, { x: -30.8, z: -19.5 },
+      { x: -45.8, z: -19.5 }, { x: -50.3, z: -24 }, { x: -66.8, z: -24 }, { x: -68.3, z: -25.5 },
+      { x: -93.8, z: -25.5 }, { x: -99.8, z: -31.5 }, { x: -108.8, z: -31.5 }, { x: -108.8, z: -30 },
+      { x: -111.8, z: -27 }, { x: -111.8, z: -19.5 }, { x: -113.3, z: -18 }, { x: -113.3, z: -16.5 },
     ] },
-    // Grimroot spur
     { kind: 'trail', points: [
-      { x: 48.8, z: -7.5 }, { x: 50.3, z: -9 }, { x: 50.3, z: -13.5 }, { x: 57.8, z: -21 },
-      { x: 59.3, z: -25.5 }, { x: 66.8, z: -33 }, { x: 66.8, z: -34.5 }, { x: 69.8, z: -39 },
-      { x: 69.8, z: -48 }, { x: 71.3, z: -49.5 }, { x: 71.3, z: -61.5 }, { x: 75.8, z: -64.5 },
-      { x: 81.8, z: -64.5 }, { x: 86.3, z: -67.5 }, { x: 90.8, z: -67.5 },
+      { x: 0.8, z: -6 }, { x: 6.8, z: -12 }, { x: 9.8, z: -12 }, { x: 8.3, z: -10.5 },
+      { x: 6.8, z: -10.5 }, { x: 8.3, z: -10.5 }, { x: 9.8, z: -12 }, { x: 11.3, z: -12 },
+      { x: 14.3, z: -15 }, { x: 18.8, z: -15 }, { x: 18.8, z: -19.5 }, { x: 21.8, z: -22.5 },
+      { x: 23.3, z: -22.5 }, { x: 24.8, z: -24 }, { x: 26.3, z: -24 }, { x: 24.8, z: -24 },
+      { x: 26.3, z: -24 }, { x: 29.3, z: -27 }, { x: 44.3, z: -27 }, { x: 47.3, z: -30 },
+      { x: 50.3, z: -30 }, { x: 71.3, z: -51 }, { x: 71.3, z: -61.5 }, { x: 74.3, z: -64.5 },
+      { x: 81.8, z: -64.5 }, { x: 84.8, z: -67.5 }, { x: 90.8, z: -67.5 },
     ] },
-    // Crow Hill spur
     { kind: 'trail', points: [
-      { x: -2, z: 42 }, { x: -3.8, z: 43.5 }, { x: -9.8, z: 43.5 }, { x: -11.3, z: 42 },
-      { x: -12.8, z: 42 }, { x: -17.3, z: 37.5 }, { x: -39.8, z: 37.5 }, { x: -44.3, z: 33 },
-      { x: -56.3, z: 33 }, { x: -63.8, z: 28.5 }, { x: -77.3, z: 28.5 }, { x: -78.8, z: 27 },
-      { x: -83.3, z: 25.5 },
+      { x: 0.8, z: -6 }, { x: 5.3, z: -6 }, { x: 14.3, z: -15 }, { x: 18.8, z: -15 },
+      { x: 18.8, z: -19.5 }, { x: 21.8, z: -22.5 }, { x: 33.8, z: -22.5 }, { x: 35.3, z: -24 },
+      { x: 48.8, z: -24 }, { x: 50.3, z: -25.5 }, { x: 81.8, z: -25.5 }, { x: 83.3, z: -27 },
+      { x: 84.8, z: -27 }, { x: 93.8, z: -36 }, { x: 93.8, z: -37.5 }, { x: 99.8, z: -43.5 },
+      { x: 101.3, z: -43.5 }, { x: 102.8, z: -45 }, { x: 104.3, z: -45 }, { x: 105.8, z: -46.5 },
+      { x: 107.3, z: -46.5 },
     ] },
-    // Briar Camp spur
     { kind: 'trail', points: [
-      { x: 2, z: 26 }, { x: 3.8, z: 27 }, { x: 15.8, z: 27 }, { x: 17.3, z: 28.5 },
-      { x: 36.8, z: 28.5 }, { x: 41.3, z: 31.5 }, { x: 47.3, z: 31.5 }, { x: 50.3, z: 34.5 },
+      { x: 24.8, z: 30 }, { x: 26.3, z: 28.5 }, { x: 54.8, z: 28.5 }, { x: 56.3, z: 27 },
+      { x: 57.8, z: 27 }, { x: 59.3, z: 28.5 }, { x: 60.8, z: 28.5 }, { x: 63.8, z: 31.5 },
       { x: 63.8, z: 34.5 },
     ] },
-    // Fen causeway
     { kind: 'trail', points: [
-      { x: 63, z: 35 }, { x: 66.8, z: 31.5 }, { x: 80.3, z: 31.5 }, { x: 80.3, z: 22.5 },
-      { x: 77.3, z: 22.5 }, { x: 80.3, z: 18 }, { x: 80.3, z: 13.5 }, { x: 81.8, z: 13.5 },
-      { x: 81.8, z: 7.5 }, { x: 87.8, z: 1.5 }, { x: 87.8, z: -1.5 }, { x: 89.3, z: -3 },
-      { x: 89.3, z: -9 },
+      { x: 63.8, z: 34.5 }, { x: 68.3, z: 30 }, { x: 71.3, z: 30 }, { x: 72.8, z: 31.5 },
+      { x: 80.3, z: 31.5 }, { x: 80.3, z: 28.5 }, { x: 81.8, z: 27 }, { x: 81.8, z: 25.5 },
+      { x: 83.3, z: 24 }, { x: 83.3, z: 22.5 }, { x: 83.3, z: 28.5 }, { x: 84.8, z: 30 },
+      { x: 84.8, z: 34.5 }, { x: 86.3, z: 36 }, { x: 104.3, z: 36 }, { x: 104.3, z: 24 },
+      { x: 102.8, z: 22.5 }, { x: 93.8, z: 22.5 }, { x: 95.3, z: 22.5 }, { x: 95.3, z: 21 },
+      { x: 96.8, z: 21 }, { x: 98.3, z: 22.5 }, { x: 101.3, z: 22.5 }, { x: 102.8, z: 21 },
+      { x: 102.8, z: 15 }, { x: 101.3, z: 13.5 }, { x: 96.8, z: 13.5 }, { x: 96.8, z: 12 },
+      { x: 95.3, z: 12 }, { x: 95.3, z: 10.5 }, { x: 93.8, z: 10.5 }, { x: 93.8, z: 7.5 },
+      { x: 90.8, z: 4.5 },
     ] },
-    // South-western sweep to Hearthstead
     { kind: 'trail', points: [
-      { x: -84, z: 26 }, { x: -81.8, z: 27 }, { x: -66.8, z: 42 }, { x: -65.3, z: 42 },
-      { x: -63.8, z: 43.5 }, { x: -60.8, z: 43.5 }, { x: -59.3, z: 45 }, { x: -51.8, z: 48 },
-      { x: -48.8, z: 51 }, { x: -45.8, z: 51 }, { x: -39.8, z: 55.5 }, { x: -27.8, z: 55.5 },
-      { x: -24.8, z: 58.5 }, { x: -20.3, z: 58.5 }, { x: -18.8, z: 57 }, { x: -14.3, z: 55.5 },
+      { x: 0.8, z: 72 }, { x: -0.8, z: 70.5 }, { x: -2.3, z: 70.5 }, { x: -5.3, z: 67.5 },
+      { x: -6.8, z: 67.5 }, { x: -11.3, z: 63 }, { x: -12.8, z: 63 }, { x: -14.3, z: 61.5 },
+      { x: -15.8, z: 61.5 }, { x: -18.8, z: 58.5 }, { x: -26.3, z: 58.5 }, { x: -27.8, z: 57 },
+      { x: -38.3, z: 57 }, { x: -41.3, z: 54 }, { x: -42.8, z: 54 }, { x: -62.3, z: 34.5 },
+      { x: -65.3, z: 34.5 }, { x: -66.8, z: 33 }, { x: -68.3, z: 33 }, { x: -69.8, z: 31.5 },
+      { x: -71.3, z: 31.5 }, { x: -72.8, z: 30 }, { x: -74.3, z: 30 }, { x: -75.8, z: 28.5 },
+      { x: -77.3, z: 28.5 }, { x: -78.8, z: 27 }, { x: -80.3, z: 27 }, { x: -81.8, z: 25.5 },
+      { x: -83.3, z: 25.5 },
+    ] },
+    { kind: 'trail', points: [
+      { x: -83.3, z: 25.5 }, { x: -83.3, z: 42 }, { x: -78.8, z: 46.5 }, { x: -78.8, z: 58.5 },
+      { x: -77.3, z: 60 },
+    ] },
+    { kind: 'trail', points: [
+      { x: -87.8, z: -24 }, { x: -92.3, z: -24 }, { x: -99.8, z: -31.5 }, { x: -108.8, z: -31.5 },
+      { x: -111.8, z: -28.5 }, { x: -111.8, z: -24 }, { x: -122.3, z: -13.5 },
+    ] },
+    { kind: 'trail', points: [
+      { x: -47.3, z: -97.5 }, { x: -45.8, z: -96 }, { x: -45.8, z: -91.5 }, { x: -39.8, z: -85.5 },
+      { x: -39.8, z: -78 }, { x: -38.3, z: -76.5 }, { x: -38.3, z: -64.5 }, { x: -36.8, z: -63 },
+      { x: -39.8, z: -60 }, { x: -39.8, z: -58.5 }, { x: -39.8, z: -60 }, { x: -38.3, z: -61.5 },
+      { x: -30.8, z: -61.5 }, { x: -24.8, z: -55.5 }, { x: -21.8, z: -55.5 }, { x: -8.3, z: -42 },
+      { x: -3.8, z: -42 }, { x: -2.3, z: -40.5 }, { x: 0.8, z: -40.5 }, { x: 8.3, z: -33 },
+      { x: 8.3, z: -31.5 }, { x: 6.8, z: -30 }, { x: 6.8, z: -21 }, { x: 5.3, z: -19.5 },
+      { x: 0.8, z: -19.5 }, { x: -0.8, z: -18 }, { x: -3.8, z: -18 }, { x: -5.3, z: -19.5 },
+      { x: -6.8, z: -19.5 }, { x: -8.3, z: -21 }, { x: -9.8, z: -21 }, { x: -11.3, z: -22.5 },
+      { x: -14.3, z: -22.5 }, { x: -17.3, z: -25.5 }, { x: -18.8, z: -25.5 }, { x: -20.3, z: -27 },
+      { x: -21.8, z: -27 }, { x: -39.8, z: -45 }, { x: -41.3, z: -43.5 }, { x: -41.3, z: -42 },
+      { x: -42.8, z: -40.5 }, { x: -42.8, z: -39 }, { x: -44.3, z: -37.5 }, { x: -45.8, z: -37.5 },
+      { x: -47.3, z: -36 }, { x: -47.3, z: -27 },
     ] },
   ],
 
-  // No authored rivers. The blueprint's water is all in the traced terrain
-  // now -- carrying a second, hand-drawn river system on top of it put water
-  // where the drawing has none. (The Killing Fields still has its own.)
-  rivers: [],
+  // The channels, traced out of the blueprint by tools/trace_rivers.py and
+  // trimmed where they run into open water -- past that point the drawing is
+  // showing a lake or the fen, not a channel, and a bridge over it would be a
+  // hundred metres of deck.
+  rivers: [
+    { name: 'Blackroot Creek', width: 6,
+      points: [
+        { x: -25.3, z: -45.3 }, { x: -23.4, z: -44.5 }, { x: -21.4, z: -43.7 }, { x: -17.5, z: -37.1 },
+        { x: -14.7, z: -33.7 }, { x: -10.7, z: -30.4 }, { x: -5.3, z: -28.4 }, { x: -0.2, z: -26.5 },
+        { x: 2.9, z: -23.5 }, { x: 10.2, z: -20.8 }, { x: 12.8, z: -19.3 }, { x: 15.1, z: -17.8 },
+        { x: 23, z: -14 }, { x: 26.7, z: -11.5 }, { x: 30.1, z: -8.5 }, { x: 34, z: -6.1 },
+        { x: 39.1, z: -6.7 }, { x: 43.3, z: -5.3 }, { x: 49.8, z: -4.9 }, { x: 55.4, z: -6.8 },
+        { x: 59.3, z: -4.6 }, { x: 64.3, z: -6.7 }, { x: 68.4, z: -5.6 },
+      ],
+      // Measured against the terrain, so the deck reaches dry land at both ends.
+      bridges: [ { x: 12.8, z: -18, span: 9 }, ],
+    },
+    { name: 'Crowwater', width: 5,
+      points: [
+        { x: -49.4, z: 24 }, { x: -45.6, z: 26 }, { x: -40.3, z: 28.7 }, { x: -36.5, z: 31.9 },
+        { x: -30.5, z: 41 }, { x: -28.3, z: 42.9 }, { x: -25.6, z: 44.7 }, { x: -16.7, z: 49.1 },
+        { x: -13.6, z: 50.1 }, { x: -10, z: 50.1 }, { x: -1.1, z: 54.6 }, { x: -0.2, z: 56.3 },
+        { x: 0.6, z: 57.9 },
+      ] },
+    { name: 'Fenrace', width: 5,
+      points: [
+        { x: 82.4, z: 12.8 }, { x: 84.5, z: 14.5 }, { x: 89.7, z: 16.6 },
+      ] },
+    { name: 'Denbrook', width: 5,
+      points: [
+        { x: 46.6, z: 94.1 }, { x: 44, z: 90.6 }, { x: 40.5, z: 86.2 }, { x: 36.5, z: 81.9 },
+        { x: 32.2, z: 77.9 }, { x: 28.4, z: 75.8 },
+      ] },
+  ],
 
 
   // ------------------------------------------------------------------
@@ -531,7 +588,7 @@ export const darkwoods = {
     { id: 'camp_lantern_6', tag: 'lantern', toggle: true, name: 'Camp Lantern', m: 'props/Camp_Lantern', x: -4.9, z: -5.1, s: 1.35, c: 0.5, reach: 3.0, verb: 'Light', verbOff: 'Put out', examine: 'A lantern on a pole at the edge of the camp.' },
     // Warden Rowan's trail lanterns. Dark until someone crushes glowcaps into
     // the oil — the first thing the outpost asks of a newcomer.
-    { id: 'lantern_east',  tag: 'lantern', name: 'Eastern Trail Lantern',  m: 'props/Camp_Lantern', x: 27.0,  z: -4.0, s: 1.6, c: 0.5, once: true,
+    { id: 'lantern_east',  tag: 'lantern', name: 'Eastern Trail Lantern',  m: 'props/Camp_Lantern', x: 23.3,  z: -0.7, s: 1.6, c: 0.5, once: true,
       quest: 'dw_lanterns', need: { item: 'Glowcap', count: 2 }, verb: 'Light',
       text: 'You crush the Glowcaps into the lantern oil. The lantern flickers to life.',
       idleText: 'The lantern is dark. Warden Rowan would know what it needs.' },
@@ -597,7 +654,7 @@ export const darkwoods = {
       text: 'The mushroom releases a foul green cloud. Wrong mushroom.' })),
     // Glowcaps: they grow in the shade of the old trees around the outpost and
     // come back in their own time, so the road can always be relit.
-    ...[[-6.4, -3.0], [-11.0, -4.0], [-5.0, -14.0], [7.0, -14.0], [13.0, -6.0], [22.3, -6.7], [-15.0, 10.0], [3.0, 8.0], [21.0, -12.0], [-9.0, -18.0]]
+    ...[[-6.4, -3.0], [-11.0, -4.0], [-5.0, -14.0], [7.0, -14.0], [13.0, -6.0], [18.6, -3.4], [-15.0, 10.0], [3.0, 8.0], [15.9, -6.5], [-9.0, -18.0]]
       .map(([x, z], i) => ({ id: 'glowcap_' + i, tag: 'glowcap', name: 'Glowcaps', m: 'cave/Luminous_Mushrooms', x, z, s: 2.6, c: 0, reach: 3,
         verb: 'Gather', gives: { item: 'Glowcap' }, respawn: 45, light: 0x7fe8c8,
         text: 'The mushroom gives off a faint blue-green glow.' })),
@@ -624,7 +681,7 @@ export const darkwoods = {
   // Campfire cooking stations. Stand near one to cook raw meat/fish.
   campfires: [
     { id: 'cf_farm',    x: -51.5,  z: 54.5 },  // Hearthstead's yard fire (early cooking)
-    { id: 'cf_camp',    x: -12, z: 54 },  // the Wayside Camp, above the Spider Den
+    { id: 'cf_camp',    x: -17.1, z: 59.5 },  // the Wayside Camp, above the Spider Den
     { id: 'cf_shrine',  x: 37, z: -75 },  // in the lee of the Fallen Chapel
     { id: 'cf_outpost', x: 1,  z: -6 },   // Witchlight Camp -- the warden's fire
   ],
@@ -669,37 +726,37 @@ export const darkwoods = {
   // ---------------------------------------------------------------------
   props: [
       // Four tents in an arc on the high side, each opening onto the fire.
-      { s: 1.45, m: 'Small_Canvas_Tent', x: 2.07, z: -4.41, yaw: 3.58, c: 1.0 },
-      { s: 1.45, m: 'Small_Canvas_Tent', x: 4.5, z: -7.06, yaw: 4.36, c: 1.0 },
-      { s: 1.45, m: 'Small_Canvas_Tent', x: 4.34, z: -10.66, yaw: 5.15, c: 1.0 },
-      { s: 1.45, m: 'Small_Canvas_Tent', x: 1.69, z: -13.09, yaw: 5.93, c: 1.0 },
+      { s: 1.45, m: 'Small_Canvas_Tent', x: -0.41, z: -4.41, yaw: 3.58, c: 1.0 },
+      { s: 1.45, m: 'Small_Canvas_Tent', x: 2.02, z: -7.06, yaw: 4.36, c: 1.0 },
+      { s: 1.45, m: 'Small_Canvas_Tent', x: 1.86, z: -10.66, yaw: 5.15, c: 1.0 },
+      { s: 1.45, m: 'Small_Canvas_Tent', x: -0.79, z: -13.09, yaw: 5.93, c: 1.0 },
       // A bedroll inside each tent, laid along it on the same bearing, head to
       // the back wall.
-      { s: 1.25, m: 'Bedroll', x: 2.16, z: -4.22, yaw: 3.58 },
-      { s: 1.25, m: 'Bedroll', x: 4.7, z: -6.99, yaw: 4.36 },
-      { s: 1.25, m: 'Bedroll', x: 4.53, z: -10.75, yaw: 5.15 },
-      { s: 1.25, m: 'Bedroll', x: 1.76, z: -13.29, yaw: 5.93 },
+      { s: 1.25, m: 'Bedroll', x: -0.32, z: -4.22, yaw: 3.58 },
+      { s: 1.25, m: 'Bedroll', x: 2.22, z: -6.99, yaw: 4.36 },
+      { s: 1.25, m: 'Bedroll', x: 2.05, z: -10.75, yaw: 5.15 },
+      { s: 1.25, m: 'Bedroll', x: -0.72, z: -13.29, yaw: 5.93 },
       // The fire: a pot over it and stools pulled up round it.
-      { m: 'Cooking_Tripod', x: 0.08, z: -8.67, yaw: 0.00, c: 0.35 },
-      { m: 'Camp_Stool', x: 0.79, z: -7.45, yaw: 3.67 },
-      { m: 'Camp_Stool', x: 0.79, z: -9.89, yaw: 5.76 },
-      { m: 'Camp_Stool', x: -1.33, z: -8.67, yaw: 1.57 },
+      { m: 'Cooking_Tripod', x: -2.4, z: -8.67, yaw: 0.00, c: 0.35 },
+      { m: 'Camp_Stool', x: -1.69, z: -7.45, yaw: 3.67 },
+      { m: 'Camp_Stool', x: -1.69, z: -9.89, yaw: 5.76 },
+      { m: 'Camp_Stool', x: -3.81, z: -8.67, yaw: 1.57 },
       // Stores under the pavilion on the sheltered side, crates stacked against it.
-      { s: 1.35, m: 'Supply_Pavilion', x: -4.07, z: -10.18, yaw: 1.22 },
-      { m: 'Supply_Crate', x: -3.14, z: -10.84, yaw: 0.98, c: 0.5 },
-      { m: 'Supply_Crate', x: -4.78, z: -11.04, yaw: 1.12, c: 0.5 },
-      { m: 'Supply_Crate', x: -5.33, z: -9.82, yaw: 1.36, c: 0.5 },
-      { m: 'Supply_Crate', x: -3.91, z: -8.95, yaw: 1.50, c: 0.5 },
-      { m: 'Water_Barrel', x: -3.5, z: -11.9, yaw: 0.84, c: 0.4 },
-      { m: 'Water_Barrel', x: -4.98, z: -8.49, yaw: 1.61, c: 0.4 },
+      { s: 1.35, m: 'Supply_Pavilion', x: -6.55, z: -10.18, yaw: 1.22 },
+      { m: 'Supply_Crate', x: -5.62, z: -10.84, yaw: 0.98, c: 0.5 },
+      { m: 'Supply_Crate', x: -7.26, z: -11.04, yaw: 1.12, c: 0.5 },
+      { m: 'Supply_Crate', x: -7.81, z: -9.82, yaw: 1.36, c: 0.5 },
+      { m: 'Supply_Crate', x: -6.39, z: -8.95, yaw: 1.50, c: 0.5 },
+      { m: 'Water_Barrel', x: -5.98, z: -11.9, yaw: 0.84, c: 0.4 },
+      { m: 'Water_Barrel', x: -7.46, z: -8.49, yaw: 1.61, c: 0.4 },
       // A rough fence across the two open approaches, and a sign on the road.
-      { m: 'Rough_Fence', x: -1.2, z: -15.91, yaw: 0.17, c: 0.8 },
-      { m: 'Rough_Fence', x: -3.03, z: -15.33, yaw: 0.44, c: 0.8 },
-      { m: 'Rough_Fence', x: -4.65, z: -14.3, yaw: 0.70, c: 0.8 },
-      { m: 'Rough_Fence', x: -6.29, z: -4.99, yaw: 2.09, c: 0.8 },
-      { m: 'Rough_Fence', x: -5.12, z: -3.47, yaw: 2.36, c: 0.8 },
-      { m: 'Rough_Fence', x: -3.6, z: -2.3, yaw: 2.62, c: 0.8 },
-      { m: 'Warning_Sign', x: 0.08, z: -16.2, yaw: 0.00, c: 0.25 },
+      { m: 'Rough_Fence', x: -3.68, z: -15.91, yaw: 0.17, c: 0.8 },
+      { m: 'Rough_Fence', x: -5.51, z: -15.33, yaw: 0.44, c: 0.8 },
+      { m: 'Rough_Fence', x: -7.13, z: -14.3, yaw: 0.70, c: 0.8 },
+      { m: 'Rough_Fence', x: -8.77, z: -4.99, yaw: 2.09, c: 0.8 },
+      { m: 'Rough_Fence', x: -7.6, z: -3.47, yaw: 2.36, c: 0.8 },
+      { m: 'Rough_Fence', x: -6.08, z: -2.3, yaw: 2.62, c: 0.8 },
+      { m: 'Warning_Sign', x: -2.4, z: -16.2, yaw: 0.00, c: 0.25 },
   ],
   scatter: [
     // Surface ore veins (small mineable-node collision).
@@ -846,11 +903,11 @@ export const darkwoods = {
     { type: 'goblin',  count: 4, cx: -34, cz: -22, r: 5,  level: 1, expect: 2, fixed: true, hint: 'Goblin camp (core)' },
     { type: 'goblin',  count: 4, cx: -34, cz: -22, r: 22, level: 2, expect: 2, roam: 26, fixed: true, hint: 'Goblin camp (roamers)' },
     // --- Scavengers picking over the drier hummocks of Murkfen ---
-    { type: 'goblin_scavenger', count: 3, cx: 88, cz: 4, r: 5,  level: 2, expect: 2, fixed: true, hint: 'Murkfen scavengers (core)' },
-    { type: 'goblin_scavenger', count: 3, cx: 88, cz: 4, r: 20, level: 2, expect: 3, roam: 24, fixed: true, hint: 'Murkfen scavengers (roamers)' },
+    { type: 'goblin_scavenger', count: 3, cx: 76.7, cz: -15.5, r: 5,  level: 2, expect: 2, fixed: true, hint: 'Murkfen scavengers (core)' },
+    { type: 'goblin_scavenger', count: 3, cx: 76.7, cz: -15.5, r: 20, level: 2, expect: 3, roam: 24, fixed: true, hint: 'Murkfen scavengers (roamers)' },
     // --- Bandits in the woods between Crow Hill and the south road ---
-    { type: 'bandit',  count: 4, cx: -40, cz: 34, r: 6,  level: 3, expect: 4, fixed: true, hint: 'Bandit hideout (core)' },
-    { type: 'bandit',  count: 3, cx: -40, cz: 34, r: 20, level: 4, expect: 4, roam: 24, fixed: true, hint: 'Bandit hideout (roamers)' },
+    { type: 'bandit',  count: 4, cx: -44.3, cz: 43, r: 6,  level: 3, expect: 4, fixed: true, hint: 'Bandit hideout (core)' },
+    { type: 'bandit',  count: 3, cx: -44.3, cz: 43, r: 20, level: 4, expect: 4, roam: 24, fixed: true, hint: 'Bandit hideout (roamers)' },
     // --- Goblin miners have jumped Dorn's claim in the Root-Choked Ravine ---
     { type: 'goblin_miner', count: 4, cx: -114, cz: -16, r: 6,  level: 4, expect: 5, fixed: true, hint: 'Ravine dig (core)' },
     { type: 'goblin_miner', count: 2, cx: -114, cz: -16, r: 16, level: 4, expect: 5, roam: 20, fixed: true, hint: 'Ravine dig (roamers)' },
@@ -864,8 +921,8 @@ export const darkwoods = {
     // The band that jumped the supply cart, still on the Grimroot spur with it.
     { type: 'goblin', count: 6, cx: 56.2, cz: -28.7, r: 10, level: 3, expect: 3, fixed: true, hint: 'Supply road raiders (Woodfang goblins)' },
     // --- Hill ogres squatting on the South Track approach ---
-    { type: 'guard',   count: 3, cx: 45.3, cz: 77.2, r: 8,  level: 6, expect: 7, fixed: true, hint: 'Ogre hollow (core)' },
-    { type: 'guard',   count: 1, cx: 45.3, cz: 77.2, r: 20, level: 5, expect: 6, roam: 24, fixed: true, hint: 'Ogre hollow (roamer)' },
+    { type: 'guard',   count: 3, cx: 46.5, cz: 75, r: 8,  level: 6, expect: 7, fixed: true, hint: 'Ogre hollow (core)' },
+    { type: 'guard',   count: 1, cx: 46.5, cz: 75, r: 20, level: 5, expect: 6, roam: 24, fixed: true, hint: 'Ogre hollow (roamer)' },
   ],
 
   // Two low-level optional elites -- the zone's capstones, nothing harder.

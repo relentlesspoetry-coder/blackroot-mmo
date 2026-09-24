@@ -1512,26 +1512,56 @@ function terrainAt(x, z) {
   if (gz < 0 || gz >= t.h || gx < 0 || gx >= t.w) return T_OFF;
   return t.rows[gz][gx] || T_OFF;
 }
-// Smooth 0..1 fields sampled off the grid, so the ground rolls between cells
-// instead of stepping. Bilinear over the four surrounding cell centres.
-function terrainField(x, z, f) {
-  const t = zone && zone.terrain;
-  if (!t) return 0;
-  const gx = (x - t.minX) / t.cell - 0.5, gz = (z - t.minZ) / t.cell - 0.5;
-  const x0 = Math.floor(gx), z0 = Math.floor(gz), tx = gx - x0, tz = gz - z0;
-  const at = (ix, iz) => {
-    if (iz < 0 || iz >= t.h || ix < 0 || ix >= t.w) return f(T_OFF);
-    return f(t.rows[iz][ix] || T_OFF);
-  };
+// Smooth 0..1 fields off the grid. A cell is 2.5 m, so interpolating over one
+// of them drops the ground 2.4 units in a single step -- a wall, which is what
+// made the banks terrace and the bridges hang. Each field is box-blurred over
+// a few cells ONCE when the zone loads, then sampled bilinear, so a shore
+// falls away over ten metres instead of two and a half.
+const FIELD_BLUR = { deep: 3, wet: 3, rock: 3, dense: 2, open: 2 };
+const FIELD_OF = {
+  deep:  c => c === T_DEEP ? 1 : 0,
+  wet:   c => (c === T_DEEP || c === T_MARSH) ? 1 : 0,
+  rock:  c => c === T_ROCK ? 1 : 0,
+  dense: c => c === T_DENSE ? 1 : (c === T_WOOD ? 0.45 : 0),
+  open:  c => c === T_OPEN ? 1 : 0,
+};
+let fields = null;
+function buildTerrainFields() {
+  fields = null;
+  const t = zone && zone.terrain; if (!t) return;
+  fields = {};
+  for (const [name, f] of Object.entries(FIELD_OF)) {
+    const raw = new Float32Array(t.w * t.h);
+    for (let gz = 0; gz < t.h; gz++) for (let gx = 0; gx < t.w; gx++) raw[gz * t.w + gx] = f(t.rows[gz][gx] || T_OFF);
+    // separable box blur, twice, which is close enough to a gaussian
+    const R = FIELD_BLUR[name], tmp = new Float32Array(t.w * t.h), out = new Float32Array(t.w * t.h);
+    const pass = (src, dst, horiz) => {
+      for (let gz = 0; gz < t.h; gz++) for (let gx = 0; gx < t.w; gx++) {
+        let sum = 0, n = 0;
+        for (let d = -R; d <= R; d++) {
+          const ix = horiz ? gx + d : gx, iz = horiz ? gz : gz + d;
+          if (ix < 0 || ix >= t.w || iz < 0 || iz >= t.h) continue;
+          sum += src[iz * t.w + ix]; n++;
+        }
+        dst[gz * t.w + gx] = n ? sum / n : 0;
+      }
+    };
+    pass(raw, tmp, true); pass(tmp, out, false);
+    pass(out, tmp, true); pass(tmp, out, false);
+    fields[name] = out;
+  }
+}
+function terrainField(x, z, name) {
+  const t = zone && zone.terrain; if (!t) return 0;
+  if (!fields) buildTerrainFields();
+  const g = fields && fields[name]; if (!g) return 0;
+  const fx = (x - t.minX) / t.cell - 0.5, fz = (z - t.minZ) / t.cell - 0.5;
+  const x0 = Math.floor(fx), z0 = Math.floor(fz), tx = fx - x0, tz = fz - z0;
+  const at = (ix, iz) => (iz < 0 || iz >= t.h || ix < 0 || ix >= t.w) ? 0 : g[iz * t.w + ix];
   const a = at(x0, z0) * (1 - tx) + at(x0 + 1, z0) * tx;
   const b = at(x0, z0 + 1) * (1 - tx) + at(x0 + 1, z0 + 1) * tx;
   return a * (1 - tz) + b * tz;
 }
-const fDeep  = c => c === T_DEEP ? 1 : 0;
-const fWet   = c => (c === T_DEEP || c === T_MARSH) ? 1 : 0;
-const fRock  = c => c === T_ROCK ? 1 : 0;
-const fDense = c => c === T_DENSE ? 1 : (c === T_WOOD ? 0.45 : 0);
-const fOpen  = c => c === T_OPEN ? 1 : 0;
 
 // Carve for ONE river.
 function riverHeightAt1(river, x, z) {
@@ -1561,13 +1591,13 @@ function landHeight(x, z) {
   return h;
 }
 // Rock stands above the land it sits on; water cuts down through it.
-const ROCK_RISE = 15, WATER_CUT = 2.4, MARSH_CUT = 0.9;
+const ROCK_RISE = 17, WATER_CUT = 3.0, MARSH_CUT = 1.0;
 function terrainHeight(x, z) {
   if (!zone || zone.enclosed) return 0;
-  const wet = terrainField(x, z, fWet), rock = terrainField(x, z, fRock);
+  const wet = terrainField(x, z, 'wet'), rock = terrainField(x, z, 'rock');
   // Hills roll under everything; rock stands on them; water cuts through.
   let y = landHeight(x, z) * (1 - wet) + ROCK_RISE * rock * rock;
-  const deep = terrainField(x, z, fDeep);
+  const deep = terrainField(x, z, 'deep');
   y -= WATER_CUT * deep + MARSH_CUT * (wet - deep);
   // Rivers are still polylines -- they are too narrow to trace as cells.
   for (const r of worldRivers()) { const h = riverHeightAt1(r, x, z); if (h < 0 && h < y) y = h; }
@@ -1794,6 +1824,7 @@ function updateSky(dt) {
 // and on every zone transition.
 function loadZone(zdata) {
   zone = zdata; lastRegionId = null;
+  buildTerrainFields();          // blur the traced classes once, for this zone
   // Sit the camera behind the character's spawn facing. Without this it
   // defaulted to yaw 0 and every new player spawned staring at the north
   // boundary wall with the entire zone behind them.
@@ -2687,8 +2718,8 @@ function buildLowPolyGround(W, D, cx, cz) {
     const hueN = fbm2(wx * 2.2, wz * 2.2, 11), ligN = fbm2((wx + 311) * 2.2, (wz - 97) * 2.2, 23), satN = fbm2((wx - 173) * 2.2, (wz + 421) * 2.2, 37);
     let onBed = false;
     for (const r of worldRivers()) { if (distToPolyline(wx, wz, r.points) < riverWaterHalf(r.width) + 0.5) { onBed = true; break; } }
-    if (!onBed && terrainField(wx, wz, fWet) > 0.45) onBed = true;
-    const rock = terrainField(wx, wz, fRock);
+    if (!onBed && terrainField(wx, wz, 'wet') > 0.45) onBed = true;
+    const rock = terrainField(wx, wz, 'rock');
     if (rock > 0.02) {                                                     // bare stone on the walls
       const g = 0.30 + ligN * 0.16 + (hueN - 0.5) * 0.05;
       c.setRGB(g * 1.02, g, g * 0.96);
@@ -2700,8 +2731,8 @@ function buildLowPolyGround(W, D, cx, cz) {
       // wood is cooler and darker, which is the blueprint's two greens.
       // Straight off the traced grid: 1 where the drawing shows open
       // "traversable area", 1 where it shows dense forest.
-      const open = terrainField(wx, wz, fOpen);
-      const deep = terrainField(wx, wz, c => c === T_DENSE ? 1 : 0);
+      const open = terrainField(wx, wz, 'open');
+      const deep = terrainField(wx, wz, 'dense');
       const hue = 0.23 + hueN * 0.16 + deep * 0.05 - open * 0.03;
       const sat = 0.30 + satN * 0.34 - deep * 0.05 + open * 0.06;
       const lig = 0.13 + ligN * 0.2 + open * 0.07 - deep * 0.05;
@@ -2768,7 +2799,10 @@ function buildDetails() {
     !inFarmYard(x, z, 2) &&
     worldPaths().every(p => distToPolyline(x, z, p) >= pathClear) &&
     worldRivers().every(r => distToPolyline(x, z, r.points) >= riverWaterHalf(r.width) + RIVER_LIP) &&
-    terrainField(x, z, fWet) < 0.3 && terrainField(x, z, fRock) < 0.3 &&
+    // The raw cell, not the blurred field: the blur reaches ~25 m past the
+    // water and the rock (it exists to round off HEIGHT), and testing it here
+    // stripped the grass and the undergrowth off a third of the map.
+    !'WwR '.includes(terrainAt(x, z)) &&
     !zone.pois.some(p => Math.hypot(x - p.x, z - p.z) < Math.max(3, clearRadius(p) - 3)) &&
     !zone.rocks.some(o => Math.hypot(x - o.x, z - o.z) < o.r + 1);
   const gen = (n, pathClear = 2.5) => {
@@ -2853,7 +2887,10 @@ function buildGrass() {
   const ok = (x, z) => (!zone.boundary || inBoundary(x, z)) &&
     !inHouse(x, z) && !inField(x, z) && !inMine(x, z) &&
     worldRivers().every(r => distToPolyline(x, z, r.points) >= riverWaterHalf(r.width) + RIVER_LIP) &&
-    terrainField(x, z, fWet) < 0.3 && terrainField(x, z, fRock) < 0.3 &&
+    // The raw cell, not the blurred field: the blur reaches ~25 m past the
+    // water and the rock (it exists to round off HEIGHT), and testing it here
+    // stripped the grass and the undergrowth off a third of the map.
+    !'WwR '.includes(terrainAt(x, z)) &&
     !zone.rocks.some(o => Math.hypot(x - o.x, z - o.z) < o.r);
   const onPathSkip = (x, z) => (worldPaths().some(p => distToPolyline(x, z, p) < 2.2) || (zone.trails || []).some(t => distToPolyline(x, z, t) < 1.5)) && rng() > 0.12;
   const spots = [];
@@ -2879,7 +2916,7 @@ function buildGrass() {
   chunkedInstances(geo, mat, spots, (p, i, im) => {
     q.setFromAxisAngle(UP, rng() * 6.28);
     const s = 0.45 + rng() * 0.5; sc.set(s, 0.5 + rng() * 0.55, s);
-    mtx.compose(new THREE.Vector3(p.x, 0, p.z), q, sc); im.setMatrixAt(i, mtx);
+    mtx.compose(new THREE.Vector3(p.x, groundY(p.x, p.z), p.z), q, sc); im.setMatrixAt(i, mtx);
     // every blade a different gradient of green (yellow-green -> deep green);
     // multiplied by the baked dark-base/bright-tip vertex gradient
     col.setHSL(0.24 + rng() * 0.13, 0.5 + rng() * 0.35, 0.4 + rng() * 0.22); im.setColorAt(i, col);
@@ -3116,7 +3153,10 @@ function instanceModels(placements, speciesList, targetH, baseScale, bark) {
       chunkedInstances(part.geo, part.mat, list, (t, i, im) => {
         q.setFromAxisAngle(UP, t.r || 0);
         const s = (t.s || 1) * baseScale; sc.set(s, s, s);
-        mtx.compose(new THREE.Vector3(t.x, 0, t.z), q, sc); im.setMatrixAt(i, mtx);
+        // Stand it on the ground. This was 0, which was right while the terrain
+        // was a flat sheet and buries a tree to its crown now that it is not.
+        if (t._y == null) t._y = groundY(t.x, t.z);
+        mtx.compose(new THREE.Vector3(t.x, t._y, t.z), q, sc); im.setMatrixAt(i, mtx);
       });
     }
   }
@@ -3487,7 +3527,7 @@ function placeInstances(list, yOf) {
 }
 function buildScatter() {
   oreMeshes.length = 0;
-  placeInstances(zone.scatter || [], () => 0);
+  placeInstances(zone.scatter || [], o => groundY(o.x, o.z));   // stand it on the terrain, not on Y=0
   // Hanging pieces are modelled downward from their origin, so they mount at
   // the ceiling rather than the floor.
   const ceil = (zone.ceilingY || 13) - 0.1;
@@ -3853,7 +3893,7 @@ function buildField() {
     const m = crops[i % crops.length], n = Math.floor((f.w - 2) / 1.5);
     for (let j = 0; j < n; j++) plants.push({ m, x: f.x - f.w / 2 + 1.5 + j * 1.5, z, r: Math.random() * 6.28, s: 0.7 + Math.random() * 0.35 });
   }
-  placeInstances(plants, () => 0.17);
+  placeInstances(plants, o => groundY(o.x, o.z) + 0.17);
 }
 
 let farmGate = null;       // { mesh, hinge }
