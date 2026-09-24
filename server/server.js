@@ -26,7 +26,7 @@ import { isBardSpell, checkBardCast, castBard, spendSongCharges, songAmp, atkSpe
   bardMonsterDmgMult, bardMonsterDefMult, bardMonsterTakenMult, bardMonsterSpeedMult, bardMonsterAtkSpeedMult, stepSongs } from './bard.js';
 import {
   dist2, closestOnPolyline, mulberry32, pointInPoly, polyCentroid, generateTrees, generateScatter, generateHanging,
-  mergeOutlines, roughenOutline, generateEdgeForest, inHouse, riversOf, bridgesOf, pathsOf, closestOnPaths, lakesOf, lakeRing, lakeEdgeDist, cliffsOf, cliffFoot, cliffDist,
+  mergeOutlines, roughenOutline, generateEdgeForest, inHouse, riversOf, bridgesOf, pathsOf, pathSpecsOf, closestOnPaths, lakesOf, lakeRing, lakeEdgeDist, cliffsOf, cliffFoot, cliffDist,
   caveOutline,
 } from './worldgen.js';
 import {
@@ -215,7 +215,7 @@ function buildSeamlessWorld() {
   const cat = (k) => { w[k] = (w[k] || []).concat(kf[k] || []); };
   ['pois', 'npcs', 'rocks', 'pools', 'chests', 'hazards', 'spawns', 'elites', 'objects', 'props', 'dirt', 'trees', '_trees', '_scatter'].forEach(cat);
   // Multiple paths/rivers now — keep each so the client can draw them all.
-  w.paths = [...pathsOf(w), ...pathsOf(kf)];
+  w.paths = [...pathSpecsOf(w), ...pathSpecsOf(kf)];
   w.rivers = [...riversOf(w), ...riversOf(kf)];
   w.lakes = [...lakesOf(w), ...lakesOf(kf)];
   w.cliffs = [...cliffsOf(w), ...cliffsOf(kf)];
@@ -3538,7 +3538,7 @@ function zoneForClient(zone) {
   return {
     id: zone.id, name: zone.name, subtitle: zone.subtitle, spawn: zone.spawn,
     bounds: zone.bounds, boundary: zone.boundary, pois: zone.pois, path: zone.path, river: zone.river,
-    paths: pathsOf(zone), rivers: riversOf(zone), lakes: lakesOf(zone), hills: zone.hills || [], cliffs: cliffsOf(zone),
+    paths: pathSpecsOf(zone), rivers: riversOf(zone), lakes: lakesOf(zone), hills: zone.hills || [], cliffs: cliffsOf(zone),
     clearings: zone.clearings || [], groves: zone.groves || [],
     rocks: zone.rocks, hazards: zone.hazards, pools: zone.pools, chests: zone.chests, objects: zone.objects,
     fishingSpots: zone.fishingSpots || [], campfires: zone.campfires || [],

@@ -1493,7 +1493,13 @@ function riverWaterHalf(width) { return width / 2 + RIVER_BANK; }
 // The world can hold several rivers now (fused zones). Helpers return every
 // river / path; single-river zones still work via the legacy fields.
 function worldRivers() { return (zone && (zone.rivers || (zone.river ? [zone.river] : []))) || []; }
-function worldPaths() { return (zone && (zone.paths || (zone.path ? [zone.path] : []))) || []; }
+// A path is either a bare list of points (a road) or { points, kind }, where
+// kind is 'road' (a major path -- wide, worn) or 'trail' (a minor one).
+function pathSpecs() {
+  const raw = (zone && (zone.paths || (zone.path ? [zone.path] : []))) || [];
+  return raw.map(p => Array.isArray(p) ? { points: p, kind: 'road' } : { points: p.points, kind: p.kind || 'road' });
+}
+function worldPaths() { return pathSpecs().map(p => p.points); }
 // Standing water with a real outline. `points` is a closed polygon; a shallow
 // lake is a fen you wade, a deep one is solid and you walk around it.
 function worldLakes() { return (zone && zone.lakes) || []; }
@@ -2427,7 +2433,10 @@ function buildZone() {
   const dirtMat = detailize(new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1,
     side: THREE.DoubleSide, transparent: true, vertexColors: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }), 'dirt', { scale: 2, strength: 0.5 });
   const shapes = [];
-  for (const pathPts of worldPaths()) shapes.push({ pts: smoothPoly(pathPts, 8), hw: 0.8, fr: 1.1, river: true, fadeEnd: 6 });
+  for (const ps of pathSpecs()) {
+    const road = ps.kind !== 'trail';
+    shapes.push({ pts: smoothPoly(ps.points, 8), hw: road ? 2.6 : 0.7, fr: road ? 1.8 : 1.0, river: true, fadeEnd: 6 });
+  }
   for (const tr of (zone.trails || [])) shapes.push({ pts: smoothPoly(tr, 8), hw: 0.45, fr: 0.8 });
   const discs = [];
   for (const h of (zone.houses || [])) {   // worn threshold in front of each door, part of the same field
@@ -10347,7 +10356,12 @@ function drawMap() {
   }
   if (!under) for (const r of worldRivers()) { if (!r.points) continue; line(r.points); ctx.strokeStyle = '#2f6f9c'; ctx.lineWidth = Math.max(3, r.width * s * 0.6); ctx.lineJoin = ctx.lineCap = 'round'; ctx.stroke(); }
   // paths (dashed trails)
-  if (!under) for (const pth of worldPaths()) { line(pth); ctx.strokeStyle = '#c9a86a'; ctx.lineWidth = 3; ctx.setLineDash([7, 5]); ctx.lineJoin = 'round'; ctx.stroke(); ctx.setLineDash([]); }
+  if (!under) for (const ps of pathSpecs()) {
+    line(ps.points); ctx.lineJoin = ctx.lineCap = 'round';
+    if (ps.kind === 'trail') { ctx.strokeStyle = '#c2704a'; ctx.lineWidth = 2; ctx.setLineDash([6, 5]); }
+    else { ctx.strokeStyle = '#b08a52'; ctx.lineWidth = 5; ctx.setLineDash([]); }
+    ctx.stroke(); ctx.setLineDash([]);
+  }
   // cliffs -- grey walls, the way the blueprint draws them
   if (!under) for (const c of (zone.cliffs || [])) {
     if (!inReg(c.points[0].x, c.points[0].z)) continue;

@@ -231,37 +231,43 @@ export const darkwoods = {
       idle: 'Wares? Aye, soon enough, traveller. Mind the woods.' },
   ],
 
-  // The road network. The blueprint draws a main road west-to-east through the
-  // pass and the camp, with spurs to the chapel, the thicket, the hill, the war
-  // camp and each of the four ways out -- so this is `paths` (many) rather than
-  // the old single `path`. Every one is a dirt trail the forest keeps clear of.
+  // The road network. The blueprint draws two kinds and the legend names them:
+  // a major path (road) and a minor path (trail). The three arteries that join
+  // the four ways out through Witchlight Camp are roads -- broad, worn, kept
+  // clear of timber. Everything hanging off them is a trail: a thin scuff
+  // through the grass with the wood standing much closer to it.
   paths: [
-    // Main road: West Road -> Wolfsnag Pass -> Witchlight Camp -> Murkfen -> East Path
-    [ { x: -128, z: 2 }, { x: -121, z: -14 }, { x: -104, z: -19 }, { x: -84, z: -20 },
+    // --- Major paths (roads) ---
+    // West Road -> Wolfsnag Pass -> Witchlight Camp -> Murkfen -> East Path
+    { kind: 'road', points: [
+      { x: -128, z: 2 }, { x: -121, z: -14 }, { x: -104, z: -19 }, { x: -84, z: -20 },
       { x: -62, z: -21 }, { x: -40, z: -17 }, { x: -20, z: -12 }, { x: 1, z: -6 },
       { x: 24, z: -4 }, { x: 48, z: -4 }, { x: 70, z: -4 }, { x: 86, z: -6 },
-      { x: 102, z: -18 }, { x: 120, z: -36 } ],
+      { x: 102, z: -18 }, { x: 120, z: -36 } ] },
     // North Trail -> Hearthstead's gate -> south to Witchlight Camp
-    [ { x: -44, z: -105 }, { x: -44, z: -92 }, { x: -44, z: -80 }, { x: -44, z: -73 },
+    { kind: 'road', points: [
+      { x: -44, z: -105 }, { x: -44, z: -92 }, { x: -44, z: -80 }, { x: -44, z: -73 },
       { x: -42, z: -62 }, { x: -38, z: -48 }, { x: -28, z: -32 }, { x: -16, z: -18 },
-      { x: 1, z: -6 } ],
+      { x: 1, z: -6 } ] },
+    // Witchlight Camp -> Mossy Bridge -> Spider Den -> South Track
+    { kind: 'road', points: [
+      { x: 1, z: -6 }, { x: 4, z: 8 }, { x: 2, z: 26 }, { x: -2, z: 42 },
+      { x: -6, z: 56 }, { x: 1, z: 69 }, { x: 16, z: 78 }, { x: 32, z: 83 }, { x: 48, z: 86 } ] },
+
+    // --- Minor paths (trails) ---
     // Chapel spur, east off the north road
-    [ { x: -40, z: -58 }, { x: -20, z: -66 }, { x: 2, z: -72 }, { x: 20, z: -76 }, { x: 34, z: -78 } ],
+    { kind: 'trail', points: [ { x: -40, z: -58 }, { x: -20, z: -66 }, { x: 2, z: -72 }, { x: 20, z: -76 }, { x: 34, z: -78 } ] },
     // Grimroot spur, north-east off the main road
-    [ { x: 48, z: -4 }, { x: 58, z: -22 }, { x: 70, z: -40 }, { x: 82, z: -56 }, { x: 91, z: -68 } ],
-    // South road: Witchlight Camp -> Mossy Bridge -> Spider Den -> South Track
-    [ { x: 1, z: -6 }, { x: 4, z: 8 }, { x: 2, z: 26 }, { x: -2, z: 42 },
-      { x: -6, z: 56 }, { x: 1, z: 69 }, { x: 16, z: 78 }, { x: 32, z: 83 }, { x: 48, z: 86 } ],
+    { kind: 'trail', points: [ { x: 48, z: -4 }, { x: 58, z: -22 }, { x: 70, z: -40 }, { x: 82, z: -56 }, { x: 91, z: -68 } ] },
     // Crow Hill spur, west off the south road
-    [ { x: -2, z: 42 }, { x: -24, z: 38 }, { x: -46, z: 33 }, { x: -66, z: 29 }, { x: -84, z: 26 } ],
+    { kind: 'trail', points: [ { x: -2, z: 42 }, { x: -24, z: 38 }, { x: -46, z: 33 }, { x: -66, z: 29 }, { x: -84, z: 26 } ] },
     // Briar Camp spur, east off the south road, over the Mossy Bridge
-    [ { x: 2, z: 26 }, { x: 22, z: 29 }, { x: 42, z: 32 }, { x: 63, z: 35 } ],
-    // Fen causeway: Briar Camp north along the shallows to the main road, which
-    // closes the eastern half of the blueprint's loop.
-    [ { x: 63, z: 35 }, { x: 74, z: 26 }, { x: 82, z: 14 }, { x: 87, z: 2 }, { x: 86, z: -6 } ],
-    // The south-western sweep: Crow Hill round to the Wayside Camp, so the
-    // hill is on the circuit instead of being a there-and-back spur.
-    [ { x: -84, z: 26 }, { x: -68, z: 40 }, { x: -46, z: 51 }, { x: -28, z: 56 }, { x: -14, z: 56 } ],
+    { kind: 'trail', points: [ { x: 2, z: 26 }, { x: 22, z: 29 }, { x: 42, z: 32 }, { x: 63, z: 35 } ] },
+    // Fen causeway: Briar Camp north along the shallows to the main road,
+    // which closes the eastern half of the blueprint's loop.
+    { kind: 'trail', points: [ { x: 63, z: 35 }, { x: 74, z: 26 }, { x: 82, z: 14 }, { x: 87, z: 2 }, { x: 86, z: -6 } ] },
+    // The south-western sweep: Crow Hill round to the Wayside Camp.
+    { kind: 'trail', points: [ { x: -84, z: 26 }, { x: -68, z: 40 }, { x: -46, z: 51 }, { x: -28, z: 56 }, { x: -14, z: 56 } ] },
   ],
 
   // Three bodies of water, as the blueprint draws them.

@@ -79,10 +79,19 @@ export function lakeEdgeDist(lake, x, z) {
 
 // The same one-or-many rule for roads: `path` is a single route, `paths` is a
 // network (a main road with spurs to each of the zone's exits).
-export function pathsOf(zone) {
+//
+// The blueprint draws two kinds -- a major path (road) and a minor path
+// (trail) -- so an entry may be a bare list of points (a road, as before) or
+// { points, kind }. `pathSpecsOf` gives the typed form for drawing; `pathsOf`
+// gives just the lines, which is what every distance check wants.
+export function pathSpecsOf(zone) {
   if (!zone) return [];
-  return zone.paths || (zone.path ? [zone.path] : []);
+  const raw = zone.paths || (zone.path ? [zone.path] : []);
+  return raw.map(p => Array.isArray(p) ? { points: p, kind: 'road' } : { points: p.points, kind: p.kind || 'road' });
 }
+export function pathsOf(zone) { return pathSpecsOf(zone).map(p => p.points); }
+// How wide the forest is kept back from each kind.
+export function pathClearOf(kind) { return kind === 'trail' ? 3 : 6; }
 // Nearest point on ANY of a zone's roads.
 export function closestOnPaths(x, z, zone) {
   let best = null;
@@ -169,7 +178,7 @@ export function generateTrees(zone) {
     const x = b.minX + 3 + rng() * (b.maxX - b.minX - 6);
     const z = b.minZ + 3 + rng() * (b.maxZ - b.minZ - 6);
     if (zone.boundary && !pointInPoly(x, z, zone.boundary)) continue;
-    if (pathsOf(zone).some(p => closestOnPolyline(x, z, p).dist < 6)) continue;
+    if (pathSpecsOf(zone).some(p => closestOnPolyline(x, z, p.points).dist < pathClearOf(p.kind))) continue;
     if (riversOf(zone).some(r => closestOnPolyline(x, z, r.points).dist < r.width / 2 + RIVER_BANK + 3)) continue;
     if (lakesOf(zone).some(l => lakeEdgeDist(l, x, z) < 3)) continue;
     if (cliffsOf(zone).some(c => cliffDist(c, x, z) < cliffFoot(c) + 2)) continue;
@@ -217,12 +226,17 @@ export function generateScatter(zone) {
       // round to one tenth outside it.
       x = +x.toFixed(1); z = +z.toFixed(1);
       if (zone.boundary && !pointInPoly(x, z, zone.boundary)) continue;
-      if (pathsOf(zone).some(p => closestOnPolyline(x, z, p).dist < (spec.r > 0 ? 4.5 : 2.2))) continue;
+      // A trail is a scuff through the grass, so dressing crowds right up to
+      // it; a road is kept clear. (Inverted on the first pass, which walled the
+      // Wayside Camp's own trail off from the camp and lost its tent.)
+      if (pathSpecsOf(zone).some(p => closestOnPolyline(x, z, p.points).dist < (p.kind === 'trail' ? 0.55 : 1) * (spec.r > 0 ? 4.5 : 2.2))) continue;
       // Keep dressing out of the water. A solid piece in a river is worse than
       // useless: an ore vein there is unreachable, because the river is the one
       // thing the player cannot walk through.
       if (riversOf(zone).some(r => closestOnPolyline(x, z, r.points).dist < r.width / 2 + RIVER_BANK + 2.5)) continue;
-      if (lakesOf(zone).some(l => lakeEdgeDist(l, x, z) < (l.shallow ? 0 : 2.5))) continue;
+      // Deep water takes nothing. A fen takes reeds and sedge -- pure decor
+      // wades out into it -- but keeps anything solid on the bank.
+      if (lakesOf(zone).some(l => lakeEdgeDist(l, x, z) < (l.shallow ? (spec.r > 0 ? 1.5 : -7) : 2.5))) continue;
       if (cliffsOf(zone).some(c => cliffDist(c, x, z) < cliffFoot(c) + 1.5)) continue;
       // Undergrowth thickens and thins with the wood above it.
       if (!spec.near && rng() > Math.min(1, 0.45 + forestAt(zone, x, z) * 0.5)) continue;
@@ -552,7 +566,7 @@ export function generateEdgeForest(zone, innerPolys, seed, band = 32) {
     const inside = innerPolys.some(pg => pointInPoly(x, z, pg));
     if (inside && dEdge > band) continue;                   // deep interior already has its forest
     if (dEdge < 2.5) continue;                              // not in the rock
-    if (pathsOf(zone).some(p => closestOnPolyline(x, z, p).dist < 6)) continue;
+    if (pathSpecsOf(zone).some(p => closestOnPolyline(x, z, p.points).dist < pathClearOf(p.kind))) continue;
     if (riversOf(zone).some(r => closestOnPolyline(x, z, r.points).dist < r.width / 2 + RIVER_BANK + 3)) continue;
     if (lakesOf(zone).some(l => lakeEdgeDist(l, x, z) < 3)) continue;
     if (cliffsOf(zone).some(c => cliffDist(c, x, z) < cliffFoot(c) + 2)) continue;
