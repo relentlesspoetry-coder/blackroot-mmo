@@ -26,7 +26,7 @@ import { isBardSpell, checkBardCast, castBard, spendSongCharges, songAmp, atkSpe
   bardMonsterDmgMult, bardMonsterDefMult, bardMonsterTakenMult, bardMonsterSpeedMult, bardMonsterAtkSpeedMult, stepSongs } from './bard.js';
 import {
   dist2, closestOnPolyline, mulberry32, pointInPoly, polyCentroid, generateTrees, generateScatter, generateHanging,
-  mergeOutlines, roughenOutline, generateEdgeForest, inHouse, riversOf, bridgesOf, pathsOf, pathSpecsOf, closestOnPaths, terrainAt, isSolid, isWater, terrainClearance, T_OFF, T_ROCK, T_DEEP,
+  mergeOutlines, roughenOutline, generateEdgeForest, inHouse, riversOf, bridgesOf, pathsOf, pathSpecsOf, closestOnPaths, terrainAt, isSolid, isWater, terrainClearance, T_OFF, T_ROCK, T_DEEP, T_MARSH,
   caveOutline,
 } from './worldgen.js';
 import {
@@ -2440,15 +2440,39 @@ function incomingMult(p) { let m = 1; for (const bf of Object.values(p.buffs)) i
 // Deep water, either a lake cell or one of the traced channels. A player in it
 // is swimming: slower, and with both hands busy.
 const SWIM_SPEED = 0.55;
-function inDeepWater(zone, x, z) {
-  if (zone.terrain && terrainAt(zone, x, z) === T_DEEP) return true;
-  for (const r of riversOf(zone)) {
-    if (closestOnPolyline(x, z, r.points).dist >= r.width / 2) continue;
-    // standing on a bridge deck is not swimming
-    if (bridgesOf(r).some(b => dist2(x, z, b.x, b.z) < (b.span ? b.span : 12) ** 2 / 4)) continue;
-    return true;
+// Breath. You have about a minute of easy swimming, less if you are working at
+// it, and then you start going under. Out of the water it comes back quickly.
+const BREATH_MAX = 100;
+const BREATH_TREAD = 1.15;    // per second, floating
+const BREATH_SWIM  = 2.4;     // per second, actually going somewhere
+const BREATH_REGAIN = 9;      // per second, back on dry land
+const DROWN_DPS = 7;          // once the breath is gone
+// How deep is it here, roughly: 0 dry, 1 out of your depth. Shallow water is
+// something you WADE -- the fen never makes you swim, and neither does the
+// first stride off a bank.
+function waterDepthAt(zone, x, z) {
+  let d = 0;
+  if (zone.terrain) {
+    const c = terrainAt(zone, x, z);
+    if (c === T_DEEP) d = 1;
+    else if (c === T_MARSH) d = 0.35;              // wadeable: never enough to swim
   }
-  return false;
+  for (const r of riversOf(zone)) {
+    const dist = closestOnPolyline(x, z, r.points).dist;
+    if (dist >= r.width / 2) continue;
+    if (bridgesOf(r).some(b => dist2(x, z, b.x, b.z) < (b.span ? b.span : 12) ** 2 / 4)) continue;
+    // shelves off toward the middle of the channel rather than dropping at the bank
+    d = Math.max(d, Math.min(1, 0.45 + (1 - dist / (r.width / 2)) * 0.8));
+  }
+  return d;
+}
+// Swimming has hysteresis: you go out of your depth well inside the water and
+// find your feet again only once you are properly back on the shelf. Without
+// it a player stood on the line flickers in and out, which spammed the chat.
+const SWIM_IN = 0.82, SWIM_OUT = 0.55;
+function swimNow(zone, p) {
+  const d = waterDepthAt(zone, p.x, p.z);
+  return p.swimming ? d > SWIM_OUT : d >= SWIM_IN;
 }
 function moveMult(p) {
   let m = p.swimming ? SWIM_SPEED : 1;
@@ -3102,11 +3126,41 @@ function stepPlayer(p) {
   const zone = zoneOf(p);
   p.canSwim = true;
   const wasSwimming = !!p.swimming;
-  p.swimming = inDeepWater(zone, p.x, p.z);
+  p.swimming = swimNow(zone, p);
   if (p.swimming !== wasSwimming) {
     // Out of the water you pick your weapon back up; into it you cannot fight.
     if (p.swimming) { p.combatId = null; p.windup = null; p.swing = null; p.channel = null; }
     send(p.ws, { t: 'event', kind: 'notice', text: p.swimming ? 'You wade in and start to swim.' : 'You climb out, dripping.' });
+  }
+  // --- breath -------------------------------------------------------------
+  if (p.breath == null) p.breath = BREATH_MAX;
+  if (p.swimming) {
+    const hard = !!(p.moving || (p.input && (p.input.f !== 0 || p.input.r !== 0)) || p.moveTo);
+    p.breath = Math.max(0, p.breath - (hard ? BREATH_SWIM : BREATH_TREAD) * DT);
+    if (p.breath <= 0) {
+      // Going under. It hurts, and it keeps hurting until you reach a bank.
+      p.drownAccum = (p.drownAccum || 0) + DROWN_DPS * DT;
+      if (p.drownAccum >= 1) {
+        const d = Math.floor(p.drownAccum); p.drownAccum -= d;
+        p.hp -= d;
+        p.combatTimer = REGEN.combatLockout;          // no resting it off mid-lake
+        send(p.ws, { t: 'event', kind: 'hazard', dmg: d, hazard: 'drowning' });
+        if (p.hp <= 0) { killPlayer(p, 'drowned'); return; }
+        if (!p.drownSaid || Date.now() - p.drownSaid > 3000) {
+          p.drownSaid = Date.now();
+          send(p.ws, { t: 'event', kind: 'notice', text: 'You are going under!' });
+        }
+      }
+    } else if (p.breath < BREATH_MAX * 0.28 && !p.breathWarned) {
+      p.breathWarned = true;
+      send(p.ws, { t: 'event', kind: 'notice', text: 'Your chest is burning — make for a bank.' });
+    }
+  } else {
+    p.drownAccum = 0;
+    if (p.breath < BREATH_MAX) {
+      p.breath = Math.min(BREATH_MAX, p.breath + BREATH_REGAIN * DT);
+      if (p.breath > BREATH_MAX * 0.5) p.breathWarned = false;
+    }
   }
   p.atkTimer = Math.max(0, p.atkTimer - DT);
   if (p.swing) { p.swing.t -= DT; if (p.swing.t <= 0) landPlayerSwing(p); }   // the axe reaches the target
@@ -3488,7 +3542,8 @@ setInterval(() => {
           tgt: p.combatId != null ? p.combatId : undefined,   // who they are actually fighting
           seat: p.seat ? { k: p.seat.k, yaw: +p.seat.yaw.toFixed(2) } : undefined,
           duel: (() => { const d = duelOf(p); return d ? { foe: d.a === p.id ? d.b : d.a, ready: d.state === 'fighting' } : undefined; })(),
-          moving: p.moving, swim: !!p.swimming || undefined, inSafe: !!p.inSafe, resting: !!p.resting, inCombat: (p.combatTimer || 0) > 0 || p.combatId != null,
+          moving: p.moving, swim: !!p.swimming || undefined,
+          breath: p.breath != null && p.breath < BREATH_MAX ? Math.round(p.breath) : undefined, inSafe: !!p.inSafe, resting: !!p.resting, inCombat: (p.combatTimer || 0) > 0 || p.combatId != null,
           combatWait: p.lastCombat ? Math.max(0, Math.ceil(LOGOUT_COMBAT_WAIT - (Date.now() - p.lastCombat) / 1000)) : 0,
           weapon: p.equipment.weapon || null,     // held item for the paperdoll
           look: lookOf(p) });                        // hair / outfit / colours + worn armour
