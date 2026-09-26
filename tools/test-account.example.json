@@ -1,0 +1,5 @@
+{
+  "_comment": "Throwaway login for smoke-testing a LOCAL server (localhost only). Not a real credential -- the accounts/ directory it creates is local test data and can be deleted at any time.",
+  "name": "Probe",
+  "password": "probe-local-1"
+}

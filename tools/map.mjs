@@ -6,11 +6,10 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { caveOutline, generateScatter, generateTrees } from '../server/worldgen.js';
+import { generateScatter, generateTrees } from '../server/worldgen.js';
 import { oreFromModel, ORES } from '../server/mining.js';
 import { MONSTER_TEMPLATES } from '../server/balance.js';
 import { darkwoods } from '../server/zones/darkwoods.js';
-import { hiddencave } from '../server/zones/hiddencave.js';
 
 const OUT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'maps');
 fs.mkdirSync(OUT, { recursive: true });
@@ -19,7 +18,6 @@ const RARE = new Set(['Runite', 'Adamantite', 'Mithril', 'Gold', 'Silver']);
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/'/g, '&#39;');
 
 function draw(zone, opts = {}) {
-  if (zone.cavern && !zone.boundary) zone.boundary = caveOutline(zone.cavern, zone.bounds);
   const b = zone.bounds;
   const pad = 70;
   const worldW = b.maxX - b.minX, worldD = b.maxZ - b.minZ;
@@ -114,7 +112,6 @@ function draw(zone, opts = {}) {
     `fill="#e8d7ac">${esc(zone.name)}</text>`);
   add(`<text x="${W - pad}" y="34" text-anchor="end" font-family="system-ui,sans-serif" font-size="12" ` +
     `fill="#8a7d63">${worldW} × ${worldD} units` +
-    (zone.cavern ? ` · ${zone.cavern.rooms.length} chambers · ${zone.cavern.tunnels.length} tunnels` : '') +
     ` · ${veins} ore veins</text>`);
   const ly = H - 20;
   const legend = [
@@ -134,7 +131,7 @@ function draw(zone, opts = {}) {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${parts.join('')}</svg>`;
 }
 
-for (const zone of [hiddencave, darkwoods]) {
+for (const zone of [darkwoods, darkwoods]) {
   const svg = draw(zone);
   const file = path.join(OUT, zone.id + '.svg');
   fs.writeFileSync(file, svg);

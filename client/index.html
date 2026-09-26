@@ -1473,20 +1473,40 @@ let fireflies = null;
 let critters = [];               // ambient flying bugs (butterflies by day, moths by night)
 let targetRing = null, friendRing = null;
 let hemiLight = null, sunLight = null;
-let caveMix = 0; // 0 = surface, 1 = deep underground; smoothly eased by player depth
-const _caveFog = new THREE.Color(0x161a22); // dark blue-grey, not void-black, so distance reads as dim rock
 let sky = {};
 let bridgeInfos = []; // arched bridges: {x,z,phi,L,archH,deckW} for walking up & over
 // Height of the bridge deck at world (x,z), or 0 if not on any bridge span.
+// Plank walks over the fen. A bridge arches and a boardwalk does not, so they
+// share the lift but not the profile: a deck is flat, and standing on one puts
+// you DECK_TOP above the ground it was laid on rather than on an arc.
+const DECK_TOP = 0.55;              // matches tools/build_wetland.py
+let deckInfos = [];
+// These return null for "there is nothing over the water here", NOT 0. They
+// used to return 0, and every caller tested `> 0` -- which quietly means "the
+// deck only counts if it is above sea level". The plank walks that matter are
+// the ones over the fen, where the ground is metres BELOW zero, so 48 of the 71
+// spans reported no deck at all and you waded under your own boardwalk.
+function deckLift(x, z) {
+  for (const d of deckInfos) {
+    const dx = x - d.x, dz = z - d.z, s = Math.sin(d.yaw), c = Math.cos(d.yaw);
+    const along = dx * c + dz * s, across = -dx * s + dz * c;
+    if (Math.abs(along) > d.len / 2 || Math.abs(across) > d.w / 2) continue;
+    return d.y + DECK_TOP;
+  }
+  return null;
+}
 function bridgeLift(x, z) {
+  const dk = deckLift(x, z);
+  if (dk !== null) return dk;
   for (const bi of bridgeInfos) {
     const dx = x - bi.x, dz = z - bi.z, sf = Math.sin(bi.phi), cf = Math.cos(bi.phi);
     const along = dx * sf + dz * cf;   // across the river (deck length axis)
     const across = dx * cf - dz * sf;  // along the deck's walkable width
     if (Math.abs(along) > bi.L / 2 || Math.abs(across) > bi.deckW / 2 + 0.4) continue;
-    return bi.archH * (1 - Math.pow(2 * along / bi.L, 2)) + 0.35; // arch + deck-top offset
+    // the bridge group is placed at world y = 0, so the arch height is absolute
+    return bi.archH * (1 - Math.pow(2 * along / bi.L, 2)) + 0.35;
   }
-  return 0;
+  return null;
 }
 // River channel profile: a carved bed so the water sits deep with banks rising
 // above it. terrainHeight is the ground height at (x,z) — 0 on flat land, the
@@ -1604,45 +1624,78 @@ function landHeight(x, z) {
   return h;
 }
 // Rock stands above the land it sits on; water cuts down through it.
-const ROCK_RISE = 17, WATER_CUT = 3.0, MARSH_CUT = 1.0;
+// A single unit of marsh cut is not a marsh, it is a damp lawn: the fen's floor
+// has to sit a wader's depth below the waterline so the sheet actually covers
+// it. Deep water is cut harder still so Ravenwater reads as deep.
+const ROCK_RISE = 17, WATER_CUT = 4.6, MARSH_CUT = 2.0;
+// Where the shoreline goes, as a contour of the traced wetness field.
+//
+// The cut used to be linear in that field, and linear puts the bowl's RIM in the
+// wrong place: with a 4.6 unit cut the ground crosses the waterline at a wetness
+// of about 0.11, so the lake filled to nearly twice its drawn area. Pinning the
+// crossing to 0.5 instead overshot the other way -- the field is box-blurred, and
+// blurring SHRINKS a stringy shape, so the 0.5 contour of the fen encloses a
+// fifth less than the cells it came from.
+//
+// So the edge levels are the ones measured to reproduce the drawing's own areas:
+// the deep water covers 5.58% of the zone and the whole wetted area 7.23%, and
+// these two contours come out at 5.6% and 7.2%. The exponents then follow from
+// them -- WATER_CUT * DEEP_EDGE^DEEP_FALL = 0.5 -- so the ground rises through
+// the waterline exactly where the drawing says the bank is.
+// These come from the ZONE (`waterEdge`), because the server reads the same two
+// numbers to decide when you are swimming. They used to live only here, and the
+// server went on using the raw cell grid -- which left 766 cells of open ground
+// that the shoreline had receded from and you still swam across.
+const WATER_EDGE_FALLBACK = { deep: 0.41, marsh: 0.44, fade: 0.41 };
+function waterEdge() { return (zone && zone.waterEdge) || WATER_EDGE_FALLBACK; }
 function terrainHeight(x, z) {
   if (!zone || zone.enclosed) return 0;
   const wet = terrainField(x, z, 'wet'), rock = terrainField(x, z, 'rock');
   // Hills roll under everything; rock stands on them; water cuts through.
-  let y = landHeight(x, z) * (1 - wet) + ROCK_RISE * rock * rock;
   const deep = terrainField(x, z, 'deep');
-  y -= WATER_CUT * deep + MARSH_CUT * (wet - deep);
+  const E = waterEdge();
+  // Land (and the rock standing on it) fades out completely by the time the
+  // wetness reaches the shoreline level. That is not cosmetic -- it is what
+  // makes "the ground is under the waterline" and "the drawing says water here"
+  // the SAME test. They used to differ: a lake lapping a hillside had ground
+  // above the waterline inside its own drawn edge, so the client drew no water
+  // while the server, which only knows the drawing, still made you swim. 561
+  // cells of the zone were like that. With the land faded, the shoreline is the
+  // edge contour and nothing else, and the two sides cannot disagree.
+  const LF = Math.max(0, 1 - wet / E.fade);
+  let y = LF * (landHeight(x, z) + ROCK_RISE * rock * rock);
+  const dFall = Math.log(0.5 / WATER_CUT) / Math.log(E.deep);
+  const mFall = Math.log(0.5 / MARSH_CUT) / Math.log(E.marsh);
+  y -= WATER_CUT * Math.pow(deep, dFall)
+     + MARSH_CUT * Math.max(0, Math.pow(wet, mFall) - Math.pow(deep, mFall));
   // Rivers are still polylines -- they are too narrow to trace as cells.
   for (const r of worldRivers()) { const h = riverHeightAt1(r, x, z); if (h < 0 && h < y) y = h; }
+  // A ruin you can walk into needs a level floor. Each structure levels a
+  // rectangle of ground and feathers it back into the hillside, so the nave is
+  // flat and the walls are not standing on stilts at the downhill end.
+  if (sitePads) for (const p of sitePads) {
+    const dx = Math.abs(x - p.x) - p.hw, dz = Math.abs(z - p.z) - p.hd;
+    if (dx >= p.fr || dz >= p.fr) continue;
+    const d = Math.hypot(Math.max(dx, 0), Math.max(dz, 0));
+    if (d >= p.fr) continue;
+    const t = 1 - d / p.fr;
+    y += (p.y - y) * (t * t * (3 - 2 * t));
+  }
   return y;
 }
-// Height an entity should stand at: on a bridge use its deck, else the terrain.
-// The spoil bank around a mining pit is solid ground you walk over, like a
-// bridge deck: its height is one function of position, used both to build
-// the bank mesh and to stand on it. Profile across the rim (distance d
-// outside the scrape's outline): up to a crest ~1 m out, back to the grass by
-// ~3.2 m, roughened by a slow noise along the rim and flattened at the opening.
-const BANK_PROFILE = [[0, 0], [0.5, 0.45], [1.0, 0.8], [1.6, 0.62], [2.2, 0.36], [3.2, 0]];
-function bankLift(x, z) {
-  let best = 0;
-  for (const m of (zone && zone.mines) || []) {
-    if (Math.hypot(x - m.x, z - m.z) > m.r * 1.45 + 4) continue;
-    if (pointInPoly(x, z, m.outline)) continue;
-    const d = distToPolyline(x, z, m.ring || (m.ring = m.outline.concat([m.outline[0]])));
-    if (d >= 3.2) continue;
-    let h = 0;
-    for (let i = 1; i < BANK_PROFILE.length; i++) {
-      const [d0, h0] = BANK_PROFILE[i - 1], [d1, h1] = BANK_PROFILE[i];
-      if (d <= d1) { h = h0 + (h1 - h0) * ((d - d0) / (d1 - d0)); break; }
-    }
-    const rough = 0.7 + 0.6 * vnoise2(x / 4.5, z / 4.5, 77);
-    let da = Math.atan2(z - m.z, x - m.x) - m.gapDir; da = Math.abs(Math.atan2(Math.sin(da), Math.cos(da)));
-    const gap = Math.max(0, Math.min(1, (da - m.gapHalf) / 0.3));   // flat across the way in
-    best = Math.max(best, h * rough * gap * gap);
-  }
-  return best;
+// Each pad's level is read off the UNPADDED ground, or the second ruin would be
+// levelled against the first one's apron.
+let sitePads = null;
+function buildSitePads() {
+  sitePads = null;
+  const pads = (zone && zone.pads || []).map(p => ({
+    x: (p.minX + p.maxX) / 2, z: (p.minZ + p.maxZ) / 2,
+    hw: (p.maxX - p.minX) / 2, hd: (p.maxZ - p.minZ) / 2, fr: p.fr || 16, y: 0 }));
+  for (const p of pads) p.y = terrainHeight(p.x, p.z);
+  sitePads = pads;
 }
-function groundY(x, z) { const b = bridgeLift(x, z); return b > 0 ? b : terrainHeight(x, z) + bankLift(x, z); }
+// Height an entity should stand at: on a bridge use its deck, else the terrain.
+function groundY(x, z) { const b = bridgeLift(x, z); return b !== null ? b : terrainHeight(x, z); }
 let worldTime = 0.35, worldWeather = 'clear';
 let riverMesh = null, riverTex = null; // animated flowing water
 let timeFrozen = false, weatherFrozen = false;   // set only through the ?debug=1 hook
@@ -1782,25 +1835,6 @@ function updateSky(dt) {
   sunLight.color.copy(pal.sun);
   sunLight.intensity = pal.sunI * (1 - 0.55 * w);
 
-  // Underground: as the player descends into the cave, pull the world into dark
-  // (short black fog, dim sun/hemi) so the chamber reads as a cave even though
-  // the scene shares one sky. Eased by depth so entering/leaving is smooth.
-  const selfRec = entityMeshes.get(myId);
-  const depth = selfRec ? -selfRec.mesh.position.y : 0;      // >0 underground
-  const caveTarget = Math.max(0, Math.min(1, (depth - 2) / 10));
-  caveMix += (caveTarget - caveMix) * Math.min(1, dt * 2.5);
-  if (caveMix > 0.001) {
-    scene.fog.color.lerp(_caveFog, caveMix);
-    scene.background.lerp(_caveFog, caveMix);
-    // Rooms are ~30m across: keep the fog well past that so a whole room and
-    // the tunnel mouths leading out of it are readable, fading to dark beyond.
-    scene.fog.near = scene.fog.near * (1 - caveMix) + 18 * caveMix;
-    scene.fog.far = scene.fog.far * (1 - caveMix) + 150 * caveMix;
-    // Enough sky fill that rock, floor and passages read; the sun is gone.
-    hemiLight.intensity = hemiLight.intensity * (1 - caveMix) + 1.15 * caveMix;
-    sunLight.intensity *= (1 - 0.85 * caveMix);
-  }
-
   // Sun/moon arc across the sky.
   const ang = (worldTime - 0.25) * Math.PI * 2;
   _sunDir.set(Math.cos(ang) * 0.55, Math.sin(ang), 0.35).normalize();
@@ -1838,6 +1872,7 @@ function updateSky(dt) {
 function loadZone(zdata) {
   zone = zdata; lastRegionId = null;
   buildTerrainFields();          // blur the traced classes once, for this zone
+  buildSitePads();               // level the ground under every ruin
   // Sit the camera behind the character's spawn facing. Without this it
   // defaulted to yaw 0 and every new player spawned staring at the north
   // boundary wall with the entire zone behind them.
@@ -1846,7 +1881,7 @@ function loadZone(zdata) {
   while (scene.children.length) scene.remove(scene.children[0]);
   entityMeshes.clear();
   poiWorld.length = 0; poiLayer.innerHTML = ''; poiEls.length = 0;
-  chestMeshes.clear(); npcMeshes.clear(); worldObjects.clear(); camBlockers.length = 0;
+  chestMeshes.clear(); npcMeshes.clear(); worldObjects.clear(); camBlockers.length = 0; lodPairs.length = 0;
   fishSpots.length = 0; cookFires.length = 0; campfireFx.length = 0;
   npcMarkLayer.innerHTML = ''; npcMarkEls.clear();
   closeDialogue();
@@ -2289,38 +2324,131 @@ function buildStripRibbon(points, width, y, material, tile, feather, cutRiver, e
 // carved to, so it lies flush on the ground (real dirt bank, not a floating
 // layer), and its outer rim feathers to transparent so the dirt melts into the
 // surrounding grass.
-// The blue of the blueprint, as an actual surface. One quad per water cell,
-// merged into a single sheet per kind; the waterline is where the terrain's
-// own carve brings the ground up past it, so the edge follows the drawing.
-// The blueprint's water as one body, not a patchwork. Vertices sit on the cell
-// lattice and are SHARED between neighbouring cells, so there are no seams; a
-// quad is emitted only where the trace says water. The surface is then a live
-// sum of travelling waves, with normals taken from the wave slope so it catches
-// the light, and its texture drifts across it.
+// The blue of the blueprint, as an actual surface.
+//
+// This used to emit one quad per wet CELL. A cell is 2.5 m, so the lake got a
+// staircase for a shore -- the hard diagonal steps you can see from the bank --
+// and, worse, the sheet stopped at the last wet cell while the ground kept
+// falling, leaving a ring of drowned bank with no water over it. The ground was
+// never the problem: terrainHeight samples a blurred field, so the basin is
+// already a smooth bowl.
+//
+// So the sheet is built the way water actually behaves. Fill the bowl to a
+// level, and cut the surface where the ground rises back through it: the
+// outline is the iso-contour of
+//        phi(x, z) = waterline - terrainHeight(x, z)
+// traced by marching squares at a third of a cell. That is a smooth curve, and
+// it meets the bank exactly -- the waterline IS the shoreline, by construction.
+//
+// The `gate` term keeps each sheet inside the water body it belongs to. Plenty
+// of dry ground sits below the waterline (the fen basin, the hollows), and
+// without it the lake would flood half the zone. It is the same blurred field
+// the ground is carved from, so where it does bind, the edge stays smooth.
+//
+// The surface is then a live sum of travelling waves, with normals taken from
+// the wave slope so it catches the light, and its texture drifts across it.
+const WATER_SUB = 3;            // marching-squares cells per terrain cell
+// Each sheet is gated at its own edge level -- the same contour the ground is
+// carved to cross -- so the two constraints, "the drawing says water here" and
+// "the ground is under the waterline here", cross zero in the same place. The
+// gate is what stops a lake spilling into whatever unrelated low ground sits
+// below the waterline nearby: the fen basin, the hollows.
 let waterSurfaces = [];
 function buildTerrainWater() {
   waterSurfaces = [];
   const T = zone && zone.terrain; if (!T) return;
-  const isW = (gx, gz, cls) => gz >= 0 && gz < T.h && gx >= 0 && gx < T.w && T.rows[gz][gx] === cls;
-  for (const [cls, drop, colour, opacity] of [['W', 0, 0x2f7fb0, 0.93], ['w', 0.22, 0x599ec2, 0.72]]) {
-    // one vertex per lattice corner that any water quad touches
+  const t0 = performance.now();
+  const fine = T.cell / WATER_SUB;
+  const FW = T.w * WATER_SUB;
+  // terrainHeight is by far the costly part of this, and both sheets want the
+  // same lattice, so it is sampled once and shared.
+  const hCache = new Map();
+  const heightAt = (fj, fi) => {
+    const k = fi * (FW + 1) + fj;
+    let v = hCache.get(k);
+    if (v === undefined) { v = terrainHeight(T.minX + fj * fine, T.minZ + fi * fine); hCache.set(k, v); }
+    return v;
+  };
+  // Both sheets sit AT the waterline; the deep one is lifted two centimetres so
+  // the pair cannot z-fight. (They used to be 22 cm apart, which put the shallow
+  // sheet's rim below the true waterline and buried its edge in the bank.)
+  const EDGE = waterEdge();
+  for (const [name, gate, surfaceY, colour, opacity] of [
+       ['deep', EDGE.deep,  RIVER_WATER_Y + 0.02, 0x2f7fb0, 0.93],
+       ['wet',  EDGE.marsh, RIVER_WATER_Y,        0x599ec2, 0.72]]) {
     const index = new Map(), pos = [], uv = [], idx = [];
-    const key = (gx, gz) => gz * (T.w + 1) + gx;
-    const vert = (gx, gz) => {
-      const k = key(gx, gz);
+    const phiCache = new Map();
+    const phiAt = (fj, fi) => {
+      const k = fi * (FW + 1) + fj;
+      let v = phiCache.get(k);
+      if (v === undefined) {
+        const x = T.minX + fj * fine, z = T.minZ + fi * fine;
+        const g = (terrainField(x, z, name) - gate) * 24;
+        v = Math.min(surfaceY - heightAt(fj, fi), g);
+        phiCache.set(k, v);
+      }
+      return v;
+    };
+    const vert = (x, z) => {
+      // weld to a centimetre so neighbouring cells share their edge vertices
+      const k = Math.round(x * 100) * 2097152 + Math.round(z * 100);
       let v = index.get(k);
       if (v === undefined) {
         v = pos.length / 3; index.set(k, v);
-        const x = T.minX + gx * T.cell, z = T.minZ + gz * T.cell;
-        pos.push(x, RIVER_WATER_Y - drop, z);
+        pos.push(x, surfaceY, z);
         uv.push(x / 9, z / 9);                        // world-space, so it tiles seamlessly
       }
       return v;
     };
+    // Only the cells this body could possibly reach: the blurred field already
+    // spreads several cells past the traced water, and the gate stops there.
     for (let gz = 0; gz < T.h; gz++) for (let gx = 0; gx < T.w; gx++) {
-      if (!isW(gx, gz, cls)) continue;
-      const a = vert(gx, gz), b = vert(gx + 1, gz), c = vert(gx + 1, gz + 1), d = vert(gx, gz + 1);
-      idx.push(a, c, b, a, d, c);
+      const cx = T.minX + (gx + 0.5) * T.cell, cz = T.minZ + (gz + 0.5) * T.cell;
+      if (terrainField(cx, cz, name) < gate * 0.55) continue;
+      // Fine tessellation is only worth paying for at the SHORE. Out in open
+      // water the surface is flat and the swell is 28 units from crest to crest,
+      // so a 2.5 m quad is already ten times finer than the wave needs -- the
+      // deviation across one is about a millimetre. Contouring the whole lake at
+      // a third of a cell cost 186k animated vertices and 23 ms a frame, which
+      // is most of a frame budget spent tessellating water nobody is standing on.
+      const q0 = gx * WATER_SUB, q1 = gz * WATER_SUB, qs = WATER_SUB;
+      const c00 = phiAt(q0, q1), c10 = phiAt(q0 + qs, q1);
+      const c11 = phiAt(q0 + qs, q1 + qs), c01 = phiAt(q0, q1 + qs);
+      if (c00 >= 0 && c10 >= 0 && c11 >= 0 && c01 >= 0) {
+        // wholly submerged: one quad, corners shared with its neighbours
+        const X0 = T.minX + gx * T.cell, X1 = X0 + T.cell;
+        const Z0 = T.minZ + gz * T.cell, Z1 = Z0 + T.cell;
+        const a = vert(X0, Z0), b = vert(X1, Z0), c = vert(X1, Z1), d = vert(X0, Z1);
+        idx.push(a, b, c, a, c, d);
+        continue;
+      }
+      if (c00 < 0 && c10 < 0 && c11 < 0 && c01 < 0
+          && phiAt(q0 + (qs >> 1), q1 + (qs >> 1)) < 0) continue;   // wholly dry
+      for (let sz = 0; sz < WATER_SUB; sz++) for (let sx = 0; sx < WATER_SUB; sx++) {
+        const fj = gx * WATER_SUB + sx, fi = gz * WATER_SUB + sz;
+        const x0 = T.minX + fj * fine, x1 = x0 + fine;
+        const z0 = T.minZ + fi * fine, z1 = z0 + fine;
+        // marching squares, filled: walk the four corners, keeping the ones
+        // under water and adding the crossing point wherever the edge between
+        // two corners passes through the waterline
+        const f = [phiAt(fj, fi), phiAt(fj + 1, fi), phiAt(fj + 1, fi + 1), phiAt(fj, fi + 1)];
+        const CX = [x0, x1, x1, x0], CZ = [z0, z0, z1, z1];
+        const poly = [];
+        for (let i = 0; i < 4; i++) {
+          const j = (i + 1) & 3;
+          if (f[i] >= 0) poly.push(CX[i], CZ[i]);
+          if ((f[i] >= 0) !== (f[j] >= 0)) {
+            const t = f[i] / (f[i] - f[j]);
+            poly.push(CX[i] + (CX[j] - CX[i]) * t, CZ[i] + (CZ[j] - CZ[i]) * t);
+          }
+        }
+        const n = poly.length / 2;
+        if (n < 3) continue;
+        const a = vert(poly[0], poly[1]);
+        for (let i = 1; i < n - 1; i++) {
+          idx.push(a, vert(poly[i * 2], poly[i * 2 + 1]), vert(poly[i * 2 + 2], poly[i * 2 + 3]));
+        }
+      }
     }
     if (!idx.length) continue;
     const g = new THREE.BufferGeometry();
@@ -2330,37 +2458,70 @@ function buildTerrainWater() {
     g.setIndex(idx);
     const tex = makeWaterTexture();
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    const mat = detailize(new THREE.MeshStandardMaterial({ map: tex, color: colour,
+    const amp = name === 'deep' ? 1 : 0.45;
+    const mat = waveify(detailize(new THREE.MeshStandardMaterial({ map: tex, color: colour,
       roughness: 0.22, metalness: 0.35, transparent: true, opacity, side: THREE.DoubleSide,
-      emissive: 0x0d3550, emissiveIntensity: 0.8 }), 'water', { scale: 4, strength: 0.5 });
+      emissive: 0x0d3550, emissiveIntensity: 0.8 }), 'water', { scale: 4, strength: 0.5 }), amp);
     const m = new THREE.Mesh(g, mat);
     m.receiveShadow = true; m.userData.isWater = true; scene.add(m);
     // keep the still positions; the swell is applied on top of them each frame
-    waterSurfaces.push({ mesh: m, base: Float32Array.from(pos), tex, amp: cls === 'W' ? 1 : 0.45 });
+    waterSurfaces.push({ mesh: m, tex, amp });
     if (!riverMesh) { riverMesh = m; riverTex = tex; }
   }
   updateWaterSurface(0);
+  console.log(`[world] water: ${waterSurfaces.map(w => w.mesh.geometry.attributes.position.count).join(' + ')}`
+    + ` shore vertices in ${(performance.now() - t0).toFixed(0)} ms`);
 }
 // Three travelling waves at different scales and bearings, summed. The normal
 // comes from the slope of that sum rather than from recomputing the mesh, which
 // is what makes it read as water rather than as a tilted sheet.
+// The same three waves, moved onto the GPU. They were summed per vertex on the
+// CPU every frame, which was affordable when the sheet was one quad per wet cell
+// and stopped being affordable the moment the shore was contoured properly.
+// The wave is a pure function of (x, z, t), so the vertex shader is where it
+// belongs: the mesh sits at the origin in world coordinates, which makes
+// `position.xz` the same x and z the CPU version read out of `base`.
+const WATER_WAVES = [
+  //  kx,      kz,     speed,  amp
+  [ 0.115,  0.062,    1.05,  0.105],
+  [-0.052,  0.141,    0.78,  0.075],
+  [ 0.223, -0.197,    1.90,  0.032],
+];
+function waveify(mat, amp) {
+  const prev = mat.onBeforeCompile;
+  const u = { value: 0 };
+  mat.userData.waterTime = u;
+  const W = WATER_WAVES.map(w => w.map(n => n.toFixed(6)));
+  const sum = (fn) => W.map(([kx, kz, sp, a]) =>
+    `${fn}(position.x * ${kx} + position.z * ${kz} + uWaterTime * ${sp}) * ${a}`).join(' + ');
+  const slope = (k) => W.map(([kx, kz, sp, a], i) =>
+    `cos(position.x * ${kx} + position.z * ${kz} + uWaterTime * ${sp}) * ${k === 'x' ? kx : kz} * ${a}`).join(' + ');
+  mat.onBeforeCompile = (sh) => {
+    if (prev) prev(sh);
+    sh.uniforms.uWaterTime = u;
+    sh.uniforms.uWaterAmp = { value: amp };
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', `#include <common>
+uniform float uWaterTime; uniform float uWaterAmp;`)
+      // the normal comes from the analytic slope of the same sum, exactly as the
+      // CPU version did -- that is what makes it read as water and not as a
+      // tilted sheet
+      .replace('#include <beginnormal_vertex>', `#include <beginnormal_vertex>
+{
+  float dhx = (${slope('x')}) * uWaterAmp;
+  float dhz = (${slope('z')}) * uWaterAmp;
+  objectNormal = normalize(vec3(-dhx, 1.0, -dhz));
+}`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+transformed.y += (${sum('sin')}) * uWaterAmp;`);
+  };
+  mat.needsUpdate = true;
+  return mat;
+}
 function updateWaterSurface(tSec) {
   for (const w of waterSurfaces) {
-    const p = w.mesh.geometry.attributes.position, n = w.mesh.geometry.attributes.normal;
-    const A = w.amp;
-    for (let i = 0; i < p.count; i++) {
-      const x = w.base[i * 3], z = w.base[i * 3 + 2];
-      const a1 = x * 0.115 + z * 0.062 + tSec * 1.05;
-      const a2 = x * -0.052 + z * 0.141 + tSec * 0.78;
-      const a3 = x * 0.223 - z * 0.197 + tSec * 1.9;
-      const h = (Math.sin(a1) * 0.105 + Math.sin(a2) * 0.075 + Math.sin(a3) * 0.032) * A;
-      p.setY(i, w.base[i * 3 + 1] + h);
-      const dx = (Math.cos(a1) * 0.115 * 0.105 + Math.cos(a2) * -0.052 * 0.075 + Math.cos(a3) * 0.223 * 0.032) * A;
-      const dz = (Math.cos(a1) * 0.062 * 0.105 + Math.cos(a2) * 0.141 * 0.075 + Math.cos(a3) * -0.197 * 0.032) * A;
-      const inv = 1 / Math.hypot(dx, 1, dz);
-      n.setXYZ(i, -dx * inv, inv, -dz * inv);
-    }
-    p.needsUpdate = true; n.needsUpdate = true;
+    const u = w.mesh.material.userData.waterTime;
+    if (u) u.value = tSec;
     w.tex.offset.x = (tSec * 0.012) % 1;
     w.tex.offset.y = (tSec * 0.021) % 1;
   }
@@ -2471,96 +2632,12 @@ function buildZone() {
     const road = ps.kind !== 'trail';
     shapes.push({ pts: smoothPoly(ps.points, 8), hw: road ? 2.6 : 0.7, fr: road ? 1.8 : 1.0, river: true, fadeEnd: 6 });
   }
-  for (const tr of (zone.trails || [])) shapes.push({ pts: smoothPoly(tr, 8), hw: 0.45, fr: 0.8 });
   const discs = [];
-  for (const h of (zone.houses || [])) {   // worn threshold in front of each door, part of the same field
-    const o = h.door === 'south' ? [0, h.d / 2 + 1.0] : h.door === 'north' ? [0, -h.d / 2 - 1.0] : h.door === 'east' ? [h.w / 2 + 1.0, 0] : [-h.w / 2 - 1.0, 0];
-    discs.push({ x: h.x + o[0], z: h.z + o[1], r: 0.9, fr: 0.9 });
-  }
   // Ground a camp has worn bare. Same field as the roads, so where a path runs
   // into a camp the two are one piece of dirt rather than two overlapping ones.
   for (const d of (zone.dirt || [])) discs.push({ x: d.x, z: d.z, r: d.r, fr: d.fr != null ? d.fr : 3 });
-  const polys = (zone.mines || []).map(m => ({ pts: m.outline, fr: 6.5 }));   // the mining pits' bare scrapes (the fringe runs out under the bank's fade)
-  buildDirtStones(buildDirtField(shapes, discs, dirtMat, 0.05, 3, polys), shapes, discs, polys);
-  for (const m of (zone.mines || [])) buildSpoilBank(m);
+  buildDirtStones(buildDirtField(shapes, discs, dirtMat, 0.05, 3, []), shapes, discs, []);
 
-  // The spoil bank around a mining pit: earth heaped along the outline (except
-// at the opening), rising to a rough crest just outside the scrape and falling
-// back to the grass. Flat-shaded and jittered so it reads as dug-out earth
-// rather than a smooth ring.
-function buildSpoilBank(mine) {
-  const pts0 = mine.outline;
-  const rng = mulberry32(Math.round(mine.x * 7 + mine.z * 13));
-  const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
-  // subdivide the outline so the mesh follows the height function closely
-  const pts = [];
-  for (let i = 0; i < pts0.length; i++) { const a = pts0[i], b = pts0[(i + 1) % pts0.length]; for (let k = 0; k < 3; k++) pts.push({ x: a.x + (b.x - a.x) * k / 3, z: a.z + (b.z - a.z) * k / 3 }); }
-  const N = pts.length;
-  const norm = [];
-  for (let i = 0; i < N; i++) {
-    const a = pts[(i + N - 1) % N], b = pts[(i + 1) % N];
-    const tx = b.x - a.x, tz = b.z - a.z, L = Math.hypot(tx, tz) || 1;
-    norm.push({ x: tz / L, z: -tx / L });   // outward (outline runs counter-clockwise seen from above)
-  }
-  const off = BANK_PROFILE.map(p => p[0]).concat([4.0, 5.2, 6.5]);   // rings: from the scrape edge out past the foot, the last three fading into the grass
-  const pos = [], col = [], idx = [], uv = [], c = new THREE.Color();
-  const open = (i) => Math.abs(wrap(Math.atan2(pts[i].z - mine.z, pts[i].x - mine.x) - mine.gapDir)) < mine.gapHalf + 0.12;
-  for (let i = 0; i < N; i++) {
-    const nz = norm[i], p = pts[i];
-    for (let k = 0; k < off.length; k++) {
-      const o = off[k], x = p.x + nz.x * o, z = p.z + nz.z * o;
-      const y = terrainHeight(x, z) + bankLift(x, z) - (k === 0 ? 0.02 : 0);
-      pos.push(x, y, z); uv.push(x / 3, z / 3);
-      const hueN = fbm2(x + 57, z - 211, 41), ligN = fbm2(x - 389, z + 133, 43);
-      c.setHSL(0.06 + hueN * 0.045, 0.42, 0.17 + ligN * 0.14 + (k === 2 ? 0.05 : k === 1 || k === 3 ? 0.03 : 0) + (rng() - 0.5) * 0.04);
-      // the outer foot fades out over the grass instead of ending in a hard line
-      const alpha = k >= off.length - 1 ? 0 : k === off.length - 2 ? 0.2 : k === off.length - 3 ? 0.5 : k === off.length - 4 ? 0.8 : 1;
-      const ragged = alpha >= 1 ? 1 : Math.max(0, Math.min(1, alpha + (fbm2(x * 2.2 + 91, z * 2.2 - 47, 53) - 0.5) * 0.6));
-      col.push(c.r, c.g, c.b, ragged);
-    }
-  }
-  const K = off.length;
-  for (let i = 0; i < N; i++) {
-    const j = (i + 1) % N;
-    for (let k = 0; k < K - 1; k++) {
-      const a = i * K + k, b = j * K + k, cc = i * K + k + 1, d = j * K + k + 1;
-      idx.push(a, b, cc, b, d, cc);
-    }
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
-  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  g.setIndex(idx); g.computeVertexNormals();
-  const m = new THREE.Mesh(g, detailize(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: true, side: THREE.DoubleSide, transparent: true }), 'dirt', { scale: 2 }));
-  m.castShadow = true; m.receiveShadow = true; scene.add(m);
-  // Pebbles and rubble: the cave pack's Rubble_Pile shrunk to fist-size
-  // clusters, strewn over the scrape and heaped a little bigger on the bank.
-  const rub = [];
-  const ring = pts.concat([pts[0]]);
-  let mnx = 1e9, mxx = -1e9, mnz = 1e9, mxz = -1e9;
-  for (const p of pts) { mnx = Math.min(mnx, p.x); mxx = Math.max(mxx, p.x); mnz = Math.min(mnz, p.z); mxz = Math.max(mxz, p.z); }
-  const area = (mxx - mnx) * (mxz - mnz);
-  // small grey rocks, then a much denser sprinkle of tiny brown dirt pebbles
-  const layers = [[Math.round(area / 7), 0.1, 0.16, [2.3, 1.75, 1.25]], [Math.round(area / 1.6), 0.035, 0.05, [2.0, 1.5, 1.05]]];   // earth-brown rocks and pebbles (the rubble model is dark cave grey, so the tint lifts it)
-  for (const [want, s0, s1, tint] of layers) {
-    for (let n = 0, guard = 0; n < want && guard < want * 8; guard++) {
-      const x = mnx + rng() * (mxx - mnx), z = mnz + rng() * (mxz - mnz);
-      if (!pointInPoly(x, z, pts) || distToPolyline(x, z, ring) < 0.5) continue;
-      rub.push({ m: 'Rubble_Pile', x, z, y: terrainHeight(x, z) + 0.02, s: s0 + rng() * s1, r: rng() * 6.28, tint }); n++;
-    }
-  }
-  for (let i = 0; i < N; i++) {
-    if (open(i)) continue;
-    const p = pts[i], nz = norm[i];
-    const k = 1 + Math.floor(rng() * 2);
-    for (let t = 0; t < k; t++) {
-      const o = 0.4 + rng() * 1.6, x = p.x + nz.x * o + (rng() - 0.5) * 0.8, z = p.z + nz.z * o + (rng() - 0.5) * 0.8;
-      rub.push({ m: 'Rubble_Pile', x, z, y: terrainHeight(x, z) + bankLift(x, z) - 0.03, s: 0.14 + rng() * 0.22, r: rng() * 6.28, tint: [2.3, 1.75, 1.25] });
-    }
-  }
-  placeInstances(rub, () => 0);
-}
 
 // Rivers — deep flowing water sitting in the carved channel, one per river.
   // Water over every traced cell the drawing paints blue. The terrain is
@@ -2650,11 +2727,8 @@ function buildSpoilBank(mine) {
   buildNpcs();
 
   // The farm gate — a standalone model that swings open/shut (server-driven).
-  buildFarmGate();
 
   // Hearthstead village: enterable houses and the crop field.
-  buildHouses();
-  buildField();
 
   // World-editor objects (player-built props), as individual meshes.
   buildEditObjects();
@@ -2672,8 +2746,6 @@ function buildSpoilBank(mine) {
   for (const cf of (zone.campfires || [])) buildCampfire(cf);
 
   // Underground cave chamber(s) + the tunnel(s) that descend into them.
-  for (const cave of (zone.caves || [])) buildCaveRegion(cave);
-  if (zone.tunnel) buildTunnel(zone.tunnel);
 
   // Environmental hazard areas
   if (zone.hazards) buildHazards();
@@ -2814,12 +2886,91 @@ function buildLowPolyGround(W, D, cx, cz) {
 // rock is drawn (and shadow-rendered) every frame no matter where the camera
 // looks. Splitting the same instances into CHUNK-sized cells gives each cell
 // its own tight bounds, so only the cells in view (or in the shadow box) draw.
-const CHUNK = 40;
+// Instances are split into spatial chunks so the frustum can throw whole blocks
+// of scenery away at once. The chunk SIZE has to follow the zone: a fixed 40
+// units was tuned for a map a third the size of this one, and on a big zone it
+// turns a single model into hundreds of draw calls -- 10,500 instanced meshes
+// and two frames a second. Roughly eight chunks across keeps culling useful
+// without the draw-call count exploding.
+function chunkSize() {
+  const b = zone && zone.bounds;
+  if (!b) return 40;
+  return Math.max(40, Math.round(Math.max(b.maxX - b.minX, b.maxZ - b.minZ) / 8));
+}
 // items: placements with x/z. fill(item, index, im) sets that instance's matrix
 // (and colour). Returns [{ im, items }] — one entry per non-empty cell — so a
 // caller can map instanceId back to its placement.
+// --- level of detail -------------------------------------------------------
+// A tree costs the same to transform whether it fills the screen or covers four
+// pixels: the vertices are all still there. With 2,243 trees at 7k-15k triangles
+// each, that was 24 million triangles a frame, 21 million of them in parts of
+// 300 triangles or more -- one species' TRUNK alone was 5,762. Pitkakangas
+// (Kajaani 2014, ch. 3.4.1) calls this the transform-bound case and names the
+// fix: a simplified version to swap to once the object is far enough away.
+//
+// The simplification is vertex clustering. Snap every vertex onto a coarse grid,
+// then throw away the triangles whose corners collapsed onto the same cell. It
+// keeps the silhouette -- which is all that survives at distance anyway -- and
+// unlike a bounding-box proxy it still looks like the thing it replaces.
+const LOD_MIN_TRIS = 600;     // below this a part is not worth a second copy
+const LOD_DISTANCE = 115;     // metres; fog closes in at 320 so this is well inside
+const LOD_GRID = 9;           // clustering grid: bbox diagonal / this
+const lodPairs = [];          // { full, lod, cx, cz }
+
+function simplifyGeometry(geo) {
+  const pos = geo.attributes.position;
+  if (!pos || geo.index) return null;            // bakeModel hands us non-indexed
+  geo.computeBoundingBox();
+  const bb = geo.boundingBox;
+  const diag = bb.min.distanceTo(bb.max) || 1;
+  const cell = diag / LOD_GRID;
+  const snap = (v) => Math.round(v / cell);
+  const out = [];
+  const a = pos.array;
+  for (let i = 0; i < pos.count; i += 3) {
+    const k = [];
+    for (let j = 0; j < 3; j++) {
+      const o = (i + j) * 3;
+      k.push(snap(a[o]) + ',' + snap(a[o + 1]) + ',' + snap(a[o + 2]));
+    }
+    // the triangle survives only if its corners landed in three different cells
+    if (k[0] === k[1] || k[1] === k[2] || k[0] === k[2]) continue;
+    for (let j = 0; j < 3; j++) {
+      const o = (i + j) * 3;
+      out.push(Math.round(a[o] / cell) * cell, Math.round(a[o + 1] / cell) * cell,
+               Math.round(a[o + 2] / cell) * cell);
+    }
+  }
+  if (out.length < 9) return null;               // nothing recognisable left
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(out, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array((out.length / 3) * 2), 2));
+  g.computeVertexNormals();
+  return g;
+}
+const _lodCache = new Map();
+function lodGeometry(geo) {
+  if (_lodCache.has(geo.uuid)) return _lodCache.get(geo.uuid);
+  const tris = (geo.index ? geo.index.count : geo.attributes.position.count) / 3;
+  const g = tris >= LOD_MIN_TRIS ? simplifyGeometry(geo) : null;
+  _lodCache.set(geo.uuid, g);
+  return g;
+}
+// Swap each chunk between its full and simplified copy by distance. Done per
+// chunk rather than per instance because the instances in a chunk are together
+// by construction -- that is what the chunking is for.
+function updateLOD() {
+  if (!lodPairs.length) return;
+  const cx = camera.position.x, cz = camera.position.z, d2 = LOD_DISTANCE * LOD_DISTANCE;
+  for (const p of lodPairs) {
+    const near = (cx - p.cx) ** 2 + (cz - p.cz) ** 2 < d2;
+    if (p.full.visible !== near) { p.full.visible = near; p.lod.visible = !near; }
+  }
+}
+
 function chunkedInstances(geo, mat, items, fill, opts = {}) {
   const cells = new Map();
+  const CHUNK = chunkSize();
   for (const it of items) {
     const k = Math.floor(it.x / CHUNK) + ':' + Math.floor(it.z / CHUNK);
     (cells.get(k) || cells.set(k, []).get(k)).push(it);
@@ -2834,6 +2985,22 @@ function chunkedInstances(geo, mat, items, fill, opts = {}) {
     im.computeBoundingSphere();
     if (opts.tag) Object.assign(im.userData, opts.tag);
     scene.add(im); out.push({ im, items: list });
+    // A cheap twin of this chunk, shown once the camera is far enough off.
+    const lg = opts.lod === false ? null : lodGeometry(geo);
+    if (lg) {
+      const lm = new THREE.InstancedMesh(lg, mat, list.length);
+      lm.castShadow = false;                    // a distant tree's shadow is not worth it
+      lm.receiveShadow = im.receiveShadow;
+      lm.instanceMatrix.copy(im.instanceMatrix);
+      lm.instanceMatrix.needsUpdate = true;
+      if (im.instanceColor) { lm.instanceColor = im.instanceColor.clone(); lm.instanceColor.needsUpdate = true; }
+      lm.computeBoundingSphere();
+      lm.visible = false;
+      scene.add(lm);
+      let sx = 0, sz = 0;
+      for (const it of list) { sx += it.x; sz += it.z; }
+      lodPairs.push({ full: im, lod: lm, cx: sx / list.length, cz: sz / list.length });
+    }
   }
   return out;
 }
@@ -2850,11 +3017,8 @@ function instScatter(geo, mat, places, yFn, squash = 1) {
 
 function buildDetails() {
   const b = zone.bounds, rng = mulberry32((zone.treeSeed || 1) + 99);
-  const fb = zone.farmBox;
-  const inFarmYard = (x, z, m) => fb && x > fb.minX - m && x < fb.maxX + m && z > fb.minZ - m && z < fb.maxZ + m;
   const clearOK = (x, z, pathClear) =>
     (!zone.boundary || inBoundary(x, z)) &&
-    !inFarmYard(x, z, 2) &&
     worldPaths().every(p => distToPolyline(x, z, p) >= pathClear) &&
     worldRivers().every(r => distToPolyline(x, z, r.points) >= riverWaterHalf(r.width) + RIVER_LIP) &&
     // The raw cell, not the blurred field: the blur reaches ~25 m past the
@@ -2875,7 +3039,6 @@ function buildDetails() {
 
   // The cave's floor detail is authored geometry now — stalagmites, boulders,
   // rubble, mushrooms and crystals all arrive through zone.scatter.
-  if (zone.id === 'hiddencave') return;
 
   // Little blades of grass across the whole zone. (This replaced the old solid
   // cone "grass tufts" and "ferns", which read as weird green pyramids/blobs.)
@@ -2939,18 +3102,14 @@ function buildGrass() {
   const mat = new THREE.MeshStandardMaterial({
     side: THREE.DoubleSide, vertexColors: true, roughness: 1,
   });
-  const inHouse = (x, z) => (zone.houses || []).some(h => Math.abs(x - h.x) < h.w / 2 + 0.6 && Math.abs(z - h.z) < h.d / 2 + 0.6);
-  const inField = (x, z) => zone.field && Math.abs(x - zone.field.x) < zone.field.w / 2 && Math.abs(z - zone.field.z) < zone.field.d / 2;
-  const inMine = (x, z) => (zone.mines || []).some(m => pointInPoly(x, z, m.outline) || distToPolyline(x, z, m.outline.concat([m.outline[0]])) < 3.2);
   const ok = (x, z) => (!zone.boundary || inBoundary(x, z)) &&
-    !inHouse(x, z) && !inField(x, z) && !inMine(x, z) &&
     worldRivers().every(r => distToPolyline(x, z, r.points) >= riverWaterHalf(r.width) + RIVER_LIP) &&
     // The raw cell, not the blurred field: the blur reaches ~25 m past the
     // water and the rock (it exists to round off HEIGHT), and testing it here
     // stripped the grass and the undergrowth off a third of the map.
     !'WwR '.includes(terrainAt(x, z)) &&
     !zone.rocks.some(o => Math.hypot(x - o.x, z - o.z) < o.r);
-  const onPathSkip = (x, z) => (worldPaths().some(p => distToPolyline(x, z, p) < 2.2) || (zone.trails || []).some(t => distToPolyline(x, z, t) < 1.5)) && rng() > 0.12;
+  const onPathSkip = (x, z) => worldPaths().some(p => distToPolyline(x, z, p) < 2.2) && rng() > 0.12;
   const spots = [];
   // Density scales with the zone's area so a larger zone stays as lush.
   const areaK = Math.min(3.2, ((b.maxX - b.minX) * (b.maxZ - b.minZ)) / 37800);
@@ -3005,7 +3164,7 @@ function buildFireflies() {
     phase[i] = Math.random() * 6.3;
   }
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  const color = zone.id === 'hiddencave' ? 0x8fd0ff : 0xffe08a;
+  const color = 0xffe08a;
   const mat = new THREE.PointsMaterial({ color, size: 0.7, map: makeSoftDot(), transparent: true, opacity: 0.9,
     blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true });
   fireflies = new THREE.Points(geo, mat);
@@ -3344,7 +3503,7 @@ function buildPoi(p) {
   // it dispatches on key; the cave has nine rooms sharing five kinds of room,
   // so it dispatches on kind. Both zones have a POI keyed 'entrance', which is
   // why this cannot simply be the key.
-  const art = p.art || (zone.id === 'hiddencave' ? p.kind : p.key);
+  const art = p.art || p.key;
   switch (art) {
     case 'entrance': addSafeRing(p.r || 10); break;
     case 'shrine': {
@@ -3583,428 +3742,86 @@ function placeInstances(list, yOf) {
     }
   }
 }
+// A structure is assembled from modular kit pieces. Every copy of a piece is an
+// instance of one asset, which is the whole performance argument for building
+// this way: no extra geometry and no extra draw call per wall. The structure
+// stands on the level pad its site cut, so the courses line up.
+// The boardwalk. Each span sits on the ground the marsh actually offers, and
+// registers the rectangle you can stand on. Placement reads terrainHeight and
+// NOT groundY: groundY consults the deck lift, so a span placed with it would
+// stand on top of itself and climb away every rebuild.
+function buildDecks() {
+  deckInfos = [];
+  const list = zone.decks || [];
+  if (!list.length) return;
+  const placements = list.map(d => {
+    // A plank walk stands on PILINGS: over water it rides the surface, and only
+    // on dry ground does it follow the terrain. Laying every span on the bed put
+    // the ones over the fen two metres under the waterline -- a submerged
+    // boardwalk you had to swim down to.
+    const y = Math.max(terrainHeight(d.x, d.z), RIVER_WATER_Y);
+    deckInfos.push({ x: d.x, z: d.z, yaw: d.yaw || 0, len: (d.len || 4) + 0.3, w: (d.w || 2.4) - 0.3, y });
+    return { m: d.m, x: d.x, z: d.z, y, r: d.yaw || 0, s: 1 };
+  });
+  placeInstances(placements, o => o.y);
+  console.log(`[world] ${placements.length} boardwalk spans over the fen`);
+}
+function buildStructures() {
+  const placements = [];
+  for (const b of (zone.structures || [])) {
+    const c = Math.cos(b.yaw || 0), sn = Math.sin(b.yaw || 0);
+    const base = terrainHeight(b.x, b.z);
+    for (const pc of (b.pieces || [])) {
+      // Positions must turn the SAME WAY the meshes do. three.js rotation.y by
+      // t sends local +X to (cos t, -sin t); this used to place the pieces with
+      // the opposite sign, so a structure with a non-zero yaw had its pieces
+      // laid out around one rotation and each piece turned by another. The
+      // chapel sits at yaw 0 and looked perfect; the Crow Hill tower sits at
+      // 0.6 and its walls were sheared off their own footprint, leaving slots
+      // you could see the hillside through.
+      placements.push({
+        m: pc.m,
+        x: +(b.x + pc.dx * c + pc.dz * sn).toFixed(2),
+        z: +(b.z - pc.dx * sn + pc.dz * c).toFixed(2),
+        y: base + (pc.dy || 0),
+        r: (b.yaw || 0) + (pc.yaw || 0), s: 1,
+      });
+    }
+  }
+  if (!placements.length) return;
+  placeInstances(placements, o => o.y);
+  console.log(`[world] ${placements.length} ruin pieces across ${(zone.structures || []).length} structures`);
+}
 function buildScatter() {
   oreMeshes.length = 0;
-  placeInstances(zone.scatter || [], o => groundY(o.x, o.z));   // stand it on the terrain, not on Y=0
+  buildStructures();
+  buildDecks();
+  // Most dressing stands on the ground. A few things float ON the water, and
+  // for those the ground is the LAKE BED -- put a lily pad there and it sits
+  // three metres under, the same way the boardwalks did before they were fixed.
+  const FLOATERS = /Lily_Pads/;
+  placeInstances(zone.scatter || [],
+    o => (FLOATERS.test(o.m) ? Math.max(groundY(o.x, o.z), RIVER_WATER_Y + 0.04)
+                             : groundY(o.x, o.z)));   // stand it on the terrain, not on Y=0
   // Hanging pieces are modelled downward from their origin, so they mount at
   // the ceiling rather than the floor.
   const ceil = (zone.ceilingY || 13) - 0.1;
   placeInstances(zone.hanging || [], () => ceil);
 }
 
-// ---- Underground cave chamber(s), built into the open world at their floorY.
-// The cave outline (rooms + connecting tunnels traced by caveOutline) becomes a
-// walled-off open interior, so the tunnels between rooms stay clear. ----
-function polyBBox(poly) {
-  let mnx = 1e9, mxx = -1e9, mnz = 1e9, mxz = -1e9;
-  for (const p of poly) { mnx = Math.min(mnx, p.x); mxx = Math.max(mxx, p.x); mnz = Math.min(mnz, p.z); mxz = Math.max(mxz, p.z); }
-  return { mnx, mxx, mnz, mxz, W: mxx - mnx, D: mxz - mnz, cx: (mnx + mxx) / 2, cz: (mnz + mxz) / 2 };
-}
-// Exact cave shape test (mirrors the server): inside any room disc or tunnel corridor.
-function segDist2D(x, z, ax, az, bx, bz) {
-  const dx = bx - ax, dz = bz - az, L2 = dx * dx + dz * dz || 1;
-  const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / L2));
-  return Math.hypot(x - (ax + dx * t), z - (az + dz * t));
-}
-// `grow` dilates the shape (used for the floor, so it runs under the wall rock
-// with no gaps at the edge to see the void through).
-function caveShapeContains(cave, x, z, grow = 0) {
-  for (const r of cave.rooms) if (Math.hypot(x - r.x, z - r.z) < r.r + grow) return true;
-  for (const t of cave.tunnels) if (segDist2D(x, z, t.ax, t.az, t.bx, t.bz) < t.half + grow) return true;
-  return false;
-}
-function buildCaveRegion(cave) {
-  const fY = cave.floorY, cY = cave.ceilingY, wallH = cY - fY;
-  const rooms = cave.rooms, tunnels = cave.tunnels;
-  const bb = polyBBox(cave.boundary), W = bb.W + 24, D = bb.D + 24, cx = bb.cx, cz = bb.cz;
-  // --- Floor: one dark faceted stone mesh clipped to the EXACT room/tunnel shape ---
-  const seg = Math.max(30, Math.round(Math.max(W, D) / 4));
-  const src = new THREE.PlaneGeometry(W, D, seg, seg).toNonIndexed(); src.rotateX(-Math.PI / 2);
-  const sp = src.attributes.position, positions = [], colors = [], uvs = [], c = new THREE.Color();
-  for (let i = 0; i < sp.count; i += 3) {
-    const mxw = (sp.getX(i) + sp.getX(i + 1) + sp.getX(i + 2)) / 3 + cx;
-    const mzw = (sp.getZ(i) + sp.getZ(i + 1) + sp.getZ(i + 2)) / 3 + cz;
-    if (!caveShapeContains(cave, mxw, mzw, 4.5)) continue;   // dilated: floor extends under the walls
-    const j = 0.85 + Math.random() * 0.3; c.setRGB(0.34 * j, 0.35 * j, 0.4 * j);
-    for (let k = 0; k < 3; k++) { const lx = sp.getX(i + k), lz = sp.getZ(i + k); positions.push(lx, fY, lz); colors.push(c.r, c.g, c.b); uvs.push((lx + W / 2) / 7, (lz + D / 2) / 7); }
-  }
-  const fg = new THREE.BufferGeometry();
-  fg.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  fg.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-  fg.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2)); fg.computeVertexNormals();
-  const floor = new THREE.Mesh(fg, detailize(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1 }), 'stone', { scale: 3 }));
-  floor.position.set(cx, 0, cz); floor.receiveShadow = true; floor.userData.isGround = true; scene.add(floor);
-  // --- Walls: boulders around each room's rim, LEAVING A GAP wherever a tunnel
-  // attaches, and along both sides of every tunnel (not intruding into rooms).
-  // That's what makes the passages readable: you can see the openings. ---
-  const walls = [];
-  const inTunnelMouth = (x, z) => tunnels.some(t => segDist2D(x, z, t.ax, t.az, t.bx, t.bz) < t.half + 0.8);
-  const inRoom = (x, z) => rooms.some(r => Math.hypot(x - r.x, z - r.z) < r.r - 0.5);
-  for (const r of rooms) {
-    const n = Math.max(12, Math.round((2 * Math.PI * r.r) / 2.2));
-    for (let i = 0; i < n; i++) {
-      const a = (i / n) * Math.PI * 2, px = r.x + Math.cos(a) * r.r, pz = r.z + Math.sin(a) * r.r;
-      if (inTunnelMouth(px, pz)) continue;                     // the doorway to a tunnel
-      const ox = Math.cos(a), oz = Math.sin(a);
-      for (const off of [0.5, 1.9]) walls.push({ x: px + ox * off, z: pz + oz * off, r: Math.random() * 6.28, s: 0.85 + Math.random() * 0.4, m: ((i + (off > 1 ? 1 : 0)) % 2) ? 'Wall_Boulder_Tall' : 'Wall_Boulder_Wide' });
-    }
-  }
-  for (const t of tunnels) {
-    const dx = t.bx - t.ax, dz = t.bz - t.az, len = Math.hypot(dx, dz) || 1, ux = dx / len, uz = dz / len, nx = -uz, nz = ux;
-    const n = Math.max(2, Math.round(len / 2.2));
-    for (let i = 0; i <= n; i++) {
-      const u = i / n, px = t.ax + dx * u, pz = t.az + dz * u;
-      for (const s of [-1, 1]) {
-        const wx = px + nx * (t.half + 0.5) * s, wz = pz + nz * (t.half + 0.5) * s;
-        if (inRoom(wx, wz)) continue;                            // inside a room: no wall here
-        walls.push({ x: wx, z: wz, r: Math.random() * 6.28, s: 0.8 + Math.random() * 0.35, m: (i % 2) ? 'Wall_Boulder_Tall' : 'Wall_Boulder_Wide' });
-      }
-    }
-  }
-  // Size the boulders to the room height, rooted at the cave floor.
-  const byModel = {};
-  for (const w of walls) (byModel[w.m] || (byModel[w.m] = [])).push(w);
-  const mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
-  for (const model of Object.keys(byModel)) {
-    const list = byModel[model], parts = bakeModel(model, wallH * (model === 'Wall_Boulder_Tall' ? 1.25 : 0.95));
-    if (!parts) continue;
-    for (const part of parts) {
-      chunkedInstances(part.geo, part.mat, list, (o, i, im) => { q.setFromAxisAngle(UP, o.r); sc.set(o.s, o.s, o.s); mtx.compose(new THREE.Vector3(o.x, fY, o.z), q, sc); im.setMatrixAt(i, mtx); });
-    }
-  }
-  // --- Ceiling: a dark rock lid over the ENTIRE underground, far past the cave
-  // footprint. From inside, looking up past a small lid's edge saw straight
-  // through the single-sided surface ground to the trees and sky. ---
-  const b = zone.bounds, LW = (b.maxX - b.minX) + 400, LD = (b.maxZ - b.minZ) + 400;
-  const lcx = (b.minX + b.maxX) / 2, lcz = (b.minZ + b.maxZ) / 2, tun = zone.tunnel;
-  // Built as a clipped grid so the descent tunnel gets a hole through the lid.
-  const lg = new THREE.PlaneGeometry(LW, LD, Math.round(LW / 6), Math.round(LD / 6)).toNonIndexed(); lg.rotateX(Math.PI / 2);
-  const lp = lg.attributes.position, lpos = [], luv = [];
-  for (let i = 0; i < lp.count; i += 3) {
-    const mxw = (lp.getX(i) + lp.getX(i + 1) + lp.getX(i + 2)) / 3 + lcx, mzw = (lp.getZ(i) + lp.getZ(i + 1) + lp.getZ(i + 2)) / 3 + lcz;
-    if (tun && segDist2D(mxw, mzw, tun.ax, tun.az, tun.bx, tun.bz) < tun.half + 2.5) continue; // tunnel shaft
-    for (let k = 0; k < 3; k++) { const lx = lp.getX(i + k), lz = lp.getZ(i + k); lpos.push(lx, 0, lz); luv.push((lx + LW / 2) / 12, (lz + LD / 2) / 12); }
-  }
-  const lgeo = new THREE.BufferGeometry();
-  lgeo.setAttribute('position', new THREE.Float32BufferAttribute(lpos, 3));
-  lgeo.setAttribute('uv', new THREE.Float32BufferAttribute(luv, 2)); lgeo.computeVertexNormals();
-  const ceil = new THREE.Mesh(lgeo, detailize(new THREE.MeshStandardMaterial({ color: 0x3a3d44, roughness: 1, side: THREE.DoubleSide }), 'rock', { scale: 4 }));
-  ceil.position.set(lcx, cY, lcz); scene.add(ceil);
-  // And a matching dark "bedrock" skirt below the floor so nothing shows through
-  // any seam from underneath either.
-  const bed = new THREE.Mesh(new THREE.PlaneGeometry(LW, LD), new THREE.MeshStandardMaterial({ color: 0x14161b, roughness: 1, side: THREE.DoubleSide }));
-  bed.rotation.x = -Math.PI / 2; bed.position.set((b.minX + b.maxX) / 2, fY - 0.6, (b.minZ + b.maxZ) / 2); scene.add(bed);
-  // --- Dressing, only where there's actually floor/ceiling (inside the shape),
-  // so nothing floats in the solid rock between rooms ---
-  const inside = o => caveShapeContains(cave, o.x, o.z);
-  placeInstances((cave.scatter || []).filter(inside), () => fY);
-  placeInstances((cave.hanging || []).filter(inside), () => cY - 0.05);
-  // --- Lighting: a warm glow at the entrance, a cool crystal glow in every room ---
-  // All cave lights are tagged so they're only switched on while underground —
-  // every point light costs on every pixel, above ground too.
-  const el = new THREE.PointLight(0xffd9a0, 2.4, 70); el.position.set(cave.entrance.x, fY + 4, cave.entrance.z); el.userData.lightGroup = 'cave'; scene.add(el);
-  rooms.forEach((r, i) => {
-    const pl = new THREE.PointLight(i % 2 ? 0xa8d8f0 : 0x9cc4e4, 2.6, r.r * 3.2);
-    pl.position.set(r.x, fY + wallH - 0.6, r.z); pl.userData.lightGroup = 'cave'; scene.add(pl);
-  });
-  // Light the tunnels too so the passages between rooms are visible, not black gaps.
-  for (const t of tunnels) {
-    const pl = new THREE.PointLight(0x9cc4e4, 1.6, 40);
-    pl.position.set((t.ax + t.bx) / 2, fY + wallH - 0.8, (t.az + t.bz) / 2); pl.userData.lightGroup = 'cave'; scene.add(pl);
-  }
-}
-// A natural descending rock tunnel from the surface mouth down to the cave
-// entrance: a dark stone ramp (a triangle strip that follows the descent, at
-// full width so you actually walk on it) lined with boulders on both sides and
-// a rock lid overhead, so it reads as a carved passage, not a grey chute.
-function buildTunnel(t) {
-  const dx = t.bx - t.ax, dz = t.bz - t.az, len = Math.hypot(dx, dz) || 1;
-  const ux = dx / len, uz = dz / len, nx = -uz, nz = ux, half = t.half;
-  const yAt = u => t.y0 + (t.y1 - t.y0) * u;
-  // --- Ramp floor (triangle strip along the slope) ---
-  const N = Math.max(8, Math.round(len / 3)), pos = [], uv = [];
-  for (let i = 0; i < N; i++) {
-    const u0 = i / N, u1 = (i + 1) / N, y0 = yAt(u0), y1 = yAt(u1);
-    const ax0 = t.ax + dx * u0, az0 = t.az + dz * u0, ax1 = t.ax + dx * u1, az1 = t.az + dz * u1;
-    const Lx0 = ax0 + nx * half, Lz0 = az0 + nz * half, Rx0 = ax0 - nx * half, Rz0 = az0 - nz * half;
-    const Lx1 = ax1 + nx * half, Lz1 = az1 + nz * half, Rx1 = ax1 - nx * half, Rz1 = az1 - nz * half;
-    pos.push(Lx0, y0, Lz0, Rx0, y0, Rz0, Lx1, y1, Lz1,  Rx0, y0, Rz0, Rx1, y1, Rz1, Lx1, y1, Lz1);
-    for (let q = 0; q < 6; q++) uv.push(0, 0);
-  }
-  const fg = new THREE.BufferGeometry();
-  fg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  fg.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); fg.computeVertexNormals();
-  const floor = new THREE.Mesh(fg, detailize(new THREE.MeshStandardMaterial({ color: 0x4a4d55, roughness: 1, flatShading: true }), 'stone', { scale: 3 }));
-  floor.receiveShadow = true; floor.userData.isGround = true; scene.add(floor);
-  // --- Boulder walls down both sides, only BELOW the surface so the mouth stays
-  // a clean opening (a rock rim frames the very top) and a rock lid roofs the
-  // buried stretch so it reads as a covered passage, not an open trench ---
-  const walls = [], lid = [];
-  for (let i = 0; i <= N; i++) {
-    const u = i / N, y = yAt(u), cxp = t.ax + dx * u, czp = t.az + dz * u;
-    const buried = y < -1.5;
-    for (const s of [-1, 1]) {
-      walls.push({ x: cxp + nx * (half + 0.4) * s, z: czp + nz * (half + 0.4) * s, y: Math.min(y, -0.5), r: Math.random() * 6.28, s: 0.6 + Math.random() * 0.25 });
-    }
-    if (buried && i % 2 === 0) lid.push({ x: cxp, z: czp, y: y + 4.2, r: Math.random() * 6.28, s: 1.0 });
-  }
-  placeInstances(walls.map(w => ({ ...w, m: 'Wall_Boulder_Tall' })), o => o.y);
-  placeInstances(lid.map(w => ({ ...w, m: 'Wall_Boulder_Wide' })), o => o.y);
-}
-
-// ---- The farm gate: a standalone model whose hinge swings open/shut. The
-// server owns the open amount (0 shut .. 1 open) and streams it as `gateTarget`;
-// the client eases the hinge toward it each frame. ----
-
-// ---- Hearthstead: enterable houses + the crop field (procedural — the asset
-// pack has no buildings). Walls are solid on the server; the gable roof hides
-// itself while you're inside so the third-person camera can look in. ----
-const houseRoofs = []; // { h, roof }
-function buildHouses() {
-  houseRoofs.length = 0;
-  const flat = (color, extra) => new THREE.MeshStandardMaterial(Object.assign({ color, roughness: 0.95, flatShading: true }, extra || {}));
-  const box = (w, h, d, mat) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.castShadow = m.receiveShadow = true; return m; };
-  const DOOR_W = 2.6, T = 0.35;
-  for (const h of (zone.houses || [])) {
-    const g = new THREE.Group(); g.position.set(h.x, 0, h.z);
-    const hw = h.w / 2, hd = h.d / 2, H = h.h;
-    const wallMat = detailize(flat(h.wall || 0xd9cfb6), 'sand', { scale: 2, strength: 0.6 }), beamMat = detailize(flat(0x4a3424), 'wood', { scale: 1.5 }), roofMat = detailize(flat(h.roof || 0x8a5a3a), 'wood', { scale: 1.6 }), floorMat = detailize(flat(0x8b6a45), 'wood', { scale: 1.5 });
-    // Floor
-    const fl = box(h.w, 0.14, h.d, floorMat); fl.position.y = 0.07; fl.userData.isGround = true; g.add(fl);
-    // Walls (door side split around the doorway, with a lintel over it)
-    const wall = (name, cx, cz, len, alongX) => {
-      const size = alongX ? [len, H, T] : [T, H, len];
-      if (h.door !== name) { const m = box(size[0], size[1], size[2], wallMat); m.position.set(cx, H / 2, cz); m.userData.camBlocker = true; camBlockers.push(m); g.add(m); return; }
-      const seg = (len - DOOR_W) / 2, off = DOOR_W / 2 + seg / 2;
-      for (const sgn of [-1, 1]) {
-        const m = alongX ? box(seg, H, T, wallMat) : box(T, H, seg, wallMat);
-        m.position.set(alongX ? cx + sgn * off : cx, H / 2, alongX ? cz : cz + sgn * off);
-        m.userData.camBlocker = true; camBlockers.push(m); g.add(m);
-      }
-      const lintel = alongX ? box(DOOR_W + 0.4, 0.8, T + 0.1, wallMat) : box(T + 0.1, 0.8, DOOR_W + 0.4, wallMat);
-      lintel.position.set(cx, H - 0.4, cz); g.add(lintel);
-      for (const sgn of [-1, 1]) { // door posts
-        const post = alongX ? box(0.22, H - 0.8, T + 0.2, beamMat) : box(T + 0.2, H - 0.8, 0.22, beamMat);
-        post.position.set(alongX ? cx + sgn * (DOOR_W / 2 + 0.11) : cx, (H - 0.8) / 2, alongX ? cz : cz + sgn * (DOOR_W / 2 + 0.11)); g.add(post);
-      }
-    };
-    wall('north', 0, -hd, h.w + T, true); wall('south', 0, hd, h.w + T, true);
-    wall('west', -hw, 0, h.d + T, false); wall('east', hw, 0, h.d + T, false);
-    // Corner posts + a top plate: timber-frame look.
-    for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) { const post = box(0.36, H + 0.1, 0.36, beamMat); post.position.set(sx * hw, H / 2, sz * hd); g.add(post); }
-    for (const [cx, cz, w, d] of [[0, -hd, h.w + 0.5, 0.45], [0, hd, h.w + 0.5, 0.45], [-hw, 0, 0.45, h.d + 0.5], [hw, 0, 0.45, h.d + 0.5]]) { const plate = box(w, 0.28, d, beamMat); plate.position.set(cx, H + 0.05, cz); g.add(plate); }
-    // Windows (dark panes) on the walls that aren't the door.
-    const paneMat = flat(0x1e2a36, { emissive: 0x334a5c, emissiveIntensity: 0.35 });
-    for (const name of ['north', 'south', 'west', 'east']) {
-      if (name === h.door) continue;
-      const alongX = name === 'north' || name === 'south', sgn = (name === 'north' || name === 'west') ? -1 : 1;
-      const pane = alongX ? box(1.1, 1.0, 0.12, paneMat) : box(0.12, 1.0, 1.1, paneMat);
-      pane.position.set(alongX ? 0 : sgn * (hw + 0.1), H * 0.55, alongX ? sgn * (hd + 0.1) : 0); g.add(pane);
-    }
-    // Gable roof: ridge along the longer axis; two slopes + gable-end triangles.
-    const roof = new THREE.Group();
-    const alongX = h.w >= h.d, span = alongX ? h.d : h.w, run = alongX ? h.w : h.d;
-    const over = 0.8, rise = span * 0.42, half = span / 2 + over, slen = Math.hypot(half, rise), ang = Math.atan2(rise, half);
-    for (const sgn of [-1, 1]) {
-      // Each slope runs from the eave (y=H, at ±half from the ridge line) up to
-      // the ridge; tilted so its outer edge is the low one.
-      if (alongX) {
-        const sl = box(run + over * 2, 0.2, slen, roofMat);
-        sl.position.set(0, H + rise / 2 + 0.1, sgn * half / 2); sl.rotation.x = sgn * ang; roof.add(sl);
-      } else {
-        const sl = box(slen, 0.2, run + over * 2, roofMat);
-        sl.position.set(sgn * half / 2, H + rise / 2 + 0.1, 0); sl.rotation.z = -sgn * ang; roof.add(sl);
-      }
-    }
-    const tri = new THREE.Shape(); tri.moveTo(-span / 2, 0); tri.lineTo(span / 2, 0); tri.lineTo(0, rise); tri.closePath();
-    for (const sgn of [-1, 1]) {
-      const gable = new THREE.Mesh(new THREE.ShapeGeometry(tri), flat(h.wall || 0xd9cfb6, { side: THREE.DoubleSide }));
-      gable.position.set(alongX ? sgn * run / 2 : 0, H, alongX ? 0 : sgn * run / 2);
-      gable.rotation.y = alongX ? Math.PI / 2 : 0; roof.add(gable);
-    }
-    const chimney = box(0.9, rise + 1.4, 0.9, flat(0x6b6b70)); chimney.position.set(alongX ? run * 0.3 : -span * 0.2, H + rise * 0.5 + 0.7, alongX ? -span * 0.2 : run * 0.3); roof.add(chimney);
-    g.add(roof); houseRoofs.push({ h, roof });
-    // Furniture
-    for (const f of (h.furn || [])) {
-      const fg = new THREE.Group(); fg.position.set(f.dx, 0, f.dz); fg.rotation.y = f.yaw || 0;
-      // Seats are clickable. The server named them when it built the house, in
-      // the same order, so the ids line up without sending a second list.
-      if (f.k === 'stool' || f.k === 'bed') {
-        const seat = (zone.seats || []).find(q => q.house === h.key && q.k === f.k
-          && Math.abs(q.x - (h.x + f.dx)) < 0.01 && Math.abs(q.z - (h.z + f.dz)) < 0.01);
-        if (seat) fg.userData.seat = seat;
-      }
-      switch (f.k) {
-        case 'bed': {
-          const frame = box(2.3, 0.45, 1.5, beamMat); frame.position.y = 0.3; fg.add(frame);
-          const mat = box(2.1, 0.28, 1.34, flat(0xe8dcc4)); mat.position.y = 0.62; fg.add(mat);
-          const pillow = box(0.5, 0.2, 1.0, flat(0xf4efe4)); pillow.position.set(-0.75, 0.86, 0); fg.add(pillow);
-          const blanket = box(1.35, 0.12, 1.36, flat(0x8a3a3a)); blanket.position.set(0.32, 0.82, 0); fg.add(blanket);
-          for (const [bx, bz] of [[-1.05, -0.65], [1.05, -0.65], [-1.05, 0.65], [1.05, 0.65]]) { const leg = box(0.16, 0.5, 0.16, beamMat); leg.position.set(bx, 0.25, bz); fg.add(leg); }
-          const head = box(0.14, 1.2, 1.5, beamMat); head.position.set(-1.12, 0.6, 0); fg.add(head);
-          break;
-        }
-        case 'table': {
-          const top = box(1.8, 0.12, 1.0, floorMat); top.position.y = 0.86; fg.add(top);
-          for (const [bx, bz] of [[-0.78, -0.4], [0.78, -0.4], [-0.78, 0.4], [0.78, 0.4]]) { const leg = box(0.12, 0.82, 0.12, beamMat); leg.position.set(bx, 0.41, bz); fg.add(leg); }
-          const mug = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.18, 8), flat(0x9a5a3a)); mug.position.set(0.3, 1.0, 0.2); fg.add(mug);
-          break;
-        }
-        case 'stool': { const st = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.26, 0.5, 8), floorMat); st.position.y = 0.25; st.castShadow = true; fg.add(st); break; }
-        case 'chest': {
-          const c = box(1.2, 0.7, 0.72, beamMat); c.position.y = 0.35; fg.add(c);
-          const lid = box(1.22, 0.16, 0.74, flat(0x6a4a2c)); lid.position.y = 0.78; fg.add(lid);
-          const clasp = box(0.16, 0.2, 0.06, flat(0xd8b24a)); clasp.position.set(0, 0.6, 0.38); fg.add(clasp);
-          break;
-        }
-        case 'hearth': {
-          // The stone surround and mantle only: the fire itself is a cooking
-          // campfire (zone.campfires, hearth: true) — the real Campfire prop
-          // with its live flames, embers and light, and the cooking tripod
-          // over it — so you cook here exactly like at a fire outside.
-          const stone = flat(0x6e6b66);
-          const back = box(2.2, 2.0, 0.5, stone); back.position.set(0, 1.0, -0.35); fg.add(back);
-          for (const sgn of [-1, 1]) { const side = box(0.4, 1.4, 1.1, stone); side.position.set(sgn * 0.9, 0.7, 0.2); fg.add(side); }
-          const hearthstone = box(2.2, 0.08, 1.4, flat(0x5a5652)); hearthstone.position.set(0, 0.04, 0.35); fg.add(hearthstone);
-          const mantle = box(2.3, 0.18, 1.2, beamMat); mantle.position.set(0, 1.5, 0.15); fg.add(mantle);
-          const tripod = cloneModel('Cooking_Tripod', 1.45); if (tripod) { tripod.position.set(0, 0, 0.35); fg.add(tripod); }
-          break;
-        }
-        case 'shelf': {
-          const back = box(2.0, 1.7, 0.1, beamMat); back.position.set(0, 0.95, -0.14); fg.add(back);
-          for (let i = 0; i < 3; i++) { const b = box(2.0, 0.08, 0.36, floorMat); b.position.set(0, 0.4 + i * 0.55, 0); fg.add(b); }
-          for (let i = 0; i < 5; i++) { const jar = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.22, 8), flat([0x7a5a3a, 0x5a7a4a, 0x8a6a4a, 0x6a5a7a, 0x9a7a3a][i])); jar.position.set(-0.7 + i * 0.35, 0.55 + (i % 3) * 0.55, 0.05); fg.add(jar); }
-          break;
-        }
-      }
-      if (fg.userData.seat) {
-        const st = fg.userData.seat;
-        const tag = { pickKind: 'seat', seatId: st.id, seatKind: st.k, seatX: st.x, seatZ: st.z };
-        fg.traverse(o => { if (o.isMesh) Object.assign(o.userData, tag); });
-      }
-      g.add(fg);
-    }
-    // A warm lamp inside so the room reads with the roof hidden.
-    const lamp = new THREE.PointLight(0xffd9a0, 1.1, Math.max(h.w, h.d) * 1.2); lamp.position.set(0, H - 0.5, 0); lamp.userData.lightGroup = 'village'; g.add(lamp);
-    scene.add(g);
-  }
-}
-// Roofs pop off while the player is inside (or in the doorway) so the camera can see in.
-// Point lights are expensive for every pixel on screen, so groups of them are
-// only switched on when they can matter: cave lights underground, village
-// lamps/hearths when you're near the farm. Hysteresis keeps the light count
-// (and so the shader programs) stable rather than flickering at the edge.
 const _lightGroupState = {};
 function updateLightGroups() {
   const me = entityMeshes.get(myId); if (!me) return;
   const px = me.mesh.position.x, pz = me.mesh.position.z, py = me.mesh.position.y;
   const want = {};
   want.cave = py < -3 || (_lightGroupState.cave && py < 1);
-  const fb = zone.farmBox;
-  if (fb) {
-    const d = Math.hypot(px - (fb.minX + fb.maxX) / 2, pz - (fb.minZ + fb.maxZ) / 2);
-    want.village = d < 80 || (_lightGroupState.village && d < 100);
-  } else want.village = true;
+  want.village = true;
   let changed = false;
   for (const k of Object.keys(want)) if (!!_lightGroupState[k] !== !!want[k]) { _lightGroupState[k] = !!want[k]; changed = true; }
   if (!changed && _lightGroupState._init) return;
   _lightGroupState._init = true;
   scene.traverse(o => { if (o.isPointLight && o.userData.lightGroup) o.visible = !!_lightGroupState[o.userData.lightGroup]; });
 }
-function updateHouseRoofs() {
-  const me = entityMeshes.get(myId); if (!me) return;
-  const px = me.mesh.position.x, pz = me.mesh.position.z;
-  for (const { h, roof } of houseRoofs) {
-    const inside = Math.abs(px - h.x) < h.w / 2 + 1.2 && Math.abs(pz - h.z) < h.d / 2 + 1.2;
-    roof.visible = !inside;
-  }
-}
-// Tilled field: dark soil with ridged rows and instanced crop plants.
-function buildField() {
-  const f = zone.field; if (!f) return;
-  // Soil: a rounded rectangle whose rim fades into the grass (vertex alpha) —
-  // no hard square edge on the field.
-  const FE = 2.2, CR = 3.0, W = f.w + FE * 2, D = f.d + FE * 2, seg = 36;
-  const sg = new THREE.PlaneGeometry(W, D, seg, seg); sg.rotateX(-Math.PI / 2);
-  const spos = sg.attributes.position, scol = [];
-  for (let i = 0; i < spos.count; i++) {
-    const px = spos.getX(i), pz = spos.getZ(i);
-    // signed distance to the inner rounded rect (0 on its edge, >0 outside)
-    const qx = Math.abs(px) - (f.w / 2 - CR), qz = Math.abs(pz) - (f.d / 2 - CR);
-    const sd = Math.hypot(Math.max(qx, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qz), 0) - CR;
-    const a = Math.max(0, Math.min(1, 1 - sd / FE));
-    scol.push(1, 1, 1, a);
-  }
-  sg.setAttribute('color', new THREE.Float32BufferAttribute(scol, 4));
-  const soil = new THREE.Mesh(sg, detailize(new THREE.MeshStandardMaterial({ color: 0x5a4030, roughness: 1,
-    transparent: true, vertexColors: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }), 'dirt', { scale: 2 }));
-  soil.position.set(f.x, 0.04, f.z); soil.receiveShadow = true; scene.add(soil);
-  const ridgeMat = new THREE.MeshStandardMaterial({ color: 0x6b4a32, roughness: 1, flatShading: true });
-  const rows = Math.max(3, Math.floor(f.d / 2.4)), plants = [];
-  const crops = f.crops && f.crops.length ? f.crops : ['Strawberry_Patch'];
-  for (let i = 0; i < rows; i++) {
-    const z = f.z - f.d / 2 + (i + 0.5) * (f.d / rows);
-    // A real dirt mound: round in section with rounded ends, sunk a little into the soil.
-    // Sunk into the soil so only a low hump shows (~0.2m) and the crops sit on top of it.
-    const ridge = new THREE.Mesh(new THREE.CapsuleGeometry(0.5, f.w - 2.6, 2, 8), ridgeMat);
-    ridge.rotation.z = Math.PI / 2; ridge.position.set(f.x, -0.3, z); ridge.receiveShadow = ridge.castShadow = true; scene.add(ridge);
-    const m = crops[i % crops.length], n = Math.floor((f.w - 2) / 1.5);
-    for (let j = 0; j < n; j++) plants.push({ m, x: f.x - f.w / 2 + 1.5 + j * 1.5, z, r: Math.random() * 6.28, s: 0.7 + Math.random() * 0.35 });
-  }
-  placeInstances(plants, o => groundY(o.x, o.z) + 0.17);
-}
-
-let farmGate = null;       // { mesh, hinge }
-let gateTarget = 0, gateOpen = 0; // signed: magnitude 0..1, sign = swing direction
-const GATE_MAX_SWING = 1.85; // radians the leaf rotates at full open (sign from gateTarget)
-function buildFarmGate() {
-  farmGate = null;
-  const g = zone.gate;
-  if (!g || !LOADED['Farm_Gate']) return;
-  // Match the instanced scatter look: native geometry, centred on X/Z and set on
-  // the ground, then uniformly scaled by the gate's scale.
-  const leaf = (mirror, offset, scale) => {
-    const obj = LOADED['Farm_Gate'].clone(true);
-    obj.updateMatrixWorld(true);
-    const box = new THREE.Box3().setFromObject(obj);
-    obj.position.set(-(box.min.x + box.max.x) / 2, -box.min.y, -(box.min.z + box.max.z) / 2);
-    const wrap = new THREE.Group(); wrap.add(obj);
-    wrap.scale.set(scale * (mirror ? -1 : 1), scale, scale);
-    // offset runs along the fence line (the gate's local X)
-    const yaw = g.yaw || 0;
-    wrap.position.set(g.x + Math.cos(yaw) * offset, 0, g.z - Math.sin(yaw) * offset);
-    wrap.rotation.y = yaw;
-    wrap.traverse(o => { if (o.isMesh) { o.castShadow = o.receiveShadow = true; o.userData.pickKind = 'gate'; } });
-    // On a double gate the two latch-side posts would meet in the middle: hide them.
-    // (the loader renames 'Gate_Post.001' -> 'Gate_Post001', so go by position: the
-    //  latch post is the one on the +X end of the leaf)
-    if (g.double) for (const post of findByName(wrap, /^Gate_Post/)) if (post.position.x > 0) post.visible = false;
-    scene.add(wrap);
-    return { mesh: wrap, hinge: findByName(wrap, /CTRL_Gate_Hinge/)[0] || null, width: box.max.x - box.min.x };
-  };
-  if (g.double) {
-    // Two mirrored leaves, each sized to half the gap so they meet in the middle
-    // and hinge on the outer posts.
-    const probe = LOADED['Farm_Gate']; probe.updateMatrixWorld(true);
-    const pb = new THREE.Box3().setFromObject(probe), nativeW = (pb.max.x - pb.min.x) || 1;
-    const scale = (g.gap / 2) / nativeW;
-    farmGate = { leaves: [leaf(false, -g.gap / 4, scale), leaf(true, g.gap / 4, scale)] };
-  } else {
-    farmGate = { leaves: [leaf(false, 0, g.s || 1)] };
-  }
-}
-function updateFarmGate(dt) {
-  if (!farmGate) return;
-  gateOpen += (gateTarget - gateOpen) * Math.min(1, dt * 6);
-  // A mirrored leaf's rotation is mirrored too, so the same angle swings both
-  // leaves toward the same side.
-  for (const l of farmGate.leaves) if (l.hinge) l.hinge.rotation.y = gateOpen * GATE_MAX_SWING;
-}
-
-// ---------------------------------------------------------------------------
-// World editor — place/move/rotate/scale/delete GLB props, saved server-side.
-// Activated with ?edit=<key>; the value is the auth key sent with every edit.
-// ---------------------------------------------------------------------------
 const EDIT = { on: false, key: '', models: [], mobs: [], items: [], loot: {}, lootType: null, tab: 'objects', placing: null, selId: null, selPart: 0, placingMob: null, selSpawn: null };
 const spawnMeshes = new Map(); // spawn region id -> THREE.Group (ring + pole + label)
 (function () { const p = new URLSearchParams(location.search).get('edit'); if (p) { EDIT.on = true; EDIT.key = p; } })();
@@ -6422,18 +6239,6 @@ function updateControls(dt) {
     // Nothing along the line was inside: look straight down at the player.
     if (!placed) { cx = px; cz = pz; cy = Math.max(cy, py + 8); }
   }
-  // Underground the third-person camera would rise through the cave roof and
-  // stare at the top of the rock lid (everything went black). Keep it below the
-  // ceiling and pulled in close so it stays inside the chamber.
-  const uc = (zone.caves || [])[0];
-  if (uc && py < uc.floorY + 6) {
-    const lid = uc.ceilingY - 0.7;
-    if (cy > lid) {
-      cy = lid;
-      // pull the camera toward the player so a low, close shot still frames them
-      const k = 0.62; cx = px + (cx - px) * k; cz = pz + (cz - pz) * k;
-    }
-  }
   camera.position.set(cx, cy, cz);
   camera.lookAt(px, py + 1.6, pz);
   if (camShake > 0.001) { camera.position.x += (Math.random() - 0.5) * camShake; camera.position.y += (Math.random() - 0.5) * camShake * 0.7; camShake *= Math.exp(-dt * 9); }
@@ -6995,10 +6800,7 @@ function tabTarget() {
     if (d > TAB_RANGE) continue;
     ndc.set(mp.x, mp.y + 1.0, mp.z).project(camera);
     if (ndc.z > 1 || Math.abs(ndc.x) > 1 || Math.abs(ndc.y) > 1) continue;                 // must be in the camera's view
-    // in plain sight: not inside a building you're outside of (or the other
-    // way round), and no wall or cliff between you
-    const houseOf = (x, z) => houseRoofs.findIndex(({ h }) => Math.abs(x - h.x) < h.w / 2 + 0.3 && Math.abs(z - h.z) < h.d / 2 + 0.3);
-    if (houseOf(mp.x, mp.z) !== houseOf(sx, sz)) continue;
+    // in plain sight: no wall or cliff between you
     const from = new THREE.Vector3(sx, selfRec.mesh.position.y + 1.2, sz), to = new THREE.Vector3(mp.x, mp.y + 1.0, mp.z);
     _tabRay.set(from, to.clone().sub(from).normalize()); _tabRay.far = from.distanceTo(to);
     if (camBlockers.length && _tabRay.intersectObjects(camBlockers, true).length) continue;
@@ -10670,12 +10472,11 @@ function animate() {
   requestAnimationFrame(animate);
   frameCount++;
   const dt = Math.min(0.05, clock.getDelta());
+  _pf('lod', () => updateLOD());
   _pf('renderWorld', () => renderWorld(dt));
   _pf('sky', () => updateSky(dt));
   _pf('controls', () => updateControls(dt));
   _pf('markers', () => updateMarkers(dt));
-  _pf('gate', () => updateFarmGate(dt));
-  _pf('roofs', () => updateHouseRoofs());
   _pf('lights', () => updateLightGroups());
   _pf('poi', () => updatePoiLabels());
   _pf('plates', () => { updateNameplates(); updateGravePlates(); updatePendingGrave(); });

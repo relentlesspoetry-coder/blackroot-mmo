@@ -10,8 +10,6 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { WebSocketServer } from 'ws';
 import { darkwoods } from './zones/darkwoods.js';
-import { hiddencave } from './zones/hiddencave.js';
-import { killingfields } from './zones/killingfields.js';
 import {
   PLAYER, ELITE, MONSTER_TEMPLATES,
   xpForLevel, xpTotalForLevel, levelForXp, xpForKill, MAX_LEVEL, attackRoll, defenceRoll, hitChance, scaledMonster, rollLoot, REGEN,
@@ -26,8 +24,7 @@ import { isBardSpell, checkBardCast, castBard, spendSongCharges, songAmp, atkSpe
   bardMonsterDmgMult, bardMonsterDefMult, bardMonsterTakenMult, bardMonsterSpeedMult, bardMonsterAtkSpeedMult, stepSongs } from './bard.js';
 import {
   dist2, closestOnPolyline, mulberry32, pointInPoly, polyCentroid, generateTrees, generateScatter, generateHanging,
-  mergeOutlines, roughenOutline, generateEdgeForest, inHouse, riversOf, bridgesOf, pathsOf, pathSpecsOf, closestOnPaths, terrainAt, isSolid, isWater, terrainClearance, T_OFF, T_ROCK, T_DEEP, T_MARSH,
-  caveOutline,
+  riversOf, bridgesOf, pathsOf, pathSpecsOf, closestOnPaths, terrainAt, terrainFieldAt, isSolid, isWater, terrainClearance, T_OFF, T_ROCK, T_DEEP, T_MARSH,
 } from './worldgen.js';
 import {
   MINING, ORES, PICKAXES, oreFromModel, bestPickaxe, swingChance, swingTime,
@@ -91,284 +88,80 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLIENT_DIR = path.join(__dirname, '..', 'client');
 const PORT = process.env.PORT || 8080;
 
-const ZONES = { darkwoods, hiddencave, killingfields };
+const ZONES = { darkwoods };
 const START_ZONE = 'darkwoods';
 function zoneOf(ent) { return ZONES[ent.zoneId]; }
 
 // Uniformly scale a zone's layout by k (linear). Everything the server and the
 // client read from the zone — bounds, boundary, POIs, paths, spawns, radii — is
 // multiplied in place, and content counts grow with area so density holds. Runs
-// once at startup before populate() so trees/scatter/monsters generate scaled.
-function scaleZone(zone, k) {
-  const A = k * k;
-  const sp = (o) => { if (!o) return; if (o.x != null) o.x *= k; if (o.z != null) o.z *= k; if (o.r != null) o.r *= k; };
-  const b = zone.bounds; if (b) { b.minX *= k; b.maxX *= k; b.minZ *= k; b.maxZ *= k; }
-  (zone.boundary || []).forEach(sp);
-  if (zone.spawn) { zone.spawn.x *= k; zone.spawn.z *= k; }
-  // Scale a portal's location in THIS zone, but NOT its `spawn` (a destination
-  // in another, unscaled zone).
-  (zone.portals || []).forEach(sp);
-  (zone.pois || []).forEach(sp);
-  (zone.npcs || []).forEach(sp);
-  pathsOf(zone).forEach(pp => pp.forEach(sp));
-  for (const r of riversOf(zone)) {
-    r.width *= k; (r.points || []).forEach(sp);
-    for (const br of bridgesOf(r)) { br.x *= k; br.z *= k; if (br.halfWidth != null) br.halfWidth *= k; }
-  }
-  if (zone.terrain) { const t = zone.terrain; t.cell *= k; t.minX *= k; t.minZ *= k; }
-  (zone.hills || []).forEach(h => { h.x *= k; h.z *= k; h.r *= k; });
-  for (const a of [...(zone.clearings || []), ...(zone.groves || [])]) { a.x *= k; a.z *= k; a.r *= k; if (a.edge != null) a.edge *= k; }   // `h.h` is authored in world metres, so it does not scale
-  (zone.rocks || []).forEach(sp);
-  (zone.pools || []).forEach(sp);
-  (zone.chests || []).forEach(sp);
-  (zone.objects || []).forEach(sp);   // quest objects: positions scale, model sizes stay native
-  (zone.props || []).forEach(sp);     // hand-placed camp dressing: same rule, sizes stay in metres
-  (zone.trees || []).forEach(sp);     // and trees planted by hand inside a clearing
-  (zone.dirt || []).forEach(d => { sp(d); if (d.fr != null) d.fr *= k; });   // worn ground: the fringe grows with the patch
-  (zone.fishingSpots || []).forEach(sp);
-  (zone.campfires || []).forEach(sp);
-  if (zone.safeSpawnRadius) zone.safeSpawnRadius *= k;
-  if (zone.boundaryInset) zone.boundaryInset *= k;
-  // Spread mobs out: regions grow with the zone (r*k) but counts grow only
-  // linearly, so a bigger zone is LESS densely packed, not more.
-  (zone.spawns || []).forEach(s => { s.cx *= k; s.cz *= k; s.r *= k; if (s.roam) s.roam *= k; if (!s.fixed) s.count = Math.max(1, Math.round(s.count * k)); }); // `fixed`: an authored camp size
-  (zone.elites || []).forEach(e => { e.cx *= k; e.cz *= k; });
-  (zone.scatter || []).forEach(s => { if (s.count && !s.fixed) s.count = Math.max(1, Math.round(s.count * A)); }); // `fixed`: an exact count, e.g. a small ore patch
-  // Farm layout: scale positions only (prop SIZES stay native meter-scale).
-  if (zone.farm) {
-    (zone.farm.fences || []).forEach(f => { f.x1 *= k; f.z1 *= k; f.x2 *= k; f.z2 *= k; });
-    if (zone.farm.gate) { const g = zone.farm.gate; g.x *= k; g.z *= k; if (g.seg) { g.seg.x1 *= k; g.seg.z1 *= k; g.seg.x2 *= k; g.seg.z2 *= k; } }
-    (zone.farm.props || []).forEach(sp);
-    (zone.farm.houses || []).forEach(h => { h.x *= k; h.z *= k; }); // sizes are metres: unscaled
-    (zone.farm.trails || []).forEach(tr => tr.forEach(sp));
-    (zone.farm.trees || []).forEach(sp); (zone.farm.plants || []).forEach(sp);
-    if (zone.farm.field) { zone.farm.field.x *= k; zone.farm.field.z *= k; }
-    // Keep-out box so the forest/scatter don't grow through the farmyard.
-    let mnx = 1e9, mxx = -1e9, mnz = 1e9, mxz = -1e9;
-    for (const f of (zone.farm.fences || [])) { mnx = Math.min(mnx, f.x1, f.x2); mxx = Math.max(mxx, f.x1, f.x2); mnz = Math.min(mnz, f.z1, f.z2); mxz = Math.max(mxz, f.z1, f.z2); }
-    zone._farmBox = { minX: mnx, maxX: mxx, minZ: mnz, maxZ: mxz };
-  }
-  (zone.mines || []).forEach(m => { m.r *= k; if (m.inner) m.inner *= k; });
-  if (zone.treeCount != null) zone.treeCount = Math.round(zone.treeCount * A);
-  zone._cen = null; // recompute the cached centroid lazily
-}
-scaleZone(darkwoods, 1.7); // "double the size" — a much roomier Dark Woods
-
-// ---------------------------------------------------------------------------
-// Seamless world: fuse the outdoor zones into ONE continuous map, so there are
-// no loading screens or transitions between them — you see across the border
-// and walk straight through. Each source zone still generates its own trees and
-// scatter in its own space first (so worldgen keeps avoiding that zone's single
-// path and river), then a neighbour is offset into place and everything is
-// concatenated into one zone. The enclosed Hidden Cave stays a separate area for
-// now (a dark interior does not belong in the open-sky world) and is reached
-// through its cave-mouth portal.
-// ---------------------------------------------------------------------------
-function offsetZone(zone, dx, dz) {
-  const sp = (o) => { if (!o) return; if (o.x != null) o.x += dx; if (o.z != null) o.z += dz; };
-  const b = zone.bounds; if (b) { b.minX += dx; b.maxX += dx; b.minZ += dz; b.maxZ += dz; }
-  (zone.boundary || []).forEach(sp);
-  if (zone.spawn) { zone.spawn.x += dx; zone.spawn.z += dz; }
-  (zone.pois || []).forEach(sp);
-  (zone.npcs || []).forEach(sp);
-  pathsOf(zone).forEach(pp => pp.forEach(sp));
-  for (const r of riversOf(zone)) {
-    (r.points || []).forEach(sp);
-    for (const br of bridgesOf(r)) { br.x += dx; br.z += dz; }
-  }
-  if (zone.terrain) { zone.terrain.minX += dx; zone.terrain.minZ += dz; }
-  (zone.hills || []).forEach(h => { h.x += dx; h.z += dz; });
-  for (const a of [...(zone.clearings || []), ...(zone.groves || [])]) { a.x += dx; a.z += dz; }
-  (zone.rocks || []).forEach(sp);
-  (zone.pools || []).forEach(sp);
-  (zone.chests || []).forEach(sp);
-  (zone.fishingSpots || []).forEach(sp);
-  (zone.campfires || []).forEach(sp);
-  (zone.hazards || []).forEach(sp);
-  (zone.spawns || []).forEach(s => { s.cx += dx; s.cz += dz; });
-  (zone.elites || []).forEach(e => { e.cx += dx; e.cz += dz; });
-  zone._cen = null;
-}
-
-function buildSeamlessWorld() {
-  // Place the Killing Fields directly south of the Dark Woods so their edges
-  // meet. Derived rather than hard-coded: the Dark Woods can be resized and the
-  // seam still lands, with a few metres of overlap so there is no bare strip.
-  const SEAM_OVERLAP = 4;
-  offsetZone(killingfields, 0, darkwoods.bounds.maxZ - killingfields.bounds.minZ - SEAM_OVERLAP);
-  // Generate each zone's forest/scatter in its own coordinate space up front, so
-  // worldgen still avoids that zone's single path & river before we fuse them.
-  for (const z of [darkwoods, killingfields]) {
-    z._trees = generateTrees(z);
-    z._scatter = generateScatter(z);
-    // Anything the zone places by hand goes down after the scatter and is not
-    // rejection-sampled: a camp that was laid out is a camp, not a suggestion.
-    for (const pr of (z.props || [])) z._scatter.push({ i: z._scatter.length, m: pr.m, x: pr.x, z: pr.z, s: pr.s || 1, r: pr.yaw || 0, c: pr.c || 0 });
-    // Trees the zone asks for by hand -- ones inside a clearing the forest was
-    // told to keep out of -- join the generated forest, so they get the same
-    // trunk collision and the same species-for-a-position as any other tree.
-    for (const tr of (z.trees || [])) z._trees.push({ x: tr.x, z: tr.z, s: tr.s || 1, r: tr.r != null ? tr.r : +(Math.random() * 6).toFixed(2) });
-  }
-  const w = darkwoods, kf = killingfields;
-  const cat = (k) => { w[k] = (w[k] || []).concat(kf[k] || []); };
-  ['pois', 'npcs', 'rocks', 'pools', 'chests', 'hazards', 'spawns', 'elites', 'objects', 'props', 'dirt', 'trees', '_trees', '_scatter'].forEach(cat);
-  // Multiple paths/rivers now — keep each so the client can draw them all.
-  w.paths = [...pathSpecsOf(w), ...pathSpecsOf(kf)];
-  w.rivers = [...riversOf(w), ...riversOf(kf)];
-  w.clearings = [...(w.clearings || []), ...(kf.clearings || [])];
-  w.groves = [...(w.groves || []), ...(kf.groves || [])];
-  // Union bounds + one rectangular boundary wall around the whole world (no
-  // interior wall at the seam, so you walk straight from one zone to the next).
-  const b = w.bounds, kb = kf.bounds;
-  // Each original zone stays its own map page (the M map shows the region the
-  // player is standing in), so remember their own bounds and outlines before
-  // the union below erases them.
-  const rect = (bb) => [{ x: bb.minX, z: bb.minZ }, { x: bb.maxX, z: bb.minZ }, { x: bb.maxX, z: bb.maxZ }, { x: bb.minX, z: bb.maxZ }];
-  w.regions = [
-    { id: 'darkwoods', name: w.name, subtitle: w.subtitle, bounds: { ...b }, boundary: (w.boundary || rect(b)).map(p => ({ x: p.x, z: p.z })) },
-    { id: 'killingfields', name: kf.name, subtitle: kf.subtitle, bounds: { ...kb }, boundary: (kf.boundary || rect(kb)).map(p => ({ x: p.x, z: p.z })) },
-  ];
-  b.minX = Math.min(b.minX, kb.minX); b.maxX = Math.max(b.maxX, kb.maxX);
-  b.minZ = Math.min(b.minZ, kb.minZ); b.maxZ = Math.max(b.maxZ, kb.maxZ);
-  // One natural outline for the whole world: the two zones' own polygons
-  // joined across the seam, then roughened into bays and headlands (outward
-  // only, so nothing authored ends up inside the rock). The bounds grow to
-  // cover the bays so the ground still reaches the wall everywhere.
-  const dwOutline = w.regions[0].boundary, kfOutline = w.regions[1].boundary;
-  const seamZ = (w.regions[0].bounds.maxZ + w.regions[1].bounds.minZ) / 2;
-  w.boundary = roughenOutline(mergeOutlines(dwOutline, kfOutline, seamZ, 40), 90210, { step: 5, big: 20, mid: 5, small: 1.6 });
-  for (const p of w.boundary) { b.minX = Math.min(b.minX, p.x - 6); b.maxX = Math.max(b.maxX, p.x + 6); b.minZ = Math.min(b.minZ, p.z - 6); b.maxZ = Math.max(b.maxZ, p.z + 6); }
-  w.models = [...new Set([...(w.models || []), ...(kf.models || [])])];
-  w.treeCount = (w.treeCount || 0) + (kf.treeCount || 0);
-  // Fill the bays and a band along the wall with forest so the border isn't bare.
-  w._trees = w._trees.concat(generateEdgeForest(w, [dwOutline, kfOutline], 777));
-  // The world is far bigger than either zone was, and now spans dense forest AND
-  // open fields — push the fog back so the open south isn't a grey wall while the
-  // forest still feels close. A blend of the two zones' original depths.
-  if (w.env) { w.env.fogNear = 55; w.env.fogFar = 340; }
-  w._cen = null;
-  // Killing Fields is now part of the Dark Woods world; drop it as a separate
-  // zone and remove the portal that used to jump between the two.
-  delete ZONES.killingfields;
-  w.portals = (w.portals || []).filter(p => p.to !== 'killingfields');
-}
-buildSeamlessWorld();
-
-// ---------------------------------------------------------------------------
-// Underground cave: fold the Hidden Cave into the world as a chamber you walk
-// DOWN into through a cave mouth — no transition, no loading. It sits below the
-// outdoor footprint (floor at CAVE_FLOOR_Y) so the grass overhead is its roof;
-// a ramped tunnel drops from the surface mouth to the cave entrance. Every cave
-// branch in movement/floor is guarded on being underground or in the tunnel, so
-// surface play is unchanged.
-// ---------------------------------------------------------------------------
-const CAVE_FLOOR_Y = -22;
-const CAVE_HEIGHT = 7;     // a close cave roof (stalactites read overhead) with room for the camera
-const TUNNEL_HALF = 7;
-function buildCaveIntoWorld() {
-  const cave = hiddencave, w = darkwoods;
-  // Keep the cave at native scale — scaleZone doesn't transform `cavern`, so
-  // scaling here would desync the traced outline, spawn and rooms. Trace the
-  // outline first, THEN offset the whole thing (outline + spawn together) so the
-  // tunnel exit lands inside the chamber.
-  if (!cave.boundary) cave.boundary = caveOutline(cave.cavern, cave.bounds);
-  // Line the cave up directly under the existing surface "Hidden Cave Entrance"
-  // so you descend right where the cave mouth already is. The entrance room is
-  // dropped a little south of the mouth so the tunnel is a short walkable ramp.
-  const mouthPoi = (w.pois || []).find(p => p.key === 'cave') || { x: -102, z: 98.6 };
-  // The surface cave-mouth rock face opens toward the zone centre; you walk INTO
-  // it heading away from the centre. Run the tunnel that same way, into the rock
-  // face, so the arched opening is the actual way down.
-  const ml = Math.hypot(mouthPoi.x, mouthPoi.z) || 1, dirX = mouthPoi.x / ml, dirZ = mouthPoi.z / ml;
-  const entX = mouthPoi.x + dirX * 26, entZ = mouthPoi.z + dirZ * 26;
-  const ent0 = cave.spawn;                                 // native entrance-room position
-  const ox = entX - ent0.x, oz = entZ - ent0.z;
-  offsetZone(cave, ox, oz);
-  cave._scatter = generateScatter(cave);                 // crystals / ore / mushrooms
-  cave._hanging = generateHanging(cave);                 // stalactites
-  const ent = { x: cave.spawn.x, z: cave.spawn.z };      // tunnel meets the chamber here
-  const mouth = { x: mouthPoi.x, z: mouthPoi.z };        // the surface cave entrance
-  // The EXACT walkable shape: the cavern's circular rooms plus the corridors
-  // joining them (offsetZone doesn't touch `cavern`, so offset them here). This
-  // is what floor, containment and the client's geometry all use — not the
-  // approximate traced outline, whose gaps let players fall out of the cave and
-  // whose blobby edge sealed the tunnels with wall rock.
-  const rooms = cave.cavern.rooms.map(r => ({ key: r.key, x: r.x + ox, z: r.z + oz, r: r.r }));
-  const byKey = Object.fromEntries(rooms.map(r => [r.key, r]));
-  const tw = cave.cavern.tunnelWidth || 13;
-  const tunnels = cave.cavern.tunnels.map(t => {
-    const a = byKey[t.from], b = byKey[t.to];
-    return { from: t.from, to: t.to, ax: a.x, az: a.z, bx: b.x, bz: b.z, half: (t.w || tw) / 2 };
-  });
-  w.caves = [{
-    boundary: cave.boundary, rooms, tunnels, floorY: CAVE_FLOOR_Y, ceilingY: CAVE_FLOOR_Y + CAVE_HEIGHT,
-    cen: polyCentroid(cave.boundary), scatter: cave._scatter, hanging: cave._hanging, env: cave.env,
-    entrance: ent,
-  }];
-  w.tunnel = { ax: mouth.x, az: mouth.z, bx: ent.x, bz: ent.z, half: TUNNEL_HALF, y0: 0, y1: CAVE_FLOOR_Y };
-  // The old portal mouth was dressed with boulders; any that sit on the tunnel
-  // (or crowd its approach) would block the way down — clear them.
-  const tseg = [{ x: mouth.x, z: mouth.z }, { x: ent.x, z: ent.z }];
-  w.rocks = (w.rocks || []).filter(r => closestOnPolyline(r.x, r.z, tseg).dist > r.r + TUNNEL_HALF + 2
-    && dist2(r.x, r.z, mouth.x, mouth.z) > (r.r + 14) ** 2);
-  // Expand the world bounds so the underground chamber isn't clamped off (the
-  // outdoor boundary polygon still fences surface players into the woods).
-  const cb = cave.bounds, b = w.bounds;
-  b.minX = Math.min(b.minX, cb.minX - 4); b.maxX = Math.max(b.maxX, cb.maxX + 4);
-  b.minZ = Math.min(b.minZ, cb.minZ - 4); b.maxZ = Math.max(b.maxZ, cb.maxZ + 4);
-  for (const s of (cave.spawns || [])) w.spawns.push({ ...s, cave: true }); // cave-tagged mobs
-  w.regions.push({ id: 'hiddencave', name: cave.name, subtitle: cave.subtitle, underground: true,
-    bounds: { ...cb }, boundary: cave.boundary.map(p => ({ x: p.x, z: p.z })), pois: (cave.pois || []).map(p => ({ ...p })) });
-  w.models = [...new Set([...(w.models || []), ...(cave.models || [])])];    // load cave props too
-  delete ZONES.hiddencave;
-  w.portals = (w.portals || []).filter(p => p.to !== 'hiddencave');
-}
-buildCaveIntoWorld();
-
-// Is (x,z) inside the cave's exact walkable shape (any room disc or tunnel corridor)?
-function caveShapeContains(cave, x, z) {
-  for (const r of cave.rooms) if (dist2(x, z, r.x, r.z) < r.r * r.r) return true;
-  for (const t of cave.tunnels) {
-    if (closestOnPolyline(x, z, [{ x: t.ax, z: t.az }, { x: t.bx, z: t.bz }]).dist < t.half) return true;
-  }
-  return false;
-}
-// Nearest point of the cave shape to (x,z) — used to pull a strayed entity back in.
-function caveClamp(cave, x, z, radius) {
-  let best = null, bestD = Infinity;
-  for (const r of cave.rooms) {
-    const dx = x - r.x, dz = z - r.z, d = Math.hypot(dx, dz) || 1e-6, lim = r.r - radius;
-    const gap = d - lim;                          // how far outside this disc
-    if (gap < bestD) { bestD = gap; best = { x: r.x + (dx / d) * Math.min(d, lim), z: r.z + (dz / d) * Math.min(d, lim) }; }
-  }
-  for (const t of cave.tunnels) {
-    const c = closestOnPolyline(x, z, [{ x: t.ax, z: t.az }, { x: t.bx, z: t.bz }]);
-    const lim = t.half - radius, gap = c.dist - lim;
-    if (gap < bestD) {
-      let dx = x - c.x, dz = z - c.z, d = Math.hypot(dx, dz) || 1e-6;
-      bestD = gap; best = { x: c.x + (dx / d) * Math.min(d, lim), z: c.z + (dz / d) * Math.min(d, lim) };
+function buildWorld() {
+  const z = darkwoods;
+  z._trees = generateTrees(z);
+  z._scatter = generateScatter(z);
+  // Anything the zone places by hand goes down after the scatter and is not
+  // rejection-sampled: a camp that was laid out is a camp, not a suggestion.
+  for (const pr of (z.props || [])) z._scatter.push({ i: z._scatter.length, m: pr.m, x: pr.x, z: pr.z, s: pr.s || 1, r: pr.yaw || 0, c: pr.c || 0 });
+  // Trees the zone asks for by hand -- ones inside a clearing the forest was
+  // told to keep out of -- join the generated forest, so they get the same
+  // trunk collision and the same species-for-a-position as any other tree.
+  for (const tr of (z.trees || [])) z._trees.push({ x: tr.x, z: tr.z, s: tr.s || 1, r: tr.r != null ? tr.r : +(Math.random() * 6).toFixed(2) });
+  // Collision follows the PIECES a structure is assembled from, not a bounding
+  // box: a modular ruin is a row of walls with gaps in it, and the gaps are the
+  // point -- they are where the building fell down and where you walk in. Only
+  // the ground course collides; an upper course of a tower is something you look
+  // at. A piece's `gap` is a doorway at the middle of its run.
+  z._walls = [];
+  z.pads = [];
+  for (const b of (z.structures || [])) {
+    const c = Math.cos(b.yaw || 0), sn = Math.sin(b.yaw || 0);
+    for (const pc of (b.pieces || [])) {
+      if (!pc.wall || (pc.dy || 0) > 0.01) continue;
+      const yaw = (b.yaw || 0) + (pc.yaw || 0);
+      // The piece's run is along its own X, half a length either side of centre
+      // -- and with the SAME sign the client draws it: three.js rotation.y by t
+      // sends local +X to (cos t, -sin t). Positions used the opposite sign, so
+      // any structure with a non-zero yaw had collision standing somewhere the
+      // stone was not.
+      const hx = Math.cos(yaw) * pc.wall / 2, hz = -Math.sin(yaw) * pc.wall / 2;
+      const px = b.x + pc.dx * c + pc.dz * sn;
+      const pz = b.z - pc.dx * sn + pc.dz * c;
+      z._walls.push({ x1: px - hx, z1: pz - hz, x2: px + hx, z2: pz + hz,
+        r: 0.45, gap: pc.gap || 0 });
     }
+    // A ruin you can walk into needs a level floor, or the interior is a slope
+    // with a wall standing on stilts at the low end.
+    if (b.padW) z.pads.push({ minX: b.x - b.padW, maxX: b.x + b.padW,
+      minZ: b.z - b.padD, maxZ: b.z + b.padD, fr: 16 });
   }
-  return best;
+  if (z._walls.length) console.log(`[worldgen] ${z._walls.length} wall segments and ${z.pads.length} pads from ${(z.structures || []).length} structures`);
+
+  // Reeds and sedge grow with their feet in the water. A fern, a stump or a
+  // berry bush does not, and each of those models is built on its own pad of
+  // earth -- so one standing in the Murkfen is a floating clod of dirt in open
+  // water. Anything not on the list goes if its cell is wet.
+  // Things that belong standing IN the water rather than beside it. The dead
+  // trees are here because Ravenwater's and Murkfen's concept sheets both lead
+  // on them -- "twisted, dead trees rise from the water", "submerged trees
+  // visible beneath surface" -- and the cull would otherwise drag every one of
+  // them back onto the bank and leave the pool bare.
+  const WADERS = /Pond_Reeds|Meadow_Sedge|Web|Cocoon|Egg_Cluster|Brood_Nest|Boardwalk|Twisted_Dead_Tree|Lily_Pads|Rock_Spire/;
+  const beforeN = z._scatter.length;
+  z._scatter = z._scatter.filter(o => {
+    if (WADERS.test(o.m)) return true;
+    return !isWater(terrainAt(z, o.x, o.z));
+  });
+  const drowned = beforeN - z._scatter.length;
+  if (drowned) console.log(`[worldgen] pulled ${drowned} pieces of dressing out of the water`);
+
+  // The map pane shows the region you are standing in; there is only one.
+  z.regions = [{ id: z.id, name: z.name, subtitle: z.subtitle,
+    bounds: { ...z.bounds }, boundary: (z.boundary || []).map(p => ({ x: p.x, z: p.z })) }];
+  z._cen = null;
+  console.log(`[worldgen] ${z.name}: ${z.bounds.maxX - z.bounds.minX} x ${z.bounds.maxZ - z.bounds.minZ} units, ` +
+    `${z._trees.length} trees, ${z._scatter.length} scatter, ${(z.pois || []).length} landmarks`);
 }
-// Which cave (if any) an UNDERGROUND entity is in. Surface points above a cave
-// (grass roof) never resolve to it — only descended entities do.
-function caveAt(zone, x, z, underground) {
-  if (!underground) return null;
-  return (zone.caves || [])[0] || null;   // one cave; being underground means being in it
-}
-// Distance along the tunnel corridor [0..1] and lateral offset, or null if outside it.
-function tunnelParam(zone, x, z) {
-  const t = zone.tunnel; if (!t) return null;
-  const dx = t.bx - t.ax, dz = t.bz - t.az, L2 = dx * dx + dz * dz || 1;
-  let u = ((x - t.ax) * dx + (z - t.az) * dz) / L2;
-  if (u < -0.05 || u > 1.05) return null;
-  u = Math.max(0, Math.min(1, u));
-  const cx = t.ax + dx * u, cz = t.az + dz * u;
-  const lat = Math.hypot(x - cx, z - cz);
-  if (lat > t.half + 1) return null;
-  return { u, lat, cx, cz };
-}
+buildWorld();
 
 // ---------------------------------------------------------------------------
 // Tuning
@@ -424,17 +217,7 @@ function primTopAt(o, x, z) {
 }
 // The walkable floor height under (x,z), reachable from fromY (ground = 0).
 function floorHeightAt(zone, x, z, fromY) {
-  let base = 0;
-  // The tunnel is a ramp from the surface mouth (y0) down to the cave floor (y1).
-  const tp = tunnelParam(zone, x, z);
-  if (tp) {
-    const t = zone.tunnel; base = t.y0 + (t.y1 - t.y0) * tp.u;
-  } else {
-    // Below the surface and inside a cave polygon -> stand on the cave floor.
-    const c = caveAt(zone, x, z, (fromY || 0) < -6);
-    if (c) base = c.floorY;
-  }
-  let best = base;
+  let best = 0;
   for (const o of (zone._editObjects || [])) {
     if (typeof o.m !== 'string' || !o.m.startsWith('prim:')) continue;
     const top = primTopAt(o, x, z);
@@ -546,35 +329,6 @@ function resolveCollision(zone, ent, radius) {
     }
   }
 
-  // Farmstead fences are solid walls (the gate gap is left open so the trail
-  // leads out); this keeps the livestock penned and the player inside until the
-  // gate.
-  for (const f of (zone._fenceSegs || [])) {
-    const dx = f.x2 - f.x1, dz = f.z2 - f.z1, L2 = dx * dx + dz * dz;
-    let t = L2 > 0 ? ((ent.x - f.x1) * dx + (ent.z - f.z1) * dz) / L2 : 0;
-    t = Math.max(0, Math.min(1, t));
-    const cx = f.x1 + dx * t, cz = f.z1 + dz * t;
-    let ox = ent.x - cx, oz = ent.z - cz, d = Math.hypot(ox, oz);
-    const min = 0.5 + radius;
-    if (d < min) { if (d < 1e-4) { ox = 1; oz = 0; d = 1; } ent.x = cx + (ox / d) * min; ent.z = cz + (oz / d) * min; }
-  }
-  // Furniture and other round solids (house interiors).
-  for (const o of (zone._solids || [])) {
-    const dx = ent.x - o.x, dz = ent.z - o.z, d = Math.hypot(dx, dz), min = o.r + radius;
-    if (d < min && d > 1e-4) { ent.x = o.x + (dx / d) * min; ent.z = o.z + (dz / d) * min; }
-  }
-  // The gate leaf blocks its gap while shut (t small); once it has swung open
-  // the gap is passable.
-  const G = zone._gate;
-  if (G && G.seg && G.t < 0.55) {
-    const f = G.seg, dx = f.x2 - f.x1, dz = f.z2 - f.z1, L2 = dx * dx + dz * dz;
-    let t = L2 > 0 ? ((ent.x - f.x1) * dx + (ent.z - f.z1) * dz) / L2 : 0;
-    t = Math.max(0, Math.min(1, t));
-    const cx = f.x1 + dx * t, cz = f.z1 + dz * t;
-    let ox = ent.x - cx, oz = ent.z - cz, d = Math.hypot(ox, oz);
-    const min = 0.5 + radius;
-    if (d < min) { if (d < 1e-4) { ox = 1; oz = 0; d = 1; } ent.x = cx + (ox / d) * min; ent.z = cz + (oz / d) * min; }
-  }
 
   // Solid cave dressing (columns, big stalagmites, ore veins).
   for (const o of (zone._scatter || [])) {
@@ -615,27 +369,30 @@ function resolveCollision(zone, ent, radius) {
     if (d < min && d > 1e-4) { ent.x = t.x + (dx / d) * min; ent.z = t.z + (dz / d) * min; }
   }
 
+  // Buildings are walls, not bollards. A structure the size of the Fallen Chapel
+  // cannot be a collision CIRCLE -- a radius that covers a 14 x 20 m footprint is
+  // a twelve-metre no-go blob you bump into from across the nave -- so a
+  // structure carries a list of wall segments instead. A wall with a `gap` has a
+  // doorway of that width at its middle, which is what makes a ruin something
+  // you walk into rather than around.
+  for (const w of (zone._walls || [])) {
+    const dx = w.x2 - w.x1, dz = w.z2 - w.z1, L2 = dx * dx + dz * dz;
+    let t = L2 > 0 ? ((ent.x - w.x1) * dx + (ent.z - w.z1) * dz) / L2 : 0;
+    t = Math.max(0, Math.min(1, t));
+    if (w.gap) {                                  // a doorway at the middle of the run
+      const len = Math.sqrt(L2) || 1;
+      if (Math.abs(t - 0.5) * len < w.gap / 2) continue;
+    }
+    const cx = w.x1 + dx * t, cz = w.z1 + dz * t;
+    let ox = ent.x - cx, oz = ent.z - cz, d = Math.hypot(ox, oz);
+    const min = (w.r || 0.4) + radius;
+    if (d < min) { if (d < 1e-4) { ox = 1; oz = 0; d = 1; } ent.x = cx + (ox / d) * min; ent.z = cz + (oz / d) * min; }
+  }
+
   // Region-aware containment. Underground (in a cave) or in the descent tunnel,
   // the entity is bounded by that region; otherwise by the outdoor boundary. The
   // surface path is exactly as before, so above-ground play is unchanged.
-  const underground = (ent.y || 0) < -6;
-  const cave = caveAt(zone, ent.x, ent.z, underground) || (underground && ent.cave ? (zone.caves || [])[0] : null);
-  const tp = tunnelParam(zone, ent.x, ent.z);
-  if (cave && !(tp && tp.u < 0.98)) {
-    // Keep inside the exact room/tunnel shape (the descent tunnel is its own
-    // corridor and is handled below while you're still on the ramp).
-    if (!caveShapeContains(cave, ent.x, ent.z)) {
-      const c = caveClamp(cave, ent.x, ent.z, radius);
-      if (c) { ent.x = c.x; ent.z = c.z; }
-    }
-  } else if (tp && underground) {
-    // In the tunnel: clamp to the corridor.
-    const t = zone.tunnel, lim = t.half - radius;
-    if (tp.lat > lim) {
-      const dx = ent.x - tp.cx, dz = ent.z - tp.cz, d = Math.hypot(dx, dz) || 1;
-      ent.x = tp.cx + (dx / d) * lim; ent.z = tp.cz + (dz / d) * lim;
-    }
-  } else if (zone.boundary) {
+  if (zone.boundary) {
     const inset = zone.boundaryInset || 0;
     const inside = pointInPoly(ent.x, ent.z, zone.boundary);
     if (!inside || inset > 0) {
@@ -662,13 +419,11 @@ function spawnInRegion(zone, region, opts = {}) {
   // Aggressive mobs are kept out of the ring around the zone's arrival point,
   // so a fresh character is never in combat before they can look around.
   const keepOut = opts.passive ? 0 : (zone.safeSpawnRadius || 0);
-  const cave = opts.cave ? (zone.caves || [])[0] : null; // cave mobs live in the chamber
   for (let i = 0; i < 40; i++) {
     const a = rand(0, Math.PI * 2), rr = Math.sqrt(Math.random()) * region.r;
     const x = region.cx + Math.cos(a) * rr, z = region.cz + Math.sin(a) * rr;
     const b = zone.bounds;
     if (x < b.minX + 3 || x > b.maxX - 3 || z < b.minZ + 3 || z > b.maxZ - 3) continue;
-    if (cave) { if (!caveShapeContains(cave, x, z)) continue; return { x, z }; } // underground: rooms/tunnels only
     if (zone.boundary && !pointInPoly(x, z, zone.boundary)) continue;
     if (!opts.passive && inSafeZone(zone, x, z)) continue;   // pens sit inside the safe village
     if (keepOut && dist2(x, z, zone.spawn.x, zone.spawn.z) < keepOut * keepOut) continue;
@@ -730,16 +485,9 @@ function populate() {
       }
     }
     for (const e of (zone.elites || [])) populateElite(zoneId, e);
-    // A cave authored as rooms and tunnels gets its boundary traced from them,
-    // so collision, walls and placement all work off one polygon as before.
-    if (zone.cavern && !zone.boundary) {
-      zone.boundary = caveOutline(zone.cavern, zone.bounds);
-    }
     // The seamless world pre-generates these (per source zone) before the merge.
     zone._trees = zone._trees || generateTrees(zone);
     zone._scatter = zone._scatter || generateScatter(zone);
-    buildFarm(zone);
-    buildMines(zone);
     loadOverrides(zone); // player-built objects from the world editor
     zone._hanging = generateHanging(zone);
     // Any scattered ore vein becomes a minable node, addressed by its index.
@@ -749,164 +497,6 @@ function populate() {
       // `remaining` is how many ores are left in this vein before it works out.
       if (ore) zone._veins.set(o.i, { id: o.i, ore, x: o.x, z: o.z, depleted: 0, remaining: veinYield(ore) });
     }
-  }
-}
-
-// Tile the farmstead: turn each fence segment into a run of Farm_Fence panels
-// (appended to the render scatter) plus a wall-collision segment, drop the gate,
-// and place the props. Panels are native meter-scale; the zone scale only moved
-// the endpoints, so we tile the native panel width across the scaled length.
-const FENCE_PANEL = 2.0; // Farm_Fence native width (local +X)
-// One fence run: Farm_Fence panels tiled along the segment (into the render
-// scatter) plus a wall-collision segment.
-function tileFence(zone, seg) {
-  const scat = zone._scatter;
-  const dx = seg.x2 - seg.x1, dz = seg.z2 - seg.z1, len = Math.hypot(dx, dz) || 1;
-  const n = Math.max(1, Math.round(len / FENCE_PANEL)), spacing = len / n;
-  const ux = dx / len, uz = dz / len, yaw = Math.atan2(-uz, ux);
-  for (let i = 0; i < n; i++) {
-    const t = (i + 0.5) * spacing;
-    // panels keep their native size and only stretch along the run (`sx`), so
-    // short runs don't come out with dinky posts next to full-size ones
-    scat.push({ i: scat.length, m: 'Farm_Fence', x: +(seg.x1 + ux * t).toFixed(2), z: +(seg.z1 + uz * t).toFixed(2), s: 1, sx: +(spacing / FENCE_PANEL).toFixed(3), r: +yaw.toFixed(3), c: 0 });
-  }
-  zone._fenceSegs.push({ x1: seg.x1, z1: seg.z1, x2: seg.x2, z2: seg.z2 });
-}
-// Mining pits (zone.mines): an irregular dirt scrape with a spoil bank heaped
-// around its edge (the client raises a berm along the outline), an opening on
-// the side nearest the road, a couple of short fence runs flanking that
-// opening, and the ore seams spread out inside with their types shuffled
-// together so no pit is one colour of rock. The outline is a wobbly closed
-// polygon, not a circle — a few lobes plus per-point jitter.
-function buildMines(zone) {
-  zone._fenceSegs = zone._fenceSegs || [];
-  zone._minePits = [];
-  const scat = zone._scatter;
-  const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
-  for (const mine of (zone.mines || [])) {
-    const poi = (zone.pois || []).find(q => q.key === mine.key); if (!poi) continue;
-    const cx = poi.x, cz = poi.z, R = mine.r;
-    const rng = mulberry32(((zone.scatterSeed || 7) * 31 + mine.key.length * 7) | 0);
-    const ph = [rng() * 6.28, rng() * 6.28, rng() * 6.28];
-    const N = 30, outline = [], radii = [];
-    for (let i = 0; i < N; i++) {
-      const th = (i / N) * Math.PI * 2;
-      const r = R * (0.8 + 0.16 * Math.sin(2 * th + ph[0]) + 0.1 * Math.sin(3 * th + ph[1]) + 0.06 * Math.sin(5 * th + ph[2]) + (rng() - 0.5) * 0.08);
-      radii.push(r); outline.push({ x: +(cx + Math.cos(th) * r).toFixed(2), z: +(cz + Math.sin(th) * r).toFixed(2) });
-    }
-    // the opening faces the road; the bank and the fences leave it clear
-    const near = closestOnPaths(cx, cz, zone);
-    const gapDir = near ? Math.atan2(near.z - cz, near.x - cx) : 0, gapHalf = 0.4;
-    const edgeAngle = (i) => wrap(((i + 0.5) / N) * Math.PI * 2 - gapDir);
-    for (let i = 0; i < N; i++) {
-      const d = edgeAngle(i), a = outline[i], b = outline[(i + 1) % N];
-      if (Math.abs(d) < gapHalf) continue;                                   // the way in
-      if (Math.abs(d) < gapHalf + 0.95) tileFence(zone, { x1: a.x, z1: a.z, x2: b.x, z2: b.z });   // short fence runs either side of the opening
-      // elsewhere the spoil bank is solid ground the player walks over (client groundY), not a wall
-    }
-    zone._minePits.push({ x: cx, z: cz, r: R, outline, gapDir: +gapDir.toFixed(3), gapHalf });
-    // seams: shuffled types, spaced out, inside the outline, off the entrance lane and the middle if asked
-    const list = []; for (const [ore, count] of Object.entries(mine.veins || {})) for (let i = 0; i < count; i++) list.push(ore);
-    for (let i = list.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [list[i], list[j]] = [list[j], list[i]]; }
-    const placed = [], inner = mine.inner || 0, SPACING = 3.6;
-    for (const ore of list) {
-      let x = cx, z = cz, ok = false;
-      for (let tries = 0; tries < 80 && !ok; tries++) {
-        const a = rng() * Math.PI * 2, rr = inner + Math.sqrt(rng()) * (R - 2.2 - inner);
-        x = +(cx + Math.cos(a) * rr).toFixed(1); z = +(cz + Math.sin(a) * rr).toFixed(1);
-        if (!pointInPoly(x, z, outline) || closestOnPolyline(x, z, outline.concat([outline[0]])).dist < 2.2) continue;
-        const spaced = placed.every(q => dist2(x, z, q.x, q.z) >= SPACING * SPACING) && !scat.some(o => o.c > 0 && dist2(x, z, o.x, o.z) < 2.4 * 2.4);
-        const inGapLane = Math.abs(wrap(a - gapDir)) < 0.35 && rr > R - 5;
-        ok = spaced && !inGapLane;
-      }
-      placed.push({ x, z });
-      scat.push({ i: scat.length, m: `${ore}_Ore_Vein`, x, z, s: +(0.9 + rng() * 0.35).toFixed(2), r: +(rng() * 6.28).toFixed(2), c: 0.8 });
-    }
-  }
-}
-function buildFarm(zone) {
-  const F = zone.farm; if (!F) return;
-  const scat = zone._scatter;
-  zone._fenceSegs = zone._fenceSegs || [];
-  for (const seg of (F.fences || [])) tileFence(zone, seg);
-  // The gate is rendered as a standalone, animated model on the client (it
-  // swings), so it is NOT baked into the instanced scatter. The server owns its
-  // open/shut state and toggles the gap collision with it.
-  if (F.gate) zone._gate = { cx: F.gate.x, cz: F.gate.z, seg: F.gate.seg || null, t: 0, target: 0, dir: 1 };
-  for (const p of (F.props || [])) scat.push({ i: scat.length, m: p.m, x: p.x, z: p.z, s: p.s || 1, r: p.yaw || 0, c: p.c || 0 });
-  // Hand-placed nature inside the fence (worldgen keeps the wild forest out).
-  zone._trees = zone._trees || [];
-  // Hand-placed trees skip the generators, so they skip the generators' rules
-  // too -- which is how one ended up standing in the guard hut. Same keep-out
-  // here, and it says so rather than quietly dropping authored scenery.
-  for (const tr of (F.trees || [])) {
-    if (inHouse(zone, tr.x, tr.z, 2.5)) { console.warn(`[worldgen] ${zone.id}: tree at ${tr.x},${tr.z} stands inside a house — skipped`); continue; }
-    zone._trees.push({ x: tr.x, z: tr.z, s: tr.s || 1, r: tr.r != null ? tr.r : +(Math.random() * 6).toFixed(2) });
-  }
-  for (const pl of (F.plants || [])) scat.push({ i: scat.length, m: pl.m, x: pl.x, z: pl.z, s: pl.s || 1, r: pl.r != null ? pl.r : +(Math.random() * 6).toFixed(2), c: 0 });
-  // Enterable houses: each wall is a solid segment; the door side is split in
-  // two around a DOOR_W gap so you can walk in. Furniture is a round solid.
-  zone._solids = zone._solids || [];
-  for (const h of (F.houses || [])) {
-    const hw = h.w / 2, hd = h.d / 2, x0 = h.x - hw, x1 = h.x + hw, z0 = h.z - hd, z1 = h.z + hd, g = DOOR_W / 2;
-    const side = (name, ax, az, bx, bz) => {
-      if (h.door !== name) { zone._fenceSegs.push({ x1: ax, z1: az, x2: bx, z2: bz }); return; }
-      const mx = (ax + bx) / 2, mz = (az + bz) / 2, ux = Math.sign(bx - ax), uz = Math.sign(bz - az);
-      zone._fenceSegs.push({ x1: ax, z1: az, x2: mx - ux * g, z2: mz - uz * g });
-      zone._fenceSegs.push({ x1: mx + ux * g, z1: mz + uz * g, x2: bx, z2: bz });
-    };
-    side('north', x0, z0, x1, z0); side('south', x0, z1, x1, z1);
-    side('west', x0, z0, x0, z1);  side('east', x1, z0, x1, z1);
-    for (const f of (h.furn || [])) {
-      // Somewhere to sit or lie down. The stool is sat on from where it stands;
-      // a bed is lain on along its length, head at the pillow end, so you stop
-      // beside it and end up on top of it rather than standing in the frame.
-      if (f.k === 'stool' || f.k === 'bed') {
-        const seats = zoneSeats(zone);
-        seats.push({ id: `${h.key}:${f.k}:${seats.length}`, k: f.k,
-          x: h.x + f.dx, z: h.z + f.dz, yaw: f.yaw || 0, house: h.key });
-      }
-      const r = FURN_R[f.k]; if (!r) continue;
-      zone._solids.push({ x: h.x + f.dx, z: h.z + f.dz, r });
-      // A hearth is a cooking station like the campfires outside.
-      if (f.k === 'hearth') {
-        zone.campfires = zone.campfires || [];
-        if (!zone.campfires.some(c => c.id === 'cf_' + h.key)) zone.campfires.push({ id: 'cf_' + h.key, x: h.x + f.dx, z: h.z + f.dz + 0.35, hearth: true });
-      }
-    }
-  }
-  // Thin dirt trails from each doorstep to the nearest point on the road, with
-  // a bend part-way so they don't read as ruler-straight.
-  zone._trails = (F.trails || []).map(tr => tr.map(p => ({ x: p.x, z: p.z })));
-  const roads = pathsOf(zone).filter(r => r.length > 1);
-  if (!zone._trails.length && roads.length) {
-    for (const h of (F.houses || [])) {
-      const off = h.door === 'south' ? [0, h.d / 2] : h.door === 'north' ? [0, -h.d / 2] : h.door === 'east' ? [h.w / 2, 0] : [-h.w / 2, 0];
-      const step = { x: h.x + off[0] + Math.sign(off[0]) * 1.2, z: h.z + off[1] + Math.sign(off[1]) * 1.2 };
-      const c = closestOnPaths(step.x, step.z, zone);
-      const mid = { x: (step.x + c.x) / 2 + (c.z - step.z) * 0.12, z: (step.z + c.z) / 2 - (c.x - step.x) * 0.12 };
-      zone._trails.push([step, mid, { x: c.x, z: c.z }]);
-    }
-  }
-}
-const DOOR_W = 2.6;                       // doorway width (metres)
-const FURN_R = { bed: 1.1, table: 0.9, chest: 0.6, hearth: 1.0, shelf: 0.5, stool: 0.3 };
-
-// The gate only opens/shuts when a player clicks it (see toggleGate); here we
-// just ease the leaf toward its target each tick.
-const GATE_REACH = 3.2; // how close a player walks before the click takes effect
-function toggleGate(g, p) {
-  g.target = g.target > 0.5 ? 0 : 1;
-  // Open AWAY from the player's side, so it swings both ways (whoever operates it
-  // pushes it open in front of them). A player north of the gate swings it south
-  // and vice-versa.
-  if (g.target > 0.5) g.dir = (p.z < g.cz) ? -1 : 1;
-}
-function stepGates() {
-  for (const zoneId of Object.keys(ZONES)) {
-    const g = ZONES[zoneId]._gate; if (!g) continue;
-    g.t += (g.target - g.t) * Math.min(1, DT * 4); // ~0.25s swing
-    if (Math.abs(g.t - g.target) < 0.01) g.t = g.target;
   }
 }
 
@@ -2150,9 +1740,7 @@ function treeTrunkRadius(t) {
 }
 function navBlocked(zone, x, z, radius = PLAYER_RADIUS * 0.9) {
   const probe = { x, z, y: 0 };
-  const G = zone._gate, keep = G ? G.t : 0; if (G) G.t = 1;   // the gate counts as open for the map; it opens on approach
   resolveCollision(zone, probe, radius);
-  if (G) G.t = keep;
   return Math.hypot(probe.x - x, probe.z - z) > 0.05;
 }
 function navGrid(zone) {
@@ -2450,17 +2038,49 @@ const DROWN_DPS = 7;          // once the breath is gone
 // How deep is it here, roughly: 0 dry, 1 out of your depth. Shallow water is
 // something you WADE -- the fen never makes you swim, and neither does the
 // first stride off a bank.
+// Are you standing on something laid OVER the water -- a bridge deck or a plank
+// walk? The river loop below already knew about bridges, but the terrain test
+// above it did not, and a bridge whose cell the trace calls deep water made you
+// swim across your own bridge: deck underfoot at the right height, full swim
+// stroke, combat dropped, breath draining. So the question is asked once, here,
+// and it covers the boardwalks too -- the client lifts you onto those and the
+// server never knew they existed.
+function onDeck(zone, x, z) {
+  for (const r of riversOf(zone)) {
+    for (const b of bridgesOf(r)) {
+      const span = b.span || 12;
+      if (dist2(x, z, b.x, b.z) < (span * span) / 4) return true;
+    }
+  }
+  for (const d of (zone.decks || [])) {
+    const dx = x - d.x, dz = z - d.z;
+    const sn = Math.sin(d.yaw || 0), cs = Math.cos(d.yaw || 0);
+    const along = dx * cs + dz * sn, across = -dx * sn + dz * cs;
+    if (Math.abs(along) <= (d.len || 4) / 2 && Math.abs(across) <= (d.w || 2.4) / 2) return true;
+  }
+  return false;
+}
 function waterDepthAt(zone, x, z) {
+  if (onDeck(zone, x, z)) return 0;                // dry feet: you are on the planks
   let d = 0;
   if (zone.terrain) {
-    const c = terrainAt(zone, x, z);
-    if (c === T_DEEP) d = 1;
-    else if (c === T_MARSH) d = 0.35;              // wadeable: never enough to swim
+    // The SAME contour the client draws its shoreline from -- not the raw cell.
+    // A cell is 2.5 m and the drawn shore is a smooth curve through it, so asking
+    // the grid "is this cell wet" put the waterline up to a couple of metres away
+    // from the water you can see. Both sides read zone.waterEdge.
+    const E = zone.waterEdge;
+    if (E) {
+      if (terrainFieldAt(zone, x, z, 'deep') >= E.deep) d = 1;
+      else if (terrainFieldAt(zone, x, z, 'wet') >= E.marsh) d = 0.35;   // wadeable
+    } else {
+      const c = terrainAt(zone, x, z);
+      if (c === T_DEEP) d = 1;
+      else if (c === T_MARSH) d = 0.35;
+    }
   }
   for (const r of riversOf(zone)) {
     const dist = closestOnPolyline(x, z, r.points).dist;
     if (dist >= r.width / 2) continue;
-    if (bridgesOf(r).some(b => dist2(x, z, b.x, b.z) < (b.span ? b.span : 12) ** 2 / 4)) continue;
     // shelves off toward the middle of the channel rather than dropping at the bank
     d = Math.max(d, Math.min(1, 0.45 + (1 - dist / (r.width / 2)) * 0.8));
   }
@@ -3173,7 +2793,7 @@ function stepPlayer(p) {
   // that is not sitting puts you back on your feet.
   if (p.seat) {
     const up = (inp && (inp.f !== 0 || inp.r !== 0)) || p.moveTo || p.combatId != null ||
-      p.pendingChest || p.pendingPickup != null || p.pendingMine != null || p.pendingGate ||
+      p.pendingChest || p.pendingPickup != null || p.pendingMine != null ||
       p.pendingFish != null || p.pendingCook != null || p.pendingUse || (p.combatTimer || 0) > 0 || !p.alive;
     if (up) standUp(p, true);
     // On a stool he swivels: the input packet carries the way the camera is
@@ -3183,7 +2803,7 @@ function stepPlayer(p) {
   }
   if (p.resting) {
     const wantsAction = (inp && (inp.f !== 0 || inp.r !== 0)) || p.moveTo || p.combatId != null ||
-      p.pendingChest || p.pendingPickup != null || p.pendingMine != null || p.pendingGate ||
+      p.pendingChest || p.pendingPickup != null || p.pendingMine != null ||
       p.pendingFish != null || p.pendingCook != null;
     if (wantsAction || (p.combatTimer || 0) > 0) { p.resting = false; sendSkills(p); }
   }
@@ -3198,12 +2818,10 @@ function stepPlayer(p) {
       else { p.pendingSeat = null; sitDown(p, seat); }
     }
   }
-  // A shut gate on the way swings open as you reach it.
-  if (p._nav && zone._gate && zone._gate.t < 0.55 && zone._gate.target < 0.5 && dist2(p.x, p.z, zone._gate.cx, zone._gate.cz) < GATE_REACH * GATE_REACH) toggleGate(zone._gate, p);
 
   if (inp && (inp.f !== 0 || inp.r !== 0)) {
     // Manual WASD overrides click-to-move / combat.
-    p.moveTo = null; p.combatId = null; p.pendingChest = null; p.pendingPickup = null; p.pendingMine = null; p.pendingGate = false; p.pendingFish = null; p.pendingCook = null; p._nav = null;
+    p.moveTo = null; p.combatId = null; p.pendingChest = null; p.pendingPickup = null; p.pendingMine = null; p.pendingFish = null; p.pendingCook = null; p._nav = null;
     const yaw = inp.yaw;
     const fx = Math.sin(yaw), fz = Math.cos(yaw);
     const rx = Math.sin(yaw - Math.PI / 2), rz = Math.cos(yaw - Math.PI / 2);
@@ -3257,12 +2875,7 @@ function stepPlayer(p) {
     if (!f) { p.pendingCook = null; }
     else if (step(f.x, f.z, COOKING.reach - 0.6)) { moved = true; }
     else p.yaw = Math.atan2(f.x - p.x, f.z - p.z);
-  } else if (p.pendingGate) {
-    const g = zone._gate;
-    if (!g) { p.pendingGate = false; }
-    else if (step(g.cx, g.cz, GATE_REACH)) { moved = true; }
-    else { p.yaw = Math.atan2(g.cx - p.x, g.cz - p.z); toggleGate(g, p); p.pendingGate = false; }
-  } else if (p.moveTo) {
+    } else if (p.moveTo) {
     if (step(p.moveTo.x, p.moveTo.z, 0.5)) moved = true;
     else p.moveTo = null;
   }
@@ -3478,7 +3091,6 @@ setInterval(() => {
     weatherTimer = 90 + Math.random() * 150;
   }
   stepVeins();
-  stepGates();
   for (const m of monsters.values()) stepMonster(m);
   for (const zone of Object.values(ZONES)) { stepHazards(bossCtx, zone, DT); stepSanctuaries(zone, DT); }
   for (const zone of Object.values(ZONES)) {          // only where somebody is around to see it
@@ -3563,7 +3175,6 @@ setInterval(() => {
         if (it.zoneId !== zid) continue;
         items.push({ id: it.id, name: it.name, qty: it.qty, x: +it.x.toFixed(2), z: +it.z.toFixed(2) });
       }
-      const gate = ZONES[zid]._gate;
       const npcs = [];   // only the ones with somewhere to be; the rest never left their mark
       for (const n of (ZONES[zid].npcs || [])) {
         if (!n._route || n._route.stops.length < 2) continue;
@@ -3574,7 +3185,6 @@ setInterval(() => {
         hazards: hazardList(ZONES[zid]),
         sanct: sanctuaryList(ZONES[zid]),
         graves: graveList(zid),
-        gate: gate ? +(gate.t * gate.dir).toFixed(3) : undefined, // signed: sign = swing direction
         time: +dayTime.toFixed(4), weather }));
     };
     for (const p of players.values()) {
@@ -3618,9 +3228,6 @@ function zoneForClient(zone) {
     paths: pathSpecsOf(zone), rivers: riversOf(zone), hills: zone.hills || [], terrain: zone.terrain || null,
     rocks: zone.rocks, hazards: zone.hazards, pools: zone.pools, chests: zone.chests, objects: zone.objects,
     fishingSpots: zone.fishingSpots || [], campfires: zone.campfires || [],
-    caves: (zone.caves || []).map(c => ({ boundary: c.boundary, rooms: c.rooms, tunnels: c.tunnels, floorY: c.floorY, ceilingY: c.ceilingY,
-      scatter: c.scatter || [], hanging: c.hanging || [], env: c.env, entrance: c.entrance })),
-    tunnel: zone.tunnel || null,
     regions: zone.regions || null,
     env: zone.env, enclosed: !!zone.enclosed, ceilingY: zone.ceilingY,
     // Without the walk state: the route, its cached path and the live moving
@@ -3630,13 +3237,9 @@ function zoneForClient(zone) {
     scatter: zone._scatter || [],
     hanging: zone._hanging || [],
     models: zone.models || [],
-    farmBox: zone._farmBox || null,
-    houses: (zone.farm && zone.farm.houses) || [],
-    trails: zone._trails || [],
-    field: (zone.farm && zone.farm.field) || null,
-    mines: zone._minePits || [],
-    gate: zone.farm && zone.farm.gate ? (g => ({ x: g.x, z: g.z, yaw: g.yaw || 0, s: g.s || 1, double: !!g.double,
-      gap: g.seg ? Math.hypot(g.seg.x2 - g.seg.x1, g.seg.z2 - g.seg.z1) : 2.4 }))(zone.farm.gate) : null,
+    structures: zone.structures || [],
+    pads: zone.pads || [],
+    decks: zone.decks || [],
     seats: zoneSeats(zone),
     dirt: zone.dirt || [],
     editObjects: zone._editObjects || [],
@@ -3696,7 +3299,7 @@ wss.on('connection', (ws) => {
         const start = ZONES[START_ZONE];
         player = {
           id, ws, kind: 'player', name, look, zoneId: START_ZONE,
-          x: start.spawn.x, z: start.spawn.z, y: 0, yaw: start.spawn.yaw, moving: false,
+          x: start.spawn.x, z: start.spawn.z, y: 0, yaw: start.spawn.yaw || 0, moving: false,
           // One class, one class level: `level`/`xp` ARE the class (see CLASSES).
           cls, level: 1, xp: 0, gold: 0, openedChests: new Set(), usedObjects: new Set(),
           known: new Set(classDef(cls).abilities.filter(a => a.level <= 1).map(a => a.id)), // learned abilities
@@ -3716,7 +3319,7 @@ wss.on('connection', (ws) => {
           questFlags: new Set(), questAnnounced: new Set(),
           maxHp: classStats(cls, 1).hp, hp: classStats(cls, 1).hp, alive: true,
           atkTimer: 0, regen: 0, combatTimer: 0, deathTimer: 0, portalCd: 0, inSafe: true,
-          moveTo: null, combatId: null, pendingChest: null, pendingPickup: null, pendingGate: false, input: { f: 0, r: 0, yaw: 0 },
+          moveTo: null, combatId: null, pendingChest: null, pendingPickup: null, input: { f: 0, r: 0, yaw: 0 },
         };
         // A name that has been here before picks its character back up: the
         // class and look on the save win over whatever the login screen was
@@ -3819,7 +3422,7 @@ wss.on('connection', (ws) => {
         // Toggle meditation. Can't start resting mid-fight.
         player.resting = !player.resting && (player.combatTimer || 0) <= 0 && player.combatId == null;
         if (player.resting) { // sitting down is stopping: drop whatever we were walking to
-          player.moveTo = null; player._nav = null; player.pendingChest = null; player.pendingPickup = null; player.pendingMine = null; player.pendingFish = null; player.pendingCook = null; player.pendingGate = false;
+          player.moveTo = null; player._nav = null; player.pendingChest = null; player.pendingPickup = null; player.pendingMine = null; player.pendingFish = null; player.pendingCook = null;
           player.medT = 0;
         }
         sendSkills(player);
@@ -3852,11 +3455,6 @@ wss.on('connection', (ws) => {
       case 'pickup': {
         if (!player || !player.alive) break;
         player.pendingPickup = Number(msg.id); player.combatId = null; player.moveTo = null; player.pendingChest = null; player.pendingMine = null;
-        break;
-      }
-      case 'gate': {
-        if (!player || !player.alive || !zoneOf(player)._gate) break;
-        player.pendingGate = true; player.combatId = null; player.moveTo = null; player.pendingChest = null; player.pendingPickup = null; player.pendingMine = null;
         break;
       }
       case 'fish': {

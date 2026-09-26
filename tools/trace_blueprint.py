@@ -15,7 +15,12 @@ import os
 IMG=os.path.join(os.path.dirname(__file__), 'blueprints', 'dark_woods.webp')
 X0,Y0,X1,Y1=300,18,1440,972
 PANELS=[(0,0,302,1086),(0,0,1448,16),(0,972,1448,1086),(1266,816,1448,980),(513,996,907,1086),(1323,326,1448,427)]
-ZW=270.0; CELL=1.5
+# The blueprint calls the zone 1.7 km x 1.3 km. Built at that size the primary
+# loop is a nine-minute walk and the forest runs to tens of thousands of trunks,
+# which the server's per-entity collision scan cannot carry. Half the drawing
+# keeps every proportion exactly and gives a zone four times the area of the old
+# one, with a loop of about 1.4 km. One number to change if it should be bigger.
+ZW=850.0; CELL=2.5
 
 im=Image.open(IMG).convert('RGB')
 hsv=np.asarray(im.filter(ImageFilter.GaussianBlur(5)).convert('HSV')).astype(np.float32)
@@ -35,7 +40,16 @@ rock  = clean(rest&(sat<0.12)&(val>0.40)&(val<0.84), 3, 6) & rest
 # The drawing renders buildings and ruins in grey too -- the chapel, the camp
 # halls, the Crow Hill tower. They classify as stone but they are not cliffs,
 # so drop every rock blob too small to be a rock wall.
-def drop_small(mask, minpx):
+# The drawing renders buildings in the same grey as cliffs, which is why this
+# filter exists -- but it was set at 2600 px, and the drawing draws cliffs as
+# MANY SMALL rock symbols rather than solid masses. Measured: 78 rock blobs, and
+# a 2600 px floor threw away 66 of them, a quarter of all the drawn stone, with
+# the largest casualty two pixels under the line. The whole Crow Hill massif
+# went that way. So the floor drops to a size that only catches a roof, and the
+# three actual buildings are excluded by WHERE they are instead.
+# (px, py, radius) -- the chapel, the camp halls, the Crow Hill tower
+BUILDING_SITES = [(912, 205, 62), (870, 495, 78), (508, 615, 52)]
+def drop_small(mask, minpx, sites=()):
     lab=np.zeros(mask.shape,np.int32); n=0; keep=np.zeros(mask.shape,bool)
     H,W=mask.shape
     for sy in range(H):
@@ -48,10 +62,14 @@ def drop_small(mask, minpx):
                     ny,nx=y+dy,x+dx
                     if 0<=ny<H and 0<=nx<W and mask[ny,nx] and not lab[ny,nx]:
                         lab[ny,nx]=n; stack.append((ny,nx)); cells.append((ny,nx))
-            if len(cells)>=minpx:
-                for (y,x) in cells: keep[y,x]=True
+            if len(cells)<minpx: continue
+            cy=sum(c[0] for c in cells)/len(cells); cx=sum(c[1] for c in cells)/len(cells)
+            # a compact grey blob sitting on a known building is a roof, not a cliff
+            if any((cx-sx)**2+(cy-sy)**2 < r*r for (sx,sy,r) in sites) and len(cells)<9000:
+                continue
+            for (y,x) in cells: keep[y,x]=True
     return keep
-rock = drop_small(rock, 2600)
+rock = drop_small(rock, 800, BUILDING_SITES)
 green = rest&~rock
 forest= green&(val<0.32)
 
@@ -70,6 +88,11 @@ for gy in range(gh):
         if land[y0:y1,x0:x1].mean()<0.45: row+=' '; continue
         fr={'W':water[y0:y1,x0:x1].mean(),'w':marsh[y0:y1,x0:x1].mean(),'R':rock[y0:y1,x0:x1].mean()}
         best=max(fr,key=fr.get)
+        # Rock needs a lower bar than water. The drawing renders cliffs as many
+        # small symbols, so a cell is rarely MOSTLY stone even where the map is
+        # plainly a cliff face -- at a 0.42 majority the Crow Hill massif scored
+        # zero. A third of a cell of drawn rock means there is rock there.
+        if best=='R' and fr['R']>0.26: row+='R'; continue
         if fr[best]>0.42: row+=best; continue
         fd=forest[y0:y1,x0:x1].mean()
         row += 'F' if fd>0.55 else ('f' if fd>0.20 else '.')
@@ -77,5 +100,15 @@ for gy in range(gh):
 cnt={c:sum(r.count(c) for r in rows) for c in ' WwRFf.'}
 print(f'grid {gw} x {gh} cells of {CELL} units -> zone {ZW:.0f} x {ZH:.0f}')
 print('cells:', {k:v for k,v in cnt.items()})
-json.dump({'cell':CELL,'w':gw,'h':gh,'minX':minX,'minZ':round(minZ,1),'rows':rows}, open('/tmp/grid.json','w'))
-for gy in range(0,gh,3): print('  '+''.join(rows[gy][gx] for gx in range(0,gw,2)))
+json.dump({'cell':CELL,'w':gw,'h':gh,'minX':minX,'minZ':round(minZ,1),'rows':rows,
+           'px':{'x0':int(px0),'y0':int(py0),'x1':int(px1),'y1':int(py1),'unitsPerPx':S}},
+          open(os.path.join(os.path.dirname(__file__),'darkwoods.terrain.json'),'w'))
+print('wrote tools/darkwoods.terrain.json')
+PAL={' ':(247,240,224),'W':(46,110,168),'w':(120,170,200),'R':(130,130,130),
+     'F':(28,80,38),'f':(92,142,72),'.':(206,198,150)}
+prev=np.zeros((gh,gw,3),np.uint8)
+for gy,r in enumerate(rows):
+    for gx,c in enumerate(r): prev[gy,gx]=PAL[c]
+Image.fromarray(prev).resize((gw*2,gh*2),Image.NEAREST).save(
+    os.path.join(os.path.dirname(__file__),'darkwoods.trace.png'))
+print('wrote tools/darkwoods.trace.png')

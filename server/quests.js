@@ -264,7 +264,7 @@ export const QUESTS = {
     active: 'Follow the path south to the Shrine Grove.',
     done: 'You found it. Rest here when the woods get hungry — nothing aggresses on holy ground.',
     objectives: [
-      { type: 'reach', zone: 'darkwoods', poi: 'shrine', label: 'Reach the Shrine Grove' },
+      { type: 'reach', zone: 'darkwoods', poi: 'chapel', label: 'Reach the Shrine Grove' },
     ],
     reward: { xp: 120, gold: 20 },
   },
@@ -368,7 +368,7 @@ export const QUESTS = {
     active: 'Find the cave mouth west of the ravine, then the Smuggler’s Niche inside.',
     done: 'My cache, at last. The deeper chambers are yours to plunder, if you’ve the nerve.',
     objectives: [
-      { type: 'chest', zone: 'hiddencave', chest: 'smug', label: 'Open the Smuggler\'s Niche' },
+      { type: 'chest', zone: 'darkwoods', chest: 'smug', label: 'Open the Smuggler\'s Niche' },
     ],
     reward: { xp: 500, gold: 120 },
   },

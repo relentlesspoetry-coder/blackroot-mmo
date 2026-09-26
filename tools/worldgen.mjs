@@ -3,15 +3,14 @@
 // necessarily get 26 — this prints what it really managed, and checks that
 // nothing landed somewhere it shouldn't.
 
-import { generateTrees, generateScatter, generateHanging, pointInPoly, dist2, caveOutline, inCavern, tunnelSamples } from '../server/worldgen.js';
+import { generateTrees, generateScatter, generateHanging, pointInPoly, dist2 } from '../server/worldgen.js';
 import { darkwoods } from '../server/zones/darkwoods.js';
-import { hiddencave } from '../server/zones/hiddencave.js';
 
 const pad = (s, n) => String(s).padEnd(n);
 let problems = 0;
 function flag(msg) { console.log('  !! ' + msg); problems++; }
 
-for (const zone of [darkwoods, hiddencave]) {
+for (const zone of [darkwoods]) {
   console.log(`\n=== ${zone.name} ===`);
 
   // A cave authored as rooms and tunnels: trace it, then check the shape is
@@ -122,8 +121,8 @@ for (const zone of [darkwoods, hiddencave]) {
 // A portal names where it drops you in the destination zone, and that point
 // lives in the source zone's file — easy to leave behind when a zone is
 // relaid out.
-const ZONES = { darkwoods, hiddencave };
-for (const zone of [darkwoods, hiddencave]) {
+const ZONES = { darkwoods };   // one zone now
+for (const zone of [darkwoods]) {
   for (const portal of (zone.portals || [])) {
     const to = ZONES[portal.to];
     if (!to) { flag(`${zone.name}: portal leads to unknown zone "${portal.to}"`); continue; }

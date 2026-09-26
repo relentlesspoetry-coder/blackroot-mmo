@@ -10,3 +10,7 @@ server/zones/*.overrides.json
 server/loot.overrides.json
 saves/
 accounts/
+
+# python build noise from the tools/
+__pycache__/
+*.pyc

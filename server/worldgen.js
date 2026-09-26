@@ -9,11 +9,6 @@ function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
 // Extra flooded width beyond the river's nominal half-width (matches the client
 // and server collision, so nothing is placed in the widened water).
 const RIVER_BANK = 4;
-// Inside the farmyard keep-out box (plus margin m)? Keeps forest/scatter out.
-function inFarm(zone, x, z, m = 0) {
-  const b = zone._farmBox; if (!b) return false;
-  return x > b.minX - m && x < b.maxX + m && z > b.minZ - m && z < b.maxZ + m;
-}
 export function dist2(ax, az, bx, bz) { const dx = ax - bx, dz = az - bz; return dx * dx + dz * dz; }
 
 // A zone may hold several bodies of water, each with several crossings. `river`
@@ -50,6 +45,57 @@ export function terrainAt(zone, x, z) {
   return t.rows[gz][gx] || T_OFF;
 }
 export function isWater(c) { return c === T_DEEP || c === T_MARSH; }
+
+// The wetness field the SHORELINE is drawn from -- box-blurred twice over a few
+// cells, then sampled bilinear. This has to be here, and has to match the client
+// exactly, because the client stopped drawing water on the raw cell grid: it
+// contours this field instead, so a cell is no longer the same thing as water.
+// Deciding swimming from cells while drawing the shore from the contour left 766
+// cells of open ground you swam across. Both sides now read `zone.waterEdge`,
+// which the zone generator writes, so the levels cannot drift apart.
+const FIELD_SRC = {
+  deep: c => (c === T_DEEP ? 1 : 0),
+  wet: c => ((c === T_DEEP || c === T_MARSH) ? 1 : 0),
+  rock: c => (c === T_ROCK ? 1 : 0),
+};
+export function terrainFieldAt(zone, x, z, name) {
+  const t = zone && zone.terrain;
+  if (!t) return 0;
+  const R = (zone.waterEdge && zone.waterEdge.blur) || 3;
+  let F = zone._fields;
+  if (!F) {
+    F = zone._fields = {};
+    for (const [key, of] of Object.entries(FIELD_SRC)) {
+      const raw = new Float32Array(t.w * t.h);
+      for (let gz = 0; gz < t.h; gz++) {
+        for (let gx = 0; gx < t.w; gx++) raw[gz * t.w + gx] = of(t.rows[gz][gx] || T_OFF);
+      }
+      const tmp = new Float32Array(t.w * t.h), out = new Float32Array(t.w * t.h);
+      const pass = (src, dst, horiz) => {
+        for (let gz = 0; gz < t.h; gz++) for (let gx = 0; gx < t.w; gx++) {
+          let sum = 0, n = 0;
+          for (let d = -R; d <= R; d++) {
+            const ix = horiz ? gx + d : gx, iz = horiz ? gz : gz + d;
+            if (ix < 0 || ix >= t.w || iz < 0 || iz >= t.h) continue;
+            sum += src[iz * t.w + ix]; n++;
+          }
+          dst[gz * t.w + gx] = n ? sum / n : 0;
+        }
+      };
+      pass(raw, tmp, true); pass(tmp, out, false);
+      pass(out, tmp, true); pass(tmp, out, false);
+      F[key] = out;
+    }
+  }
+  const g = F[name];
+  if (!g) return 0;
+  const fx = (x - t.minX) / t.cell - 0.5, fz = (z - t.minZ) / t.cell - 0.5;
+  const x0 = Math.floor(fx), z0 = Math.floor(fz), tx = fx - x0, tz = fz - z0;
+  const at = (ix, iz) => (iz < 0 || iz >= t.h || ix < 0 || ix >= t.w) ? 0 : g[iz * t.w + ix];
+  const a = at(x0, z0) * (1 - tx) + at(x0 + 1, z0) * tx;
+  const b = at(x0, z0 + 1) * (1 - tx) + at(x0 + 1, z0 + 1) * tx;
+  return a * (1 - tz) + b * tz;
+}
 // Solid ground you cannot enter: deep water, rock, and off the map.
 export function isSolid(c) { return c === T_DEEP || c === T_ROCK || c === T_OFF; }
 // Distance from (x,z) out to the nearest cell that is not `ok`, capped at
@@ -101,26 +147,6 @@ export function closestOnPaths(x, z, zone) {
   }
   return best;
 }
-// The mining pits (zone.mines, each at the POI of its key), as circles to keep
-// the forest and scatter out of, with a margin for the fence and dirt fringe.
-export function mineAreas(zone) {
-  if (zone._mineAreas) return zone._mineAreas;
-  zone._mineAreas = (zone.mines || []).map(m => { const p = (zone.pois || []).find(q => q.key === m.key); return p ? { x: p.x, z: p.z, r: m.r } : null; }).filter(Boolean);
-  return zone._mineAreas;
-}
-function inMine(zone, x, z, m = 0) { return mineAreas(zone).some(a => dist2(x, z, a.x, a.z) < (a.r + m) ** 2); }
-// Inside one of the enterable houses (axis-aligned, w x d about its centre)?
-// The farm keep-out box is built from the fence line alone, so a cottage set
-// outside the fences was protected by nothing and the forest grew through its
-// roof. Canopy over a roof is fine and looks well; a trunk in the bedroom is
-// not, so the margin only has to keep trunks off the walls.
-export function houseAreas(zone) {
-  return ((zone.farm && zone.farm.houses) || []);
-}
-export function inHouse(zone, x, z, m = 0) {
-  return houseAreas(zone).some(h => Math.abs(x - h.x) < h.w / 2 + m && Math.abs(z - h.z) < h.d / 2 + m);
-}
-
 export function closestOnSeg(px, pz, ax, az, bx, bz) {
   const abx = bx - ax, abz = bz - az;
   const t = clamp(((px - ax) * abx + (pz - az) * abz) / (abx * abx + abz * abz || 1), 0, 1);
@@ -160,6 +186,24 @@ export function mulberry32(a) {
   };
 }
 
+// Is (x, z) inside a building's footprint? A structure declares one already --
+// the pad it levels the ground with -- so that rectangle, rotated with the
+// building and given a margin, is the thing nothing else may stand in.
+//
+// This was missing, and clearRadiusS returns a flat 7 m for a ruin or a
+// lookout: the Crow Hill tower is eight metres across under an eleven-metre
+// roof, so the forest was seeded happily inside it and an oak grew up through
+// the lookout. Gravestones were doing the same to the chapel's nave.
+export function inStructure(zone, x, z, margin = 3) {
+  for (const b of (zone.structures || [])) {
+    const c = Math.cos(b.yaw || 0), s = Math.sin(b.yaw || 0);
+    const dx = x - b.x, dz = z - b.z;
+    const lx = dx * c + dz * s, lz = -dx * s + dz * c;
+    if (Math.abs(lx) < (b.padW || 8) + margin && Math.abs(lz) < (b.padD || 8) + margin) return true;
+  }
+  return false;
+}
+
 export function clearRadiusS(p) {
   if (p.kind === 'safe') return (p.r || 9) + 3;
   if (p.kind === 'boss') return 15;
@@ -180,10 +224,8 @@ export function generateTrees(zone) {
     if (pathSpecsOf(zone).some(p => closestOnPolyline(x, z, p.points).dist < pathClearOf(p.kind))) continue;
     if (riversOf(zone).some(r => closestOnPolyline(x, z, r.points).dist < r.width / 2 + RIVER_BANK + 3)) continue;
     if (riversOf(zone).some(r => bridgesOf(r).some(b => dist2(x, z, b.x, b.z) < 15 * 15))) continue;
-    if (inFarm(zone, x, z, 3)) continue;
-    if (inHouse(zone, x, z, 2.5)) continue;
-    if (inMine(zone, x, z, 4)) continue;
     if (zone.pois.some(p => dist2(x, z, p.x, p.z) < clearRadiusS(p) ** 2)) continue;
+    if (inStructure(zone, x, z, 4)) continue;          // no oaks through the tower
     if ((zone.rocks || []).some(o => dist2(x, z, o.x, o.z) < (o.r + 2) ** 2)) continue;
     // Density decides both whether a tree stands here at all and how close it
     // stands to its neighbours: a grove packs them in, a clearing is bare.
@@ -223,6 +265,23 @@ export function generateScatter(zone) {
       // round to one tenth outside it.
       x = +x.toFixed(1); z = +z.toFixed(1);
       if (zone.boundary && !pointInPoly(x, z, zone.boundary)) continue;
+      // `shore` dressing belongs ON THE BANK: dry ground within sight of the
+      // water. Scattered through a disc instead, it mostly lands in the middle
+      // of the pool and is culled -- Ravenwater kept 2 of its 12 mossy boulders
+      // and 1 of its 7 willows that way, and its banks came out bare while its
+      // own concept sheet lists boulders and fallen logs as key props.
+      if (spec.shore) {
+        if (isWater(terrainAt(zone, x, z))) continue;
+        const reach = spec.shoreR || 7;
+        let found = false;
+        for (let i = 0; i < 8 && !found; i++) {
+          const a2 = i / 8 * Math.PI * 2;
+          for (const rr2 of [reach * 0.45, reach * 0.8, reach]) {
+            if (isWater(terrainAt(zone, x + Math.cos(a2) * rr2, z + Math.sin(a2) * rr2))) { found = true; break; }
+          }
+        }
+        if (!found) continue;
+      }
       // A trail is a scuff through the grass, so dressing crowds right up to
       // it; a road is kept clear. (Inverted on the first pass, which walled the
       // Wayside Camp's own trail off from the camp and lost its tent.)
@@ -235,10 +294,14 @@ export function generateScatter(zone) {
       // wades out into it -- but keeps anything solid on the bank.
       // Undergrowth thickens and thins with the wood above it.
       if (!spec.near && rng() > Math.min(1, 0.45 + forestAt(zone, x, z) * 0.5)) continue;
-      if (inFarm(zone, x, z, 2)) continue;
-      if (inHouse(zone, x, z, 1.5)) continue;
       // a pit's own dressing (crates, barricades at the ravine dig) may sit in it; nothing else may
-      if (inMine(zone, x, z, 3) && !(spec.near && (zone.mines || []).some(m => m.key === spec.near))) continue;
+      if (inStructure(zone, x, z, 1.5)) continue;      // the churchyard, not the nave
+      // Nothing stands INSIDE a cliff. Rock is solid ground you cannot walk on
+      // and it rises many metres, so a piece placed there is either buried or
+      // perched out of reach -- and an ore vein in a cliff face is a node that
+      // can never be mined. Wolfsnag had 55 of its 65 pieces there, seventeen
+      // of them ore, once its chokepoints squeezed the open ground away.
+      if (isSolid(terrainAt(zone, x, z))) continue;
       if ((zone.rocks || []).some(o => dist2(x, z, o.x, o.z) < (o.r + 1.5) ** 2)) continue;
       if ((zone.chests || []).some(c => dist2(x, z, c.x, c.z) < 16)) continue;
       if (dist2(x, z, zone.spawn.x, zone.spawn.z) < 64) continue;
@@ -319,33 +382,6 @@ function wobble(seed, angle, rough) {
     0.34 * Math.sin(k2 * angle + p2) +
     0.16 * Math.sin(k3 * angle + p3));
 }
-
-export function roomRadius(room, angle) {
-  return room.r * wobble(room.key || 'room', angle, room.rough != null ? room.rough : 0.34);
-}
-
-// Rooms are also stretched along an axis of their own. A circle with ripples
-// still reads as a circle; an elongated lumpy blob reads as a cave.
-export function roomShape(room) {
-  const seed = room.key || 'room';
-  return {
-    axis: hash(seed + 'x') * Math.PI,                    // orientation
-    stretch: 1.15 + hash(seed + 'y') * 0.45,             // 1.15 to 1.6 long axis
-  };
-}
-
-// A tunnel bends through a midpoint pushed off the straight line, so passages
-// curve instead of running dead straight between rooms.
-export function tunnelPath(cav, t) {
-  const a = cav.rooms.find(r => r.key === t.from), b = cav.rooms.find(r => r.key === t.to);
-  if (!a || !b) return null;
-  const mx = (a.x + b.x) / 2, mz = (a.z + b.z) / 2;
-  const dx = b.x - a.x, dz = b.z - a.z;
-  const len = Math.hypot(dx, dz) || 1;
-  const bend = (hash(t.from + t.to) - 0.5) * 2 * (t.bend != null ? t.bend : 0.3) * len;
-  return { a, b, c: { x: mx + (-dz / len) * bend, z: mz + (dx / len) * bend } };
-}
-
 function quadPoint(p, s) {
   const u = 1 - s;
   return {
@@ -353,222 +389,5 @@ function quadPoint(p, s) {
     z: u * u * p.a.z + 2 * u * s * p.c.z + s * s * p.b.z,
   };
 }
-
-// Points along a tunnel's actual curve — used by tools to verify a passage is
-// open end to end. Sampling the straight line between room centres tests rock.
-export function tunnelSamples(cav, t, n = 24) {
-  const p = tunnelPath(cav, t);
-  if (!p) return [];
-  const out = [];
-  for (let i = 0; i <= n; i++) out.push(quadPoint(p, i / n));
-  return out;
-}
-
-export function inCavern(cav, x, z) {
-  for (const r of cav.rooms) {
-    let dx = x - r.x, dz = z - r.z;
-    if (Math.abs(dx) > r.r * 2 || Math.abs(dz) > r.r * 2) continue;   // cheap reject
-    const sh = roomShape(r);
-    // Into the room's own frame, then squash the long axis so the radial test
-    // below describes an elongated blob rather than a disc.
-    const ca = Math.cos(-sh.axis), sa = Math.sin(-sh.axis);
-    const lx = (dx * ca - dz * sa) / sh.stretch, lz = dx * sa + dz * ca;
-    const d = Math.hypot(lx, lz);
-    if (d <= roomRadius(r, Math.atan2(lz, lx))) return true;
-  }
-  for (const t of cav.tunnels) {
-    const p = tunnelPath(cav, t);
-    if (!p) continue;
-    const baseW = (t.w || cav.tunnelWidth || 12) / 2;
-    const steps = 14;
-    for (let i = 0; i <= steps; i++) {
-      const s = i / steps;
-      const q = quadPoint(p, s);
-      const dx = x - q.x, dz = z - q.z;
-      // Passages pinch and open along their length rather than running at one
-      // constant width.
-      const w = baseW * (0.7 + 0.5 * Math.abs(Math.sin(s * 5.1 + hash(t.from + t.to + 'w') * 6.283)));
-      if (dx * dx + dz * dz <= w * w) return true;
-    }
-  }
-  return false;
-}
-
-// Marching squares over the union, chained into one ring and simplified.
-export function caveOutline(cav, bounds, opts = {}) {
-  const step = opts.step || 2.5;
-  const x0 = bounds.minX, x1 = bounds.maxX, z0 = bounds.minZ, z1 = bounds.maxZ;
-  const nx = Math.ceil((x1 - x0) / step), nz = Math.ceil((z1 - z0) / step);
-  const at = (i, j) => inCavern(cav, x0 + i * step, z0 + j * step);
-
-  const grid = [];
-  for (let i = 0; i <= nx; i++) {
-    grid[i] = [];
-    for (let j = 0; j <= nz; j++) grid[i][j] = at(i, j);
-  }
-
-  // Each cell contributes edge segments between midpoints of its sides.
-  const key = (p) => p[0].toFixed(2) + ',' + p[1].toFixed(2);
-  const segs = [];
-  for (let i = 0; i < nx; i++) {
-    for (let j = 0; j < nz; j++) {
-      const tl = grid[i][j], tr = grid[i + 1][j], br = grid[i + 1][j + 1], bl = grid[i][j + 1];
-      const code = (tl ? 8 : 0) | (tr ? 4 : 0) | (br ? 2 : 0) | (bl ? 1 : 0);
-      if (code === 0 || code === 15) continue;
-      const X = x0 + i * step, Z = z0 + j * step;
-      const T = [X + step / 2, Z], R = [X + step, Z + step / 2];
-      const B = [X + step / 2, Z + step], L = [X, Z + step / 2];
-      const push = (a, b) => segs.push([a, b]);
-      switch (code) {
-        case 1: case 14: push(L, B); break;
-        case 2: case 13: push(B, R); break;
-        case 3: case 12: push(L, R); break;
-        case 4: case 11: push(T, R); break;
-        case 6: case 9:  push(T, B); break;
-        case 7: case 8:  push(L, T); break;
-        case 5: push(L, T); push(B, R); break;
-        case 10: push(T, R); push(L, B); break;
-      }
-    }
-  }
-  if (!segs.length) return [];
-
-  // Chain segments end-to-end into the longest closed ring.
-  const adj = new Map();
-  for (const [a, b] of segs) {
-    for (const [p, q] of [[a, b], [b, a]]) {
-      const k = key(p);
-      if (!adj.has(k)) adj.set(k, { pt: p, next: [] });
-      adj.get(k).next.push(q);
-    }
-  }
-  const used = new Set();
-  let best = [];
-  for (const startKey of adj.keys()) {
-    if (used.has(startKey)) continue;
-    const ring = [];
-    let cur = adj.get(startKey).pt, curKey = startKey;
-    while (true) {
-      used.add(curKey);
-      ring.push(cur);
-      const node = adj.get(curKey);
-      if (!node) break;
-      const nxt = node.next.find(p => !used.has(key(p)));
-      if (!nxt) break;
-      cur = nxt; curKey = key(nxt);
-    }
-    if (ring.length > best.length) best = ring;
-  }
-
-  // Ramer-Douglas-Peucker: the raw ring is thousands of 2.5-unit steps, and
-  // the client turns every edge into a wall mesh.
-  const tol = opts.tolerance || 1.1;
-  const simplify = (pts) => {
-    if (pts.length < 3) return pts;
-    const d2 = (p, a, b) => {
-      const vx = b[0] - a[0], vz = b[1] - a[1];
-      const len2 = vx * vx + vz * vz || 1;
-      let s = ((p[0] - a[0]) * vx + (p[1] - a[1]) * vz) / len2;
-      s = s < 0 ? 0 : s > 1 ? 1 : s;
-      const dx = p[0] - (a[0] + vx * s), dz = p[1] - (a[1] + vz * s);
-      return dx * dx + dz * dz;
-    };
-    const keep = new Array(pts.length).fill(false);
-    keep[0] = keep[pts.length - 1] = true;
-    const stack = [[0, pts.length - 1]];
-    while (stack.length) {
-      const [lo, hi] = stack.pop();
-      let far = -1, fd = tol * tol;
-      for (let i = lo + 1; i < hi; i++) {
-        const d = d2(pts[i], pts[lo], pts[hi]);
-        if (d > fd) { fd = d; far = i; }
-      }
-      if (far > 0) { keep[far] = true; stack.push([lo, far], [far, hi]); }
-    }
-    return pts.filter((_, i) => keep[i]);
-  };
-
-  return simplify(best).map(p => ({ x: +p[0].toFixed(1), z: +p[1].toFixed(1) }));
-}
-
-// ---------------------------------------------------------------------------
-// The world's outline. Two zones stacked north/south each have their own
-// natural boundary polygon; the world's boundary is the two joined into one
-// (each loses the arc that faces the seam, and short bridges close the sides)
-// and then roughened: subdivided every few metres and pushed OUTWARD by
-// layered noise so the mountain wall wanders in bays and headlands instead of
-// running in straight edges. Only outward, so nothing authored inside either
-// zone ends up in the rock.
-// ---------------------------------------------------------------------------
 function signedArea(poly) { let a = 0; for (let i = 0; i < poly.length; i++) { const p = poly[i], q = poly[(i + 1) % poly.length]; a += p.x * q.z - q.x * p.z; } return a / 2; }
 function ccw(poly) { return signedArea(poly) > 0 ? poly.slice() : poly.slice().reverse(); }
-export function mergeOutlines(north, south, seamZ, keep = 40) {
-  // Both counter-clockwise (in x/z). Drop each polygon's points that face the
-  // seam, then walk north's remaining arc and south's remaining arc so the
-  // result is one loop: north arc (west -> east along its far side), bridge,
-  // south arc, bridge back.
-  const N = ccw(north).filter(p => p.z < seamZ - keep), S = ccw(south).filter(p => p.z > seamZ + keep);
-  // rotate each arc so it starts at its end nearest the seam on one side: for
-  // the north arc start at the south-west-most kept point and go around the
-  // top to the south-east-most; south arc from north-east to north-west.
-  const rot = (arr, startIdx) => arr.slice(startIdx).concat(arr.slice(0, startIdx));
-  const nIdx = N.reduce((b, p, i) => (p.z - p.x * 0.3 > N[b].z - N[b].x * 0.3 ? i : b), 0);      // SW-most
-  let n = rot(N, nIdx);
-  // ensure it runs west->north->east (x increasing over the top): if the next point heads south-east, reverse
-  if (n[1].z > n[0].z) n = [n[0]].concat(n.slice(1).reverse());
-  const sIdx = S.reduce((b, p, i) => (p.z + p.x * 0.3 < S[b].z + S[b].x * 0.3 ? i : b), 0);      // NE-most
-  let sArr = rot(S, sIdx);
-  if (sArr[1].z < sArr[0].z) sArr = [sArr[0]].concat(sArr.slice(1).reverse());
-  return n.concat(sArr).map(p => ({ x: p.x, z: p.z }));
-}
-export function roughenOutline(poly, seed, opts = {}) {
-  const step = opts.step || 5, big = opts.big || 18, mid = opts.mid || 5, small = opts.small || 1.6;
-  const rng = mulberry32(seed);
-  const lat = (n) => { const a = []; for (let i = 0; i < n; i++) a.push(rng()); return a; };
-  const L1 = lat(24), L2 = lat(96), L3 = lat(384);
-  const per = (L, u) => { const n = L.length, x = ((u % 1) + 1) % 1 * n, i = Math.floor(x), f = x - i, t = f * f * (3 - 2 * f); return L[i % n] * (1 - t) + L[(i + 1) % n] * t; };
-  const P = ccw(poly), N = P.length;
-  let total = 0; const cum = [0];
-  for (let i = 0; i < N; i++) { const a = P[i], b = P[(i + 1) % N]; total += Math.hypot(b.x - a.x, b.z - a.z); cum.push(total); }
-  let cx = 0, cz = 0; for (const p of P) { cx += p.x; cz += p.z; } cx /= N; cz /= N;
-  const out = [];
-  for (let i = 0; i < N; i++) {
-    const a = P[i], b = P[(i + 1) % N], len = Math.hypot(b.x - a.x, b.z - a.z), segs = Math.max(1, Math.round(len / step));
-    // outward normal of this edge (polygon is ccw, so the left of the edge is inside)
-    let nx = (b.z - a.z) / len, nz = -(b.x - a.x) / len;
-    if ((a.x + b.x) / 2 * nx + (a.z + b.z) / 2 * nz < cx * nx + cz * nz) { nx = -nx; nz = -nz; }
-    for (let s = 0; s < segs; s++) {
-      const t = s / segs, u = (cum[i] + len * t) / total;
-      const x = a.x + (b.x - a.x) * t, z = a.z + (b.z - a.z) * t;
-      // layered, purely outward: broad bays, mid-size shoulders, small crags
-      const d = Math.max(0, per(L1, u) - 0.3) / 0.7 * big + per(L2, u) * mid + per(L3, u) * small;
-      out.push({ x: +(x + nx * d).toFixed(1), z: +(z + nz * d).toFixed(1) });
-    }
-  }
-  return out;
-}
-// Forest for the world's edge: the bays the roughened outline opened up and a
-// dense band inside the wall, so the border reads as deep woods rather than a
-// bare strip of grass in front of rock.
-export function generateEdgeForest(zone, innerPolys, seed, band = 32) {
-  const b = zone.bounds, rng = mulberry32(seed), out = [], trees = zone._trees || [];
-  const ring = zone.boundary.concat([zone.boundary[0]]);
-  const minSpace = 7.5, tries = 9000;
-  for (let k = 0; k < tries; k++) {
-    const x = b.minX + rng() * (b.maxX - b.minX), z = b.minZ + rng() * (b.maxZ - b.minZ);
-    if (!pointInPoly(x, z, zone.boundary)) continue;
-    const dEdge = closestOnPolyline(x, z, ring).dist;
-    const inside = innerPolys.some(pg => pointInPoly(x, z, pg));
-    if (inside && dEdge > band) continue;                   // deep interior already has its forest
-    if (dEdge < 2.5) continue;                              // not in the rock
-    if (pathSpecsOf(zone).some(p => closestOnPolyline(x, z, p.points).dist < pathClearOf(p.kind))) continue;
-    if (riversOf(zone).some(r => closestOnPolyline(x, z, r.points).dist < r.width / 2 + RIVER_BANK + 3)) continue;
-    if (inFarm(zone, x, z, 3) || inMine(zone, x, z, 4) || inHouse(zone, x, z, 2.5)) continue;
-    if (forestAt(zone, x, z) < 0.4 && rng() > 0.12) continue;   // the border band still respects a clearing
-    if ((zone.pois || []).some(p => dist2(x, z, p.x, p.z) < clearRadiusS(p) ** 2)) continue;
-    const near = (t) => dist2(x, z, t.x, t.z) < minSpace * minSpace;
-    if (trees.some(near) || out.some(near)) continue;
-    out.push({ x: +x.toFixed(1), z: +z.toFixed(1), s: +(0.85 + rng() * 0.35).toFixed(2), r: +(rng() * 6).toFixed(2) });
-  }
-  return out;
-}
