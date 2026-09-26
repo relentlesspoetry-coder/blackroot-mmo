@@ -127,6 +127,10 @@ export const darkwoods = {
     { type: 'bat', level: 3, count: 6, cx: 31.0, cz: -199.2, r: 30, roam: 22 },
     { type: 'spider', level: 4, count: 3, cx: 31.0, cz: -199.2, r: 28, roam: 18 },
     { type: 'goblin_archer', level: 11, count: 4, cx: -243.3, cz: 142.4, r: 34, roam: 22 },
+    { type: 'goblin', level: 9, count: 5, cx: -243.3, cz: 142.4, r: 34, roam: 22 },
+    { type: 'bat', level: 5, count: 7, cx: -232.1, cz: -169.3, r: 44, roam: 26 },
+    { type: 'spider', level: 6, count: 5, cx: -232.1, cz: -169.3, r: 42, roam: 22 },
+    { type: 'bat', level: 4, count: 4, cx: 31.0, cz: -199.2, r: 30, roam: 22 },
     { type: 'cow', level: 1, count: 5, cx: -75.1, cz: -18.3, r: 30, roam: 22 },
   ],
 
@@ -586,15 +590,18 @@ export const darkwoods = {
     { id: 'watchtower', x: -239.3, z: 137.4 },
     { id: 'rotfen', x: 284.2, z: -10.8 },
     { id: 'wolfden', x: -255.8, z: -34.7 },
-    { id: 'stones', x: 271.5, z: -153.1 },
-    { id: 'smug', x: 4.6, z: 277.3 },
+    { id: 'stones', x: 271.2, z: -149.9 },
+    { id: 'smug', x: 3.8, z: 275.1 },
     { id: 'fencache', x: 216.7, z: 49.2 },
     { id: 'ravenmere', x: -243.1, z: -162.3 },
+    { id: 'reliquary', x: 31.0, z: -206.2 },
   ],
 
   elites: [
     { type: 'goblin_chief', name: 'Chief Rattlecap', level: 14, cx: 231.4, cz: 147.7 },
-    { type: 'cave_guardian', name: 'The Rootbound Guardian', level: 16, cx: 284.5, cz: -157.1 },
+    { type: 'cave_guardian', name: 'The Rootbound Guardian', level: 16, cx: 281.2, cz: -157.4 },
+    { type: 'broodmother', name: 'The Den Mother', level: 12, cx: -4.4, cz: 266.3 },
+    { type: 'cave_giant', name: 'The Drowned Warden', level: 11, cx: -226.2, cz: -187.4 },
   ],
 
   models: [

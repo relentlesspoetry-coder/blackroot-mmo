@@ -186,6 +186,26 @@ console.log('\nThe Dark Woods — zone invariants\n');
 
   const ore = (z.scatter || []).filter(o => /Ore_Vein/.test(o.model || o.m || ''));
   ok('ore specs exist', ore.length > 0, `${ore.length} vein specs`);
+
+  // Anything you have to walk up to must stand on ground you can stand on.
+  // Two chests had been sealed inside cliffs -- unopenable, and silent about it.
+  const sealedIn = [
+    ...(z.chests || []).map(c => ['chest ' + c.id, c.x, c.z]),
+    ...(z.elites || []).map(e => ['elite ' + e.name, e.cx, e.cz]),
+    ...(z.npcs || []).map(n => ['npc ' + n.name, n.x, n.z]),
+  ].filter(([, x, zz]) => isSolid(terrainAt(z, x, zz)));
+  ok('chests, elites and NPCs stand on reachable ground', sealedIn.length === 0,
+      sealedIn.length ? sealedIn.map(r => r[0]).join(', ')
+                      : `${z.chests.length} chests, ${z.elites.length} elites, ${z.npcs.length} npcs`);
+
+  // A named landmark with nothing in it is a signpost, not a place.
+  const barren = z.pois.filter(p => p.kind !== 'exit' && p.kind !== 'safe').filter(p => {
+    const mobs = (z.spawns || []).filter(sp => Math.hypot(sp.cx - p.x, sp.cz - p.z) < p.r + 20)
+                                 .reduce((a, sp) => a + sp.count, 0);
+    return mobs === 0;
+  });
+  ok('every landmark has something in it', barren.length === 0,
+      barren.length ? barren.map(p => p.key).join(', ') : `${z.pois.length - 5} landmarks populated`);
 }
 
 // --- reachability ----------------------------------------------------------

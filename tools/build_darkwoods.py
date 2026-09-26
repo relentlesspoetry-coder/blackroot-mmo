@@ -222,6 +222,15 @@ SPAWNS = [
     ('chapel',              'bat', 3, 6, 30, 22),
     ('chapel',           'spider', 4, 3, 28, 18),
     ('crowhill',    'goblin_archer',11, 4, 34, 22),
+    ('crowhill',           'goblin', 9, 5, 34, 22),   # a lookout needs a garrison
+    # Ravenwater was the one named landmark in the zone with nothing in it at
+    # all: no mob, no elite, a chest and two fishing spots. Its own sheet calls
+    # it a haunted pool whose deep water "conceals hidden secrets", and the
+    # cows that used to graze it have gone to the camp's pasture where they
+    # belong. Bats over the water, spiders in the dead trees round the shore.
+    ('ravenwater',            'bat', 5, 7, 44, 26),
+    ('ravenwater',         'spider', 6, 5, 42, 22),
+    ('chapel',                'bat', 4, 4, 30, 22),   # more of them in the nave
     # The cows used to graze Ravenwater Pool, which its own sheet calls "deep
     # waters, darker secrets" -- and no livestock appears anywhere in the zone
     # blueprint. They are quest fauna (a quest wants cow hide), so they move to
@@ -720,12 +729,20 @@ CHESTS = [
     ('smug',       'spiderden', 5,  4),
     ('fencache',   'fen_cache',  1,  1),      # out on the fen's south island
     ('ravenmere',  'ravenwater', -11, 7),     # "deep waters conceal hidden secrets"
+    ('reliquary',  'chapel',      0, -7),     # at the altar, in the standing east end
 ]
 
 # The two named things the quests ask you to put down.
 ELITES = [
     ('goblin_chief',  'Chief Rattlecap',        14, 'briar',    0, -6),
     ('cave_guardian', 'The Rootbound Guardian', 16, 'grimroot', 6,  4),
+    # The Spider Den is scattered with egg clusters, brood nests and hanging
+    # cocoons, and nothing had laid any of them -- the bestiary has carried a
+    # `broodmother` since before this zone and no zone ever used her.
+    ('broodmother',   'The Den Mother',         12, 'spiderden', -4, -7),
+    # Ravenwater's "deep, dark waters conceal hidden secrets". Something has
+    # been down there long enough to go green.
+    ('cave_giant',    'The Drowned Warden',     11, 'ravenwater', 9, -13),
 ]
 
 
@@ -1584,6 +1601,37 @@ def main():
             return (wx, wz), 0.0
         return (round(best[0], 1), round(best[1], 1)), bd
 
+    # Anything you have to REACH must stand on ground you can stand on. Rock is
+    # solid and deep water is solid to anything that cannot swim, so a chest or
+    # an elite placed there is unopenable or gets shoved somewhere arbitrary by
+    # collision. Two chests had been sealed in cliffs since before this pass --
+    # the Grimroot cache and the smuggler's chest at the Den -- and squeezing
+    # the chokepoints put more rock around both.
+    def snap_to_ground(wx, wz, limit=40):
+        if cell_at(wx, wz) in '.fFw':
+            return (wx, wz), 0.0
+        gx0 = int((wx - minX) / cell)
+        gz0 = int((wz - minZ) / cell)
+        for ring in range(1, int(limit / cell)):
+            found = None
+            for dz in range(-ring, ring + 1):
+                for dx in range(-ring, ring + 1):
+                    if max(abs(dx), abs(dz)) != ring:
+                        continue
+                    gx, gz = gx0 + dx, gz0 + dz
+                    if gx < 0 or gz < 0 or gx >= W or gz >= H:
+                        continue
+                    if rows[gz][gx] not in '.fFw':
+                        continue
+                    cx = minX + (gx + 0.5) * cell
+                    cz = minZ + (gz + 0.5) * cell
+                    dd = math.hypot(cx - wx, cz - wz)
+                    if found is None or dd < found[1]:
+                        found = ((cx, cz), dd)
+            if found:
+                return (round(found[0][0], 1), round(found[0][1], 1)), found[1]
+        return (wx, wz), 0.0
+
     A('  fishingSpots: [')
     moved = 0
     for fid, px, py, tier in FISHING:
@@ -1624,16 +1672,28 @@ def main():
     A('  ],')
     A('')
     A('  chests: [')
+    dug = 0
     for cid, anchor, dx, dz in CHESTS:
         ax, az = poi_world(anchor)
-        A(f"    {{ id: '{cid}', x: {round(ax + dx, 1)}, z: {round(az + dz, 1)} }},")
+        (cx, cz), shift = snap_to_ground(ax + dx, az + dz)
+        if shift > 0.5:
+            dug += 1
+        A(f"    {{ id: '{cid}', x: {cx}, z: {cz} }},")
+    if dug:
+        print(f'  {dug} chest(s) dug out of solid ground')
     A('  ],')
     A('')
     A('  elites: [')
+    shoved = 0
     for etype, ename, elvl, anchor, dx, dz in ELITES:
         ax, az = poi_world(anchor)
+        (cx, cz), shift = snap_to_ground(ax + dx, az + dz)
+        if shift > 0.5:
+            shoved += 1
         A(f"    {{ type: '{etype}', name: '{ename}', level: {elvl}, "
-          f'cx: {round(ax + dx, 1)}, cz: {round(az + dz, 1)} }},')
+          f'cx: {cx}, cz: {cz} }},')
+    if shoved:
+        print(f'  {shoved} elite(s) moved onto ground they can stand on')
     A('  ],')
     A('')
     # Everything placed anywhere has to be listed, or the client never downloads
