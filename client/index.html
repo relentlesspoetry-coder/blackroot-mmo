@@ -2417,24 +2417,27 @@ function buildTerrainWater() {
   // that did not read as water at all. Concentrate it: about a metre of depth,
   // a gentler tint, and a curve that keeps the pale in the last stride or two
   // before the bank.
-  // RIM_FEATHER is how much `margin` buys full opacity, and margin is
-  // min(depth, field-margin x 24) -- a MIXED unit that grows slowly across a
-  // gently shelving pool. At 1.2 it took about eight metres of shore to reach
-  // full opacity, which measured as 65-69% of the water surface sitting below
-  // 0.4 alpha and 6,479 vertices at flat zero. That is not a feathered rim, it
-  // is a mostly-transparent sheet, and what you saw through it was the dark
-  // carved bed: the water looked black. A rim is a stride wide, not eight.
-  const SHALLOW_AT = 1.05, RIM_FEATHER = 0.30, SHALLOW_POW = 1.7;
-  // Full opacity once the water is this deep, and never more see-through than
-  // ALPHA_FLOOR anywhere -- so the outermost band still blends into the wet
-  // bank, and nowhere is the sheet a hole onto the dark bed.
-  // A HAIRLINE, not a gradient. Floored at 0.42 the sheet still showed 58% of
-  // whatever lay under it, and under a carved pool in shadow that is very dark
-  // -- which is why the water read as black. The blend the shore needs is the
-  // last few centimetres of the sheet, over lit shallow mud; everything past
-  // that has to be opaque or it is a window onto the bottom of a bowl.
-  const DEPTH_OPAQUE = 0.22, ALPHA_FLOOR = 0.80;
-  const SHORE_TINT = { r: 1.27, g: 1.33, b: 1.24 };
+  // Shallow water is PALER, and by enough to see. The first pass multiplied the
+  // base colour by 1.27 over one metre of depth with a power curve on top,
+  // which on a dark blue is a difference you have to be told about. This ramps
+  // a real turquoise across two and a half metres of depth -- at Ravenwater's
+  // shelf, the first twenty metres of pool.
+  const SHALLOW_AT = 2.5, SHALLOW_POW = 1.15;
+  const SHORE_TINT = { r: 1.58, g: 1.82, b: 1.66 };
+  // ...and a FOAM line right at the contour. This is the thing that makes
+  // water MEET land rather than stop on it: a bright band in the last third of
+  // a metre, brightest at the very edge. Without it the shore is a seam
+  // between two flat colours however carefully the alpha is tuned, which is
+  // what it still was.
+  const FOAM_DEPTH = 0.34, FOAM_LIFT = 0.85;
+  // Opacity: see-through enough at the very edge to melt into the wet bank,
+  // solid once there is real water over the bed. The FLOOR is not cosmetic --
+  // a sheet that goes fully clear over a carved pool is a window onto the dark
+  // bottom of a bowl, and that is what made the water look black. Tightened to
+  // a hairline to fix that, which then left a near-hard edge; this is the
+  // middle, and it is safe because the bed under shallow water is close,
+  // brown and lit.
+  const DEPTH_OPAQUE = 0.75, ALPHA_FLOOR = 0.50, RIM_FEATHER = 0.55;
   for (const [name, gate, surfaceY, colour, opacity] of [
        ['deep', EDGE.deep,  RIVER_WATER_Y + 0.02, 0x2f7fb0, 0.93],
        ['wet',  EDGE.marsh, RIVER_WATER_Y,        0x599ec2, 0.72]]) {
@@ -2481,9 +2484,12 @@ function buildTerrainWater() {
         const f = Math.min(1, Math.max(0, Math.min(depth / DEPTH_OPAQUE,
                                                    margin / RIM_FEATHER)));
         const a = ALPHA_FLOOR + (1 - ALPHA_FLOOR) * (f * f * (3 - 2 * f));
-        // lighten toward the shore: a warm pale tint mixed into the base colour
+        // lighten toward the shore, and break into foam at the waterline
         const k2 = Math.pow(1 - shallow, SHALLOW_POW);
-        col.push(1 + k2 * (SHORE_TINT.r - 1), 1 + k2 * (SHORE_TINT.g - 1), 1 + k2 * (SHORE_TINT.b - 1), a);
+        const foam = Math.max(0, 1 - depth / FOAM_DEPTH) * FOAM_LIFT;
+        col.push(1 + k2 * (SHORE_TINT.r - 1) + foam,
+                 1 + k2 * (SHORE_TINT.g - 1) + foam,
+                 1 + k2 * (SHORE_TINT.b - 1) + foam, a);
       }
       return v;
     };
@@ -2570,11 +2576,26 @@ function buildTerrainWater() {
 // The wave is a pure function of (x, z, t), so the vertex shader is where it
 // belongs: the mesh sits at the origin in world coordinates, which makes
 // `position.xz` the same x and z the CPU version read out of `base`.
+// Measured before touching these: the sum came to 0.21 m of vertical travel
+// spread over wavelengths of 2pi/0.13, about FORTY-EIGHT METRES. Across the ten
+// metres of water you can actually see at once, that is a sheet tilting by a
+// couple of centimetres. It was animated; it was not animated VISIBLY, which is
+// the only kind that counts. Shorter waves and more of them: the longest is now
+// about eleven metres from crest to crest, so a crest crosses your view while
+// you are standing there.
+//
+//   kx, kz   the wave's direction and wavelength (2pi / |k| metres)
+//   speed    radians per second
+//   amp      metres, crest to trough / 2
+// Nothing shorter than about 8 m belongs here: out in open water the sheet is
+// one 2.5 m quad per cell, and a wave needs three or four samples across it or
+// it aliases into a twitching lattice. Fine chop comes from the scrolling
+// surface texture and its normal map instead, which are per-pixel and free.
 const WATER_WAVES = [
   //  kx,      kz,     speed,  amp
-  [ 0.115,  0.062,    1.05,  0.105],
-  [-0.052,  0.141,    0.78,  0.075],
-  [ 0.223, -0.197,    1.90,  0.032],
+  [ 0.420,  0.230,    1.35,  0.085],   // ~13 m, the main swell
+  [-0.190,  0.520,    1.05,  0.060],   // ~11 m, crossing it
+  [ 0.560, -0.480,    1.80,  0.032],   // ~8.5 m, the shorter set
 ];
 function waveify(mat, amp) {
   const prev = mat.onBeforeCompile;
@@ -2625,8 +2646,11 @@ function updateWaterSurface(tSec) {
   for (const w of waterSurfaces) {
     const u = w.mesh.material.userData.waterTime;
     if (u) u.value = tSec;
-    w.tex.offset.x = (tSec * 0.012) % 1;
-    w.tex.offset.y = (tSec * 0.021) % 1;
+    // 0.012 tiles a second over a 9 m tile is 0.108 m/s -- eighty-three seconds
+    // for one tile to pass. The surface texture was scrolling at the speed of a
+    // minute hand. This is a visible drift without becoming a conveyor belt.
+    w.tex.offset.x = (tSec * 0.055) % 1;
+    w.tex.offset.y = (tSec * 0.082) % 1;
   }
 }
 
