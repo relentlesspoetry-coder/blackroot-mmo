@@ -1910,7 +1910,7 @@ function loadZone(zdata) {
   while (scene.children.length) scene.remove(scene.children[0]);
   entityMeshes.clear();
   poiWorld.length = 0; poiLayer.innerHTML = ''; poiEls.length = 0;
-  chestMeshes.clear(); npcMeshes.clear(); worldObjects.clear(); camBlockers.length = 0; lodPairs.length = 0;
+  chestMeshes.clear(); npcMeshes.clear(); worldObjects.clear(); camBlockers.length = 0;
   fishSpots.length = 0; cookFires.length = 0; campfireFx.length = 0;
   npcMarkLayer.innerHTML = ''; npcMarkEls.clear();
   closeDialogue();
@@ -3110,86 +3110,40 @@ function chunkSize() {
 // items: placements with x/z. fill(item, index, im) sets that instance's matrix
 // (and colour). Returns [{ im, items }] — one entry per non-empty cell — so a
 // caller can map instanceId back to its placement.
-// --- level of detail -------------------------------------------------------
-// A tree costs the same to transform whether it fills the screen or covers four
-// pixels: the vertices are all still there. With 2,243 trees at 7k-15k triangles
-// each, that was 24 million triangles a frame, 21 million of them in parts of
-// 300 triangles or more -- one species' TRUNK alone was 5,762. Pitkakangas
-// (Kajaani 2014, ch. 3.4.1) calls this the transform-bound case and names the
-// fix: a simplified version to swap to once the object is far enough away.
+// --- level of detail: there isn't any, on purpose ------------------------
+// There was. Distant instances were swapped for a vertex-clustered copy of
+// their geometry -- snap every vertex to a coarse grid, drop the triangles
+// whose corners collapsed. It is a real technique and it was a real mistake
+// here, for two reasons.
 //
-// The simplification is vertex clustering. Snap every vertex onto a coarse grid,
-// then throw away the triangles whose corners collapsed onto the same cell. It
-// keeps the silhouette -- which is all that survives at distance anyway -- and
-// unlike a bounding-box proxy it still looks like the thing it replaces.
-const LOD_MIN_TRIS = 600;     // below this a part is not worth a second copy
-const LOD_DISTANCE = 115;     // metres; fog closes in at 320 so this is well inside
-const LOD_GRID = 9;           // clustering grid: bbox diagonal / this
-const lodPairs = [];          // { full, lod, cx, cz }
-
-function simplifyGeometry(geo) {
-  const pos = geo.attributes.position;
-  if (!pos || geo.index) return null;            // bakeModel hands us non-indexed
-  geo.computeBoundingBox();
-  const bb = geo.boundingBox;
-  const diag = bb.min.distanceTo(bb.max) || 1;
-  const cell = diag / LOD_GRID;
-  const snap = (v) => Math.round(v / cell);
-  const out = [];
-  const a = pos.array;
-  for (let i = 0; i < pos.count; i += 3) {
-    const k = [];
-    for (let j = 0; j < 3; j++) {
-      const o = (i + j) * 3;
-      k.push(snap(a[o]) + ',' + snap(a[o + 1]) + ',' + snap(a[o + 2]));
-    }
-    // the triangle survives only if its corners landed in three different cells
-    if (k[0] === k[1] || k[1] === k[2] || k[0] === k[2]) continue;
-    for (let j = 0; j < 3; j++) {
-      const o = (i + j) * 3;
-      out.push(Math.round(a[o] / cell) * cell, Math.round(a[o + 1] / cell) * cell,
-               Math.round(a[o + 2] / cell) * cell);
-    }
-  }
-  if (out.length < 9) return null;               // nothing recognisable left
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(out, 3));
-  g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array((out.length / 3) * 2), 2));
-  g.computeVertexNormals();
-  return g;
-}
-const _lodCache = new Map();
-function lodGeometry(geo) {
-  if (_lodCache.has(geo.uuid)) return _lodCache.get(geo.uuid);
-  const tris = (geo.index ? geo.index.count : geo.attributes.position.count) / 3;
-  const g = tris >= LOD_MIN_TRIS ? simplifyGeometry(geo) : null;
-  _lodCache.set(geo.uuid, g);
-  return g;
-}
-// Swap each chunk between its full and simplified copy by distance. Done per
-// chunk rather than per instance because the instances in a chunk are together
-// by construction -- that is what the chunking is for.
-function updateLOD() {
-  if (!lodPairs.length) return;
-  const cx = camera.position.x, cz = camera.position.z, d2 = LOD_DISTANCE * LOD_DISTANCE;
-  for (const p of lodPairs) {
-    const near = (cx - p.cx) ** 2 + (cz - p.cz) ** 2 < d2;
-    if (p.full.visible !== near) { p.full.visible = near; p.lod.visible = !near; }
-  }
-}
+// It looked wrong. Snapping to the grid CORNERS quantises the silhouette into
+// steps of a whole cell, and with the grid at a ninth of the bounding box a
+// tree canopy became a stack of green boxes. Worse, the swap was decided on the
+// CENTROID of a chunk, and a chunk is about 105 m across on this map, so a tree
+// forty metres from the camera was drawn as boxes because the average of its
+// neighbours was far away.
+//
+// And it bought nothing. Measured at the camp, four two-second samples each,
+// interleaved: with the swap at 115 m, 64.8 FPS (62.5-71.2). With no LOD at
+// all, 62.5 FPS (60.5-65.0). The ranges overlap. Forcing the cheap copy on
+// everything from one metre gave 75.5 -- which is the number that made the
+// technique look worth having, and it is a number no player ever sees, because
+// almost everything in view from anywhere is inside 115 m.
+//
+// Two and a bit frames per second is not worth drawing a generated stand-in in
+// place of a model that was authored. The models are the game; the renderer
+// draws them as they are, at every distance.
 
 // Chunking exists so the frustum can throw a whole cell away in one test. That
 // only pays when a cell holds enough instances to be worth the object. Splitting
 // on a fixed grid REGARDLESS of how many copies a model has meant a species with
-// a dozen placements got a dozen meshes instead of one -- and then a thirteenth
-// each for their LOD twins. Measured: 8,184 of the scene's 9,631 instanced
+// a dozen placements got a dozen meshes instead of one. Measured: 8,184 of the
+// scene's 9,631 instanced
 // meshes held five instances or fewer. Eighty-five per cent of the objects
 // three.js walks, frustum-tests and can draw every frame, carrying five per cent
 // of the content.
 //
-// So a model is chunked only when it has enough copies for culling to pay, and
-// a model too sparse to chunk does not get an LOD twin either: its handful of
-// pieces are not what costs anything.
+// So a model is chunked only when it has enough copies for culling to pay.
 // How many instances a cell should hold for the frustum test to be worth the
 // object it costs. Below this the cell is overhead.
 // Swept on the real map at 24 / 36 / 64. Frame rate is flat across that range
@@ -3223,7 +3177,6 @@ function chunkedInstances(geo, mat, items, fill, opts = {}) {
   const CHUNK = new URLSearchParams(location.search).get('chunk') === 'old' ? chunkSize()
               : items.length <= CHUNK_TARGET ? Infinity
               : Math.max(chunkSize(), L * Math.sqrt(CHUNK_TARGET / items.length));
-  const sparse = !isFinite(CHUNK);
   for (const it of items) {
     const k = Math.floor(it.x / CHUNK) + ':' + Math.floor(it.z / CHUNK);
     (cells.get(k) || cells.set(k, []).get(k)).push(it);
@@ -3238,26 +3191,6 @@ function chunkedInstances(geo, mat, items, fill, opts = {}) {
     im.computeBoundingSphere();
     if (opts.tag) Object.assign(im.userData, opts.tag);
     scene.add(im); out.push({ im, items: list });
-    // A cheap twin of this chunk, shown once the camera is far enough off.
-    // An unchunked model is ONE mesh spanning the whole zone, so its LOD twin
-    // would switch on the centroid of every copy -- a bush at your feet drawn
-    // as its low-detail twin because the average of its species is far away.
-    // Those models have few enough instances that full detail is free.
-    const lg = (opts.lod === false || sparse) ? null : lodGeometry(geo);
-    if (lg) {
-      const lm = new THREE.InstancedMesh(lg, mat, list.length);
-      lm.castShadow = false;                    // a distant tree's shadow is not worth it
-      lm.receiveShadow = im.receiveShadow;
-      lm.instanceMatrix.copy(im.instanceMatrix);
-      lm.instanceMatrix.needsUpdate = true;
-      if (im.instanceColor) { lm.instanceColor = im.instanceColor.clone(); lm.instanceColor.needsUpdate = true; }
-      lm.computeBoundingSphere();
-      lm.visible = false;
-      scene.add(lm);
-      let sx = 0, sz = 0;
-      for (const it of list) { sx += it.x; sz += it.z; }
-      lodPairs.push({ full: im, lod: lm, cx: sx / list.length, cz: sz / list.length });
-    }
   }
   return out;
 }
@@ -11419,7 +11352,6 @@ function animate() {
   requestAnimationFrame(animate);
   frameCount++;
   const dt = Math.min(0.05, clock.getDelta());
-  _pf('lod', () => updateLOD());
   _pf('renderWorld', () => renderWorld(dt));
   _pf('sky', () => updateSky(dt));
   _pf('controls', () => updateControls(dt));
