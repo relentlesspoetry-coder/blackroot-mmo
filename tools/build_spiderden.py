@@ -103,6 +103,47 @@ ORE = [
     ('Copper_Ore_Vein', 'shaft',  3, 16),
 ]
 
+# --------------------------------------------------------------- quest objects
+# The den had 79 things to put your hands on above ground and NOT ONE below it.
+# Every interaction down here was a corpse or a chest: nothing to cut, pick,
+# prise or burn in a cave whose whole dressing is cocoons, egg clusters, fungus
+# and crystal. The kinds below are the ones the chambers were already named
+# for -- the larder IS the cocoons, the brood chamber IS the eggs.
+#
+# Placed on a golden-angle spiral inside each chamber's own disc, so they land
+# in open cave rather than in the wall, and kept clear of the chests, the NPC
+# and the elites.
+#
+# (key, n, model, rooms, gives, extra)
+NODES = [
+    # Gedd Marrow walked in with five other people. They are in the larder.
+    ('cocoon', 7, 'Ground_Cocoon', ['larder'], ('Company Tag', 1), dict(
+        name='Wrapped Cocoon', once=True, reach=3.4, quest='dw_larder',
+        idleText='Something person-shaped, wrapped and hung. Leave it.',
+        text='You cut it open. There is a tag on a cord, and not much else.')),
+    # Cave fungus, which is the one thing down here that is not trying to bite.
+    ('denfungus', 11, 'Brown_Mushrooms', ['gallery', 'shaft', 'seep', 'bones'],
+     ('Cave Mushroom', 1), dict(
+        name='Cave Mushrooms', respawn=120, reach=3.2,
+        text='You cut the mushrooms off the wall.')),
+    # The seep's walls glitter. Prising it out is not mining -- no pick needed,
+    # which gives a low-level character something to do this deep.
+    ('glimmer', 8, 'Violet_Crystals', ['seep', 'hollow'], ('Uncut Quartz', 1), dict(
+        name='Quartz Seam', respawn=200, reach=3.4, light=0x9a6fd8,
+        text='You work a piece of quartz out of the seam.')),
+    # Her eggs. They burst, and the burst ones bite.
+    ('eggs', 6, 'Egg_Cluster', ['brood', 'hollow'], None, dict(
+        name='Egg Cluster', once=True, reach=3.6, hurt=9, quest='dw_burnbrood',
+        idleText='Eggs, in their hundreds. You have no reason to touch them yet.',
+        text='You put your torch into the cluster. It goes up fast, and it fights.')),
+    # Web strung across the passages. Cutting it is how you get through, and the
+    # silk is worth keeping.
+    ('webwall', 5, 'Tunnel_Web_Barrier', ['gallery', 'shaft', 'hollow', 'bones'],
+     ('Spider Silk', 1), dict(
+        name='Web Barrier', respawn=240, reach=3.8,
+        text='You cut the web apart and pull the good silk off it.')),
+]
+
 # (model, count, room, radius)
 SCATTER = [
     ('Floor_Web', 10, 'mouth', 20), ('Torn_Wall_Web', 6, 'mouth', 20),
@@ -271,6 +312,62 @@ def main():
         A(f"    {{ id: '{cid}', x: {x + dx}, z: {z + dz} }},")
     A('  ],')
     A('')
+    # ----------------------------------------------------- quest objects
+    # Spread on a golden-angle spiral between a third and four fifths of each
+    # chamber's radius: far enough off the middle that they do not stand on the
+    # spawn circle, far enough off the wall that they are not inside it.
+    A('  // What a quest asks you to put your hands on down here. See NODES in')
+    A('  // the builder -- placed inside the chambers, never against the wall.')
+    A('  objects: [')
+    taken = [(room(rk)[0] + dx, room(rk)[1] + dz) for _c, rk, dx, dz in CHESTS]
+    taken += [(room(rk)[0] + dx, room(rk)[1] + dz) for _t, _n, _l, rk, dx, dz in ELITES]
+    taken += [(room(rk)[0] + dx, room(rk)[1] + dz) for _i, _n, _m, rk, dx, dz, _d in NPCS]
+    GOLD = math.pi * (3 - math.sqrt(5))
+    n_obj, short = 0, []
+    for key, n, model, rooms, gives, extra in NODES:
+        got = 0
+        # Deal the count round the chambers this kind lives in, so seven cocoons
+        # in one room and eleven mushrooms over four both come out even.
+        per = [n // len(rooms) + (1 if i < n % len(rooms) else 0) for i in range(len(rooms))]
+        for rk, want in zip(rooms, per):
+            cx, cz, rr = room(rk)
+            placed_here, i = 0, 0
+            while placed_here < want and i < want * 60:
+                t = i * GOLD
+                # sqrt spreads them evenly over the annulus rather than bunching
+                # them at the middle, which a linear radius would.
+                frac = 0.34 + 0.46 * math.sqrt(((i % 40) + 0.5) / 40)
+                x = round(cx + math.cos(t) * rr * frac, 1)
+                z = round(cz + math.sin(t) * rr * frac, 1)
+                i += 1
+                if any(math.hypot(x - ox, z - oz) < 7.0 for ox, oz in taken):
+                    continue
+                taken.append((x, z))
+                f = [f"id: '{key}_{got + 1}'", f"tag: '{key}'", f"m: '{model}'",
+                     f'x: {x}', f'z: {z}', f'yaw: {round((t % 6.283), 3)}']
+                for k in ('name', 'text', 'idleText', 'quest', 'needDead', 'doused'):
+                    if k in extra:
+                        f.append(f"{k}: '{extra[k]}'")
+                for k in ('s', 'reach', 'respawn', 'hurt'):
+                    if k in extra:
+                        f.append(f'{k}: {extra[k]}')
+                if extra.get('once'):
+                    f.append('once: 1')
+                if 'light' in extra:
+                    f.append(f"light: 0x{extra['light']:06x}")
+                if gives:
+                    f.append(f"gives: {{ item: '{gives[0]}', count: {gives[1]} }}")
+                A('    { ' + ', '.join(f) + ' },')
+                got += 1
+                placed_here += 1
+                n_obj += 1
+        if got < n:
+            short.append(f'{key} {got}/{n}')
+    A('  ],')
+    A('')
+    print(f'  {n_obj} quest objects placed in the chambers'
+          + (f'  !! SHORT: {", ".join(short)}' if short else ''))
+
     A('  scatter: [')
     # `near` takes a POI key, and every chamber is emitted as a POI above, so a
     # chamber name is all the anchor a spec needs.
@@ -290,7 +387,8 @@ def main():
     A('  treeCount: 0,')
     A('  scatterSeed: 31,')
     A('')
-    used = sorted({m for m, *_ in SCATTER} | {m for m, *_ in HANGING} | {o[0] for o in ORE})
+    used = sorted({m for m, *_ in SCATTER} | {m for m, *_ in HANGING} | {o[0] for o in ORE}
+                  | {n[2] for n in NODES})
     models = [f'{MODEL_DIR[m]}/{m}' for m in used] + [
         'Cave_Spider', 'Venom_Spider', 'Crystal_Spider', 'Bat', 'Cave_Broodmother',
         'Cave_Guardian']

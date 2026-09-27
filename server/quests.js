@@ -460,6 +460,53 @@ export const QUESTS = {
   },
 
   // ==========================================================================
+  // GEDD MARROW — the survivor at the den mouth. He was placed there to give
+  // the cave a voice and a turn-in point, and then given nothing to say: the
+  // only NPC below ground, standing in the dark, with no reason to talk to
+  // him. His line is about the people who did not come back out, and they are
+  // in the larder, because the larder IS the cocoons.
+  // ==========================================================================
+  dw_larder: {
+    id: 'dw_larder', name: 'Five Went In', giver: 'gedd', minLevel: 9, requires: ['dw_denmouth'],
+    summary: 'Cut open the cocoons in the larder and bring Gedd back his company\u2019s tags.',
+    intro: 'Six of us took the contract. I am the one who came back up, and I have been stood here since working out how to say that to anybody. They are still in there — the side chamber off the gallery, the one with the shapes hanging in it. I cannot go back in. Cut them down. Bring me the tags so I have something to hand their people.',
+    active: 'The larder, west off the gallery. The cocoons are hanging in it.',
+    done: 'Five. That is all of them, then. I will carry these out myself — it is the last thing I can do for them, and it is not much.',
+    objectives: [
+      { type: 'use', tag: 'cocoon', count: 5, label: 'Cocoons cut open' },
+      { type: 'collect', item: 'Company Tag', count: 5, label: 'Company tags recovered' },
+      { type: 'kill', target: 'spider', count: 6, label: 'Cave spiders killed' },
+    ],
+    reward: { xp: 1100, gold: 280, items: ['Minor Healing Potion', 'Minor Healing Potion'] },
+  },
+  dw_cavecrop: {
+    id: 'dw_cavecrop', name: 'What Grows Down There', giver: 'gedd', minLevel: 9, requires: ['dw_larder'],
+    summary: 'Gedd is not going home empty-handed. Bring him cave mushrooms and quartz out of the seep.',
+    intro: 'I am not walking out of here with nothing but tin tags. There is fungus on the gallery walls that Pedlar Ovric pays for, and the wet chamber past the hollow glitters — quartz, right there in the seam, no pick needed. If I am going to have been down here, I would like it to have been worth something.',
+    active: 'Mushrooms on the walls, quartz in the seep. Neither of them fights back.',
+    done: 'That is a season\u2019s wage in a sack. It does not make it square. It makes it payable.',
+    objectives: [
+      { type: 'gather', tag: 'denfungus', count: 6, label: 'Cave mushrooms cut' },
+      { type: 'gather', tag: 'glimmer', count: 5, label: 'Quartz worked loose' },
+      { type: 'collect', item: 'Cave Mushroom', count: 6, label: 'Cave Mushrooms' },
+      { type: 'collect', item: 'Uncut Quartz', count: 5, label: 'Uncut Quartz' },
+    ],
+    reward: { xp: 1000, gold: 340 },
+  },
+  dw_burnbrood: {
+    id: 'dw_burnbrood', name: 'Burn What She Laid', giver: 'gedd', minLevel: 13, requires: ['dw_denmother'],
+    summary: 'The Den Mother is dead. What she laid is not. Burn the clusters out of the hollow and the nest.',
+    intro: 'You killed her. Good. Now go and look at the floor of the brood chamber, because she spent a long time down here and she was not idle. Clusters of them, in the hollow as well. Kill the mother and leave the eggs and in a year we are stood here having this conversation again. Take a torch to every one you find.',
+    active: 'Egg clusters in the hollow and the brood chamber. They burst when they burn.',
+    done: 'Then it is finished properly. I have been in this cave a long time and that is the first thing anyone has done that will still matter next spring.',
+    objectives: [
+      { type: 'use', tag: 'eggs', count: 5, label: 'Egg clusters burned' },
+      { type: 'kill', target: 'venom_spider', count: 8, label: 'Venom spiders killed' },
+    ],
+    reward: { xp: 2000, gold: 520, items: ['Bone Charm'] },
+  },
+
+  // ==========================================================================
   // RAVENWATER POOL — the pool had nothing in it at all until recently, and
   // nothing sent you to it either.
   // ==========================================================================

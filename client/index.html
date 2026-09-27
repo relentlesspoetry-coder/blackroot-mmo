@@ -9554,9 +9554,17 @@ function showHit(m) {
     || (m.hitKind === 'poison' ? 'poison' : m.hitKind === 'burn' ? 'fire' : m.hitKind === 'bleed' ? 'bleeding' : 'Something');
   const an = nameOf(A, m.by), tn = nameOf(T, m.target);
   // "The Goblin" but never "the Hero142": a person gets their name plain.
+  // A named elite is a proper name and gets the same treatment -- it read as
+  // "The The Den Mother hits you for 18", because every elite in this world is
+  // called The Something. The server has used this rule since it was written
+  // (`m.elite ? m.name : 'the ' + m.name`); the combat log never did. The
+  // leading-article test is belt and braces for any name that carries its own.
   const isPerson = (r, id) => id === myId || (r && r.kind === 'player') || (r && r.data && r.data.cls != null);
-  const The = (n, r, id) => (isPerson(r, id) || n === 'You' ? n : `The ${n}`);
-  const the = (n, r, id) => (isPerson(r, id) || n === 'You' ? n : `the ${n}`);
+  const isNamed = (r, id) => isPerson(r, id) || (r && r.data && r.data.elite);
+  const hasArticle = (n) => /^(the|a|an)\s/i.test(n);
+  const The = (n, r, id) => (isNamed(r, id) || n === 'You' ? n : hasArticle(n) ? n : `The ${n}`);
+  const the = (n, r, id) => (isNamed(r, id) || n === 'You' ? n
+                             : hasArticle(n) ? n.replace(/^The\s/, 'the ') : `the ${n}`);
   const AN = The(an, A, m.by), TN = the(tn, T, m.target), ANl = the(an, A, m.by);
 
   // ---- combat log

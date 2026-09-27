@@ -228,6 +228,11 @@ SPAWNS = [
     ('briar',           'bandit', 9, 6, 32, 22),
     ('briar',   'goblin_warrior',10, 4, 30, 18),
     ('briar',    'goblin_archer',10, 3, 30, 18),
+    # Chief Rattlecap asks you to kill eight warriors and two "goblin brutes"
+    # before you get to him -- and the only goblin_chief in the zone WAS him,
+    # so the line meant killing the same named elite twice and waiting out his
+    # respawn to do it. Brutes are ordinary mobs: two of them, guarding him.
+    ('briar',    'goblin_chief', 12, 2, 22, 12),
     # the hollow outside the mouth: what has come up out of it, not the den
     ('spiderden',           'spider', 8, 5, 34, 24),
     ('spiderden',     'venom_spider',10, 2, 30, 20),

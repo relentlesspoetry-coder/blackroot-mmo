@@ -17,17 +17,21 @@ const ZONES = { darkwoods, spiderden };
 
 // Lookups from the real world data.
 const npcs = new Set(), pois = new Set(), chests = new Set(), spawnTypes = new Set(), eliteNames = new Set(), dropItems = new Set();
-const objectIds = new Set(), objectTags = new Map();
+const objectIds = new Set(), objectTags = new Map(), roamingTypes = new Set();
+const eliteCount = new Map();
 for (const [zid, z] of Object.entries(ZONES)) {
   for (const n of (z.npcs || [])) npcs.add(n.id);
   for (const p of (z.pois || [])) pois.add(`${zid}:${p.key}`);
   for (const c of (z.chests || [])) chests.add(`${zid}:${c.id}`);
-  for (const s of (z.spawns || [])) spawnTypes.add(s.type);
+  for (const s of (z.spawns || [])) { spawnTypes.add(s.type); roamingTypes.add(s.type); }
   for (const o of (z.objects || [])) {
     objectIds.add(o.id);
     if (o.tag) objectTags.set(o.tag, (objectTags.get(o.tag) || 0) + 1);
   }
-  for (const e of (z.elites || [])) { spawnTypes.add(e.type); if (e.name) eliteNames.add(e.name); }
+  for (const e of (z.elites || [])) {
+    spawnTypes.add(e.type); if (e.name) eliteNames.add(e.name);
+    eliteCount.set(e.type, (eliteCount.get(e.type) || 0) + 1);
+  }
 }
 for (const t of Object.values(MONSTER_TEMPLATES)) {
   for (const d of (t.droptable || [])) if (d.item) dropItems.add(d.item);
@@ -91,7 +95,20 @@ for (const id of QUEST_IDS) {
       else if (!gatherable.has(o.item) && !droppedBySpawning.has(o.item))
         err(id, `collect item '${o.item}' exists but nothing that spawns drops it`);
     }
-    else if (o.type === 'kill') { if (!MONSTER_TEMPLATES[o.target]) err(id, `kill target '${o.target}' has no template`); else if (!spawnTypes.has(o.target)) warn(id, `kill target '${o.target}' never spawns`); }
+    else if (o.type === 'kill') {
+      if (!MONSTER_TEMPLATES[o.target]) err(id, `kill target '${o.target}' has no template`);
+      else if (!spawnTypes.has(o.target)) warn(id, `kill target '${o.target}' never spawns`);
+      // Elite types were folded into spawnTypes, so "kill goblin_chief x2"
+      // looked satisfiable while the only goblin_chief in the world was Chief
+      // Rattlecap -- meaning the line read "kill this named boss twice, waiting
+      // out his respawn in between". A kill objective wants ordinary mobs; a
+      // named one is what `slay` is for.
+      else if (!roamingTypes.has(o.target)) {
+        const n = eliteCount.get(o.target) || 0;
+        if ((o.count || 1) > n)
+          err(id, `kill target '${o.target}' x${o.count || 1} only exists as ${n} named elite(s) — that is farming a boss, not killing mobs`);
+      }
+    }
     else if (o.type === 'slay') { if (!eliteNames.has(o.name)) err(id, `slay target '${o.name}' is not a named elite`); }
     else if (o.type === 'reach') { if (!pois.has(`${o.zone}:${o.poi}`)) err(id, `reach POI '${o.zone}:${o.poi}' does not exist`); }
     else if (o.type === 'chest') { if (!chests.has(`${o.zone}:${o.chest}`)) err(id, `chest '${o.zone}:${o.chest}' does not exist`); }

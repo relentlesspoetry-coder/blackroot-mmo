@@ -28,6 +28,18 @@ const toPath = (x, zz) => {
     best = Math.min(best, segDist(x, zz, p.points[i], p.points[i + 1]));
   return best;
 };
+// A cave zone's walkable space is its chambers and the tunnels joining them --
+// there is no terrain grid to ask. Anything outside both is inside the rock.
+const inCavern = (zone, x, zz) => {
+  const C = zone.cavern; if (!C) return true;
+  const room = k => C.rooms.find(r => r.key === k);
+  for (const r of C.rooms) if (Math.hypot(x - r.x, zz - r.z) <= r.r) return true;
+  for (const t of C.tunnels) {
+    const a = room(t.from), b = room(t.to); if (!a || !b) continue;
+    if (segDist(x, zz, a, b) <= (t.w || C.tunnelWidth || 10) / 2) return true;
+  }
+  return false;
+};
 const onDeck = (x, zz) => {
   for (const r of (z.rivers || [])) for (const b of (r.bridges || [])) {
     const s = b.span || 12;
@@ -286,56 +298,68 @@ console.log('\nThe Dark Woods — zone invariants\n');
 // wrong with it. These check the list exists, that what is in it can be walked
 // up to, and that the ones a quest names by id are still named that.
 {
-  const objs = z.objects || [];
-  ok('the zone has quest objects at all', objs.length > 0, `${objs.length} objects`);
+  // Both zones. The Spider Den had NO objects at all while these ran only
+  // against the Dark Woods, so a cave whose chambers are named after its
+  // cocoons and its egg clusters passed a check that never looked at it.
+  const ZS = { darkwoods: z, spiderden };
+  const all = [], badGive = [], ghostQuest = [], badDead = [], sealed = [], dupes = [];
+  let stacked = 0, emptyZones = [];
+  for (const [zid, zone] of Object.entries(ZS)) {
+    const objs = zone.objects || [];
+    if (!objs.length) emptyZones.push(zid);
+    const ids = new Set();
+    for (const o of objs) {
+      if (ids.size === ids.add(o.id).size) dupes.push(`${zid}:${o.id}`);
+      all.push([zid, o]);
+      if (o.gives && !ITEMS[o.gives.item]) badGive.push(`${o.id} -> ${o.gives.item}`);
+      if (o.quest && !QUESTS[o.quest]) ghostQuest.push(`${o.id} -> ${o.quest}`);
+      const eliteNames = new Set((zone.elites || []).map(e => e.name));
+      if (o.needDead && !eliteNames.has(o.needDead)) badDead.push(`${o.id} -> ${o.needDead}`);
+      // Above ground: buried in a cliff or sunk in the lake. Underground: the
+      // cave is the walkable part, so anything outside the chambers and the
+      // tunnels is inside solid rock.
+      if (zone.enclosed) { if (!inCavern(zone, o.x, o.z)) sealed.push(`${zid}:${o.id}`); }
+      else if (isSolid(terrainAt(zone, o.x, o.z)) || terrainAt(zone, o.x, o.z) === 'W')
+        sealed.push(`${zid}:${o.id}`);
+    }
+    for (let i = 0; i < objs.length; i++) for (let j = i + 1; j < objs.length; j++)
+      if (Math.hypot(objs[i].x - objs[j].x, objs[i].z - objs[j].z) < 3.5) stacked++;
+  }
 
-  const ids = new Set();
-  const dupes = objs.filter(o => ids.size === ids.add(o.id).size).map(o => o.id);
+  ok('every zone has quest objects', emptyZones.length === 0,
+      emptyZones.length ? `${emptyZones.join(', ')} has none` : `${all.length} objects across ${Object.keys(ZS).length} zones`);
+
   ok('every object id is unique', dupes.length === 0,
-      dupes.length ? dupes.join(', ') : `${ids.size} ids`);
+      dupes.length ? dupes.join(', ') : `${all.length} ids`);
 
-  // Buried in a cliff, sunk in the lake, or standing in the middle of a
-  // building -- all three make it unusable, and all three have happened to
-  // something else in this zone already.
-  const unreachable = objs.filter(o => isSolid(terrainAt(z, o.x, o.z))
-                                    || terrainAt(z, o.x, o.z) === 'W');
-  ok('every object stands on ground you can reach', unreachable.length === 0,
-      unreachable.length ? unreachable.map(o => o.id).join(', ') : `${objs.length} clear`);
+  ok('every object stands somewhere you can reach', sealed.length === 0,
+      sealed.length ? sealed.join(', ') : `${all.length} clear`);
 
   // The reach is how close you must get. An object further from any walkable
-  // route than a player will ever wander is decoration.
-  const stranded = objs.filter(o => toPath(o.x, o.z) > 70);
+  // route than a player will ever wander is decoration. (Only above ground --
+  // a cave has no path network, its chambers ARE the route.)
+  const stranded = (z.objects || []).filter(o => toPath(o.x, o.z) > 70);
   ok('no object is stranded away from the path network', stranded.length === 0,
       stranded.length ? stranded.map(o => `${o.id} ${toPath(o.x, o.z) | 0}u`).join(', ')
-                      : `furthest ${Math.max(...objs.map(o => toPath(o.x, o.z))) | 0}u off a path`);
+                      : `furthest ${Math.max(...(z.objects || []).map(o => toPath(o.x, o.z))) | 0}u off a path`);
 
   // Two nodes in the same spot read as one, so a 'gather 6' that looks like it
   // has ten sources can really have five.
-  let stacked = 0;
-  for (let i = 0; i < objs.length; i++) for (let j = i + 1; j < objs.length; j++)
-    if (Math.hypot(objs[i].x - objs[j].x, objs[i].z - objs[j].z) < 3.5) stacked++;
   ok('no two objects stand on the same spot', stacked === 0, `${stacked} overlapping pairs`);
 
   // Anything that hands an item over must hand over an item that exists.
-  const badGive = objs.filter(o => o.gives && !ITEMS[o.gives.item]);
   ok('everything an object gives is a real item', badGive.length === 0,
-      badGive.length ? badGive.map(o => `${o.id} -> ${o.gives.item}`).join(', ')
-                     : `${objs.filter(o => o.gives).length} give items`);
+      badGive.length ? badGive.join(', ') : `${all.filter(([, o]) => o.gives).length} give items`);
 
   // A once-only object gated behind a quest you cannot yet have is fine; one
   // gated behind a quest that does not exist is a dead prop.
-  const ghostQuest = objs.filter(o => o.quest && !QUESTS[o.quest]);
   ok('every object gated behind a quest names a real one', ghostQuest.length === 0,
-      ghostQuest.length ? ghostQuest.map(o => `${o.id} -> ${o.quest}`).join(', ')
-                        : `${objs.filter(o => o.quest).length} gated`);
+      ghostQuest.length ? ghostQuest.join(', ') : `${all.filter(([, o]) => o.quest).length} gated`);
 
   // needDead names an elite by its display name. Misspell it and the object
   // can never be used, because the kill it waits for never registers.
-  const eliteNames = new Set((z.elites || []).map(e => e.name));
-  const badDead = objs.filter(o => o.needDead && !eliteNames.has(o.needDead));
   ok('every needDead names a real elite', badDead.length === 0,
-      badDead.length ? badDead.map(o => `${o.id} -> ${o.needDead}`).join(', ')
-                     : `${objs.filter(o => o.needDead).length} gated on a kill`);
+      badDead.length ? badDead.join(', ') : `${all.filter(([, o]) => o.needDead).length} gated on a kill`);
 }
 
 // --- portals ----------------------------------------------------------------

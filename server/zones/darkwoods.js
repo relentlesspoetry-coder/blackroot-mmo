@@ -121,6 +121,7 @@ export const darkwoods = {
     { type: 'bandit', level: 9, count: 6, cx: 231.4, cz: 153.7, r: 32, roam: 22 },
     { type: 'goblin_warrior', level: 10, count: 4, cx: 231.4, cz: 153.7, r: 30, roam: 18 },
     { type: 'goblin_archer', level: 10, count: 3, cx: 231.4, cz: 153.7, r: 30, roam: 18 },
+    { type: 'goblin_chief', level: 12, count: 2, cx: 231.4, cz: 153.7, r: 22, roam: 12 },
     { type: 'spider', level: 8, count: 5, cx: -0.4, cz: 273.3, r: 34, roam: 24 },
     { type: 'venom_spider', level: 10, count: 2, cx: -0.4, cz: 273.3, r: 30, roam: 20 },
     { type: 'goblin_scavenger', level: 5, count: 7, cx: 276.2, cz: -1.8, r: 50, roam: 30 },

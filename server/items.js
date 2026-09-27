@@ -351,6 +351,9 @@ export const ITEMS = {
   'Sticky Webbing': { value: 14 },
   'Uncut Quartz': { value: 30 },
   'Cave Mushroom': { value: 7 },
+  // Cut out of the cocoons in the larder. Gedd Marrow walked into the den with
+  // five other people and walked back out on his own.
+  'Company Tag':  { value: 16, desc: 'A stamped tin tag on a cord. Somebody wore this in.' },
   'Spiderling Pet Egg': { value: 400 },
   'Cave Giant Pet Stone': { value: 900 },
   // --- goblin loot (Goblin_Loot_Items pack) ---
