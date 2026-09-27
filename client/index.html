@@ -1730,7 +1730,47 @@ function buildSitePads() {
   sitePads = pads;
 }
 // Height an entity should stand at: on a bridge use its deck, else the terrain.
-function groundY(x, z) { const b = bridgeLift(x, z); return b !== null ? b : terrainHeight(x, z); }
+// --- the surface you can actually SEE ---------------------------------------
+// terrainHeight is a continuous function; the ground MESH is a lattice of
+// triangles sampling it every ~2.5 m. They are not the same surface, and
+// anything that sits on the ground has to follow the triangles -- the function
+// dips below them in every hollow and rises above them over every crest, so a
+// crate placed by the function is a crate half-buried in the slope it stands
+// on. (A thing laid at a constant y is worse again: the dirt field was one
+// flat sheet at y = 0.05 across a map with 15 hills on it. 60% of its vertices
+// were underground and 22% floated, which is why a trail simply vanished the
+// moment it left level ground.)
+//
+// This reproduces the mesh exactly -- the same lattice, and the same diagonal
+// three.js splits each quad along -- so the answer is the height of the very
+// triangle being drawn under that point. The lattice heights are memoised, so
+// it is also cheaper than terrainHeight for anything asked more than once.
+let groundGrid = null;          // set by buildLowPolyGround
+let _gmH = null;                // lattice heights, NaN = not yet computed
+function groundLatticeY(i, j) {
+  const G = groundGrid, k = j * (G.nx + 1) + i;
+  let v = _gmH[k];
+  if (v !== v) { v = terrainHeight(G.minX + i * G.dx, G.minZ + j * G.dz); _gmH[k] = v; }
+  return v;
+}
+function groundMeshY(x, z) {
+  const G = groundGrid;
+  if (!G) return terrainHeight(x, z);
+  const fx = (x - G.minX) / G.dx, fz = (z - G.minZ) / G.dz;
+  const i = Math.max(0, Math.min(G.nx - 1, Math.floor(fx)));
+  const j = Math.max(0, Math.min(G.nz - 1, Math.floor(fz)));
+  const u = fx - i, v = fz - j;
+  // three.js PlaneGeometry splits each quad (a,b,d)(b,c,d) with the diagonal
+  // running from (i, j+1) to (i+1, j) -- the line u + v = 1.
+  if (u + v <= 1) {
+    const h00 = groundLatticeY(i, j);
+    return h00 + u * (groundLatticeY(i + 1, j) - h00) + v * (groundLatticeY(i, j + 1) - h00);
+  }
+  const h11 = groundLatticeY(i + 1, j + 1);
+  return h11 + (1 - u) * (groundLatticeY(i, j + 1) - h11) + (1 - v) * (groundLatticeY(i + 1, j) - h11);
+}
+// Where the ground is, for everything that stands on it.
+function groundY(x, z) { const b = bridgeLift(x, z); return b !== null ? b : groundMeshY(x, z); }
 let worldTime = 0.35, worldWeather = 'clear';
 let riverMesh = null, riverTex = null; // animated flowing water
 let timeFrozen = false, weatherFrozen = false;   // set only through the ?debug=1 hook
@@ -1906,6 +1946,7 @@ function updateSky(dt) {
 // and on every zone transition.
 function loadZone(zdata) {
   zone = zdata; lastRegionId = null;
+  groundGrid = null; _gmH = null;  // the old zone's lattice is not this zone's ground
   buildTerrainFields();          // blur the traced classes once, for this zone
   buildSitePads();               // level the ground under every ruin
   // Sit the camera behind the character's spawn facing. Without this it
@@ -2145,6 +2186,10 @@ function smoothPoly(points, seg) {
 // A single continuous, smoothly-curving ribbon strip that follows a polyline
 // with a constant width (mitred at joints) — no disconnected rectangles. Used
 // for the dirt path and the river so both read as one connected feature.
+// `y` is a LIFT above the ground, not an altitude: every vertex sits on the
+// ground mesh's own triangle at that point. It used to be an altitude, so the
+// whole field was one flat sheet -- fine on a map with no relief, a brown
+// plateau standing proud of the grass on this one.
 // One mesh of dirt for a set of polylines + discs. Alpha per vertex = max over
 // all shapes of the soft distance field (1 inside the core, 0 at core+feather),
 // so overlapping shapes merge instead of stacking. Only grid cells that touch
@@ -2217,7 +2262,7 @@ function buildDirtField(shapes, discs, material, y, T, polys = []) {
     // spread of the three so the brown reads as a gradient drifting across
     // the ground rather than one flat tone.
     dirtCol.setHSL(0.047 + hueN * 0.045, 0.36 + satN * 0.32, 0.11 + ligN * 0.28);
-    vid[k] = pos.length / 3; pos.push(x, y, z); uv.push(x / T, z / T); col.push(dirtCol.r, dirtCol.g, dirtCol.b, A[k]); return vid[k];
+    vid[k] = pos.length / 3; pos.push(x, groundMeshY(x, z) + y, z); uv.push(x / T, z / T); col.push(dirtCol.r, dirtCol.g, dirtCol.b, A[k]); return vid[k];
   };
   for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
     const k = j * (nx + 1) + i;
@@ -2233,6 +2278,7 @@ function buildDirtField(shapes, discs, material, y, T, polys = []) {
   g.setIndex(idx); g.computeVertexNormals();
   const m = new THREE.Mesh(g, material); m.receiveShadow = true; scene.add(m);
   m.userData.alphaAt = alphaAt;   // how much dirt is at a spot: the pebbles ask the same question
+  m.userData.groundDecal = { name: 'dirt', lift: y };   // __bk.groundFit() checks it lies flat
   return m;
 }
 // Loose stones on bare ground. The grass gets blades, so the dirt gets grit:
@@ -2285,7 +2331,7 @@ function buildDirtStones(dirtMesh, shapes, discs, polys) {
     q.setFromEuler(new THREE.Euler(rng() * 6.28, rng() * 6.28, rng() * 6.28));
     const s = 0.03 + rng() * 0.07;
     sc.set(s * (0.7 + rng() * 0.6), s * (0.5 + rng() * 0.5), s * (0.7 + rng() * 0.6));   // squat, never marbles
-    mtx.compose(new THREE.Vector3(p.x, 0.055 + s * 0.25, p.z), q, sc); im.setMatrixAt(i, mtx);
+    mtx.compose(new THREE.Vector3(p.x, groundMeshY(p.x, p.z) + 0.055 + s * 0.25, p.z), q, sc); im.setMatrixAt(i, mtx);
     // Every stone its own brown, drawn at random from the same gradient the
     // ground is painted with.
     col.setHSL(0.047 + rng() * 0.045, 0.30 + rng() * 0.26, 0.34 + rng() * 0.26);
@@ -2662,9 +2708,12 @@ function updateWaterSurface(tSec) {
 
 function buildRiverShore(points, half) {
   const pts = smoothPoly(points, 8);
-  const H = half + RIVER_LIP, W = RIVER_WATER_Y, FR = 2.0;
-  // Height at perpendicular offset o — identical to terrainHeight's profile.
-  const yAt = (o) => { const d = Math.abs(o); if (d >= H) return 0; if (d >= half) return W + (-W) * ((d - half) / RIVER_LIP); const t = d / half; return RIVER_BED_Y + (W - RIVER_BED_Y) * (t * t * t); };
+  const H = half + RIVER_LIP, FR = 2.0;
+  // The ribbon sits on the ground mesh. It used to carry its own copy of the
+  // channel profile and assume the land either side was at y = 0 -- true of a
+  // flat map, and a floating shelf anywhere the terrain has a hill under it.
+  // terrainHeight already cuts the channel (riverHeightAt1), so following the
+  // mesh gives the same bed for free and the banks come out where the land is.
   // Offsets across the ribbon and their alpha (1 = opaque dirt, 0 = faded into
   // grass). Only the outer rim (H -> H+FR) fades.
   const cols = [
@@ -2678,7 +2727,10 @@ function buildRiverShore(points, half) {
     let dx = b.x - a.x, dz = b.z - a.z; const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
     const nx = -dz, nz = dx;
     if (i > 0) dist += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z);
-    for (const c of cols) { pos.push(pts[i].x + nx * c.o, yAt(c.o) + 0.03, pts[i].z + nz * c.o); uv.push((c.o + H) / T, dist / T); col.push(1, 1, 1, c.a); }
+    for (const c of cols) {
+      const vx = pts[i].x + nx * c.o, vz = pts[i].z + nz * c.o;
+      pos.push(vx, groundMeshY(vx, vz) + 0.03, vz); uv.push((c.o + H) / T, dist / T); col.push(1, 1, 1, c.a);
+    }
   }
   for (let i = 0; i < pts.length - 1; i++) for (let j = 0; j < N - 1; j++) {
     const p = i * N + j; idx.push(p, p + 1, p + N, p + 1, p + N + 1, p + N);
@@ -2692,7 +2744,9 @@ function buildRiverShore(points, half) {
     vertexColors: true, transparent: true, depthWrite: false, // rim alpha melts the dirt into grass
     emissive: 0x241a10, emissiveIntensity: 0.35,
     polygonOffset: true, polygonOffsetFactor: -2 }), 'dirt', { scale: 2 });
-  const m = new THREE.Mesh(g, mat); m.receiveShadow = true; m.userData.isGround = true; scene.add(m); return m;
+  const m = new THREE.Mesh(g, mat); m.receiveShadow = true; m.userData.isGround = true;
+  m.userData.groundDecal = { name: 'river shore', lift: 0.03 };
+  scene.add(m); return m;
 }
 
 function buildZone() {
@@ -2956,6 +3010,10 @@ function buildLowPolyGround(W, D, cx, cz) {
   const seg = Math.max(24, Math.round(Math.max(W, D) / (zone.enclosed ? 6 : 2.5)));
   const geo = new THREE.PlaneGeometry(W, D, seg, seg);
   geo.rotateX(-Math.PI / 2);
+  // Remember the lattice so anything laid on the ground can follow the same
+  // triangles (groundMeshY).
+  groundGrid = { minX: cx - W / 2, minZ: cz - D / 2, dx: W / seg, dz: D / seg, nx: seg, nz: seg };
+  _gmH = new Float32Array((seg + 1) * (seg + 1)).fill(NaN);
   const rng = mulberry32(9), c = new THREE.Color();
   const half = (zone.river && !zone.enclosed) ? riverWaterHalf(zone.river.width) : 0;
 
@@ -11035,7 +11093,30 @@ respawnBtn.onclick = () => ws?.send(JSON.stringify({ t: 'respawn' }));
 if (location.search.includes('debug')) {
   window.__bk = {
     THREE,
-    terrainHeight, landHeight, groundY, terrainAt, terrainField,   // terrain probes
+    terrainHeight, landHeight, groundY, groundMeshY, terrainAt, terrainField,   // terrain probes
+    // Does everything laid ON the ground actually lie on it? Every vertex of
+    // every ground decal against the ground mesh's own triangle under it. A
+    // flat sheet over a hilly map shows up here as metres of gap; the answer
+    // should be the decal's own lift, to within rounding.
+    groundFit() {
+      const out = [];
+      scene.traverse((o) => {
+        const d = o.userData && o.userData.groundDecal;
+        if (!d || !o.geometry) return;
+        const pos = o.geometry.attributes.position;
+        let lo = Infinity, hi = -Infinity, sum = 0, worst = null;
+        for (let i = 0; i < pos.count; i++) {
+          const x = pos.getX(i) + o.position.x, y = pos.getY(i) + o.position.y, z = pos.getZ(i) + o.position.z;
+          const gap = y - groundMeshY(x, z);
+          if (gap < lo) lo = gap;
+          if (gap > hi) { hi = gap; worst = [Math.round(x), Math.round(z)]; }
+          sum += gap;
+        }
+        out.push({ mesh: d.name, lift: d.lift, verts: pos.count,
+          min: +lo.toFixed(3), max: +hi.toFixed(3), mean: +(sum / pos.count).toFixed(3), worstAt: worst });
+      });
+      return out;
+    },
     get scene() { return scene; },
     get camera() { return camera; },
     get renderer() { return renderer; },
