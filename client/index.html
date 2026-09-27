@@ -7546,12 +7546,13 @@ function optionsFor(pk) {
     ];
   }
   if (pk.kind === 'fishspot') {
-    const req = FISH_LEVEL[pk.tier] || 1;
+    const fish = fishForTier(pk.tier);
+    const req = FISH_LEVEL[fish] || 1;
     const can = (skills.fishing?.level || 1) >= req;
     return [
-      { label: `Fish <b>${escapeHtml(pk.tier || 'fishing spot')}</b>` +
-        (can ? '' : ` <span class="lvl">(needs Fishing ${req})</span>`), act: () => fishSpot(pk.id) },
-      { label: 'Examine fishing spot', act: () => examineText(`A shoal of ${(pk.tier || 'fish').toLowerCase()} stirs the water. Fishing ${req}.`) },
+      { label: `Fish <b>${escapeHtml(fish)}</b>`
+        + (can ? '' : ` <span class="lvl">(needs Fishing ${req})</span>`), act: () => fishSpot(pk.id) },
+      { label: 'Examine fishing spot', act: () => examineText(`A shoal of ${fish.toLowerCase()} stirs the water. Fishing ${req}.`) },
     ];
   }
   if (pk.kind === 'cookfire') return [
@@ -7809,6 +7810,15 @@ function mineVein(id) {
 
 // Mirrors server/fishing.js FISH; used only for menu labels.
 const FISH_LEVEL = { Shrimp: 1, Trout: 10, Salmon: 22, Pike: 34 };
+// A fishing spot's `tier` in the zone is a NUMBER, 1-4; the server turns it
+// into a fish with fishForTier. This mirrors server/fishing.js TIERS -- the
+// client was indexing FISH_LEVEL with the number, so every spot read as
+// "Fish 3", needing Fishing 1, whatever was actually in it.
+const FISH_TIERS = ['Shrimp', 'Trout', 'Salmon', 'Pike'];
+function fishForTier(tier) {
+  if (typeof tier === 'string') return tier;
+  return FISH_TIERS[Math.min(FISH_TIERS.length, Math.max(1, tier | 0)) - 1] || 'fish';
+}
 // Edible items (mirror the `heal` foods in server/items.js) — clicking eats them.
 const EDIBLE = new Set(['Shrimp', 'Cooked Chicken', 'Cooked Beef',
   'Trout', 'Salmon', 'Pike', 'Kebab']);
@@ -11114,7 +11124,11 @@ document.querySelectorAll('#chattabs button').forEach(b => b.onclick = () => {
   document.querySelectorAll('#chattabs button').forEach(x => x.classList.toggle('on', x === b));
   chatLog.dataset.tab = b.dataset.tab; chatLog.scrollTop = chatLog.scrollHeight;
 });
-function escapeHtml(s) { return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+// Total on purpose. It is called on whatever a zone file or the server hands
+// over, and a fishing spot's `tier` is a NUMBER: s.replace threw out of the
+// middle of building the context menu, so the menu opened with its title and
+// no options at all -- there was no way to fish in the game.
+function escapeHtml(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
 // ---------------------------------------------------------------------------
 // Death screen
