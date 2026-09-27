@@ -2383,6 +2383,11 @@ const WATER_SUB = 3;            // marching-squares cells per terrain cell
 // gate is what stops a lake spilling into whatever unrelated low ground sits
 // below the waterline nearby: the fen basin, the hollows.
 let waterSurfaces = [];
+// How far past the waterline the dirt bank reaches, measured in the blurred
+// water field rather than in metres -- which is what makes a shallow shelving
+// pool get a wide beach and a cut bank get a narrow one.
+const BANK_BAND = 0.11;
+const _bankC = new THREE.Color();
 function buildTerrainWater() {
   waterSurfaces = [];
   const T = zone && zone.terrain; if (!T) return;
@@ -2402,10 +2407,38 @@ function buildTerrainWater() {
   // the pair cannot z-fight. (They used to be 22 cm apart, which put the shallow
   // sheet's rim below the true waterline and buried its edge in the bank.)
   const EDGE = waterEdge();
+  // Over this much depth the water is its full colour; above the bed it pales
+  // toward SHORE_TINT. RIM_FEATHER is how far inside the waterline the sheet
+  // takes to reach full opacity -- the band that melts into the wet bank.
+  // Measured against the real profile at Ravenwater, which shelves from nothing
+  // at the bank to 3.8 m at twenty-five metres out. The first pass paled the
+  // water over 1.5 m of depth -- the first THIRTEEN metres of pool -- and by a
+  // factor of 1.74, which turned the whole margin into a washed-out grey-green
+  // that did not read as water at all. Concentrate it: about a metre of depth,
+  // a gentler tint, and a curve that keeps the pale in the last stride or two
+  // before the bank.
+  // RIM_FEATHER is how much `margin` buys full opacity, and margin is
+  // min(depth, field-margin x 24) -- a MIXED unit that grows slowly across a
+  // gently shelving pool. At 1.2 it took about eight metres of shore to reach
+  // full opacity, which measured as 65-69% of the water surface sitting below
+  // 0.4 alpha and 6,479 vertices at flat zero. That is not a feathered rim, it
+  // is a mostly-transparent sheet, and what you saw through it was the dark
+  // carved bed: the water looked black. A rim is a stride wide, not eight.
+  const SHALLOW_AT = 1.05, RIM_FEATHER = 0.30, SHALLOW_POW = 1.7;
+  // Full opacity once the water is this deep, and never more see-through than
+  // ALPHA_FLOOR anywhere -- so the outermost band still blends into the wet
+  // bank, and nowhere is the sheet a hole onto the dark bed.
+  // A HAIRLINE, not a gradient. Floored at 0.42 the sheet still showed 58% of
+  // whatever lay under it, and under a carved pool in shadow that is very dark
+  // -- which is why the water read as black. The blend the shore needs is the
+  // last few centimetres of the sheet, over lit shallow mud; everything past
+  // that has to be opaque or it is a window onto the bottom of a bowl.
+  const DEPTH_OPAQUE = 0.22, ALPHA_FLOOR = 0.80;
+  const SHORE_TINT = { r: 1.27, g: 1.33, b: 1.24 };
   for (const [name, gate, surfaceY, colour, opacity] of [
        ['deep', EDGE.deep,  RIVER_WATER_Y + 0.02, 0x2f7fb0, 0.93],
        ['wet',  EDGE.marsh, RIVER_WATER_Y,        0x599ec2, 0.72]]) {
-    const index = new Map(), pos = [], uv = [], idx = [];
+    const index = new Map(), pos = [], uv = [], idx = [], col = [];
     const phiCache = new Map();
     const phiAt = (fj, fi) => {
       const k = fi * (FW + 1) + fj;
@@ -2426,6 +2459,31 @@ function buildTerrainWater() {
         v = pos.length / 3; index.set(k, v);
         pos.push(x, surfaceY, z);
         uv.push(x / 9, z / 9);                        // world-space, so it tiles seamlessly
+        // Depth, and how far inside the waterline this vertex is. The rivers
+        // have had both since they were built -- a dirt shore and a rim that
+        // feathers into it -- while the traced BODIES of water were two flat
+        // sheets of one colour each, cut off square at the contour. Same water,
+        // two different standards.
+        //
+        //   shallow water is paler, because you are seeing the bed through it
+        //   and less of the column's own colour;
+        //   and the rim fades out instead of ending, so the sheet melts into
+        //   the wet bank rather than stopping on it like a laid carpet.
+        const depth = Math.max(0, surfaceY - terrainHeight(x, z));
+        const margin = Math.min(depth, (terrainField(x, z, name) - gate) * 24);
+        const shallow = Math.min(1, depth / SHALLOW_AT);          // 0 at the edge, 1 out deep
+        // Opacity off DEPTH, which is in metres and means something, with a
+        // floor so the sheet never becomes a window. Tightening the feather
+        // alone was not enough: 40% of the surface was still under 0.4 alpha,
+        // because `margin` mixes metres with a slow-growing field term. Water
+        // a metre deep hides its bed; water at the very edge is a thin film
+        // and should show the wet mud under it -- that is the blend.
+        const f = Math.min(1, Math.max(0, Math.min(depth / DEPTH_OPAQUE,
+                                                   margin / RIM_FEATHER)));
+        const a = ALPHA_FLOOR + (1 - ALPHA_FLOOR) * (f * f * (3 - 2 * f));
+        // lighten toward the shore: a warm pale tint mixed into the base colour
+        const k2 = Math.pow(1 - shallow, SHALLOW_POW);
+        col.push(1 + k2 * (SHORE_TINT.r - 1), 1 + k2 * (SHORE_TINT.g - 1), 1 + k2 * (SHORE_TINT.b - 1), a);
       }
       return v;
     };
@@ -2483,6 +2541,7 @@ function buildTerrainWater() {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));   // rgb tint + rim alpha
     g.setAttribute('normal', new THREE.Float32BufferAttribute(new Float32Array(pos.length), 3));
     g.setIndex(idx);
     const tex = makeWaterTexture();
@@ -2490,6 +2549,7 @@ function buildTerrainWater() {
     const amp = name === 'deep' ? 1 : 0.45;
     const mat = waveify(detailize(new THREE.MeshStandardMaterial({ map: tex, color: colour,
       roughness: 0.22, metalness: 0.35, transparent: true, opacity, side: THREE.DoubleSide,
+      vertexColors: true,            // depth tint + the rim that feathers into the bank
       emissive: 0x0d3550, emissiveIntensity: 0.8 }), 'water', { scale: 4, strength: 0.5 }), amp);
     const m = new THREE.Mesh(g, mat);
     m.receiveShadow = true; m.userData.isWater = true; scene.add(m);
@@ -2518,6 +2578,20 @@ const WATER_WAVES = [
 ];
 function waveify(mat, amp) {
   const prev = mat.onBeforeCompile;
+  // three.js caches compiled programs by the material's PARAMETERS plus
+  // customProgramCacheKey, and onBeforeCompile is baked into that program. Two
+  // materials whose parameters hash the same therefore SHARE a program -- and
+  // share whichever one's onBeforeCompile got compiled first.
+  //
+  // detailize sets a constant key ('detailU'), so the only thing keeping the
+  // waved lake water apart from the un-waved river water was that one had
+  // vertexColors and the other did not. Turning vertexColors on for the lakes
+  // to tint them by depth made the two hash identically, they collided, and
+  // the sheet that got the wrong program had no uWaterTime uniform bound. The
+  // water rendered BLACK -- which is what it looks like when a shader reads a
+  // uniform that was never set.
+  const prevKey = mat.customProgramCacheKey;
+  mat.customProgramCacheKey = () => (prevKey ? prevKey.call(mat) : '') + '|wave';
   const u = { value: 0 };
   mat.userData.waterTime = u;
   const W = WATER_WAVES.map(w => w.map(n => n.toFixed(6)));
@@ -2920,16 +2994,42 @@ function buildLowPolyGround(W, D, cx, cz) {
     // than only across a whole field -- at 1:1 its octaves sit at 6, 16 and 45
     // metres and a screenful of grass was very nearly one colour.
     const hueN = fbm2(wx * 2.2, wz * 2.2, 11), ligN = fbm2((wx + 311) * 2.2, (wz - 97) * 2.2, 23), satN = fbm2((wx - 173) * 2.2, (wz + 421) * 2.2, 37);
-    let onBed = false;
-    for (const r of worldRivers()) { if (distToPolyline(wx, wz, r.points) < riverWaterHalf(r.width) + 0.5) { onBed = true; break; } }
-    if (!onBed && terrainField(wx, wz, 'wet') > 0.45) onBed = true;
+    // How much of this vertex is water-worn ground: 1 under the water, falling
+    // off through the BANK and reaching 0 where the grass takes over.
+    //
+    // This used to be a boolean that flipped exactly at the waterline, so every
+    // lake and every fen had grass growing right up to the water's edge and
+    // then mud beneath it, with nothing in between. Rivers have had a proper
+    // dirt shore since they were built (buildRiverShore); the traced bodies of
+    // water never got one. A shore is a gradient -- soaked mud, then damp
+    // earth, then grass -- and because it is driven off the blurred field, a
+    // gently shelving pool like Ravenwater gets a wide beach and a steep bank
+    // gets a narrow one, for free.
+    const EW = waterEdge();
+    let bed = 0;
+    for (const r of worldRivers()) {
+      const d = distToPolyline(wx, wz, r.points) - riverWaterHalf(r.width);
+      if (d < 0.5) { bed = 1; break; }
+      bed = Math.max(bed, 1 - Math.min(1, d / RIVER_BANK));      // the river's own margin
+    }
+    {
+      const wetF = terrainField(wx, wz, 'wet');
+      // full mud from the waterline in; fading out across BANK_BAND of field
+      const t = (wetF - (EW.marsh - BANK_BAND)) / BANK_BAND;
+      bed = Math.max(bed, Math.min(1, Math.max(0, t)));
+    }
+    const onBed = bed > 0.995;
     const rock = terrainField(wx, wz, 'rock');
     if (rock > 0.02) {                                                     // bare stone on the walls
       const g = 0.30 + ligN * 0.16 + (hueN - 0.5) * 0.05;
       c.setRGB(g * 1.02, g, g * 0.96);
       if (rock < 1) { const gr = new THREE.Color(); gr.setHSL(0.23 + hueN * 0.16, 0.30 + satN * 0.34, 0.13 + ligN * 0.2); c.lerp(gr, 1 - rock); }
     }
-    else if (onBed) c.setHSL(0.09, 0.34, 0.15 + (ligN - 0.5) * 0.04);      // muddy riverbed
+    // The submerged bed. At lightness 0.15 under shadow and fog this was
+    // effectively black, and every part of the water thin enough to see
+    // through read as a black hole rather than as shallow water over mud.
+    // A wet silt bed is dark, but it is BROWN.
+    else if (onBed) c.setHSL(0.085, 0.36, 0.215 + (ligN - 0.5) * 0.05);    // muddy bed
     else {
       // Shift with the canopy: open ground is a warmer, lighter sward, deep
       // wood is cooler and darker, which is the blueprint's two greens.
@@ -2941,6 +3041,18 @@ function buildLowPolyGround(W, D, cx, cz) {
       const sat = 0.30 + satN * 0.34 - deep * 0.05 + open * 0.06;
       const lig = 0.13 + ligN * 0.2 + open * 0.07 - deep * 0.05;
       c.setHSL(hue, sat, Math.max(0.05, lig));
+      // ...and the bank: blend that grass toward wet earth as the water nears.
+      // Two steps, because a shore is not one colour -- the soaked margin at
+      // the edge is darker and browner than the damp ground behind it.
+      if (bed > 0.001) {
+        // Measured across the bank at Ravenwater: with a smoothstep blend the
+        // ground only reached half mud at the halfway point and was still a
+        // dull olive at the waterline itself -- green led right up to the edge
+        // and then stopped. A shore reads as earth for a stride or two BEFORE
+        // the water, so the ramp is front-loaded and the mud is warmer.
+        const mud = _bankC.setHSL(0.075, 0.38 + bed * 0.08, 0.19 - bed * 0.04 + (ligN - 0.5) * 0.05);
+        c.lerp(mud, Math.pow(bed, 0.65));
+      }
     }
     colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
   }

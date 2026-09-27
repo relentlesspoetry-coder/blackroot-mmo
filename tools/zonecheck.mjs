@@ -9,6 +9,7 @@ import { darkwoods as z } from '../server/zones/darkwoods.js';
 import { spiderden } from '../server/zones/spiderden.js';
 import { terrainAt, terrainFieldAt, isSolid } from '../server/worldgen.js';
 import { ITEMS } from '../server/items.js';
+import { FISH, TIERS } from '../server/fishing.js';
 import { QUESTS } from '../server/quests.js';
 
 let failures = 0;
@@ -249,6 +250,19 @@ console.log('\nThe Dark Woods — zone invariants\n');
   });
   ok('every fishing spot has a bank to stand on', unreachable.length === 0,
       unreachable.length ? unreachable.map(f => f.id).join(', ') : `${spots.length} spots reachable`);
+
+  // Every species the game can catch needs water to catch it in. Pike had a
+  // level, an xp value, an item, a cooked form and a model, and no tier 4 spot
+  // anywhere in the world -- the same dead-content shape as an item nothing
+  // drops, one layer further out.
+  {
+    const tiers = new Set(spots.map(f => f.tier));
+    const homeless = TIERS.map((name, i) => [name, i + 1])
+      .filter(([, t]) => !tiers.has(t))
+      .map(([name, t]) => `${name} (tier ${t}, needs Fishing ${FISH[name].level})`);
+    ok('every catchable species has water to catch it in', homeless.length === 0,
+        homeless.length ? homeless.join(', ') : `${TIERS.length} species, ${tiers.size} tiers stocked`);
+  }
 
   const ore = (z.scatter || []).filter(o => /Ore_Vein/.test(o.model || o.m || ''));
   ok('ore specs exist', ore.length > 0, `${ore.length} vein specs`);

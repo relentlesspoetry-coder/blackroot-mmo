@@ -723,6 +723,8 @@ export const darkwoods = {
     { id: 'fs_fen_deep_w', x: 218.7, z: -16.8, tier: 2 },
     { id: 'fs_creek', x: -7.8, z: -73.6, tier: 1 },
     { id: 'fs_crowwater', x: -32.6, z: 164.9, tier: 2 },
+    { id: 'fs_ravenwater_deep', x: -235.4, z: -210.4, tier: 4 },
+    { id: 'fs_ravenwater_w', x: -303.9, z: -179.8, tier: 4 },
   ],
 
   campfires: [

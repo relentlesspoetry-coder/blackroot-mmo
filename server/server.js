@@ -2131,6 +2131,13 @@ function onDeck(zone, x, z) {
   }
   return false;
 }
+// How far past the deep contour the bed has to shelve before you are out of
+// your depth. Tuned against the measured profile at Ravenwater, which drops
+// from nothing at the bank to 3.8 m twenty-five metres out.
+// At 0.34 the swim line measured 15 m out at Ravenwater in 1.93 m of water --
+// over a fighter's head. Shoulders on a 1.8 m man are about 1.5 m, so the ramp
+// is shortened to put the line there: you wade to your chest and swim past it.
+const DEEP_RAMP = 0.29;
 function waterDepthAt(zone, x, z) {
   if (onDeck(zone, x, z)) return 0;                // dry feet: you are on the planks
   let d = 0;
@@ -2141,8 +2148,19 @@ function waterDepthAt(zone, x, z) {
     // from the water you can see. Both sides read zone.waterEdge.
     const E = zone.waterEdge;
     if (E) {
-      if (terrainFieldAt(zone, x, z, 'deep') >= E.deep) d = 1;
-      else if (terrainFieldAt(zone, x, z, 'wet') >= E.marsh) d = 0.35;   // wadeable
+      // GRADED, not a step. This returned 1 the instant you crossed the deep
+      // contour, so you started swimming at the water's edge where it is
+      // ankle deep -- a step off the bank and you were out of your depth. The
+      // bed shelves, and the field shelves with it: at the contour you are
+      // wading, and you only lose your feet once you are properly out. At
+      // Ravenwater that puts the swim line about thirteen metres out, where
+      // the pool is a metre and a half deep -- chest-to-shoulder on a man.
+      const dg = terrainFieldAt(zone, x, z, 'deep');
+      const wg = terrainFieldAt(zone, x, z, 'wet');
+      if (dg >= E.deep) {
+        const t = Math.min(1, (dg - E.deep) / DEEP_RAMP);
+        d = Math.max(d, 0.30 + 0.70 * (t * t * (3 - 2 * t)));
+      } else if (wg >= E.marsh) d = 0.35;                                // wadeable
     } else {
       const c = terrainAt(zone, x, z);
       if (c === T_DEEP) d = 1;

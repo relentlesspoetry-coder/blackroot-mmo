@@ -819,6 +819,12 @@ FISHING = [
     ('fs_jetty',       1274, 566, 3),
     ('fs_fen_deep_e',  1313, 501, 3), ('fs_fen_deep_w', 1163, 472, 2),
     ('fs_creek',        860, 396, 1), ('fs_crowwater',    848, 646, 2),
+    # Tier 4 is PIKE, and there was no tier 4 spot anywhere -- a species with a
+    # level, an xp value, an item, a cooked form and a model, and nowhere in
+    # the world to catch one. Pike lie in the deepest, stillest water, which is
+    # Ravenwater; these two sit out from its north and west shores where the
+    # pool is darkest.
+    ('fs_ravenwater_deep', 556, 214, 4), ('fs_ravenwater_w', 486, 276, 4),
 ]
 
 # Threshold markers: the two chokepoints the drawing calls out, and a waystone
