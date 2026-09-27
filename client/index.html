@@ -920,7 +920,13 @@ async function loadModels(list, onProgress) {
 // Node names the procedural rigs drive (buildRig / animateEntity). Everything
 // hanging under one of these that isn't itself a rig node moves rigidly with
 // it, so those meshes can be fused into one mesh per segment.
-const RIG_NODE = /^(Wing_[LR]|Arm_[LR]|Leg_[LR]|Shin_[LR]|Head|Weapon|Shield|Leg_[LR]_\d|QLeg_(FL|FR|BL|BR)|CTRL_.*|.*Club.*)$/;
+// Anything NOT named here is fused into its parent, so a node that needs to be
+// animated has to be listed or it stops existing. The Broodmother's jointed
+// legs (Leg_L1_Coxa -> _Femur -> _Tibia) were missing from this list, so her
+// whole leg chain was merged into the body before the rig ever looked at it --
+// which is why she animated on the body alone. Her CTRL_ nodes survived only
+// because CTRL_.* was already here.
+const RIG_NODE = /^(Wing_[LR]|Arm_[LR]|Leg_[LR]|Shin_[LR]|Head|Weapon|Shield|Leg_[LR]_\d|Leg_[LR]\d_(Coxa|Femur|Tibia)|QLeg_(FL|FR|BL|BR)|CTRL_.*|.*Club.*)$/;
 // A character glTF arrives as a hundred-odd little meshes with a few dozen
 // flat-colour materials (a goblin archer was 125 meshes). Each is a draw call
 // and a per-frame matrix update, and with every mob of the seamless world
@@ -5546,6 +5552,36 @@ function buildRig(wrap, style) {
         baseY: leg.rotation.y, baseX: leg.rotation.x, baseP: leg.position.clone(),
       });
     }
+    // JOINTED legs. The Broodmother is properly rigged where the small spiders
+    // are not: Coxa -> Femur -> Tibia -> Foot_Claw, a real chain, so the
+    // hip/upper/middle/lower the brief describes actually exists and the leg
+    // can fold at its joints instead of swinging rigid. Her nodes are named
+    // Leg_L1_Coxa, not Leg_L_1, which is why the pattern above never saw her
+    // and she has been animating on the body alone since she was added.
+    rig.jlegs = [];
+    for (const coxa of findByName(body, /^Leg_[LR]\d_Coxa$/)) {
+      const m = coxa.name.match(/^Leg_([LR])(\d)_Coxa$/);
+      const side = m[1], idx = +m[2];
+      const femur = findByName(coxa, new RegExp(`^Leg_${side}${idx}_Femur$`))[0] || null;
+      const tibia = femur ? (findByName(femur, new RegExp(`^Leg_${side}${idx}_Tibia$`))[0] || null) : null;
+      const group = (side === 'L' ? idx : idx + 1) % 2;
+      const strideK = [1.00, 0.78, 0.78, 0.93][idx - 1];
+      const liftK = [1.35, 0.90, 0.90, 1.05][idx - 1];
+      const jitter = (((idx * 37 + (side === 'L' ? 11 : 23)) % 17) / 17 - 0.5) * 0.38;
+      rig.jlegs.push({
+        coxa, femur, tibia, group, side, idx, strideK, liftK, jitter,
+        // a left leg points -X and a right leg +X, so "up" is opposite z-rotation
+        sign: side === 'L' ? -1 : 1,
+        bc: coxa.rotation.clone(),
+        bf: femur ? femur.rotation.clone() : null,
+        bt: tibia ? tibia.rotation.clone() : null,
+      });
+    }
+    // She also has the controls the brief wants for secondary motion.
+    rig.abdomen = findByName(body, /^CTRL_Abdomen$/)[0] || null;
+    rig.headCtrl = findByName(body, /^CTRL_Head$/)[0] || null;
+    if (rig.abdomen) rig.abdomenBase = rig.abdomen.rotation.clone();
+    if (rig.headCtrl) rig.headCtrlBase = rig.headCtrl.rotation.clone();
   }
   // Quadruped (cow): four hip-pivoted legs on a diagonal gait + a head to bite.
   rig.qlegs = [];
@@ -6060,6 +6096,51 @@ function animateEntity(rec, e, kind, dt) {
       leg.node.rotation.x = leg.baseX + lift;        // fold up off the floor
       leg.node.position.y = leg.baseP.y + lift * 0.20;
     }
+  }
+
+  // --- the same cycle, on a leg that has joints to fold -------------------
+  if (rig.jlegs && rig.jlegs.length) {
+    const DUTY = 0.62, TAU = Math.PI * 2;
+    const turn = Math.max(-1, Math.min(1, (rig.turn || 0) * 0.30));
+    for (const L of rig.jlegs) {
+      const ph = rig.gait + (L.group ? Math.PI : 0) + L.jitter;
+      let t = (ph / TAU) % 1; if (t < 0) t += 1;
+      const inside = (L.side === 'L') ? -1 : 1;
+      const sweep = 0.34 * a * (0.94 + L.strideK * 0.08)
+        * Math.max(0.25, 1 + inside * turn * 0.5);
+      let ang, lift;
+      if (t < DUTY) {
+        ang = sweep * (1 - 2 * (t / DUTY));   // planted: constant rate, no easing
+        lift = 0;
+      } else {
+        const u = (t - DUTY) / (1 - DUTY);
+        const e = u * u * (3 - 2 * u);
+        ang = sweep * (2 * e - 1);
+        lift = Math.sin(u * Math.PI) * a * L.liftK;
+      }
+      // Hip sweeps fore and aft; the upper segment picks the whole leg up; the
+      // lower one folds in as it rises and straightens again to reach for the
+      // ground. That fold is the difference between a leg and a broom handle.
+      L.coxa.rotation.y = L.bc.y + ang;
+      L.coxa.rotation.z = L.bc.z + lift * 0.30 * L.sign;
+      if (L.femur) L.femur.rotation.z = L.bf.z + lift * 0.42 * L.sign;
+      if (L.tibia) L.tibia.rotation.z = L.bt.z - lift * 0.34 * L.sign;
+    }
+  }
+
+  // --- her abdomen follows the thorax, late ------------------------------
+  // "The abdomen generally follows the direction of travel smoothly, while the
+  // front body can make small directional adjustments." A lagged yaw does both:
+  // the abdomen swings wide through a corner and settles after the turn ends.
+  if (rig.abdomen && rig.abdomenBase) {
+    rig.absway = (rig.absway || 0) + ((-(rig.turn || 0) * 0.16) - (rig.absway || 0)) * Math.min(1, dt * 3.2);
+    rig.abdomen.rotation.y = rig.abdomenBase.y + Math.max(-0.30, Math.min(0.30, rig.absway))
+      + Math.sin(rig.gait) * 0.020 * a;
+    rig.abdomen.rotation.z = rig.abdomenBase.z + Math.sin(rig.gait) * 0.028 * a;
+  }
+  if (rig.headCtrl && rig.headCtrlBase) {
+    rig.headCtrl.rotation.y = rig.headCtrlBase.y + Math.max(-0.22, Math.min(0.22, (rig.turn || 0) * 0.10));
+    rig.headCtrl.rotation.x = rig.headCtrlBase.x + punch * 0.22;
   }
   if (rig.club) rig.club.rotation.x = -punch * 1.5 - Math.sin(rig.gait) * 0.12 * a;
 
