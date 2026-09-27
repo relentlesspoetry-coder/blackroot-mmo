@@ -353,6 +353,23 @@ for (const id of QUEST_IDS) {
   }
 }
 
+// Everyone with something to ask should have a voice for asking it.
+//
+// Without a `talk` script the client falls back to printing the quest's intro
+// as one block of text, so meeting the character is a wall of prose rather
+// than a conversation. Nine of the thirteen NPCs were like that, including the
+// Warden -- who hands out eight of the thirty-six quests and is the first
+// person anyone speaks to. A warning rather than an error: a later quest in a
+// chain can reasonably be a line of text from someone you already know.
+{
+  const byGiver = {};
+  for (const id of QUEST_IDS) (byGiver[QUESTS[id].giver] = byGiver[QUESTS[id].giver] || []).push(id);
+  for (const [giver, ids] of Object.entries(byGiver)) {
+    const lines = ids.reduce((a, id) => a + ((QUESTS[id].talk || []).length), 0);
+    if (!lines) warn(ids[0], `${giver} gives ${ids.length} quest(s) and has no dialogue at all`);
+  }
+}
+
 // Prereq chains must resolve without cycles.
 const seen = {}, resolve = (id, stack = []) => {
   if (seen[id] === 'ok') return true;

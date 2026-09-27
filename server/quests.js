@@ -242,6 +242,21 @@ export const QUESTS = {
   // --- Warden Alric, Entrance Clearing -------------------------------------
   feathers: {
     id: 'feathers', name: 'Feathers and Hide', giver: 'alric', minLevel: 1,
+    talk: [
+      ['n', 'Stop there. Let me look at you.'],
+      ['y', 'Is that necessary?'],
+      ['n', 'Everyone who walks in from the road gets looked at.'],
+      ['n', 'Most of them I never see again, so I like to have the face.'],
+      ['y', 'That is a grim welcome.'],
+      ['n', 'It is an honest one. You will prefer it by the end of the week.'],
+      ['n', 'Warden Alric. I keep this camp and I keep count of who is in it.'],
+      ['y', 'And what do you want from me?'],
+      ['n', 'Something small, so I can see whether you come back.'],
+      ['n', 'The clearing west of here has fowl and cattle in it. Bring me feathers and hide.'],
+      ['y', 'Chickens. You are testing me with chickens.'],
+      ['n', 'I am testing whether you can follow an instruction and return alive.'],
+      ['n', 'Nine places on this map will kill you. Chickens are not one of them. Start there.'],
+    ],
     summary: 'Gather what the clearing’s livestock leaves behind.',
     intro: 'You’ll not last an hour out there empty-handed. Start small — the fowl and cattle by the clearing. Bring me feathers and a couple of hides and I’ll see you armed.',
     active: 'Feathers from the chickens, hide from the cows. They won’t fight back.',
@@ -279,6 +294,17 @@ export const QUESTS = {
   // --- The Farmstead: Old Maggie & Farmhand Bram ---------------------------
   henhouse: {
     id: 'henhouse', name: 'Foxes in the Hen House', giver: 'maggie', minLevel: 1,
+    talk: [
+      ['n', 'You have hands. Good. Something has been at my birds.'],
+      ['y', 'A fox?'],
+      ['n', 'A fox takes one and goes. This takes one a night and leaves the feathers.'],
+      ['y', 'That is worse.'],
+      ['n', 'That is a habit. Foxes do not have habits, they have hunger.'],
+      ['n', 'Maggie Byrne. The yard east of the fire is mine and so is everything in it.'],
+      ['y', 'What do you want done?'],
+      ['n', 'Bring me eggs, so I know how many are still laying.'],
+      ['n', 'And if you see what is doing it, do not be gentle about it.'],
+    ],
     summary: 'Drive the egg-thieving scavengers off the farm.',
     intro: 'Goblin scavengers have been slinking out of the trees to raid my hens — half my eggs gone before dawn! Put a few of the little thieves down and gather what eggs you can find, there’s a love.',
     active: 'Five scavengers off my hens, and four eggs back in the basket.',
@@ -291,6 +317,17 @@ export const QUESTS = {
   },
   mending: {
     id: 'mending', name: 'Mending the Fences', giver: 'bram', minLevel: 2, requires: ['henhouse'],
+    talk: [
+      ['n', 'Mind the rail. It is not as attached as it looks.'],
+      ['y', 'You are the one who mends them.'],
+      ['n', 'I am the one who complains about mending them. The mending happens eventually.'],
+      ['n', 'Bram Holt. Fences, gates, anything the wood has leaned on.'],
+      ['y', 'Busy work, then.'],
+      ['n', 'Until the night something walks through a gap I did not close.'],
+      ['n', 'Then it is the only work that mattered and nobody remembers whose it was.'],
+      ['y', 'What do you need?'],
+      ['n', 'Rope and timber, and the patience to fetch both. That is all I ever need.'],
+    ],
     summary: 'Scavenge the goblins’ leavings to repair the farm.',
     intro: 'Them goblins wrecked the west fence gettin’ at the cows. I can mend it, but I need cordage and hide — and the goblins carry plenty, if you’re handy with a blade. Bring me rope and leather scraps.',
     active: 'Four coils of rope and three leather scraps off the goblins.',
@@ -305,6 +342,16 @@ export const QUESTS = {
   // --- Prospector Dorn, Root-Choked Ravine ---------------------------------
   claimjumpers: {
     id: 'claimjumpers', name: 'Claim Jumpers', giver: 'dorn', minLevel: 4, requires: ['shrine'],
+    talk: [
+      ['n', 'That is my claim they are jumping, and I want it back.'],
+      ['y', 'Who is jumping it?'],
+      ['n', 'Greenskins. A dozen of them squatting in a hole I cut myself.'],
+      ['n', 'Dorn Pike. I have worked that seam eleven years.'],
+      ['y', 'Why not go yourself?'],
+      ['n', 'I am a miner. I swing at rock. Rock does not swing back.'],
+      ['y', 'Fair.'],
+      ['n', 'Clear them off and haul me iron out of it. Do that and I will see you properly kitted.'],
+    ],
     summary: 'Run the goblin miners out of the ravine and haul out iron.',
     intro: 'Goblins have jumped my claim in the Root-Choked Ravine — a whole dig-crew stripping my iron seam. Clear the miners out and bring me five loads of iron ore, mined or looted off their carcasses, I don’t care which.',
     active: 'Four goblin miners cleared, and five loads of iron ore for Dorn.',
@@ -319,6 +366,17 @@ export const QUESTS = {
   // --- Ranger Sela, Fallen Watchtower --------------------------------------
   wolfraid: {
     id: 'wolfraid', name: 'The Wolf Den', giver: 'sela', minLevel: 4, requires: ['trail'],
+    talk: [
+      ['n', 'Down. Stay down until they have moved.'],
+      ['y', 'Until what has moved?'],
+      ['n', 'There. Along the ridge. Do not point.'],
+      ['n', 'Huntress Sela. I watch the pass and the pass watches back.'],
+      ['y', 'How long have you been out here?'],
+      ['n', 'Long enough to stop counting and not long enough to be careless.'],
+      ['n', 'The den is west, through the cliffs. Go loud or go home.'],
+      ['y', 'Loud?'],
+      ['n', 'Quiet gets you surrounded. Loud gets them coming one at a time.'],
+    ],
     summary: 'Break the goblin war-camp at the Wolf Den.',
     intro: 'The goblins have made a war-camp of the old Wolf Den, east past the creek — warriors and archers both, under banners. Thin them out before they march on the trail: their warriors, their bowmen, and bring me a fistful of teeth to prove it.',
     active: 'Four goblin warriors, two archers, and six teeth from the Wolf Den camp.',
@@ -334,6 +392,17 @@ export const QUESTS = {
   // --- The Hermit, Shrine Grove --------------------------------------------
   rotfen: {
     id: 'rotfen', name: 'Rotfen Pickings', giver: 'hermit', minLevel: 3, requires: ['shrine'],
+    talk: [
+      ['n', 'Quiet. Listen to it a moment before you speak.'],
+      ['y', '...'],
+      ['n', 'Good. Most of them cannot manage three seconds.'],
+      ['n', 'The water remembers everything that walks into it. It does not give much back.'],
+      ['y', 'You live out here alone?'],
+      ['n', 'I live out here. Alone is a thing you say about people who wanted company.'],
+      ['n', 'There is a rot in the fen and it is spreading along the shallows.'],
+      ['y', 'And you cannot deal with it yourself.'],
+      ['n', 'I could. I have knees that disagree, and you have arrived.'],
+    ],
     summary: 'Break up the bandit camp east of the shrine.',
     intro: 'Bandits in the Rotfen, east of here. They’ve been robbing pilgrims on the road — the pendants they carry belong to the dead. Take five of them down and bring back three pendants.',
     active: 'Five bandits, three stolen pendants. Mind the rot — the thicket itself is poison.',
@@ -370,6 +439,17 @@ export const QUESTS = {
   // --- The Wandering Merchant, Abandoned Camp -------------------------------
   intothedark: {
     id: 'intothedark', name: 'Into the Dark', giver: 'merchant', minLevel: 4, requires: ['shrine'],
+    talk: [
+      ['n', 'Buying or selling? No — you have the look of neither.'],
+      ['y', 'What look is that?'],
+      ['n', 'Broke and willing. My favourite sort of customer.'],
+      ['n', 'Pedlar Ovric. I buy what you drag back and I ask nothing about it.'],
+      ['y', 'Nothing at all?'],
+      ['n', 'A question is a thing a man can be made to answer later. I avoid them.'],
+      ['n', 'I have stock sitting under a stone arch south of here that I would like returned.'],
+      ['y', 'Why is it under an arch?'],
+      ['n', 'Because my partners put it there, and then my partners did not come back out.'],
+    ],
     summary: 'Find the Spider Den and recover the smugglers’ cache from its mouth.',
     intro: 'There’s an arch of stone south of the camp with a hole under it — my partners went in with my stock and didn’t come out. The niche they used is just outside the mouth. Fetch what’s mine and I’ll not ask what you keep.',
     active: 'The stone arch south of the camp. The Smuggler’s Niche is by the mouth.',
@@ -533,6 +613,18 @@ export const QUESTS = {
   // ==========================================================================
   pibfinds: {
     id: 'pibfinds', name: 'Pib Finds Things', giver: 'pib', minLevel: 7, requires: ['dw_pib'],
+    talk: [
+      ['n', 'Ssst. You. Tall one. Come here, come here.'],
+      ['y', 'You are a goblin.'],
+      ['n', 'Pib is a goblin, yes, very good, you are observant, congratulations.'],
+      ['n', 'Pib is also the goblin who did not stab you just now, so. Balance it.'],
+      ['y', 'What do you want?'],
+      ['n', 'Pib WATCHES. Woodfang put good crates where Woodfang think nobody look.'],
+      ['n', 'Pib look. Pib always look. But Pib small and crates heavy.'],
+      ['y', 'And the archers.'],
+      ['n', 'And the archers, yes. This is the part where you are useful and Pib is clever.'],
+      ['n', 'Pib point. You go. We both do well. Is good arrangement, yes?'],
+    ],
     summary: 'Pib will tell you where the Woodfang keep their good stock. For a price, obviously.',
     intro: 'You paid Pib fair. Pib remembers fair. So — Pib tells you thing. Woodfang put good crates where Woodfang think nobody look. Pib look. Pib always look. But Pib small and crates heavy and archers watch, so you go, and Pib point, and we both do well, yes?',
     active: 'Briar Hollow. The crates Pib means are the ones in the middle, which is where the archers are.',
@@ -553,6 +645,20 @@ export const QUESTS = {
   // ==========================================================================
   dw_larder: {
     id: 'dw_larder', name: 'Five Went In', giver: 'gedd', minLevel: 9, requires: ['dw_denmouth'],
+    talk: [
+      ['n', 'Do not go in. Do not — no. Listen first.'],
+      ['y', 'You are hurt.'],
+      ['n', 'I am out. That is different and it is better.'],
+      ['n', 'Gedd Marrow. Six of us took the contract.'],
+      ['y', 'And the others?'],
+      ['n', 'I got as far as the second room. That is further than the others.'],
+      ['y', 'How long have you been standing here?'],
+      ['n', 'Working out how to say that sentence to anybody. I am still working on it.'],
+      ['n', 'They are in the side chamber off the gallery. The one with the shapes hanging in it.'],
+      ['y', 'You want me to bring them out.'],
+      ['n', 'I want their tags. I cannot carry five people and I cannot go back in.'],
+      ['n', 'Cut them down. Bring me something I can hand to their families.'],
+    ],
     summary: 'Cut open the cocoons in the larder and bring Gedd back his company\u2019s tags.',
     intro: 'Six of us took the contract. I am the one who came back up, and I have been stood here since working out how to say that to anybody. They are still in there — the side chamber off the gallery, the one with the shapes hanging in it. I cannot go back in. Cut them down. Bring me the tags so I have something to hand their people.',
     active: 'The larder, west off the gallery. The cocoons are hanging in it.',
