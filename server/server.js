@@ -15,7 +15,7 @@ import {
   PLAYER, ELITE, MONSTER_TEMPLATES,
   xpForLevel, xpTotalForLevel, levelForXp, xpForKill, MAX_LEVEL, attackRoll, defenceRoll, hitChance, scaledMonster, rollLoot, REGEN,
   TICK, CLASSES, DEFAULT_CLASS, classDef, classStats, abilityCost,
-  maxHit, MEDITATION, meditationHealPerTick, rollGear } from './balance.js';
+  maxHit, MEDITATION, meditationHealPerTick, rollGear, STARTING_INVENTORY } from './balance.js';
 import { ITEMS, SLOTS, SLOT_INFO, DOLL, itemDef, slotOf, valueOf, equipStats, slotsFor, emptySlots, stackable, bagStacks } from './items.js';
 import { weaponProfile, swingSeconds, weaponRange, swingBand, resolveAttack, facing,
          MOB_ARCH, MOB_DEF, archOf, addThreat, threatOf, dropThreat, clearThreat, taunt, topThreat, decayThreat } from './combat.js';
@@ -33,7 +33,7 @@ import {
   miningLevelFromXp, canMine, veinYield,
 } from './mining.js';
 import {
-  FISHING, FISH, RODS, bestRod, fishingLevelFromXp, catchChance, castTime,
+  FISHING, FISH, RODS, bestRod, fishingLevelFromXp, catchChance, castTime, fishForTier,
 } from './fishing.js';
 import {
   COOKING, COOKABLES, BURNT, cookingLevelFromXp, burnChance, cookableInInventory,
@@ -1529,13 +1529,19 @@ function grantFishingXp(p, amount) {
 function fishCast(p, spot) {
   const st = fisherStats(p);
   if (!st.rod) { send(p.ws, { t: 'event', kind: 'notice', text: 'You need a fishing rod.' }); p.pendingFish = null; return true; }
-  const fish = FISH[spot.tier];
+  // A spot names a tier; the species table is keyed by name. Both of these
+  // used to pass spot.tier straight in, which indexed a name-keyed object with
+  // a number -- undefined every time, for every spot.
+  const key = fishForTier(spot.tier);
+  const fish = FISH[key];
   if (!fish || st.level < fish.level) {
-    send(p.ws, { t: 'event', kind: 'notice', text: `You need Fishing level ${fish ? fish.level : '?'} to fish here.` });
+    send(p.ws, { t: 'event', kind: 'notice',
+      text: fish ? `You need Fishing level ${fish.level} to fish here.`
+                 : 'There is nothing worth catching here.' });
     p.pendingFish = null; return true;
   }
   send(p.ws, { t: 'event', kind: 'fishcast', id: spot.id });
-  if (Math.random() >= catchChance(spot.tier, st.level, st.power)) return false;
+  if (Math.random() >= catchChance(key, st.level, st.power)) return false;
   p.inventory.push(fish.item);
   send(p.ws, { t: 'event', kind: 'caught', item: fish.item, xp: fish.xp });
   grantFishingXp(p, fish.xp);
@@ -3364,7 +3370,7 @@ wss.on('connection', (ws) => {
           // Everyone starts able to mine and fish; better tools are earned. The
           // pickaxe rides in the bag (it counts for mining from there); the
           // class's own weapon is what's in hand.
-          inventory: ['Fishing Rod', 'Bronze Pickaxe'],
+          inventory: [...STARTING_INVENTORY],
           equipment: Object.assign(emptySlots(), { weapon: classDef(cls).startWeapon || 'Bronze Dagger' }), gear: {},
           miningXp: 0, pendingMine: null, mineTimer: 0,
           fishingXp: 0, pendingFish: null, fishTimer: 0,

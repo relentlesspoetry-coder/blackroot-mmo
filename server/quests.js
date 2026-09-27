@@ -155,7 +155,9 @@ export const QUESTS = {
     reward: { xp: 450, gold: 110 },
   },
   dw_rattlecap: {
-    id: 'dw_rattlecap', name: 'Chief Rattlecap', giver: 'rowan', minLevel: 5, requires: ['dw_smoke'],
+    // Was minLevel 5, against a level 14 elite -- nine levels over your head,
+    // and nothing in the chain above it raised the bar either.
+    id: 'dw_rattlecap', name: 'Chief Rattlecap', giver: 'rowan', minLevel: 12, requires: ['dw_smoke'],
     summary: "Take the Wolf Den camp, kill the chief, and bring the outpost's banner home.",
     intro: 'The signal fires are out and Rattlecap is isolated. His raids have cost us food, medicine, weapons and people. End it — and bring back our banner.',
     active: 'The camp at the Wolf Den: the warriors, his two brutes, the chief himself, and the banner he strung up.',
@@ -190,7 +192,10 @@ export const QUESTS = {
       { type: 'slay', name: 'Chief Rattlecap', label: 'Chief Rattlecap killed' },
       { type: 'use', object: 'banner', label: 'Outpost banner recovered' },
     ],
-    reward: { xp: 750, gold: 225, items: ["Rattlecap's Trophy"] },
+    // 750 xp was set when this quest opened at level 5. It opens at 12 now,
+    // sitting between a 1400 and a 1700, so it was paying half what the quests
+    // either side of it pay for a harder fight.
+    reward: { xp: 1550, gold: 420, items: ["Rattlecap's Trophy"] },
   },
 
   // --- Old Fenwick, and the difference between a mushroom and a mistake ------
@@ -349,7 +354,7 @@ export const QUESTS = {
     reward: { xp: 900, gold: 250, items: ['Big Bones'] },
   },
   guardian: {
-    id: 'guardian', name: 'The Rootbound Guardian', giver: 'hermit', minLevel: 7, requires: ['ogres'],
+    id: 'guardian', name: 'The Rootbound Guardian', giver: 'hermit', minLevel: 14, requires: ['ogres'],
     summary: 'Put down the thing in the Ancient Stone Circle.',
     intro: 'There is a thing in the stone circle that the roots have grown through and kept walking. It was a man once. Free it, if you can — but go at full strength.',
     active: 'The Rootbound Guardian waits in the Ancient Stone Circle. Go rested.',
@@ -460,6 +465,55 @@ export const QUESTS = {
   },
 
   // ==========================================================================
+  // THE SKILLS NOBODY ASKED ABOUT. Fishing had nine spots in the zone, four
+  // catchable species and NOT ONE quest that wanted a fish. Cooking had six
+  // recipes, three campfires standing lit, and nothing that wanted a meal.
+  // Both were fully built systems the zone never once pointed a player at.
+  // ==========================================================================
+  fenfish: {
+    id: 'fenfish', name: 'What the Water Remembers', giver: 'hermit', minLevel: 6, requires: ['rotfen'],
+    summary: 'The Hermit wants the fen fished, and he wants to know what comes up.',
+    intro: 'You have walked my water. Now put a line in it. There are nine places along the fen and the pool where the fish still rise, and I want to know they still do — I have not had the knees for the jetty in some years. Bring me what you pull out. All of it, mind. I want to see what the water has been keeping.',
+    active: 'Anywhere the water is disturbed — the fen, the creek, Ravenwater. A rod and a patient hour.',
+    done: 'Still rising, then. Good. While the fish are in it the fen is only a fen, and not the other thing.',
+    objectives: [
+      { type: 'collect', item: 'Raw Shrimp', count: 8, label: 'Shrimp from the fen' },
+      { type: 'reach', zone: 'darkwoods', poi: 'ravenwater', label: 'Fish the deep pool' },
+    ],
+    reward: { xp: 720, gold: 180, items: ['Minor Healing Potion'] },
+  },
+  campkitchen: {
+    id: 'campkitchen', name: 'Nobody Eats Raw', giver: 'maggie', minLevel: 3, requires: ['henhouse'],
+    summary: 'Maggie has birds and Bram has cattle. Somebody has to put them over a fire.',
+    intro: 'We have hens and we have cattle and we have a fire going day and night, and every third person through that gate still tries to eat it raw off the hoof. Take a bird, take a side of beef, put them over the camp fire until they stop being an argument. It is not difficult. It is just nobody does it.',
+    active: 'The camp fire. Raw chicken and raw beef go on it; food comes off it.',
+    done: 'There. That is the difference between a camp and a field full of people. Keep the fire going.',
+    objectives: [
+      { type: 'collect', item: 'Cooked Chicken', count: 3, label: 'Chicken, cooked' },
+      { type: 'collect', item: 'Cooked Beef', count: 3, label: 'Beef, cooked' },
+    ],
+    reward: { xp: 260, gold: 70 },
+  },
+
+  // ==========================================================================
+  // PIB. A goblin standing in the middle of a goblin camp with a line about
+  // how he FOUND it, and no way to take him up on that. Tessa's quest sends
+  // you to talk to him once and then he never speaks again.
+  // ==========================================================================
+  pibfinds: {
+    id: 'pibfinds', name: 'Pib Finds Things', giver: 'pib', minLevel: 7, requires: ['dw_pib'],
+    summary: 'Pib will tell you where the Woodfang keep their good stock. For a price, obviously.',
+    intro: 'You paid Pib fair. Pib remembers fair. So — Pib tells you thing. Woodfang put good crates where Woodfang think nobody look. Pib look. Pib always look. But Pib small and crates heavy and archers watch, so you go, and Pib point, and we both do well, yes?',
+    active: 'Briar Hollow. The crates Pib means are the ones in the middle, which is where the archers are.',
+    done: 'Good! Good. Pib knew you was the useful one. Come back. Pib will have found more by then.',
+    objectives: [
+      { type: 'collect', item: 'Supply Crate', count: 3, label: 'Crates Pib pointed at' },
+      { type: 'kill', target: 'goblin_archer', count: 5, label: 'Woodfang archers' },
+    ],
+    reward: { xp: 820, gold: 230 },
+  },
+
+  // ==========================================================================
   // GEDD MARROW — the survivor at the den mouth. He was placed there to give
   // the cave a voice and a turn-in point, and then given nothing to say: the
   // only NPC below ground, standing in the dark, with no reason to talk to
@@ -557,7 +611,12 @@ export const QUESTS = {
   // reason to walk into the nave.
   // ==========================================================================
   dw_reliquary: {
-    id: 'dw_reliquary', name: 'What the Chapel Kept', giver: 'rowan', minLevel: 8, requires: ['dw_rattlecap'],
+    // Hung off dw_rattlecap purely because Rowan gives both. Raising Rattlecap
+    // to match his level 14 elite dragged this to 12 with it -- level 8 content
+    // (six bats and a chest) that you were not let into until 12. Rowan's line
+    // runs lanterns (1) to reliquary (8) to Rattlecap (12) now, which is a
+    // progression rather than a queue.
+    id: 'dw_reliquary', name: 'What the Chapel Kept', giver: 'rowan', minLevel: 8, requires: ['dw_lanterns'],
     summary: 'The chapel on the hill still has its altar. Find out whether it still has what was on it.',
     intro: 'The east window is still standing up there, which means the altar under it is too. There was a reliquary on that altar when this was somebody’s chapel. I would rather we had it than whatever is nesting in the nave.',
     active: 'The Fallen Chapel. The altar is at the east end, under the big window.',
@@ -568,6 +627,29 @@ export const QUESTS = {
       { type: 'kill', target: 'bat', count: 6, label: 'Clear the nave' },
     ],
     reward: { xp: 900, gold: 240 },
+  },
+
+  // ==========================================================================
+  // The top of the zone had nothing in it. Quests stopped at 14 while the two
+  // hardest things in the Dark Woods -- a level 15 elite and a level 16 one --
+  // were already dead by then, so the last levels were spent with nobody
+  // asking for anything.
+  // ==========================================================================
+  dw_lastwatch: {
+    id: 'dw_lastwatch', name: 'The Last Watch', giver: 'sela', minLevel: 15,
+    requires: ['dw_denmother', 'guardian'],
+    summary: 'The den is out, the chief is down, the Guardian is felled. Sela wants the passes held while it lasts.',
+    intro: 'You have killed the three things in this wood that were worth being frightened of, and I have watched you do it. So here is what nobody says out loud: it grows back. The Woodfang will put up another chief by spring and something will crawl into that cave and like it. Walk the passes with me once, while they are still ours. Kill what is standing in them.',
+    active: 'Wolfsnag Pass, Grimroot Thicket, the plank road. Whatever is holding them.',
+    done: 'Held. For a season, maybe two. That is what holding a place means out here and I will take it.',
+    objectives: [
+      { type: 'reach', zone: 'darkwoods', poi: 'wolfsnag', label: 'Walk Wolfsnag Pass' },
+      { type: 'reach', zone: 'darkwoods', poi: 'grimroot', label: 'Walk Grimroot Thicket' },
+      { type: 'kill', target: 'goblin_chief', count: 4, label: 'Woodfang brutes' },
+      { type: 'kill', target: 'venom_spider', count: 12, label: 'Venom spiders' },
+      { type: 'use', tag: 'lantern', count: 6, label: 'Trail lanterns relit' },
+    ],
+    reward: { xp: 3200, gold: 900, items: ['Bone Charm'] },
   },
 };
 

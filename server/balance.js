@@ -424,6 +424,13 @@ const GOBLIN_DROPS = [
 // seconds; `loot` is a weighted table rolled on death (an entry with item
 // 'Coins' drops a coin pile; item null = nothing that roll). Cave creatures use
 // `droptable` (independent rolls) instead — assigned just below.
+// What every character walks into the world carrying. This lived inline in
+// server.js, which meant nothing could check against it: the fishing rod is the
+// ONLY one in the world -- no mob drops it, no chest holds it, no merchant
+// sells one (merchants only buy) -- so "is a fish obtainable" depends entirely
+// on this line and questcheck could not see it.
+export const STARTING_INVENTORY = ['Fishing Rod', 'Bronze Pickaxe'];
+
 export const MONSTER_TEMPLATES = {
   goblin: { name: 'Goblin', hp: 35, dmg: [2, 5], speed: 4.5, aggro: 12, xp: 28, respawn: 25,
     droptable: buildDropTable(GOBLIN_DROPS, GOB.scavenger) },

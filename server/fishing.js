@@ -21,6 +21,18 @@ export const FISH = {
   Pike:   { level: 34, xp: 90, item: 'Raw Pike',   difficulty: 3.0 },
 };
 
+// A fishing SPOT is authored by tier -- `{ id, x, z, tier: 2 }` -- because a
+// mapmaker places "a better spot", not "a trout". The species above are keyed
+// by name. Nothing joined the two, and the server indexed this name-keyed table
+// with the tier number: `FISH[spot.tier]` came back undefined for every spot in
+// the world, so every cast was refused with "You need Fishing level ? to fish
+// here." Nine spots, four species, a rod in everyone's starting bag, and not
+// one fish could ever be caught.
+export const TIERS = ['Shrimp', 'Trout', 'Salmon', 'Pike'];
+export function fishForTier(tier) {
+  return TIERS[Math.min(TIERS.length, Math.max(1, tier | 0)) - 1];
+}
+
 // Fishing rods. `power` is both reel speed and how well you hook a fish.
 export const RODS = {
   'Fishing Rod':      { level: 1,  power: 1.0 },

@@ -6,9 +6,9 @@
 
 import { QUESTS, QUEST_IDS, questProgress, canStart, recordUse } from '../server/quests.js';
 import { ITEMS } from '../server/items.js';
-import { MONSTER_TEMPLATES } from '../server/balance.js';
-import { ORES, oreFromModel } from '../server/mining.js';
-import { FISH } from '../server/fishing.js';
+import { MONSTER_TEMPLATES, STARTING_INVENTORY } from '../server/balance.js';
+import { ORES, oreFromModel, PICKAXES } from '../server/mining.js';
+import { FISH, RODS } from '../server/fishing.js';
 import { COOKABLES } from '../server/cooking.js';
 import { darkwoods } from '../server/zones/darkwoods.js';
 import { spiderden } from '../server/zones/spiderden.js';
@@ -18,7 +18,7 @@ const ZONES = { darkwoods, spiderden };
 // Lookups from the real world data.
 const npcs = new Set(), pois = new Set(), chests = new Set(), spawnTypes = new Set(), eliteNames = new Set(), dropItems = new Set();
 const objectIds = new Set(), objectTags = new Map(), roamingTypes = new Set();
-const eliteCount = new Map();
+const eliteCount = new Map(), eliteLevel = new Map();
 for (const [zid, z] of Object.entries(ZONES)) {
   for (const n of (z.npcs || [])) npcs.add(n.id);
   for (const p of (z.pois || [])) pois.add(`${zid}:${p.key}`);
@@ -31,6 +31,7 @@ for (const [zid, z] of Object.entries(ZONES)) {
   for (const e of (z.elites || [])) {
     spawnTypes.add(e.type); if (e.name) eliteNames.add(e.name);
     eliteCount.set(e.type, (eliteCount.get(e.type) || 0) + 1);
+    if (e.name) eliteLevel.set(e.name, e.level);
   }
 }
 for (const t of Object.values(MONSTER_TEMPLATES)) {
@@ -68,12 +69,35 @@ for (const [zid, z] of Object.entries(ZONES)) {
   }
   if ((z.fishingSpots || []).length) for (const [k, f] of Object.entries(FISH)) note(f.item || k, `${zid} fishing`);
 }
+// What you start with is a source like any other -- and for fishing it is the
+// ONLY one. No mob drops a rod, no chest holds one and merchants only buy, so
+// every fish in the game hangs off one line of the character-creation code.
+for (const it of STARTING_INVENTORY) note(it, 'starting kit');
 // Cooking turns a raw item into a cooked one, so the cooked side is obtainable
-// whenever the raw side is.
-for (const [raw, cooked] of Object.entries(COOKABLES)) {
-  const out = cooked.item || cooked;
+// whenever the raw side is. (This read `cooked.item`. The field is `cooked`, so
+// `out` was an object, the typeof guard rejected it, and the whole branch had
+// never contributed a single item -- a derived check quietly deriving nothing,
+// which is the same failure as the hand-written list it replaced. It stayed
+// invisible until a quest actually asked for a cooked item.)
+for (const [raw, rec] of Object.entries(COOKABLES)) {
+  const out = typeof rec === 'string' ? rec : rec.cooked;
   if (typeof out === 'string' && (gatherable.has(raw) || dropItems.has(raw))) note(out, `cooked from ${raw}`);
 }
+// Fishing and cooking chain: a raw fish is gathered, so its cooked form is too.
+for (const [raw, rec] of Object.entries(COOKABLES)) {
+  const out = typeof rec === 'string' ? rec : rec.cooked;
+  if (typeof out === 'string' && gatherable.has(raw)) note(out, `cooked from ${raw}`);
+}
+
+// What level a quest really lets you in at: its own minLevel, or the highest
+// one anywhere behind it, whichever is greater.
+const effectiveLevel = (id, seen = new Set()) => {
+  if (seen.has(id) || !QUESTS[id]) return 0;
+  seen.add(id);
+  let m = QUESTS[id].minLevel || 1;
+  for (const r of (QUESTS[id].requires || [])) m = Math.max(m, effectiveLevel(r, seen));
+  return m;
+};
 
 let errors = 0, warns = 0;
 const err = (id, m) => { console.log(`  ✗ [${id}] ${m}`); errors++; };
@@ -84,6 +108,16 @@ for (const id of QUEST_IDS) {
   if (q.id !== id) err(id, `id mismatch (${q.id})`);
   if (!npcs.has(q.giver)) err(id, `giver '${q.giver}' is not a real NPC`);
   for (const r of (q.requires || [])) if (!QUESTS[r]) err(id, `requires unknown quest '${r}'`);
+  // A quest states the level it was written for. If its prerequisite chain does
+  // not let you in until much later, it is being served in the wrong band --
+  // What the Chapel Kept says 8 and was six bats and a chest, but it hung off
+  // Chief Rattlecap, so raising HIM to match his level 14 elite dragged it to
+  // 12 with him. A chain should order content, not relevel it.
+  {
+    const open = effectiveLevel(id), own = q.minLevel || 1;
+    if (open - own >= 4)
+      warn(id, `written for level ${own} but its chain does not open until ${open}`);
+  }
   for (const it of (q.reward?.items || [])) if (!ITEMS[it]) err(id, `reward item '${it}' not in ITEMS`);
   for (const o of q.objectives) {
     if (o.type === 'collect') {
@@ -109,7 +143,20 @@ for (const id of QUEST_IDS) {
           err(id, `kill target '${o.target}' x${o.count || 1} only exists as ${n} named elite(s) — that is farming a boss, not killing mobs`);
       }
     }
-    else if (o.type === 'slay') { if (!eliteNames.has(o.name)) err(id, `slay target '${o.name}' is not a named elite`); }
+    else if (o.type === 'slay') {
+      if (!eliteNames.has(o.name)) err(id, `slay target '${o.name}' is not a named elite`);
+      // The level a quest OPENS at is the highest minLevel anywhere in its
+      // prerequisite chain, not its own. Chief Rattlecap was a level 14 elite
+      // behind a chain that opened at 5, and The Rootbound Guardian a level 16
+      // behind one that opened at 7 -- both nine levels over the head of the
+      // player the quest invited in. A boss is meant to be a stretch, not a
+      // wall.
+      else {
+        const lvl = eliteLevel.get(o.name) || 0, open = effectiveLevel(id);
+        if (lvl - open >= 4)
+          err(id, `slay '${o.name}' is level ${lvl} but the quest chain opens at ${open} — ${lvl - open} levels over your head`);
+      }
+    }
     else if (o.type === 'reach') { if (!pois.has(`${o.zone}:${o.poi}`)) err(id, `reach POI '${o.zone}:${o.poi}' does not exist`); }
     else if (o.type === 'chest') { if (!chests.has(`${o.zone}:${o.chest}`)) err(id, `chest '${o.zone}:${o.chest}' does not exist`); }
     // The checker only knew the first five types while quests.js grew five
@@ -187,6 +234,49 @@ for (const id of QUEST_IDS) {
     // `avoid` is satisfied by doing nothing, which is already the start state.
   }
   if (!questProgress(p, q).complete) err(id, 'objectives satisfied but quest does not report complete');
+}
+
+// The reward curve must not go backwards. A quest's xp is set once, when it is
+// written, and then the level it opens at moves underneath it -- Chief
+// Rattlecap was written at level 5 for 750 xp, and when he was raised to 12 to
+// match his elite he sat between a 1400 and a 1700 still paying 750. Compare
+// band medians rather than individual quests, so one deliberately small errand
+// in a band does not cry wolf.
+{
+  const byBand = {};
+  for (const id of QUEST_IDS) {
+    const l = effectiveLevel(id);
+    (byBand[l] = byBand[l] || []).push({ id, xp: QUESTS[id].reward?.xp || 0 });
+  }
+  const bands = Object.keys(byBand).map(Number).sort((a, b) => a - b);
+  let prev = 0, prevBand = null;
+  for (const l of bands) {
+    const v = byBand[l].map(q => q.xp).sort((a, b) => a - b);
+    const med = v[Math.floor(v.length / 2)];
+    if (med < prev)
+      warn(byBand[l][0].id, `level ${l} pays a median of ${med} xp, less than level ${prevBand}'s ${prev} — the reward curve goes backwards here`);
+    prev = med; prevBand = l;
+  }
+}
+
+// A gathering skill needs a tool, and a tool that exists in no drop table, no
+// chest, no shop and no starting kit makes the whole skill unreachable however
+// many nodes the world puts down. The Dark Woods has nine fishing spots and
+// four catchable species behind a rod that only character creation hands out.
+{
+  const reachable = (item) => droppedBySpawning.has(item) || gatherable.has(item);
+  for (const [skill, tools] of [['fishing', Object.keys(RODS)], ['mining', Object.keys(PICKAXES)]]) {
+    const usedBy = QUEST_IDS.filter(id => (QUESTS[id].objectives || []).some(o => {
+      if (o.type !== 'collect') return false;
+      return skill === 'fishing'
+        ? Object.values(FISH).some(f => (f.item || '') === o.item)
+        : Object.keys(ORES).some(k => `${k} Ore` === o.item);
+    }));
+    if (!usedBy.length) continue;                   // nothing asks for it; not this check's business
+    const have = tools.filter(reachable);
+    if (!have.length)
+      err(usedBy[0], `${skill} is asked for but no ${skill} tool is obtainable anywhere (${tools.join(', ')})`);
+  }
 }
 
 // Prereq chains must resolve without cycles.
