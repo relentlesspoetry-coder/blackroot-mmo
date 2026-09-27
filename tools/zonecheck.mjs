@@ -4,6 +4,7 @@
 //   node tools/zonecheck.mjs
 //
 // Exits non-zero if any invariant fails, so it can gate a build.
+import { readFileSync } from 'fs';
 import { darkwoods as z } from '../server/zones/darkwoods.js';
 import { spiderden } from '../server/zones/spiderden.js';
 import { terrainAt, terrainFieldAt, isSolid } from '../server/worldgen.js';
@@ -63,6 +64,22 @@ console.log('\nThe Dark Woods — zone invariants\n');
   const E = z.waterEdge;
   ok('zone carries waterEdge', !!(E && E.deep && E.marsh && E.fade),
       E ? `deep ${E.deep} marsh ${E.marsh} fade ${E.fade}` : 'missing');
+  // ...and it has to REACH the client, or the client quietly uses its own copy
+  // and the two shores drift apart the moment anyone retunes the waterline.
+  {
+    const src = readFileSync(new URL('../server/server.js', import.meta.url), 'utf8');
+    const sends = /function zoneForClient[\s\S]*?\n\}/.exec(src);
+    ok('the client is sent waterEdge', !!(sends && /waterEdge/.test(sends[0])),
+        sends && /waterEdge/.test(sends[0]) ? 'in zoneForClient' : 'zoneForClient does not send it');
+    // and the client's fallback must agree with the zone, for the case where
+    // an older zone file has none.
+    const cli = readFileSync(new URL('../client/index.html', import.meta.url), 'utf8');
+    const fb = /WATER_EDGE_FALLBACK = \{([^}]*)\}/.exec(cli);
+    const num = (k) => { const m = fb && new RegExp(k + ':\\s*([0-9.]+)').exec(fb[1]); return m ? +m[1] : null; };
+    const same = fb && num('deep') === E.deep && num('marsh') === E.marsh && num('fade') === E.fade;
+    ok("the client's fallback waterline matches the zone", !!same,
+        fb ? `fallback deep ${num('deep')} marsh ${num('marsh')} fade ${num('fade')}` : 'no fallback found');
+  }
   // The real test has to reproduce the CLIENT's shoreline, which is the ground
   // crossing the waterline -- not just restate the server's rule, which would
   // be comparing a number with itself and could never fail.
@@ -189,15 +206,49 @@ console.log('\nThe Dark Woods — zone invariants\n');
 
 // --- interactables ---------------------------------------------------------
 {
+  // This asked the TRACED GRID whether a spot was wet, and counted anything
+  // within RIVER_BANK of a river as wet too. Both are the wrong question. The
+  // client contours its shoreline off the BLURRED field against waterEdge and
+  // the server decides swimming off the same numbers, so a lone 'W' cell with
+  // dry ground round it has no water drawn on it at all -- and this check said
+  // it was fine. fs_murkfen_w was a 'W' cell whose blurred value was 0.256
+  // against a 0.44 waterline: ripple rings on grass, and a player stood in a
+  // field casting into it, which is how it was finally noticed. Ask the
+  // question the game answers.
+  const E = z.waterEdge;
   const spots = z.fishingSpots || [];
-  const dry = spots.filter(f => {
-    const c = terrainAt(z, f.x, f.z);
-    if (c === 'W' || c === 'w') return false;
-    for (const r of z.rivers) for (let i = 0; i < r.points.length - 1; i++)
-      if (segDist(f.x, f.z, r.points[i], r.points[i + 1]) < r.width / 2 + 4) return false;
+  const inChannel = (x, zz) => (z.rivers || []).some(r => {
+    for (let i = 0; i < r.points.length - 1; i++)
+      if (segDist(x, zz, r.points[i], r.points[i + 1]) < r.width / 2) return true;
+    return false;
+  });
+  const drawn = (x, zz) => terrainFieldAt(z, x, zz, 'wet') >= E.marsh
+                        || terrainFieldAt(z, x, zz, 'deep') >= E.deep
+                        || inChannel(x, zz);
+  const dry = spots.filter(f => !drawn(f.x, f.z));
+  ok('every fishing spot is in water the game draws', dry.length === 0,
+      dry.length ? dry.map(f => `${f.id} (wet ${terrainFieldAt(z, f.x, f.z, 'wet').toFixed(2)} < ${E.marsh})`).join(', ')
+                 : `${spots.length} spots, 0 on land`);
+  // ...and you have to be able to STAND somewhere to fish it. A spot in the
+  // middle of a lake is as unusable as one in a field.
+  // Standing room is dry walkable ground OR a deck: the jetty and the plank
+  // walks are built out over the fen precisely so you can stand where there is
+  // water under you, and a check that only counted dry land called the jetty
+  // spot unreachable while it is the most obviously reachable one there is.
+  const FISH_REACH = 4.5;
+  const unreachable = spots.filter(f => {
+    for (let a = 0; a < 24; a++) {
+      const ang = a / 24 * Math.PI * 2;
+      for (const rr of [1.6, 2.4, 3.2, 4.0, FISH_REACH - 0.1]) {
+        const x = f.x + Math.cos(ang) * rr, zz = f.z + Math.sin(ang) * rr;
+        if (onDeck(x, zz)) return false;
+        if (!drawn(x, zz) && !isSolid(terrainAt(z, x, zz))) return false;
+      }
+    }
     return true;
-  }).length;
-  ok('every fishing spot is on water', dry === 0, `${spots.length} spots, ${dry} on land`);
+  });
+  ok('every fishing spot has a bank to stand on', unreachable.length === 0,
+      unreachable.length ? unreachable.map(f => f.id).join(', ') : `${spots.length} spots reachable`);
 
   const ore = (z.scatter || []).filter(o => /Ore_Vein/.test(o.model || o.m || ''));
   ok('ore specs exist', ore.length > 0, `${ore.length} vein specs`);

@@ -224,7 +224,7 @@ export const spiderden = {
   scatterSeed: 31,
 
   models: [
-    'cave/Bone_Pile', 'cave/Broken_Web_Strands', 'cave/Brood_Nest', 'cave/Brown_Mushrooms',
+    'Bone_Pile', 'cave/Broken_Web_Strands', 'cave/Brood_Nest', 'cave/Brown_Mushrooms',
     'cave/Cave_Column', 'cave/Ceiling_Web_Canopy', 'cave/Coal_Ore_Vein', 'cave/Copper_Ore_Vein',
     'cave/Corner_Cobweb', 'cave/Corner_Web', 'cave/Egg_Cluster', 'cave/Floor_Rock_Slab',
     'cave/Floor_Web', 'cave/Funnel_Web', 'cave/Ground_Cocoon', 'cave/Hanging_Cocoon',

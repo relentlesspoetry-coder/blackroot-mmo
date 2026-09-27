@@ -203,11 +203,16 @@ HANGING = [
     ('Hanging_Cocoon', 11, 'brood', 28), ('Ceiling_Web_Canopy', 7, 'brood', 28),
 ]
 
+# Everything the den uses lives in the cave kit EXCEPT the handful that come
+# from the shared top-level library. Blanket-mapping the lot to 'cave/' made
+# the zone declare cave/Bone_Pile, which is not on disk -- so the bone piles in
+# the bones chamber were placed, positioned, and never downloaded.
+import os as _os
+_TOP = {f[:-4] for f in _os.listdir(ROOT / 'client' / 'models') if f.endswith('.glb')}
 MODEL_DIR = {}
-for m, *_ in SCATTER + HANGING:
-    MODEL_DIR[m] = 'cave'
-for m, *_ in ORE:
-    MODEL_DIR[m] = 'cave'
+for m, *_ in SCATTER + HANGING + ORE:
+    if m not in _TOP:
+        MODEL_DIR[m] = 'cave'
 
 # The Dark Woods end of the pair: the Rock_Arch standing in the den's hollow.
 # Coming out puts you a few metres in FRONT of it rather than inside it.
@@ -403,7 +408,7 @@ def main():
     A('')
     used = sorted({m for m, *_ in SCATTER} | {m for m, *_ in HANGING} | {o[0] for o in ORE}
                   | {n[2] for n in NODES})
-    models = [f'{MODEL_DIR[m]}/{m}' for m in used] + [
+    models = [(f'{MODEL_DIR[m]}/{m}' if m in MODEL_DIR else m) for m in used] + [
         'Cave_Spider', 'Venom_Spider', 'Crystal_Spider', 'Bat', 'Cave_Broodmother',
         'Cave_Guardian']
     # NPC bodies are NOT listed here: the client loads Male_Base/Female_Base by

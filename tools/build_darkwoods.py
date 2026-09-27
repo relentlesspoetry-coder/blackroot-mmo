@@ -1056,6 +1056,12 @@ FORD_COST = 26.0
 # What a span of plank walk costs the router per cell. Dearer than open ground
 # (you would not detour into a marsh for fun) but far cheaper than wading it, so
 # where the direct line lies across the fen the road takes it -- on planks.
+# WHERE THE WATER IS, as one set of numbers. The zone carries these to the
+# client (which contours its shoreline off them) and the server (which decides
+# swimming off them) -- and now the builder snaps fishing spots with them too,
+# so all three agree by construction rather than by coincidence.
+WATER_EDGE = {'deep': 0.41, 'marsh': 0.44, 'fade': 0.41, 'blur': 3}
+
 DECK_COST = 2.4
 
 
@@ -1923,8 +1929,96 @@ def main():
     # against the OLD Crowwater centreline and was left 54 metres from the
     # river when that got re-traced. So the authored pixel is a hint and the
     # generator snaps it to the nearest water -- a wet cell or a river channel.
+    # Where the game actually DRAWS water, which is not the same as where the
+    # traced grid says 'W'. The client contours the BLURRED field against
+    # waterEdge and the server decides swimming off the same numbers, so a lone
+    # wet cell with dry ground all round it blurs away to nothing: there is no
+    # water on it, you cannot swim in it, and you cannot fish it.
+    #
+    # fs_murkfen_w sat on a 'W' cell whose blurred wet value was 0.256 against
+    # a 0.44 waterline. The spot passed every check there was, rendered its
+    # ripple rings on grass, and a player stood in a field casting into it.
+    # This is the same lesson as the 766 cells of swimming on dry land, in the
+    # one place that had not learned it yet.
+    _fld = {}
+
+    def _field(name):
+        if name in _fld:
+            return _fld[name]
+        want = ('Ww' if name == 'wet' else 'W')
+        raw = [[1.0 if rows[gz][gx] in want else 0.0 for gx in range(W)] for gz in range(H)]
+        R = int(WATER_EDGE['blur'])
+
+        def hpass(src):
+            dst = [[0.0] * W for _ in range(H)]
+            for gz in range(H):
+                row = src[gz]
+                for gx in range(W):
+                    lo, hi = max(0, gx - R), min(W - 1, gx + R)
+                    dst[gz][gx] = sum(row[lo:hi + 1]) / (hi - lo + 1)
+            return dst
+
+        def vpass(src):
+            dst = [[0.0] * W for _ in range(H)]
+            for gx in range(W):
+                col = [src[gz][gx] for gz in range(H)]
+                for gz in range(H):
+                    lo, hi = max(0, gz - R), min(H - 1, gz + R)
+                    dst[gz][gx] = sum(col[lo:hi + 1]) / (hi - lo + 1)
+            return dst
+        # TWO separable box blurs -- four passes -- which is what both
+        # worldgen.terrainFieldAt and the client's buildTerrainFields do. One
+        # separable blur is a visibly different field: at the Ravenwater shore
+        # it read 0.437 where the game reads 0.514, which is the difference
+        # between "dry, stand here" and "water, you are swimming", and it is
+        # why the first two attempts at snapping the fishing spots put them
+        # somewhere the runtime disagreed with.
+        out = vpass(hpass(raw))
+        out = vpass(hpass(out))
+        _fld[name] = out
+        return out
+
+    def field_at(wx, wz, name):
+        """Bilinear between cell CENTRES -- byte for byte what
+        worldgen.terrainFieldAt does at runtime.
+
+        This sampled the containing cell instead, and that one difference put
+        the answers either side of the waterline: 1.6 m from the Ravenwater
+        spot the cell read 0.429 (dry, stand here) while the interpolated value
+        the game actually uses read above 0.44 (water, you would be swimming).
+        Two implementations of one rule is the same mistake as two copies of
+        the waterline, which is what put the fishing spots on grass to begin
+        with."""
+        g = _field(name)
+        fx = (wx - minX) / cell - 0.5
+        fz = (wz - minZ) / cell - 0.5
+        x0 = math.floor(fx)
+        z0 = math.floor(fz)
+        tx, tz = fx - x0, fz - z0
+
+        def at(ix, iz):
+            if ix < 0 or iz < 0 or ix >= W or iz >= H:
+                return 0.0
+            return g[iz][ix]
+        a = at(x0, z0) * (1 - tx) + at(x0 + 1, z0) * tx
+        b = at(x0, z0 + 1) * (1 - tx) + at(x0 + 1, z0 + 1) * tx
+        return a * (1 - tz) + b * tz
+
+    def water_drawn(wx, wz):
+        """True where the client would draw water and the server would let you
+        swim -- the contour, not the cell."""
+        if field_at(wx, wz, 'wet') >= WATER_EDGE['marsh']:
+            return True
+        if field_at(wx, wz, 'deep') >= WATER_EDGE['deep']:
+            return True
+        for _name, width, wp in rivers_w:         # a river channel is always water
+            q = on_centreline((wx, wz), wp)
+            if math.hypot(wx - q[0], wz - q[1]) < width / 2:
+                return True
+        return False
+
     def snap_to_water(wx, wz, limit=70):
-        if cell_at(wx, wz) in 'Ww':
+        if water_drawn(wx, wz):
             return (wx, wz), 0.0
         best, bd = None, 1e18
         for name, width, wp in rivers_w:
@@ -1950,10 +2044,10 @@ def main():
                     gx, gz = gx0 + dx, gz0 + dz
                     if gx < 0 or gz < 0 or gx >= W or gz >= H:
                         continue
-                    if rows[gz][gx] not in 'Ww':
-                        continue
                     cx = minX + (gx + 0.5) * cell
                     cz = minZ + (gz + 0.5) * cell
+                    if not water_drawn(cx, cz):
+                        continue
                     dd = math.hypot(cx - wx, cz - wz)
                     if found is None or dd < found[1]:
                         found = ((cx, cz), dd)
@@ -1996,16 +2090,94 @@ def main():
                 return (round(found[0][0], 1), round(found[0][1], 1)), found[1]
         return (wx, wz), 0.0
 
+    # You fish a spot from the BANK -- fishing.js says so in as many words and
+    # puts the reach at 4.5 m. A spot further than that from anywhere you can
+    # stand can only be reached by swimming out to it, which is not fishing.
+    # Both Ravenwater spots were out in the open pool.
+    FISH_REACH = 4.5
+
+    def standable(x, z):
+        if water_drawn(x, z):
+            return False
+        return cell_at(x, z) in '.fFw'
+
+    def near_deck(x, z):
+        for m, dx, dz, dyaw, dw in deck_rows:
+            cs, sn = math.cos(dyaw), math.sin(dyaw)
+            ox, oz = x - dx, z - dz
+            if abs(ox * cs + oz * sn) <= 2.0 and abs(-ox * sn + oz * cs) <= dw / 2 + 0.5:
+                return True
+        return False
+
+    def has_bank(x, z):
+        for i in range(24):
+            a = i / 24 * math.tau
+            for rr in (1.6, 2.4, 3.2, 4.0, FISH_REACH - 0.1):
+                px2, pz2 = x + math.cos(a) * rr, z + math.sin(a) * rr
+                if near_deck(px2, pz2) or standable(px2, pz2):
+                    return True
+        return False
+
+    def pull_to_bank(x, z, limit=70.0):
+        """Put the spot in the water BESIDE a bank, rather than trying to drag
+        a spot in open water inward until a bank happens to come into range.
+
+        Pulling inward kept failing on Ravenwater's south end, where the marsh
+        shelves so gently that the drawn waterline is twenty-six metres from
+        anywhere you can stand. Built the other way round there is nothing to
+        fail: find the nearest place a player can actually stand, step out from
+        it into the water, and stop while the bank is still within casting
+        reach. The spot is beside a bank by construction.
+        """
+        if has_bank(x, z):
+            return (x, z), 0.0
+        bank, bd = None, 1e18
+        rings = int(limit / cell)
+        for ring in range(1, rings):
+            for i in range(max(8, ring * 8)):
+                a = i / max(8, ring * 8) * math.tau
+                bx = x + math.cos(a) * ring * cell
+                bz = z + math.sin(a) * ring * cell
+                if not (standable(bx, bz) or near_deck(bx, bz)):
+                    continue
+                d = math.hypot(bx - x, bz - z)
+                if d < bd:
+                    bd, bank = d, (bx, bz)
+            if bank:
+                break
+        if not bank:
+            print(f'    !! nowhere to stand within {limit:.0f}u of ({x:.1f},{z:.1f})')
+            return (x, z), 0.0
+        # Step out from that bank into the water, keeping it within reach, and
+        # take the furthest offset that is still both wet and reachable -- the
+        # spot wants to be IN the water, not lapping at the edge of it.
+        ux, uz = (x - bank[0]) / bd, (z - bank[1]) / bd
+        best = None
+        for out in [i * 0.3 for i in range(3, 15)]:      # 0.9 m .. 4.2 m out
+            cx, cz = bank[0] + ux * out, bank[1] + uz * out
+            if water_drawn(cx, cz) and has_bank(cx, cz):
+                best = (cx, cz)
+        if not best:
+            print(f'    !! no water within reach of the bank at ({bank[0]:.1f},{bank[1]:.1f})')
+            return (x, z), 0.0
+        return (round(best[0], 1), round(best[1], 1)), math.hypot(best[0] - x, best[1] - z)
+
     A('  fishingSpots: [')
     moved = 0
+    pulled = 0
     for fid, px, py, tier in FISHING:
         # the jetty spot rides with the jetty, which is computed off the walk
         wx, wz = jetty_at if fid == 'fs_jetty' else world(px, py)
         (wx, wz), shift = snap_to_water(wx, wz)
         if shift > 0.5:
             moved += 1
+        (wx, wz), drag = pull_to_bank(wx, wz)
+        if drag > 0.5:
+            pulled += 1
         A(f"    {{ id: '{fid}', x: {wx}, z: {wz}, tier: {tier} }},")
     A('  ],')
+    if pulled:
+        print(f'  {pulled} fishing spot(s) pulled in to within casting reach of a bank')
     A('')
     if moved:
         print(f'  {moved} fishing spot(s) snapped onto water')
@@ -2263,7 +2435,8 @@ def main():
     A('  // `fade` is the level by which the LAND has faded out entirely. It makes')
     A('  // "ground under the waterline" and "inside the drawn edge" the same test,')
     A('  // so the drawn shore and the swimming rule cannot come apart.')
-    A('  waterEdge: { deep: 0.41, marsh: 0.44, fade: 0.41, blur: 3 },')
+    A(f"  waterEdge: {{ deep: {WATER_EDGE['deep']}, marsh: {WATER_EDGE['marsh']}, "
+      f"fade: {WATER_EDGE['fade']}, blur: {WATER_EDGE['blur']} }},")
     A('')
     A('  // Traced straight off the drawing: one character per cell.')
     A("  // ' ' off-map   W deep water   w marsh   R rock   F dense forest   f wood   . open")

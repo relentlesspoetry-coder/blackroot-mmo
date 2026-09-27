@@ -14,3 +14,9 @@ accounts/
 # python build noise from the tools/
 __pycache__/
 *.pyc
+
+# The asset generators need trimesh + numpy, which this distro's python will
+# not install system-wide (PEP 668). `python3 -m venv tools/.venv` and
+# `tools/.venv/bin/pip install trimesh numpy` gets them; the venv itself is
+# not something to commit.
+tools/.venv/

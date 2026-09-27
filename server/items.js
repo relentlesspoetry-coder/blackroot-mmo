@@ -325,8 +325,11 @@ export const ITEMS = {
   'Pike':           { value: 44, heal: 55 },
   'Burnt Food':   { value: 1 },
   // --- fishing rods (tools; held in the weapon slot, but fishing checks the bag) ---
-  'Fishing Rod':   { slot: 'weapon', atk: 0, level: 1, value: 40, desc: 'A simple rod. Find water and a fishing spot.' },
-  'Feathered Rod': { slot: 'weapon', atk: 0, level: 1, value: 260, desc: 'A finer rod — hooks the wary fish more often. Needs fishing 15.' },
+  // `model`/`len` put these in the hand: buildHeldWeapon only draws a model for
+  // an item that names one, so before this the rod was a stat line and an
+  // inventory icon and the player fished with empty hands.
+  'Fishing Rod':   { slot: 'weapon', atk: 0, level: 1, value: 40, model: 'Fishing_Rod', len: 1.95, desc: 'A simple rod. Find water and a fishing spot.' },
+  'Feathered Rod': { slot: 'weapon', atk: 0, level: 1, value: 260, model: 'Feathered_Rod', len: 2.05, desc: 'A finer rod — hooks the wary fish more often. Needs fishing 15.' },
   'Big Bones':    { value: 9 },
   'Spider Silk':  { value: 18 },
 

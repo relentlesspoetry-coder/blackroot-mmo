@@ -714,15 +714,15 @@ export const darkwoods = {
   ],
 
   fishingSpots: [
-    { id: 'fs_ravenwater_n', x: -262.0, z: -182.8, tier: 2 },
-    { id: 'fs_ravenwater_s', x: -205.2, z: -151.4, tier: 2 },
-    { id: 'fs_murkfen_w', x: 208.8, z: 15.1, tier: 1 },
-    { id: 'fs_murkfen_e', x: 318.8, z: -4.9, tier: 1 },
+    { id: 'fs_ravenwater_n', x: -249.8, z: -166.0, tier: 2 },
+    { id: 'fs_ravenwater_s', x: -196.7, z: -121.8, tier: 2 },
+    { id: 'fs_murkfen_w', x: 198.8, z: 17.6, tier: 1 },
+    { id: 'fs_murkfen_e', x: 321.2, z: -4.9, tier: 1 },
     { id: 'fs_jetty', x: 238.9, z: -0.0, tier: 3 },
     { id: 'fs_fen_deep_e', x: 330.8, z: 4.9, tier: 3 },
     { id: 'fs_fen_deep_w', x: 218.7, z: -16.8, tier: 2 },
     { id: 'fs_creek', x: -7.8, z: -73.6, tier: 1 },
-    { id: 'fs_crowwater', x: -43.8, z: 152.6, tier: 2 },
+    { id: 'fs_crowwater', x: -32.6, z: 164.9, tier: 2 },
   ],
 
   campfires: [

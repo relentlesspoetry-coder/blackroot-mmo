@@ -1526,6 +1526,9 @@ function grantFishingXp(p, amount) {
   if (after > before) { send(p.ws, { t: 'event', kind: 'fishlevel', level: after }); systemChat(`${p.name} reached Fishing level ${after}.`); }
   sendSkills(p);
 }
+// How long the reel-in takes. The fish has to travel from the water to the
+// rod and be seen doing it, which is most of a second.
+const REEL_TIME = 0.9;
 function fishCast(p, spot) {
   const st = fisherStats(p);
   if (!st.rod) { send(p.ws, { t: 'event', kind: 'notice', text: 'You need a fishing rod.' }); p.pendingFish = null; return true; }
@@ -1543,20 +1546,34 @@ function fishCast(p, spot) {
   send(p.ws, { t: 'event', kind: 'fishcast', id: spot.id });
   if (Math.random() >= catchChance(key, st.level, st.power)) return false;
   p.inventory.push(fish.item);
+  p.fishReel = REEL_TIME;                 // the flourish everyone can see
+  p.fishCaught = fish.item;
   send(p.ws, { t: 'event', kind: 'caught', item: fish.item, xp: fish.xp });
   grantFishingXp(p, fish.xp);
   sendBag(p);
   return false; // keep fishing this spot (spots never deplete)
 }
 function stepFishing(p) {
-  if (p.pendingFish == null) return;
+  // The reel-in outlives the cast that earned it, so it ticks down even after
+  // the player has stopped fishing -- otherwise the flourish is cut off the
+  // moment they walk away from the water.
+  if (p.fishReel > 0) p.fishReel = Math.max(0, p.fishReel - DT);
+  if (p.pendingFish == null) { p.fishing = null; return; }
   const zone = zoneOf(p);
   const spot = (zone.fishingSpots || []).find(s => s.id === p.pendingFish);
-  if (!spot) { p.pendingFish = null; return; }
-  if (Math.hypot(spot.x - p.x, spot.z - p.z) > FISHING.reach) return; // stepPlayer walks us in
+  if (!spot) { p.pendingFish = null; p.fishing = null; return; }
+  // Walking in is not fishing. The rod only comes out once they are on the bank.
+  if (Math.hypot(spot.x - p.x, spot.z - p.z) > FISHING.reach) { p.fishing = null; return; }
   p.yaw = Math.atan2(spot.x - p.x, spot.z - p.z);
+  const st = fisherStats(p);
+  const dur = castTime(st.power || 1);
+  // What everyone in the zone needs to draw it: which rod, where the line goes,
+  // and how far through the cast they are. Without this in the snapshot only
+  // the fisher's own client knew anything was happening, so to every other
+  // player they stood at the water doing nothing at all.
+  p.fishing = { spot: spot.id, x: spot.x, z: spot.z, rod: st.rod || 'Fishing Rod', dur };
   p.fishTimer -= DT;
-  if (p.fishTimer <= 0) { p.fishTimer = castTime(fisherStats(p).power || 1); if (fishCast(p, spot)) p.pendingFish = null; }
+  if (p.fishTimer <= 0) { p.fishTimer = dur; if (fishCast(p, spot)) p.pendingFish = null; }
 }
 
 // ---------------------------------------------------------------------------
@@ -3218,6 +3235,14 @@ setInterval(() => {
           breath: p.breath != null && p.breath < BREATH_MAX ? Math.round(p.breath) : undefined, inSafe: !!p.inSafe, resting: !!p.resting, inCombat: (p.combatTimer || 0) > 0 || p.combatId != null,
           combatWait: p.lastCombat ? Math.max(0, Math.ceil(LOGOUT_COMBAT_WAIT - (Date.now() - p.lastCombat) / 1000)) : 0,
           weapon: p.equipment.weapon || null,     // held item for the paperdoll
+          // Fishing, for everyone's client: the rod in hand, where the line is
+          // going, how far through the cast, and the reel-in when one bites.
+          fish: p.fishing ? {
+            x: +p.fishing.x.toFixed(2), z: +p.fishing.z.toFixed(2), rod: p.fishing.rod,
+            p: +Math.max(0, Math.min(1, 1 - p.fishTimer / (p.fishing.dur || 1))).toFixed(3),
+            reel: p.fishReel > 0 ? +(p.fishReel / REEL_TIME).toFixed(2) : undefined,
+            got: p.fishReel > 0 ? p.fishCaught : undefined,
+          } : (p.fishReel > 0 ? { reel: +(p.fishReel / REEL_TIME).toFixed(2), got: p.fishCaught } : undefined),
           look: lookOf(p) });                        // hair / outfit / colours + worn armour
       }
       for (const m of monsters.values()) {
@@ -3286,6 +3311,14 @@ function zoneForClient(zone) {
     id: zone.id, name: zone.name, subtitle: zone.subtitle, spawn: zone.spawn,
     bounds: zone.bounds, boundary: zone.boundary, pois: zone.pois, path: zone.path, river: zone.river,
     paths: pathSpecsOf(zone), rivers: riversOf(zone), hills: zone.hills || [], terrain: zone.terrain || null,
+    // The waterline. The client contours its shoreline off these and the
+    // server decides swimming off them, which was the whole point of moving
+    // them into the zone -- and then this never sent them, so the client fell
+    // back to its own hardcoded copy. The two agreed only because the numbers
+    // happened to be identical; retuning the waterline in the builder would
+    // have moved the server's shore and left the drawn one where it was, which
+    // is exactly the 766 cells of swimming on dry land all over again.
+    waterEdge: zone.waterEdge || null,
     rocks: zone.rocks, hazards: zone.hazards, pools: zone.pools, chests: zone.chests, objects: zone.objects,
     fishingSpots: zone.fishingSpots || [], campfires: zone.campfires || [],
     regions: zone.regions || null,
@@ -3373,7 +3406,7 @@ wss.on('connection', (ws) => {
           inventory: [...STARTING_INVENTORY],
           equipment: Object.assign(emptySlots(), { weapon: classDef(cls).startWeapon || 'Bronze Dagger' }), gear: {},
           miningXp: 0, pendingMine: null, mineTimer: 0,
-          fishingXp: 0, pendingFish: null, fishTimer: 0,
+          fishingXp: 0, pendingFish: null, fishTimer: 0, fishing: null, fishReel: 0, fishCaught: null,
           cookingXp: 0, pendingCook: null, cookTimer: 0,
           quests: new Map(), questDone: new Set(), questKills: {},
           questFlags: new Set(), questAnnounced: new Set(),

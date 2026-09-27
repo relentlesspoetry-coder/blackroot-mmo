@@ -4052,6 +4052,112 @@ function updateFlyers(dt) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// The line, the float and the fish on the end of it.
+//
+// The rod alone is a stick: what makes fishing read is that something leaves
+// the tip and goes into the water, and that when one bites you SEE it come
+// out. One of these per player who is fishing, built on demand and dropped
+// when they stop, so a lake with nobody at it costs nothing.
+// ---------------------------------------------------------------------------
+const fishRigs = new Map();     // playerId -> { group, line, pos, float, fish, fishName }
+const LINE_PTS = 10;
+
+function fishRigFor(id) {
+  let r = fishRigs.get(id);
+  if (r) return r;
+  const group = new THREE.Group();
+  const pos = new Float32Array(LINE_PTS * 3);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const line = new THREE.Line(geo, new THREE.LineBasicMaterial({
+    color: 0xe8e4d8, transparent: true, opacity: 0.75, depthWrite: false }));
+  line.frustumCulled = false;
+  // A red-and-white float, because it has to be findable on dark water.
+  const float = new THREE.Group();
+  const bob = new THREE.Mesh(new THREE.SphereGeometry(0.075, 10, 8),
+    new THREE.MeshStandardMaterial({ color: 0xc8352c, roughness: 0.6 }));
+  const cap = new THREE.Mesh(new THREE.SphereGeometry(0.076, 10, 5, 0, Math.PI * 2, 0, Math.PI / 2),
+    new THREE.MeshStandardMaterial({ color: 0xf2eee4, roughness: 0.6 }));
+  cap.position.y = 0.004;
+  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.14, 6),
+    new THREE.MeshStandardMaterial({ color: 0x2a2a2e, roughness: 0.7 }));
+  stem.position.y = 0.10;
+  float.add(bob, cap, stem);
+  group.add(line, float);
+  scene.add(group);
+  r = { group, line, pos, float, fish: null, fishName: null, t: 0 };
+  fishRigs.set(id, r);
+  return r;
+}
+
+function dropFishRig(id) {
+  const r = fishRigs.get(id); if (!r) return;
+  scene.remove(r.group);
+  r.line.geometry.dispose(); r.line.material.dispose();
+  fishRigs.delete(id);
+}
+
+const _rtA = new THREE.Vector3(), _rtB = new THREE.Vector3();
+function updateFishingLines(dt) {
+  const live = new Set();
+  for (const [id, rec] of entityMeshes) {
+    const e = rec.data;
+    if (rec.kind !== 'player' || !e || !e.fish || !rec.mesh.visible) continue;
+    const rig = rec.mesh.userData.rig;
+    const tip = rig && rig.weapon ? findByName(rig.weapon, /^RodTip$/)[0] : null;
+    if (!tip) continue;                       // the rod has not streamed in yet
+    live.add(id);
+    const r = fishRigFor(id);
+    r.t += dt;
+    tip.getWorldPosition(_rtA);               // where the line leaves the rod
+    const reel = e.fish.reel || 0;
+    // The hook end: out at the float normally, hauled back toward the tip as
+    // the fish comes in. Eased, so it accelerates out of the water.
+    const hx = e.fish.x != null ? e.fish.x : _rtA.x;
+    const hz = e.fish.z != null ? e.fish.z : _rtA.z;
+    const k = reel > 0 ? smooth(1 - reel) : 0;
+    _rtB.set(hx + (_rtA.x - hx) * k,
+             RIVER_WATER_Y + 0.02 + (_rtA.y - RIVER_WATER_Y - 0.02) * k,
+             hz + (_rtA.z - hz) * k);
+    // The float rides the hook end and bobs; while a fish is on it, it is out
+    // of the water and swinging, so the bob stops.
+    r.float.position.copy(_rtB);
+    r.float.position.y += reel > 0 ? 0 : Math.sin(r.t * 2.4) * 0.03;
+    r.float.rotation.z = reel > 0 ? Math.sin(r.t * 9) * 0.35 : Math.sin(r.t * 1.7) * 0.10;
+    r.float.visible = true;
+    // The line sags between rod tip and hook. A straight line looks like wire;
+    // the sag is what makes it read as line under its own weight.
+    const drop = Math.max(0.05, _rtA.distanceTo(_rtB) * 0.12) * (1 - k * 0.8);
+    for (let i = 0; i < LINE_PTS; i++) {
+      const t = i / (LINE_PTS - 1);
+      r.pos[i * 3]     = _rtA.x + (_rtB.x - _rtA.x) * t;
+      r.pos[i * 3 + 1] = _rtA.y + (_rtB.y - _rtA.y) * t - Math.sin(Math.PI * t) * drop;
+      r.pos[i * 3 + 2] = _rtA.z + (_rtB.z - _rtA.z) * t;
+    }
+    r.line.geometry.attributes.position.needsUpdate = true;
+    r.line.geometry.computeBoundingSphere();
+    // ...and the fish itself, on the hook, only while it is being brought in.
+    const want = reel > 0 ? (e.fish.got || null) : null;
+    if (want !== r.fishName) {
+      if (r.fish) { r.group.remove(r.fish); r.fish = null; }
+      r.fishName = want;
+      if (want) {
+        const key = itemModelName(want);
+        const g = cloneModel(key, 0.34, true);
+        if (g) { r.fish = g; r.group.add(g); }
+        else if (LOADED[key] === undefined) loadModels(['items/' + key]).catch(() => {});
+      }
+    }
+    if (r.fish) {
+      r.fish.position.copy(_rtB); r.fish.position.y -= 0.12;
+      r.fish.rotation.y = r.t * 7.5;            // twisting on the line
+      r.fish.rotation.z = Math.sin(r.t * 11) * 0.5;
+    }
+  }
+  for (const id of [...fishRigs.keys()]) if (!live.has(id)) dropFishRig(id);
+}
+
 const _lightGroupState = {};
 function updateLightGroups() {
   const me = entityMeshes.get(myId); if (!me) return;
@@ -5316,6 +5422,14 @@ function tierColor(name) {
   return /Iron/.test(name) ? 0x9aa0a8 : /Steel/.test(name) ? 0xc2c8d0 : /Mithril/.test(name) ? 0x4f7fd0
     : /Adamant/.test(name) ? 0x2f8f6f : /Rune/.test(name) ? 0x49b0c8 : /Gold/.test(name) ? 0xe8c34a : /Bronze/.test(name) ? 0xb87333 : null;
 }
+const ROD_ITEM = /Rod$/;
+// How the rod sits in the fist, relative to how a sword sits. `?debug` lets
+// window.__rodAdj override it so it can be tuned against the actual model.
+// Solved, not guessed: with the rod arm frozen at the hold pose, a sweep over
+// (shoulder angle x rod pitch x rod yaw) against a target of "mostly forward,
+// lifted about 25 degrees, barely any sideways" lands on these. Measured
+// result: 0.90 along the player's facing, 0.44 up, 0.07 across.
+const ROD_HOLD = { x: 0.6, y: 0.5, z: 0 };
 function buildHeldWeapon(name) {
   const g = new THREE.Group();
   const info = itemInfo(name);
@@ -5329,6 +5443,22 @@ function buildHeldWeapon(name) {
       const box = new THREE.Box3().setFromObject(model);
       const sc = (info.len || 1) / (Math.max(box.max.x - box.min.x, box.max.y - box.min.y, box.max.z - box.min.z) || 1);
       model.scale.setScalar(sc);
+      // A blade hangs point-down from the fist. A ROD does not -- it runs out
+      // ahead of the hand and lifts, the way you hold one, and a two-metre rod
+      // rotated like a sword buries its tip in the ground behind the player.
+      if (ROD_ITEM.test(name)) {
+        model.rotation.x = -0.34;                // tip out ahead and a little up
+        model.position.z = -Math.max(0, -box.min.z) * sc * 0.55;   // the fist on the grip, not the butt
+        // An empty at the very end of the blank, so the line has something to
+        // hang off that follows every rotation of the arm for free rather than
+        // being re-derived from the hand each frame.
+        const tip = new THREE.Object3D();
+        tip.name = 'RodTip';
+        tip.position.set(0, 0, box.max.z * sc);
+        model.add(tip);
+        g.add(model);
+        return;
+      }
       model.rotation.x = Math.PI / 2;            // +Z (the blade) -> down from the fist
       // the pack's grip runs from the origin back to box.min.z (the pommel); slide
       // the weapon so the middle of that grip, not the guard, sits in the fist
@@ -5395,6 +5525,15 @@ function updateHeldWeapon(rec, name) {
     // blade hangs down when the arm is at rest.
     w.position.copy(gripPoint(rig, 'R', mount) || new THREE.Vector3(0.04, -0.09, 0));   // inside the curl of the fingers
     w.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), new THREE.Vector3(0, 0, 1));   // the handle runs across the palm along the knuckle line, blade out the thumb side
+    // A rod is gripped the same way but POINTS somewhere else: a blade hangs
+    // down out of the fist, a rod runs out ahead of it. Tuned live against the
+    // model rather than reasoned about, because the hand frame is three
+    // rotations deep and getting it wrong by a quarter turn lays a two-metre
+    // pole across the player's back.
+    if (ROD_ITEM.test(name)) {
+      const a = window.__rodAdj || ROD_HOLD;
+      w.rotateX(a.x); w.rotateY(a.y); w.rotateZ(a.z);
+    }
     mount.add(w);
     rig.weapon = w; rig.swingArm = rig.armR;
     return;
@@ -6028,6 +6167,84 @@ function animateEntity(rec, e, kind, dt) {
         torsoX += -0.12 * punch;                       // lean back a touch
       }
     }
+    // FISHING. The whole cycle in one pose function, driven off `e.fish.p`
+    // (0..1 through the cast) and `e.fish.reel` (1..0 while a fish comes in),
+    // both of which ride in the snapshot so every player sees the same motion
+    // rather than only the one holding the rod.
+    //
+    //   0.00-0.14  the load    rod swept back over the shoulder, torso coils
+    //   0.14-0.26  the cast    whipped forward and through, torso uncoils
+    //   0.26-1.00  the wait    rod held out and slightly up, drifting, the
+    //                          tip nodding on the water
+    //
+    // One-handed throughout, because it has to be: a sweep over both shoulder
+    // chains could not bring the left hand within 0.38 m of the rod butt, and
+    // two hands near each other but not on the same object reads worse than
+    // one hand that is plainly holding it.
+    //   reel                   rod hauled UP and back, the off hand winding
+    //                          the reel in fast circles, torso leaning away
+    //
+    // The wait is most of the cycle on purpose. Fishing is mostly waiting, and
+    // a rod that whips every second reads as a man beating the water.
+    const fs = e && e.fish;
+    if (fs && punch <= 0) {
+      rig.atk = 0;                       // never the attack swing; that was the old "animation"
+      rec.holdLute = false;
+      const reel = fs.reel || 0;
+      if (reel > 0) {
+        // Reel-in: the rod comes up and back against the weight of the fish,
+        // and the LEFT hand winds -- small fast circles at the reel, which is
+        // the only part of this that says "reeling" rather than "lifting".
+        const pull = Math.sin(Math.PI * Math.min(1, (1 - reel) * 1.35));   // strain, peaking mid-haul
+        const wind = (1 - reel) * 26;                                      // the crank turns
+        rArm = -0.95 - 0.55 * pull;  rArmZ = -0.16;
+        rFore = [-0.85 - 0.35 * pull, 0, 0.10];
+        // The off hand winds. It does NOT hold the rod: a sweep over both
+        // shoulders could not get the left hand closer than 0.38 m to the rod
+        // butt in this rig, so a two-handed grip would be two hands near each
+        // other and not on the same object. One-handed with a cranking off
+        // hand is what a rod this long is actually held like anyway.
+        lArm = -0.78 + Math.sin(wind) * 0.16;
+        lArmZ = -0.45 + Math.cos(wind) * 0.09;
+        lFore = [-1.15 + Math.cos(wind) * 0.20, 0, 0.16];
+        torsoX += -0.13 * pull;           // lean back against it
+        torsoY += 0.10 * pull;
+        lLeg -= 0.10 * pull; rLeg += 0.06 * pull;
+      } else {
+        const t = fs.p || 0;
+        // Keyframes, not a sum of ramps. The first version added a `cast` term
+        // that reached 1 and STAYED there, so the arm held its follow-through
+        // for the remaining three quarters of the cycle instead of coming back
+        // to the rest pose -- measured as the shoulder sitting at +0.30 rad
+        // through the whole wait, which is a man who has just thrown something
+        // away, held for two and a half seconds.
+        //
+        //   0.00  rest      rod out over the water
+        //   0.14  loaded    swept back over the shoulder
+        //   0.26  through   whipped forward, arm extended
+        //   0.44  settling  coming back down
+        //   1.00  rest      and holding, with a slow breathing drift
+        const breathe = t > 0.5 ? Math.sin((t - 0.5) * 8.0) * 0.045 : 0;
+        // The hold angle was solved against a frozen pose; once rArmZ and the
+        // forearm started moving on their own keyframes the same shoulder value
+        // put the rod at 0.68-0.81 up (about 45 degrees), which is a man
+        // holding a flagpole. Measured back down to a little over 30.
+        rArm  = kf(t, [[0, -0.40], [0.14, -1.78], [0.26, 0.22], [0.44, -0.40], [1, -0.40]]) + breathe;
+        rArmZ = kf(t, [[0, -0.20], [0.14, -0.44], [0.26, -0.04], [0.44, -0.18], [1, -0.20]]);
+        rFore = [kf(t, [[0, -0.55], [0.14, -1.30], [0.26, -0.10], [0.44, -0.48], [1, -0.55]]), 0, 0.12];
+        // The off hand counterbalances rather than gripping -- back on the
+        // load, swinging through with the cast, then easy at the side.
+        lArm  = kf(t, [[0, -0.16], [0.14, -0.68], [0.26, 0.30], [0.44, -0.10], [1, -0.16]]);
+        lArmZ = kf(t, [[0, -0.22], [0.14, -0.46], [0.26, -0.08], [0.44, -0.20], [1, -0.22]]);
+        lFore = [kf(t, [[0, -0.45], [0.14, -0.88], [0.26, -0.18], [0.44, -0.40], [1, -0.45]]), 0, 0.10];
+        // the body coils away and uncoils through the cast, then stands easy
+        torsoY += kf(t, [[0, 0], [0.14, -0.24], [0.26, 0.17], [0.46, 0], [1, 0]]);
+        torsoX += kf(t, [[0, -0.02], [0.14, -0.08], [0.26, 0.08], [0.46, -0.02], [1, -0.02]]);
+        // weight shifts onto the back foot for the load, forward for the cast
+        lLeg += kf(t, [[0, 0], [0.14, 0.11], [0.26, -0.07], [0.5, 0], [1, 0]]);
+        rLeg += kf(t, [[0, 0], [0.14, -0.09], [0.26, 0.06], [0.5, 0], [1, 0]]);
+      }
+    }
     // A Bard carries the lute: left hand up on the neck, right forearm resting
     // over the body, whether standing or walking — only a swing lets go.
     rec.holdLute = !!(rec.instrument && punch <= 0);   // arms solved onto the lute below (luteArms); a swing lets go
@@ -6389,7 +6606,11 @@ function renderWorld(dt) {
       rec.mesh.position.y = py;
       rec.mesh.rotation.y = yaw + (rec.mesh.userData.faceOffset || 0);
       rec.data = e;
-      if (kind === 'player' && e.weapon !== rec.heldWeapon) updateHeldWeapon(rec, e.weapon);
+      // The rod comes out of the bag and INTO the hand while fishing: the rod
+      // is what makes the action legible, and the class weapon is not what
+      // anyone is holding at the water's edge.
+      const wantWeapon = (kind === 'player' && e.fish && e.fish.rod) ? e.fish.rod : e.weapon;
+      if (kind === 'player' && wantWeapon !== rec.heldWeapon) updateHeldWeapon(rec, wantWeapon);
       // Both hands are busy in the water, so the weapon goes away rather than
       // sticking out sideways across the surface.
       { const rigW = rec.mesh.userData.rig; if (rigW && rigW.weapon) rigW.weapon.visible = !e.swim; }
@@ -9573,12 +9794,14 @@ function onEvent(m) {
       flyText(`Mining level ${m.level}!`, 'heal');
       addChat('Mining', `You are now Mining level ${m.level}.`, true);
       break;
-    case 'fishcast': {
-      // The cast/reel motion reads as effort even on an empty cast.
-      const rec = entityMeshes.get(myId);
-      if (rec && rec.mesh.userData.rig) rec.mesh.userData.rig.atk = 1;
+    case 'fishcast':
+      // This used to set rig.atk = 1 -- the overhead weapon CHOP, borrowed
+      // because there was no fishing animation to play. There is one now, and
+      // it is driven off the snapshot so everyone sees it; leaving the chop in
+      // meant the attack pose and the cast pose fought for the same arm every
+      // cast, which measured as the shoulder jumping between -2.38 and 0 rad
+      // inside a single reel-in.
       break;
-    }
     case 'caught':
       addChat('Fishing', `You catch some ${m.item}.`, true);
       flyText(`+${m.xp} Fishing`, 'xp');
@@ -10584,6 +10807,7 @@ if (location.search.includes('debug')) {
     get objects() { return worldObjects; },   // quest objects, for checking they arrived
     get flyers() { return flyerMeshes; },     // butterflies/moths, for checking they drift
     get ores() { return oreMeshes; },         // instanceId -> vein mapping, for checking picks resolve
+    get fishRigs() { return fishRigs; },      // line / float / hooked fish, for checking the reel-in
     get npcs() { return npcMeshes; },
     get wardrobe() { return wardrobe; }, wardrobePieces: (look) => lookPieces(look),
     get self() { return entityMeshes.get(myId); },
@@ -10903,6 +11127,7 @@ function animate() {
   _pf('markers', () => updateMarkers(dt));
   _pf('lights', () => updateLightGroups());
   _pf('flyers', () => updateFlyers(dt));
+  _pf('fishline', () => updateFishingLines(dt));
   _pf('poi', () => updatePoiLabels());
   _pf('plates', () => { updateNameplates(); updateGravePlates(); updatePendingGrave(); });
   _pf('npcmk', () => updateNpcMarkers());
