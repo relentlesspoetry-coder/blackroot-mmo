@@ -289,6 +289,27 @@ SCATTER = [
     ('Thorn_Bush', 70, None, 0), ('Darkroot_Bush', 55, None, 0),
     ('Hosta_Plant', 50, None, 0), ('Foxglove_Clump', 40, None, 0),
     ('Blackberry_Bramble', 45, None, 0), ('Twisted_Dead_Tree', 35, None, 0),
+    # --- the shaded understorey -----------------------------------------
+    # Twenty plant models were in the library and not one placement used them,
+    # so the Dark Woods was dressed out of the same eight species everywhere.
+    # These are sorted by the light they want rather than sprinkled: what grows
+    # under a closed canopy is not what grows in a clearing, and the blueprint
+    # already traced which is which.
+    ('Broadleaf_Plant', 85, None, 0),          # big soft leaves, deep shade
+    ('Creeping_Bellflowers', 60, None, 0),     # shaded banks
+    ('Blue_Hydrangea', 34, None, 0),           # damp shade
+    # --- the clearings, which want light --------------------------------
+    ('Poppy_Patch', 60, None, 0, 'open'),
+    ('Goldenrod_Patch', 50, None, 0, 'open'),
+    ('Meadow_Shrub', 48, None, 0, 'open'),
+    ('Strawberry_Patch', 38, None, 0, 'open'),  # woodland edge, in the light
+    ('Flowering_Bush', 44, None, 0, 'open'),
+    # The only two assets in the library that would look wrong standing still,
+    # so the client drifts them (see FLYERS / updateFlyers). Butterflies belong
+    # over the flowers in the light; moths belong under the canopy, which is
+    # the whole difference between the two and the reason they are two specs.
+    ('Butterfly', 70, None, 0, 'open'),
+    ('Moth', 55, None, 0),
     # Grimroot Thicket: the drawing paints it purple and calls it cursed
     ('Twisted_Dead_Tree', 22, 'grimroot', 40), ('Poison_Mushrooms', 26, 'grimroot', 38),
     ('Darkroot_Bush', 24, 'grimroot', 40), ('Bone_Pile', 8, 'grimroot', 34),
@@ -358,6 +379,18 @@ SCATTER = [
     # Witchlight Camp: the sheet draws a wagon and bedrolls in the tents.
 
     ('Camp_Lantern', 4, 'briar', 24),
+    # --- plants that belong to a PLACE rather than to a habitat ----------
+    # A churchyard keeps its planting long after the roof goes. Roses gone
+    # feral over the graves and box hedging that has not been cut in a century
+    # say "somebody tended this" louder than another fern would.
+    ('Rose_Bush', 12, 'chapel', 34), ('Round_Box_Bush', 9, 'chapel', 30),
+    # Witchlight Camp is lived in: a herb bed by the fire and a hedge along the
+    # line Bram Holt keeps complaining about mending.
+    ('Lavender_Clump', 9, 'camp', 26), ('Sage_Bush', 8, 'camp', 26),
+    ('Tall_Hedgerow', 16, 'camp', 34), ('Round_Box_Bush', 5, 'camp', 24),
+    # Heather takes the thin poor soil nothing else wants -- the exposed
+    # ground on the hill and in the pass, which is most of what is up there.
+    ('Heather_Clump', 34, 'crowhill', 46), ('Heather_Clump', 26, 'wolfsnag', 48),
     # Crow Hill: rail fences along the ascent path and fallen stone on the crown.
     ('Rough_Fence', 14, 'crowhill', 30), ('Ruin_Rubble', 10, 'crowhill', 28),
     ('Banner_Crow', 3, 'crowhill', 26),
@@ -506,7 +539,93 @@ def briar_layout():
     return p
 
 
-LAYOUTS = [('camp', camp_layout), ('briar', briar_layout)]
+def henyard_layout():
+    """Maggie Byrne's hen yard.
+
+    A whole farm kit -- twenty-two models -- sat in client/models/farm and not
+    one placement used any of it, while seven hens I had just put in the world
+    pecked at bare grass fifty metres from a camp whose poultry-keeper's only
+    line is "Something has been at the birds again". A hen yard is a coop, a
+    run, feeders, nesting boxes and a fence with a gate in it; that is what the
+    kit is for and what the NPC is talking about.
+
+    Footprints measured off the GLBs, not guessed: the fence panel is 2.00 m
+    wide, which is what closes the ring.
+    """
+    p = []
+    # the ring fence, panels abutting, with a gate where the camp road comes in
+    p += _ring('Farm_Fence', 0, 13.0, yaw_out=False, coll=0.5, width=2.0)
+    p += [('Farm_Gate', 0.0, -13.0, 0.0, 1.0, 0.0)]          # north side, toward camp
+    # the housing, along the back fence out of the wind
+    p += [('Walk_In_Chicken_House', -5.0, 8.4, 0.35, 1.0, 1.3),
+          ('Raised_Chicken_Coop', 2.2, 9.2, 0.0, 1.0, 0.9),
+          ('Covered_Chicken_Run', 7.0, 6.4, -0.5, 1.0, 1.0),
+          ('Nesting_Boxes', -9.2, 5.0, 1.57, 1.0, 0.8),
+          ('Chicken_Cage', -1.4, 10.4, 0.2, 1.0, 0.0)]
+    # feed and water where the birds actually stand
+    p += [('Chicken_Feeder', -2.6, 1.2, 0.0, 1.0, 0.0),
+          ('Chicken_Feeder', 4.4, -1.8, 0.7, 1.0, 0.0),
+          ('Chicken_Waterer', -0.4, -3.2, 0.0, 1.0, 0.0),
+          ('Chicken_Waterer', 6.2, 2.6, 1.1, 1.0, 0.0),
+          ('Grain_Barrel', -7.6, -1.0, 0.0, 1.0, 0.5),
+          ('Grain_Sack', -8.4, 0.6, 0.4, 1.0, 0.0),
+          ('Grain_Sack', -7.0, 1.4, 2.1, 1.0, 0.0),
+          ('Egg_Basket', -9.0, 3.4, 0.0, 1.0, 0.0),
+          ('Egg_Basket', 3.0, 7.8, 0.9, 1.0, 0.0)]
+    # the work of the place, left where it was put down
+    p += [('Wheelbarrow', 8.4, -3.0, 2.4, 1.0, 0.5),
+          ('Pitchfork', -6.2, -5.4, 0.3, 1.0, 0.0),
+          ('Vegetable_Crate', 9.0, -6.0, 0.6, 1.0, 0.0),
+          ('Vegetable_Crate', 9.8, -4.8, 1.9, 1.0, 0.0),
+          ('Hay_Pile', -9.6, -6.2, 0.0, 1.0, 0.7),
+          ('Square_Hay_Bale', 5.6, -7.6, 0.4, 1.0, 0.4),
+          # and the thing that watches the wood, which is the point of the yard
+          ('Scarecrow', 0.6, -9.6, 0.0, 1.0, 0.4)]
+    return p
+
+
+def cowfield_layout():
+    """The clearing west of the camp where the cattle are.
+
+    Bram Holt's one line is that fences do not mend themselves. Here are the
+    fences. A byre needs troughs, hay and a way in; the cows had none of it.
+    """
+    p = []
+    p += _ring('Farm_Fence', 0, 17.0, yaw_out=False, coll=0.5, width=2.0)
+    p += [('Farm_Gate', 0.0, -17.0, 0.0, 1.0, 0.0),
+          ('Farm_Gate', 17.0, 0.0, 1.5708, 1.0, 0.0)]
+    p += [('Water_Trough', -6.0, 4.0, 0.0, 1.0, 0.6),
+          ('Water_Trough', 7.4, -2.2, 1.57, 1.0, 0.6),
+          ('Feeding_Trough', -2.0, -6.4, 0.0, 1.0, 0.6),
+          ('Feeding_Trough', 4.6, 6.8, 0.9, 1.0, 0.6)]
+    # a winter's hay, stacked against the fence
+    p += [('Tall_Haystack', -11.0, -8.0, 0.0, 1.0, 1.0),
+          ('Stacked_Hay_Bales', -12.4, -4.6, 0.3, 1.0, 0.8),
+          ('Round_Hay_Bale', -10.0, -2.0, 0.0, 1.0, 0.6),
+          ('Round_Hay_Bale', -12.0, -0.4, 1.2, 1.0, 0.6),
+          ('Square_Hay_Bale', 9.6, 7.4, 0.5, 1.0, 0.4),
+          ('Hay_Pile', 10.6, 4.2, 0.0, 1.0, 0.7),
+          ('Pitchfork', -9.2, -6.2, 2.8, 1.0, 0.0),
+          ('Wheelbarrow', 11.0, -6.6, 1.1, 1.0, 0.5),
+          ('Grain_Barrel', 8.0, 9.4, 0.0, 1.0, 0.5),
+          ('Vegetable_Crate', 6.8, 10.2, 0.8, 1.0, 0.0)]
+    return p
+
+
+LAYOUTS = [('camp', camp_layout), ('briar', briar_layout),
+           ('henyard', henyard_layout), ('cowfield', cowfield_layout)]
+
+# A yard fronts ONTO the road; it is not bisected by one. Anchored on where the
+# animals were put, the hen yard's centre came out 7.2 m from a road and the
+# cow field's 12.9 m, against ring radii of 13 and 17 -- so both roads ran
+# straight through the middle and the path-clearing rule quietly deleted the
+# coop, the run and the nesting boxes, which is the entire point of a hen yard.
+#
+# So the yard is not authored facing anywhere. It is pushed off the road until
+# its fence clears, and turned so the GATE is the side the road is on. Which
+# road, and which way, is measured at build time.
+#   key -> (ring radius, how far clear of the road the fence should stand)
+ROAD_FACING = {'henyard': (13.0, 5.0), 'cowfield': (17.0, 5.0)}
 
 
 def chapel_layout():
@@ -748,15 +867,28 @@ MODEL_DIR = {
     'Stalagmite_Cluster': 'cave', 'Stalagmite_Large': 'cave',
     'Luminous_Mushrooms': 'cave',
     'Violet_Crystals': 'cave', 'Teal_Crystals': 'cave',
-    'Farm_Handcart': 'farm', 'Bedroll': 'props',
+    **{k: 'farm' for k in (
+        'Farm_Handcart', 'Farm_Fence', 'Farm_Gate', 'Walk_In_Chicken_House',
+        'Raised_Chicken_Coop', 'Covered_Chicken_Run', 'Nesting_Boxes',
+        'Chicken_Cage', 'Chicken_Feeder', 'Chicken_Waterer', 'Grain_Barrel',
+        'Grain_Sack', 'Egg_Basket', 'Wheelbarrow', 'Pitchfork',
+        'Vegetable_Crate', 'Hay_Pile', 'Square_Hay_Bale', 'Round_Hay_Bale',
+        'Stacked_Hay_Bales', 'Tall_Haystack', 'Scarecrow', 'Water_Trough',
+        'Feeding_Trough')},
+    'Bedroll': 'props',
     'Small_Canvas_Tent': 'props', 'Supply_Pavilion': 'props', 'Camp_Lantern': 'props',
     'Cooking_Tripod': 'props', 'Supply_Crate': 'props', 'Water_Barrel': 'props',
     'Camp_Stool': 'props', 'Rolled_Bedroll': 'props', 'Goblin_Hide_Tent': 'props',
     'Unlit_Fire_Pit': 'props', 'Campfire': 'props', 'Brown_Mushrooms': 'cave',
 }
 
+# Every tree the client can choose must be downloaded, or the habitat mix picks
+# a species the player never receives and that patch of wood renders empty. The
+# client sorts these into wet / deep / light stands; the manifest just has to
+# carry all of them.
 TREE_SPECIES = ['Ancient_Forest_Tree', 'Broad_Crown_Oak', 'Tall_Leafy_Birch',
-                'Twisted_Darkwood', 'Weeping_Willow']
+                'Twisted_Darkwood', 'Weeping_Willow', 'Willow_Tree',
+                'Yew_Tree', 'Oak_Tree', 'Maple_Tree', 'Normal_Tree', 'Tree']
 
 # The people. These ids are the ones server/quests.js hands its quests to, so
 # the names are fixed even though the map they stood on is new -- every one of
@@ -1461,19 +1593,76 @@ def main():
     A('')
     A('  rocks: [],')
     A('  hazards: [],')
-    A('  treeCount: 4200,')
+    # A hand-typed 4200 of which the generator could only ever place 2266. The
+    # spacing rule caps a wood at one tree per 9 m (6.5 m where the blueprint
+    # traced dense forest), and over the 124,000 m2 of wood on this map that
+    # allows around 2400 -- so the number asked for nearly double what the
+    # rules permit and the build reported neither the ask nor the shortfall.
+    # Derived from the traced grid instead: count the wooded cells and divide
+    # by the area one tree is given.
+    wooded = sum(1 for r in rows for c in r if c in 'fF')
+    dense_n = sum(1 for r in rows for c in r if c == 'F')
+    cell_a = cell * cell
+    # 9 m spacing in light wood, 6.5 m where it is dense. The 0.58 is the
+    # packing fraction the rejection sampler actually reaches, measured rather
+    # than assumed: asking for more than this makes it grind without placing
+    # anything extra -- 2200 places 2115, 2800 still places only 2182.
+    cap = ((wooded - dense_n) * cell_a / (math.pi * 4.5 ** 2)
+           + dense_n * cell_a / (math.pi * 3.25 ** 2)) * 0.58
+    tree_n = int(cap)
+    A(f'  treeCount: {tree_n},')
+    print(f'  {wooded} wooded cells ({dense_n} dense) -> asking for {tree_n} trees')
     A('  treeSeed: 20260925,')
     A('  scatterSeed: 7,')
     A('')
+    def nearest_path(x, z):
+        """(distance, unit vector from the point toward the nearest path)."""
+        best, vec = 1e9, (0.0, 1.0)
+        for _k, _a, _b, pts in paths:
+            for i in range(len(pts) - 1):
+                (x0, z0), (x1, z1) = pts[i], pts[i + 1]
+                ddx, ddz = x1 - x0, z1 - z0
+                L2 = ddx * ddx + ddz * ddz or 1.0
+                t = max(0.0, min(1.0, ((x - x0) * ddx + (z - z0) * ddz) / L2))
+                px, pz = x0 + ddx * t, z0 + ddz * t
+                d = math.hypot(x - px, z - pz)
+                if d < best:
+                    best = d
+                    n = d or 1.0
+                    vec = ((px - x) / n, (pz - z) / n)
+        return best, vec
+
+    # Where each fenced yard actually ends up, solved ONCE. The fence, the gate
+    # and the animals all have to agree on it: the first pass moved the yard off
+    # the road and left the birds standing where they had always stood, which
+    # put every hen outside its own fence, and the cows 20 m outside theirs.
+    YARDS = {}
+    for key, (ring_r, clear) in ROAD_FACING.items():
+        ax, az = world(*SPAWN_ANCHORS[key])
+        d, (vx, vz) = nearest_path(ax, az)
+        if d < ring_r + clear:
+            push = (ring_r + clear) - d
+            ax, az = round(ax - vx * push, 1), round(az - vz * push, 1)
+            d, (vx, vz) = nearest_path(ax, az)
+        # the layout's gate sits at -dz, so turn -dz toward the road
+        YARDS[key] = (ax, az, math.atan2(vx, vz) - math.pi)
+        print(f'  {key}: fronts its road, fence {d:.1f}u clear of it')
+
     A('  spawns: [')
     for key, typ, lvl, n, r, roam in SPAWNS:
-        if key in SPAWN_ANCHORS:
+        if key in YARDS:
+            wx, wz, _spin = YARDS[key]
+            # Penned animals stay in the pen. Their roam radius was wider than
+            # the ring that was later built round them.
+            r = min(r, ROAD_FACING[key][0] - 2.5)
+            roam = min(roam, ROAD_FACING[key][0] - 3.5)
+        elif key in SPAWN_ANCHORS:
             wx, wz = world(*SPAWN_ANCHORS[key])
         else:
             poi = [q for q in POIS if q[0] == key][0]
             wx, wz = world(poi[3], poi[4])
         A(f"    {{ type: '{typ}', level: {lvl}, count: {n}, "
-          f'cx: {wx}, cz: {wz}, r: {r}, roam: {roam} }},')
+          f'cx: {wx}, cz: {wz}, r: {round(r, 1)}, roam: {round(roam, 1)} }},')
     A('  ],')
     A('')
     A('  scatter: [')
@@ -1481,10 +1670,14 @@ def main():
         A(f"    {{ model: '{model}', count: {n}, near: '{near}', nearR: {r} }},")
     for spec in SCATTER:
         model, n, near, nearR = spec[0], spec[1], spec[2], spec[3]
-        shore = len(spec) > 4 and spec[4]
+        flag = spec[4] if len(spec) > 4 else None
         extra = f", near: '{near}', nearR: {nearR}" if near else ''
-        if shore:
+        # True is the old spelling of 'shore'. 'open' is the inverse bias: it
+        # sends a species toward the clearings instead of under the canopy.
+        if flag is True or flag == 'shore':
             extra += ', shore: 1, shoreR: 8'
+        elif flag == 'open':
+            extra += ', open: 1'
         A(f"    {{ model: '{model}', count: {n}{extra} }},")
     A('  ],')
     A('')
@@ -1687,9 +1880,22 @@ def main():
     laid = 0
     gateways = 0
     for key, fn in LAYOUTS:
-        poi = [q for q in POIS if q[0] == key][0]
-        ax, az = world(poi[3], poi[4])
-        for model, dx, dz, yaw, sc, coll in fn():
+        # A layout may sit on a landmark OR on a spawn anchor -- the hen yard
+        # and the cow field are anchored to where their animals actually are,
+        # not to a POI, because that is what the fence has to enclose.
+        if key in SPAWN_ANCHORS:
+            ax, az = world(*SPAWN_ANCHORS[key])
+        else:
+            poi = [q for q in POIS if q[0] == key][0]
+            ax, az = world(poi[3], poi[4])
+        if key in YARDS:
+            ax, az, spin = YARDS[key]
+        else:
+            spin = 0.0
+        cs, sn = math.cos(spin), math.sin(spin)
+        for model, dx0, dz0, yaw0, sc, coll in fn():
+            dx, dz = dx0 * cs + dz0 * sn, -dx0 * sn + dz0 * cs
+            yaw = yaw0 + spin
             wx, wz = round(ax + dx, 1), round(az + dz, 1)
             if coll > 0 and not path_clear(wx, wz, 3.6):
                 gateways += 1
@@ -1818,6 +2024,8 @@ def main():
     def poi_world(key):
         if key in WAYPOINTS:
             return world(*WAYPOINTS[key])
+        if key in SPAWN_ANCHORS:
+            return world(*SPAWN_ANCHORS[key])
         q = [r for r in POIS if r[0] == key][0]
         return world(q[3], q[4])
 

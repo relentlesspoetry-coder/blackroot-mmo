@@ -896,7 +896,25 @@ const MOB_MODEL = {
   ember_dragon: { model: 'Ember_Dragon', h: 4.6 }, frost_dragon: { model: 'Frost_Dragon', h: 4.8 },
   venom_dragon: { model: 'Venom_Dragon', h: 4.4 },
 };
-const TREE_SPECIES = ['Ancient_Forest_Tree', 'Broad_Crown_Oak', 'Tall_Leafy_Birch', 'Twisted_Darkwood', 'Weeping_Willow'];
+// Eleven tree models are in the library and five of them were being used. The
+// species for a given tree was chosen by hashing its position, which spreads
+// the SAME five uniformly over the whole map -- so every wood in the zone had
+// the identical mix, and Oak, Maple, Yew, Willow and the two plain Trees had
+// never once appeared in the world.
+//
+// A wood is not uniform. Which species can stand somewhere is decided by the
+// ground the blueprint traced: willow and birch take the wet edges, the dark
+// close-canopy species hold the deep forest where nothing else gets light, and
+// open woodland gets the broadleaf trees that need it. Position still picks
+// WHICH tree inside the mix, so a grove stays stable between frames.
+const TREES_WET   = ['Weeping_Willow', 'Willow_Tree', 'Tall_Leafy_Birch'];
+const TREES_DEEP  = ['Ancient_Forest_Tree', 'Twisted_Darkwood', 'Yew_Tree', 'Broad_Crown_Oak'];
+const TREES_LIGHT = ['Oak_Tree', 'Maple_Tree', 'Normal_Tree', 'Tree', 'Tall_Leafy_Birch', 'Broad_Crown_Oak'];
+const TREE_SPECIES = [...new Set([...TREES_WET, ...TREES_DEEP, ...TREES_LIGHT])];
+function treesAt(x, z) {
+  if (terrainField(x, z, 'wet') > 0.20) return TREES_WET;
+  return terrainField(x, z, 'dense') > 0.55 ? TREES_DEEP : TREES_LIGHT;
+}
 const BUSH_SPECIES = ['Normal_Bush', 'Berry_Bush', 'Flowering_Bush', 'Thorn_Bush', 'Darkroot_Bush', 'Dead_Bush'];
 const MODEL_YAW = Math.PI; // GLB characters face -Z; flip to match our +Z "forward"
 
@@ -3351,7 +3369,7 @@ function buildForest() {
   // full-canopy models, so no procedural canopy/bark augmentation is needed.
   const placements = zone.trees || [];
   if (!placements.length) return;
-  instanceModels(placements, TREE_SPECIES, TREE_H, 1.0, true); // bark the trunks
+  instanceModels(placements, zone.terrain ? treesAt : TREE_SPECIES, TREE_H, 1.0, true); // bark the trunks
 }
 
 
@@ -3433,7 +3451,9 @@ function applyBarkUV(geo) {
 function instanceModels(placements, speciesList, targetH, baseScale, bark) {
   const groups = {};
   for (const t of placements) {
-    const sp = speciesFor(speciesList, t.x, t.z);
+    // A list, or a function of position that returns one -- which is how the
+    // woods pick their species by habitat instead of hashing one flat mix.
+    const sp = speciesFor(typeof speciesList === 'function' ? speciesList(t.x, t.z) : speciesList, t.x, t.z);
     (groups[sp] || (groups[sp] = [])).push(t);
   }
   const mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
@@ -3825,6 +3845,13 @@ const oreMeshes = [];   // { mesh, veins: [placement,...] } for instance picking
 // ore veins register into oreMeshes for mining picks.
 const ORE_SINK = 0.38;   // veins sit well into the ground rather than perched on it
 const _tintC = new THREE.Color();
+// Butterfly and Moth were in the library and nothing placed either of them.
+// They are the only assets here that would look WRONG standing still, so they
+// are not quite scatter: the placement records them, and updateFlyers drifts
+// each one round its own anchor every frame. The cost is one matrix rebuild
+// per butterfly, which is a few hundred, not a few thousand.
+const FLYERS = /Butterfly|Moth/;
+let flyerMeshes = [];
 function placeInstances(list, yOf) {
   const mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
   const byModel = {};
@@ -3848,6 +3875,19 @@ function placeInstances(list, yOf) {
       }, isOre ? { tag: { pickKind: 'ore', oreName: model.replace(/_Ore_Vein$/, '') } } : {});
       // each chunk keeps its own vein list so instanceId -> vein still lines up
       if (isOre) for (const c of chunks) oreMeshes.push({ mesh: c.im, veins: c.items });
+      if (FLYERS.test(model)) {
+        for (const c of chunks) {
+          const base = c.items.map(o => ({
+            x: o.x, z: o.z, y: (o.y != null ? o.y : yOf(o)) + 0.9 + (o.s || 1) * 0.5,
+            // every one gets its own circle, speed and phase off its position,
+            // so a meadow reads as many insects rather than one shoal
+            rad: 0.7 + ((Math.abs(Math.floor(o.x * 7919) ^ Math.floor(o.z * 104729)) % 90) / 100),
+            spd: 0.35 + ((Math.abs(Math.floor(o.x * 15485863)) % 70) / 100),
+            ph: (Math.abs(Math.floor(o.x * 92837111) ^ Math.floor(o.z * 689287499)) % 628) / 100,
+          }));
+          flyerMeshes.push({ im: c.im, base });
+        }
+      }
     }
   }
 }
@@ -3916,6 +3956,28 @@ function buildScatter() {
   // the ceiling rather than the floor.
   const ceil = (zone.ceilingY || 13) - 0.1;
   placeInstances(zone.hanging || [], () => ceil);
+}
+
+// A butterfly does not hold still. Each one orbits its own anchor at its own
+// rate and bobs on a second, slower beat, so the meadow moves without any of
+// them leaving the flowers they were placed on.
+const _fm = new THREE.Matrix4(), _fq = new THREE.Quaternion(), _fs = new THREE.Vector3(1, 1, 1);
+const _fv = new THREE.Vector3();
+let _flyT = 0;
+function updateFlyers(dt) {
+  if (!flyerMeshes.length) return;
+  _flyT += dt;
+  for (const g of flyerMeshes) {
+    for (let i = 0; i < g.base.length; i++) {
+      const b = g.base[i], a = b.ph + _flyT * b.spd;
+      _fq.setFromAxisAngle(UP, a + Math.PI / 2);       // face the way it is going
+      _fm.compose(_fv.set(b.x + Math.cos(a) * b.rad,
+                          b.y + Math.sin(a * 2.3 + b.ph) * 0.18,
+                          b.z + Math.sin(a) * b.rad), _fq, _fs);
+      g.im.setMatrixAt(i, _fm);
+    }
+    g.im.instanceMatrix.needsUpdate = true;
+  }
 }
 
 const _lightGroupState = {};
@@ -10448,6 +10510,7 @@ if (location.search.includes('debug')) {
     get quests() { return questData; },
     get entities() { return entityMeshes; },
     get objects() { return worldObjects; },   // quest objects, for checking they arrived
+    get flyers() { return flyerMeshes; },     // butterflies/moths, for checking they drift
     get npcs() { return npcMeshes; },
     get wardrobe() { return wardrobe; }, wardrobePieces: (look) => lookPieces(look),
     get self() { return entityMeshes.get(myId); },
@@ -10766,6 +10829,7 @@ function animate() {
   _pf('controls', () => updateControls(dt));
   _pf('markers', () => updateMarkers(dt));
   _pf('lights', () => updateLightGroups());
+  _pf('flyers', () => updateFlyers(dt));
   _pf('poi', () => updatePoiLabels());
   _pf('plates', () => { updateNameplates(); updateGravePlates(); updatePendingGrave(); });
   _pf('npcmk', () => updateNpcMarkers());

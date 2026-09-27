@@ -82,6 +82,19 @@ console.log('\n=== unreferenced models ===');
 const referenced = new Set();
 for (const m of CORE) referenced.add(m.split('/').pop());
 for (const z of ZONES) for (const m of (z.models || [])) referenced.add(m.split('/').pop());
+// Mob bodies are NOT in zone.models -- the client keeps its own table and
+// loads one when a creature of that type first appears. Reading that table out
+// of the client (the same way CORE_MODELS is read) stops this listing twenty
+// goblins, spiders, cows and hens as "unused" while they walk around the map,
+// which is what buried the assets that really were unused.
+const mobTable = clientSrc.match(/const MOB_MODEL = \{(.*?)\n\};/s);
+const MOB = mobTable ? [...mobTable[1].matchAll(/model:\s*'([^']+)'/g)].map(m => m[1]) : [];
+for (const m of MOB) referenced.add(m.split('/').pop());
+// Likewise the wardrobe, the tree mixes and the bush list.
+for (const listName of ['TREES_WET', 'TREES_DEEP', 'TREES_LIGHT', 'BUSH_SPECIES', 'AMBIENT_SPECIES']) {
+  const m = clientSrc.match(new RegExp(`const ${listName}\\s*=\\s*\\[(.*?)\\];`, 's'));
+  if (m) for (const q of m[1].matchAll(/'([^']+)'/g)) referenced.add(q[1].split('/').pop());
+}
 const bareOf = (f) => f.replace('.glb', '');
 const weaponModels = new Set(Object.values(WEAPON_ITEMS).map(d => d.model));
 const walk = (dir, prefix = '') => {

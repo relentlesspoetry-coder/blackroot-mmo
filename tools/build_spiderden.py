@@ -146,6 +146,20 @@ NODES = [
 
 # (model, count, room, radius)
 SCATTER = [
+    # Seven more web pieces sat in the cave kit unused while the den was dressed
+    # out of the same eleven everywhere. A spider den should not run out of
+    # kinds of web: the sheet webs and the corner webs fill the angles the
+    # floor webs cannot, the bridges span the gaps, and the timber supports say
+    # somebody dug here before the spiders moved in.
+    ('Corner_Web', 11, 'gallery', 26), ('Corner_Web', 8, 'hollow', 28),
+    ('Round_Wall_Web', 9, 'gallery', 27), ('Round_Wall_Web', 7, 'brood', 28),
+    ('Triangular_Sheet_Web', 10, 'larder', 22), ('Triangular_Sheet_Web', 8, 'shaft', 18),
+    ('Root_Corner_Web', 9, 'hollow', 30), ('Root_Corner_Web', 6, 'bones', 20),
+    ('Oval_Door_Web', 5, 'shaft', 18), ('Oval_Door_Web', 4, 'seep', 22),
+    ('Sagging_Web_Bridge', 4, 'hollow', 30), ('Sagging_Web_Bridge', 3, 'brood', 28),
+    # the mine that was here first
+    ('Timber_Support', 7, 'seep', 23), ('Timber_Support', 5, 'shaft', 18),
+    ('Floor_Rock_Slab', 9, 'bones', 21), ('Floor_Rock_Slab', 7, 'mouth', 20),
     ('Floor_Web', 10, 'mouth', 20), ('Torn_Wall_Web', 6, 'mouth', 20),
     ('Broken_Web_Strands', 8, 'mouth', 22), ('Rubble_Pile', 6, 'mouth', 20),
 

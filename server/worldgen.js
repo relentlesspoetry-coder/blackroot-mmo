@@ -250,8 +250,16 @@ export function generateScatter(zone) {
     (a.count - b.count) || a.model.localeCompare(b.model));
   for (const spec of specs) {
     const anchor = spec.near ? zone.pois.find(p => p.key === spec.near) : null;
+    // The sampling budget, not the space. The zone has room for some thirty
+    // thousand pieces of dressing at the 3 m spacing this enforces and places
+    // under three; what stopped a spec finishing was giving up after count x 40
+    // tries, against a stack of gates (forest bias, paths, rivers, structures,
+    // solid rock, spacing) that between them reject most candidates. At x40
+    // Poison_Mushrooms placed 49 of 71; at x300 it places 61, and the whole
+    // scatter pass goes from 266ms to 368ms -- which is nothing, in a build
+    // step that runs once.
     let placed = 0, guard = 0;
-    while (placed < spec.count && guard++ < spec.count * 40) {
+    while (placed < spec.count && guard++ < spec.count * 300) {
       let x, z;
       if (anchor) {
         const a = rng() * Math.PI * 2, rr = Math.sqrt(rng()) * (spec.nearR || 22);
@@ -292,8 +300,17 @@ export function generateScatter(zone) {
       if (riversOf(zone).some(r => closestOnPolyline(x, z, r.points).dist < r.width / 2 + RIVER_BANK + 2.5)) continue;
       // Deep water takes nothing. A fen takes reeds and sedge -- pure decor
       // wades out into it -- but keeps anything solid on the bank.
-      // Undergrowth thickens and thins with the wood above it.
-      if (!spec.near && rng() > Math.min(1, 0.45 + forestAt(zone, x, z) * 0.5)) continue;
+      // Undergrowth thickens and thins with the wood above it -- but a meadow
+      // species wants the opposite of undergrowth, which is light. Scattered
+      // with the forest bias a flower pack lands under the canopy where it
+      // would never grow, and the clearings the blueprint drew stay bare.
+      // `open` inverts the bias so poppies and goldenrod find the open ground.
+      if (!spec.near) {
+        const dens = forestAt(zone, x, z);
+        const keep = spec.open ? Math.min(1, 0.22 + (1 - dens) * 0.9)
+                               : Math.min(1, 0.45 + dens * 0.5);
+        if (rng() > keep) continue;
+      }
       // a pit's own dressing (crates, barricades at the ravine dig) may sit in it; nothing else may
       if (inStructure(zone, x, z, 1.5)) continue;      // the churchyard, not the nave
       // Nothing stands INSIDE a cliff. Rock is solid ground you cannot walk on
