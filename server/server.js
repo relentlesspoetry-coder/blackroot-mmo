@@ -1529,6 +1529,9 @@ function grantFishingXp(p, amount) {
 // How long the reel-in takes. The fish has to travel from the water to the
 // rod and be seen doing it, which is most of a second.
 const REEL_TIME = 0.9;
+// The beat between a fish taking and the line coming up: the float ducks, the
+// rod tip knocks, and then it is on.
+const BITE_TIME = 0.55;
 function fishCast(p, spot) {
   const st = fisherStats(p);
   if (!st.rod) { send(p.ws, { t: 'event', kind: 'notice', text: 'You need a fishing rod.' }); p.pendingFish = null; return true; }
@@ -1545,12 +1548,12 @@ function fishCast(p, spot) {
   }
   send(p.ws, { t: 'event', kind: 'fishcast', id: spot.id });
   if (Math.random() >= catchChance(key, st.level, st.power)) return false;
-  p.inventory.push(fish.item);
-  p.fishReel = REEL_TIME;                 // the flourish everyone can see
-  p.fishCaught = fish.item;
-  send(p.ws, { t: 'event', kind: 'caught', item: fish.item, xp: fish.xp });
-  grantFishingXp(p, fish.xp);
-  sendBag(p);
+  // A fish does not appear in your hand the instant it takes. It takes, the
+  // float goes under, and THEN you strike -- and that beat is the whole tell
+  // of fishing. The catch is held here for it; stepFishing lands it when the
+  // bite runs out.
+  p.fishBite = BITE_TIME;
+  p.fishOnLine = { item: fish.item, xp: fish.xp };
   return false; // keep fishing this spot (spots never deplete)
 }
 function stepFishing(p) {
@@ -1558,6 +1561,22 @@ function stepFishing(p) {
   // the player has stopped fishing -- otherwise the flourish is cut off the
   // moment they walk away from the water.
   if (p.fishReel > 0) p.fishReel = Math.max(0, p.fishReel - DT);
+  // The bite runs down whether or not they are still stood at the water --
+  // walking off mid-bite loses the fish, which is fair and needs no message.
+  if (p.fishBite > 0) {
+    p.fishBite = Math.max(0, p.fishBite - DT);
+    if (p.fishBite === 0 && p.fishOnLine) {
+      const got = p.fishOnLine; p.fishOnLine = null;
+      if (p.pendingFish != null && p.alive) {
+        p.inventory.push(got.item);
+        p.fishReel = REEL_TIME;               // the flourish everyone can see
+        p.fishCaught = got.item;
+        send(p.ws, { t: 'event', kind: 'caught', item: got.item, xp: got.xp });
+        grantFishingXp(p, got.xp);
+        sendBag(p);
+      }
+    }
+  }
   if (p.pendingFish == null) { p.fishing = null; return; }
   const zone = zoneOf(p);
   const spot = (zone.fishingSpots || []).find(s => s.id === p.pendingFish);
@@ -1572,6 +1591,8 @@ function stepFishing(p) {
   // the fisher's own client knew anything was happening, so to every other
   // player they stood at the water doing nothing at all.
   p.fishing = { spot: spot.id, x: spot.x, z: spot.z, rod: st.rod || 'Fishing Rod', dur };
+  // Nothing new happens while a fish is already on the line or coming in.
+  if (p.fishBite > 0 || p.fishReel > 0) return;
   p.fishTimer -= DT;
   if (p.fishTimer <= 0) { p.fishTimer = dur; if (fishCast(p, spot)) p.pendingFish = null; }
 }
@@ -2664,6 +2685,12 @@ const GRAVE_TTL = 120;
 const graves = new Map();
 function killPlayer(p, how) {
   p.hp = 0; p.alive = false; p.deathTimer = RESPAWN_TIME; p.engagedWith = null;
+  // The fishing STATE, not just the intent to fish. `fishing` is what the
+  // snapshot sends and stepFishing is the only thing that clears it -- and
+  // stepFishing does not run for a corpse. A dead player lay on the bank
+  // frozen a quarter of the way through a cast, rod still in hand, until they
+  // respawned.
+  p.pendingFish = null; p.fishing = null; p.fishBite = 0; p.fishOnLine = null; p.fishReel = 0;
   p.swing = null; p.queued = null;
   for (const m of monsters.values()) if (m.zoneId === p.zoneId) { dropThreat(m, p.id); if (m.targetId === p.id) { m.targetId = null; retarget(m); } }
   systemChat(`${p.name} ${how}.`);
@@ -2911,6 +2938,12 @@ function stepPlayer(p) {
   if (inp && (inp.f !== 0 || inp.r !== 0)) {
     // Manual WASD overrides click-to-move / combat.
     p.moveTo = null; p.combatId = null; p.pendingChest = null; p.pendingPickup = null; p.pendingMine = null; p.pendingFish = null; p.pendingCook = null; p._nav = null;
+    // ...and the fishing STATE, not just the intent. Clearing pendingFish stops
+    // the casting loop, but `fishing` is what the snapshot sends, and stepFishing
+    // is the only thing that clears it -- which does not run for a corpse. A
+    // dead player lay on the bank frozen a quarter of the way through a cast,
+    // rod in hand, until they respawned.
+    p.fishing = null; p.fishBite = 0; p.fishOnLine = null; p.fishReel = 0;
     const yaw = inp.yaw;
     const fx = Math.sin(yaw), fz = Math.cos(yaw);
     const rx = Math.sin(yaw - Math.PI / 2), rz = Math.cos(yaw - Math.PI / 2);
@@ -3258,6 +3291,7 @@ setInterval(() => {
           fish: p.fishing ? {
             x: +p.fishing.x.toFixed(2), z: +p.fishing.z.toFixed(2), rod: p.fishing.rod,
             p: +Math.max(0, Math.min(1, 1 - p.fishTimer / (p.fishing.dur || 1))).toFixed(3),
+            bite: p.fishBite > 0 ? +(p.fishBite / BITE_TIME).toFixed(2) : undefined,
             reel: p.fishReel > 0 ? +(p.fishReel / REEL_TIME).toFixed(2) : undefined,
             got: p.fishReel > 0 ? p.fishCaught : undefined,
           } : (p.fishReel > 0 ? { reel: +(p.fishReel / REEL_TIME).toFixed(2), got: p.fishCaught } : undefined),
@@ -3425,6 +3459,7 @@ wss.on('connection', (ws) => {
           equipment: Object.assign(emptySlots(), { weapon: classDef(cls).startWeapon || 'Bronze Dagger' }), gear: {},
           miningXp: 0, pendingMine: null, mineTimer: 0,
           fishingXp: 0, pendingFish: null, fishTimer: 0, fishing: null, fishReel: 0, fishCaught: null,
+          fishBite: 0, fishOnLine: null,
           cookingXp: 0, pendingCook: null, cookTimer: 0,
           quests: new Map(), questDone: new Set(), questKills: {},
           questFlags: new Set(), questAnnounced: new Set(),

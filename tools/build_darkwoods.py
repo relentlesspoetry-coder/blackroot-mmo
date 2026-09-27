@@ -2010,12 +2010,21 @@ def main():
         b = at(x0, z0 + 1) * (1 - tx) + at(x0 + 1, z0 + 1) * tx
         return a * (1 - tz) + b * tz
 
-    def water_drawn(wx, wz):
+    def water_drawn(wx, wz, margin=0.0):
         """True where the client would draw water and the server would let you
-        swim -- the contour, not the cell."""
-        if field_at(wx, wz, 'wet') >= WATER_EDGE['marsh']:
+        swim -- the contour, not the cell.
+
+        `margin` asks for water with something in hand. The sheet is only built
+        where the surface is above the GROUND as well as inside the contour, and
+        at the very edge of the contour the carve has barely begun: fs_murkfen_w
+        passed every field test while its ground sat three centimetres above the
+        waterline, so no sheet was drawn over it and its ripple rings sat on
+        grass. The builder cannot evaluate terrainHeight -- that lives in the
+        client -- but the field and the carve rise together, so asking for a
+        little depth in the field asks for a little water over the bed."""
+        if field_at(wx, wz, 'wet') >= WATER_EDGE['marsh'] + margin:
             return True
-        if field_at(wx, wz, 'deep') >= WATER_EDGE['deep']:
+        if field_at(wx, wz, 'deep') >= WATER_EDGE['deep'] + margin:
             return True
         for _name, width, wp in rivers_w:         # a river channel is always water
             q = on_centreline((wx, wz), wp)
@@ -2102,6 +2111,11 @@ def main():
     # Both Ravenwater spots were out in the open pool.
     FISH_REACH = 4.5
 
+    # How far inside the contour a fishing spot has to sit before there is
+    # reliably water over the bed rather than a damp field. Measured: at the
+    # bare contour the ground can still be above the waterline.
+    WET_MARGIN = 0.055
+
     def standable(x, z):
         if water_drawn(x, z):
             return False
@@ -2168,6 +2182,28 @@ def main():
             return (x, z), 0.0
         return (round(best[0], 1), round(best[1], 1)), math.hypot(best[0] - x, best[1] - z)
 
+    def wade_out(x, z, limit=30.0):
+        """Nudge a spot off the bare edge of the contour until there is water
+        over the bed, not just a wet field."""
+        if water_drawn(x, z, WET_MARGIN):
+            return (x, z), 0.0
+        best, bd = None, 1e18
+        for ring in range(1, int(limit / cell)):
+            for i in range(max(8, ring * 8)):
+                a = i / max(8, ring * 8) * math.tau
+                px2 = x + math.cos(a) * ring * cell
+                pz2 = z + math.sin(a) * ring * cell
+                if not water_drawn(px2, pz2, WET_MARGIN):
+                    continue
+                d = math.hypot(px2 - x, pz2 - z)
+                if d < bd:
+                    bd, best = d, (px2, pz2)
+            if best:
+                break
+        if not best:
+            return (x, z), 0.0
+        return (round(best[0], 1), round(best[1], 1)), bd
+
     A('  fishingSpots: [')
     moved = 0
     pulled = 0
@@ -2176,6 +2212,9 @@ def main():
         wx, wz = jetty_at if fid == 'fs_jetty' else world(px, py)
         (wx, wz), shift = snap_to_water(wx, wz)
         if shift > 0.5:
+            moved += 1
+        (wx, wz), wade = wade_out(wx, wz)
+        if wade > 0.5:
             moved += 1
         (wx, wz), drag = pull_to_bank(wx, wz)
         if drag > 0.5:

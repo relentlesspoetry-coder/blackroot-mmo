@@ -4174,6 +4174,10 @@ function updateFlyers(dt) {
 // ---------------------------------------------------------------------------
 const fishRigs = new Map();     // playerId -> { group, line, pos, float, fish, fishName }
 const LINE_PTS = 10;
+// Where in the cast cycle the float leaves the rod and where it lands. These
+// are the same fractions the arm keyframes use for the whip, so the float
+// leaves the tip on the forward stroke rather than at some unrelated moment.
+const CAST_STARTS = 0.16, CAST_LANDS = 0.34, CAST_ARC = 2.6;
 
 function fishRigFor(id) {
   let r = fishRigs.get(id);
@@ -4210,6 +4214,56 @@ function dropFishRig(id) {
   fishRigs.delete(id);
 }
 
+// A splash: a ring that spreads and thins on the surface, and a handful of
+// droplets thrown up out of it. Water had nothing like this -- a float landed
+// on a lake with no more disturbance than a decal, and a fish left it in
+// silence. Pooled, because a busy shore makes a lot of them.
+const splashes = [];
+const SPLASH_POOL = 18;
+function waterSplash(x, z, scale = 1) {
+  let s = splashes.find(q => !q.live);
+  if (!s) {
+    if (splashes.length >= SPLASH_POOL) return;
+    const g = new THREE.Group();
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.10, 0.20, 20),
+      new THREE.MeshBasicMaterial({ color: 0xdff2f8, transparent: true, opacity: 0.8,
+        side: THREE.DoubleSide, depthWrite: false }));
+    ring.rotation.x = -Math.PI / 2;
+    const drops = [];
+    const dg = new THREE.SphereGeometry(0.045, 6, 5);
+    const dm = new THREE.MeshBasicMaterial({ color: 0xe8f6fb, transparent: true, opacity: 0.9, depthWrite: false });
+    for (let i = 0; i < 7; i++) { const d = new THREE.Mesh(dg, dm); g.add(d); drops.push(d); }
+    g.add(ring); scene.add(g);
+    s = { g, ring, drops, live: false, t: 0, dur: 0.75, scale: 1, vel: [] };
+    splashes.push(s);
+  }
+  s.live = true; s.t = 0; s.scale = scale;
+  s.g.position.set(x, RIVER_WATER_Y + 0.03, z);
+  s.g.visible = true;
+  s.vel = s.drops.map(() => {
+    const a = Math.random() * Math.PI * 2, r = (0.6 + Math.random() * 0.9) * scale;
+    return [Math.cos(a) * r, (1.5 + Math.random() * 1.6) * scale, Math.sin(a) * r];
+  });
+  for (const d of s.drops) d.position.set(0, 0, 0);
+}
+function updateSplashes(dt) {
+  for (const s of splashes) {
+    if (!s.live) continue;
+    s.t += dt;
+    const u = s.t / s.dur;
+    if (u >= 1) { s.live = false; s.g.visible = false; continue; }
+    const k = 1 + u * 5 * s.scale;
+    s.ring.scale.set(k, k, 1);
+    s.ring.material.opacity = 0.8 * (1 - u) * (1 - u);
+    for (let i = 0; i < s.drops.length; i++) {
+      const v = s.vel[i], t = s.t;
+      s.drops[i].position.set(v[0] * t, Math.max(0, v[1] * t - 4.9 * t * t), v[2] * t);
+      s.drops[i].material.opacity = 0.9 * (1 - u);
+      s.drops[i].visible = s.drops[i].position.y > 0.001;
+    }
+  }
+}
+
 const _rtA = new THREE.Vector3(), _rtB = new THREE.Vector3();
 function updateFishingLines(dt) {
   const live = new Set();
@@ -4223,20 +4277,61 @@ function updateFishingLines(dt) {
     const r = fishRigFor(id);
     r.t += dt;
     tip.getWorldPosition(_rtA);               // where the line leaves the rod
-    const reel = e.fish.reel || 0;
-    // The hook end: out at the float normally, hauled back toward the tip as
-    // the fish comes in. Eased, so it accelerates out of the water.
+    const reel = e.fish.reel || 0, bite = e.fish.bite || 0, ph = e.fish.p || 0;
     const hx = e.fish.x != null ? e.fish.x : _rtA.x;
     const hz = e.fish.z != null ? e.fish.z : _rtA.z;
-    const k = reel > 0 ? smooth(1 - reel) : 0;
-    _rtB.set(hx + (_rtA.x - hx) * k,
-             RIVER_WATER_Y + 0.02 + (_rtA.y - RIVER_WATER_Y - 0.02) * k,
-             hz + (_rtA.z - hz) * k);
-    // The float rides the hook end and bobs; while a fish is on it, it is out
-    // of the water and swinging, so the bob stops.
-    r.float.position.copy(_rtB);
-    r.float.position.y += reel > 0 ? 0 : Math.sin(r.t * 2.4) * 0.03;
-    r.float.rotation.z = reel > 0 ? Math.sin(r.t * 9) * 0.35 : Math.sin(r.t * 1.7) * 0.10;
+    const WY = RIVER_WATER_Y + 0.02;
+    if (reel > 0) {
+      // Coming in: the hook end is hauled from the water back to the rod tip,
+      // eased so it accelerates out of the water rather than gliding.
+      const k = smooth(1 - reel);
+      _rtB.set(hx + (_rtA.x - hx) * k, WY + (_rtA.y - WY) * k, hz + (_rtA.z - hz) * k);
+      r.float.position.copy(_rtB);
+      r.float.rotation.z = Math.sin(r.t * 9) * 0.35;
+      if (!r.splashedOut) { r.splashedOut = true; waterSplash(hx, hz, 1.25); }
+    } else if (bite > 0) {
+      // A BITE outranks the cast phase. When a cast resolves the server resets
+      // the cycle to 0, so during the bite `p` reads as the start of a throw --
+      // and the float was being lobbed through the air at the exact moment it
+      // should have been pulled under. Measured: the dunk reached one
+      // centimetre, because it never ran.
+      if (!r.landed) { r.landed = true; waterSplash(hx, hz, 0.9); }
+      r.splashedOut = false;
+      const dunk = 0.22 + Math.sin((1 - bite) * 34) * 0.08;
+      _rtB.set(hx, WY - dunk, hz);
+      r.float.position.copy(_rtB);
+      r.float.rotation.z = Math.sin(r.t * 22) * 0.55;
+      if (r.t - (r.lastBiteRing || -9) > 0.18) {
+        r.lastBiteRing = r.t; waterSplash(hx, hz, 0.42);   // the rings a take makes
+      }
+    } else if (ph < CAST_LANDS) {
+      // THE CAST. The float used to teleport onto the spot the instant the
+      // cycle turned over; now it is thrown, and it travels. Out of the rod
+      // tip on the whip, over in an arc, and down onto the water -- which is
+      // the part that makes a cast read as a cast rather than as a man
+      // waving a stick at a float that was already there.
+      const t = Math.max(0, (ph - CAST_STARTS) / (CAST_LANDS - CAST_STARTS));
+      const k = smooth(Math.min(1, t));
+      _rtB.set(_rtA.x + (hx - _rtA.x) * k, 0, _rtA.z + (hz - _rtA.z) * k);
+      // The arc has to suit the cast. A fixed 2.6 m lob measured as the float
+      // peaking 3.8 m up on a four-metre throw -- a mortar, not a cast. Scale
+      // it with the distance and cap it, so a flick to the near bank stays
+      // flat and a long cast still gets some air.
+      const reach = Math.hypot(hx - _rtA.x, hz - _rtA.z);
+      _rtB.y = _rtA.y + (WY - _rtA.y) * k
+             + Math.sin(Math.PI * k) * Math.min(CAST_ARC, reach * 0.28);
+      r.float.position.copy(_rtB);
+      r.float.rotation.z = Math.sin(r.t * 14) * 0.5;      // tumbling through the air
+      r.splashedOut = false;
+      r.landed = false;
+    } else {
+      // On the water, waiting. A bite ducks it under and shakes it.
+      if (!r.landed) { r.landed = true; waterSplash(hx, hz, 0.9); }
+      r.splashedOut = false;
+      _rtB.set(hx, WY + Math.sin(r.t * 2.4) * 0.03, hz);   // riding the ripples
+      r.float.position.copy(_rtB);
+      r.float.rotation.z = Math.sin(r.t * 1.7) * 0.10;
+    }
     r.float.visible = true;
     // The line sags between rod tip and hook. A straight line looks like wire;
     // the sag is what makes it read as line under its own weight.
@@ -5045,6 +5140,26 @@ function buildFishingSpots() {
     g.traverse(o => { if (o.isMesh) { o.userData.pickKind = 'fishspot'; o.userData.pickId = sp.id; } });
     scene.add(g);
     fishSpots.push({ id: sp.id, tier: sp.tier, x: sp.x, z: sp.z, ripples, phase: Math.random() * 6 });
+    // Is there actually WATER here? zonecheck can ask the blurred field, but
+    // the sheet is only built where the surface is above the GROUND as well,
+    // and the builder cannot evaluate terrainHeight -- it lives here. So the
+    // last word on it is checked here, where the real function is, the same
+    // way the ore instance mapping is. fs_murkfen_w passed every field test
+    // with its bed three centimetres proud of the waterline: no sheet, and a
+    // set of ripple rings turning on the grass.
+    if (location.search.includes('debug')) {
+      const surface = RIVER_WATER_Y + 0.02, h = terrainHeight(sp.x, sp.z);
+      const E = waterEdge();
+      const inContour = terrainField(sp.x, sp.z, 'wet') >= E.marsh
+                     || terrainField(sp.x, sp.z, 'deep') >= E.deep;
+      const inRiver = worldRivers().some(r =>
+        distToPolyline(sp.x, sp.z, r.points) < riverWaterHalf(r.width));
+      if (!inRiver && !(inContour && h <= surface))
+        console.error(`[fish] ${sp.id} has no water over it: bed at ${h.toFixed(2)}, `
+          + `surface ${surface.toFixed(2)}, inside contour ${inContour} `
+          + '— its ripples are drawing on dry ground');
+
+    }
   }
 }
 
@@ -6288,6 +6403,8 @@ function animateEntity(rec, e, kind, dt) {
     //   0.14-0.26  the cast    whipped forward and through, torso uncoils
     //   0.26-1.00  the wait    rod held out and slightly up, drifting, the
     //                          tip nodding on the water
+    //   bite        the strike  something takes; the tip knocks and the hook
+    //                          is set with a short sharp lift
     //
     // One-handed throughout, because it has to be: a sweep over both shoulder
     // chains could not bring the left hand within 0.38 m of the rod butt, and
@@ -6302,8 +6419,23 @@ function animateEntity(rec, e, kind, dt) {
     if (fs && punch <= 0) {
       rig.atk = 0;                       // never the attack swing; that was the old "animation"
       rec.holdLute = false;
-      const reel = fs.reel || 0;
-      if (reel > 0) {
+      const reel = fs.reel || 0, bite = fs.bite || 0;
+      if (bite > 0) {
+        // THE STRIKE. Something takes, the tip knocks down, and the angler
+        // sets the hook -- a short sharp lift, not the long haul of the reel.
+        // Without this the fish simply appeared in the bag between one frame
+        // and the next; this is the beat that tells you it happened.
+        const u = 1 - bite;                       // 0 at the take, 1 as it ends
+        const set = Math.sin(Math.PI * Math.min(1, u * 1.6));
+        rArm  = -0.40 - 0.85 * set;
+        rArmZ = -0.20 - 0.10 * set;
+        rFore = [-0.55 - 0.50 * set, 0, 0.12];
+        lArm  = -0.16 - 0.30 * set;
+        lArmZ = -0.22 - 0.12 * set;
+        lFore = [-0.45 - 0.35 * set, 0, 0.10];
+        torsoX += -0.09 * set;
+        torsoY += 0.07 * set;
+      } else if (reel > 0) {
         // Reel-in: the rod comes up and back against the weight of the fish,
         // and the LEFT hand winds -- small fast circles at the reel, which is
         // the only part of this that says "reeling" rather than "lifting".
@@ -11239,7 +11371,7 @@ function animate() {
   _pf('markers', () => updateMarkers(dt));
   _pf('lights', () => updateLightGroups());
   _pf('flyers', () => updateFlyers(dt));
-  _pf('fishline', () => updateFishingLines(dt));
+  _pf('fishline', () => { updateFishingLines(dt); updateSplashes(dt); });
   _pf('poi', () => updatePoiLabels());
   _pf('plates', () => { updateNameplates(); updateGravePlates(); updatePendingGrave(); });
   _pf('npcmk', () => updateNpcMarkers());

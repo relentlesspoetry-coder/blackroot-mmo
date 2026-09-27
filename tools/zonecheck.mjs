@@ -232,24 +232,43 @@ console.log('\nThe Dark Woods — zone invariants\n');
                  : `${spots.length} spots, 0 on land`);
   // ...and you have to be able to STAND somewhere to fish it. A spot in the
   // middle of a lake is as unusable as one in a field.
-  // Standing room is dry walkable ground OR a deck: the jetty and the plank
-  // walks are built out over the fen precisely so you can stand where there is
-  // water under you, and a check that only counted dry land called the jetty
-  // spot unreachable while it is the most obviously reachable one there is.
-  const FISH_REACH = 4.5;
+  // "A bank to stand on" was the wrong rule twice over. Asking for DRY land
+  // called the jetty unreachable -- it is a plank walk built out over the fen
+  // precisely so you can stand where there is water under you -- and asking
+  // the blurred field instead passed fs_creek on ground a metre and a half
+  // UNDER the waterline, because beside a carved channel the field says "not
+  // water" over a submerged bed.
+  //
+  // The rule that actually matters is the one the player feels: can you fish
+  // it without swimming? Wading is fine. That is waterDepthAt, which is purely
+  // field-based, so it can be reproduced here exactly rather than approximated.
+  const FISH_REACH = 4.5, DEEP_RAMP = 0.29, SWIM_IN = 0.82;
+  const wadeDepth = (x, zz) => {
+    let d = 0;
+    for (const r of (z.rivers || [])) {
+      let m = 1e9;
+      for (let i = 0; i < r.points.length - 1; i++) m = Math.min(m, segDist(x, zz, r.points[i], r.points[i + 1]));
+      if (m < r.width / 2) d = Math.max(d, Math.min(1, 0.45 + (1 - m / (r.width / 2)) * 0.8));
+    }
+    const dg = terrainFieldAt(z, x, zz, 'deep'), wg = terrainFieldAt(z, x, zz, 'wet');
+    if (dg >= E.deep) { const t = Math.min(1, (dg - E.deep) / DEEP_RAMP); d = Math.max(d, 0.30 + 0.70 * (t * t * (3 - 2 * t))); }
+    else if (wg >= E.marsh) d = Math.max(d, 0.35);
+    return d;
+  };
   const unreachable = spots.filter(f => {
     for (let a = 0; a < 24; a++) {
       const ang = a / 24 * Math.PI * 2;
       for (const rr of [1.6, 2.4, 3.2, 4.0, FISH_REACH - 0.1]) {
         const x = f.x + Math.cos(ang) * rr, zz = f.z + Math.sin(ang) * rr;
-        if (onDeck(x, zz)) return false;
-        if (!drawn(x, zz) && !isSolid(terrainAt(z, x, zz))) return false;
+        if (onDeck(x, zz)) return false;                       // the planks
+        if (isSolid(terrainAt(z, x, zz))) continue;            // cliff or off-map
+        if (wadeDepth(x, zz) < SWIM_IN) return false;          // you can stand here
       }
     }
     return true;
   });
-  ok('every fishing spot has a bank to stand on', unreachable.length === 0,
-      unreachable.length ? unreachable.map(f => f.id).join(', ') : `${spots.length} spots reachable`);
+  ok('every fishing spot can be fished without swimming', unreachable.length === 0,
+      unreachable.length ? unreachable.map(f => f.id).join(', ') : `${spots.length} spots wadeable`);
 
   // Every species the game can catch needs water to catch it in. Pike had a
   // level, an xp value, an item, a cooked form and a model, and no tier 4 spot
