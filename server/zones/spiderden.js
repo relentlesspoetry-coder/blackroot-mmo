@@ -69,6 +69,11 @@ export const spiderden = {
     { x: 0, z: -143, r: 5.0, to: 'darkwoods', spawn: { x: -0.4, z: 266.0, yaw: 0 } },
   ],
 
+  npcs: [
+    { id: 'gedd', name: 'Gedd Marrow', x: 5, z: -124, model: 'Male', poi: 'mouth', yaw: 0,
+      idle: 'I got as far as the second room. That is further than the others.' },
+  ],
+
   spawns: [
     { type: 'spider', level: 7, count: 5, cx: 4, cz: -62, r: 22, roam: 14 },
     { type: 'bat', level: 6, count: 6, cx: 4, cz: -62, r: 24, roam: 16 },

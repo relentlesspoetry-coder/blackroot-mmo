@@ -82,6 +82,14 @@ ELITES = [
     ('cave_guardian', 'The Web-Bound', 15, 'bones', 3, -4),
 ]
 
+# The den had no voice at all. Somebody the merchant sent in ahead of you is
+# still at the mouth, having got that far back out and no further -- which gives
+# the cave a turn-in point and a reason to stop on the way past.
+NPCS = [
+    ('gedd', 'Gedd Marrow', 'Male', 'mouth', 5, 4,
+     'I got as far as the second room. That is further than the others.'),
+]
+
 CHESTS = [
     ('den_larder', 'larder', 4, -3),
     ('den_seep',   'seep',  -5,  6),
@@ -235,6 +243,14 @@ def main():
       f"spawn: {{ x: {DARKWOODS_MOUTH[0]}, z: {DARKWOODS_MOUTH[1]}, yaw: 0 }} }},")
     A('  ],')
     A('')
+    A('  npcs: [')
+    for nid, nname, nmodel, rk, dx, dz, idle in NPCS:
+        x, z, _r = room(rk)
+        A(f"    {{ id: '{nid}', name: '{nname}', x: {x + dx}, z: {z + dz}, "
+          f"model: '{nmodel}', poi: '{rk}', yaw: 0,")
+        A(f"      idle: '{idle}' }},")
+    A('  ],')
+    A('')
     A('  spawns: [')
     for typ, lvl, n, rk, r, roam in SPAWNS:
         x, z, _r = room(rk)
@@ -278,6 +294,8 @@ def main():
     models = [f'{MODEL_DIR[m]}/{m}' for m in used] + [
         'Cave_Spider', 'Venom_Spider', 'Crystal_Spider', 'Bat', 'Cave_Broodmother',
         'Cave_Guardian']
+    # NPC bodies are NOT listed here: the client loads Male_Base/Female_Base by
+    # its own path, and the Dark Woods manifest lists none either.
     A('  models: [')
     for i in range(0, len(models), 4):
         A('    ' + ' '.join(f"'{m}'," for m in models[i:i + 4]))
