@@ -363,10 +363,10 @@ export const QUESTS = {
   // --- The Wandering Merchant, Abandoned Camp -------------------------------
   intothedark: {
     id: 'intothedark', name: 'Into the Dark', giver: 'merchant', minLevel: 4, requires: ['shrine'],
-    summary: 'Find the hidden cave and recover the smugglers’ cache.',
-    intro: 'There’s a cave mouth west of the ravine — my partners went in with my stock and didn’t come out. The niche they used is just inside. Fetch what’s mine and I’ll not ask what you keep.',
-    active: 'Find the cave mouth west of the ravine, then the Smuggler’s Niche inside.',
-    done: 'My cache, at last. The deeper chambers are yours to plunder, if you’ve the nerve.',
+    summary: 'Find the Spider Den and recover the smugglers’ cache from its mouth.',
+    intro: 'There’s an arch of stone south of the camp with a hole under it — my partners went in with my stock and didn’t come out. The niche they used is just outside the mouth. Fetch what’s mine and I’ll not ask what you keep.',
+    active: 'The stone arch south of the camp. The Smuggler’s Niche is by the mouth.',
+    done: 'My cache, at last. The chambers below are yours to plunder, if you’ve the nerve.',
     objectives: [
       { type: 'chest', zone: 'darkwoods', chest: 'smug', label: 'Open the Smuggler\'s Niche' },
     ],
@@ -388,15 +388,139 @@ export const QUESTS = {
   },
   silk: {
     id: 'silk', name: 'Silk and Venom', giver: 'merchant', minLevel: 5, requires: ['intothedark'],
-    summary: 'Harvest spider silk and venom from the Crystal Hollow.',
-    intro: 'Spider silk sells better than anything I’ve carried. Venom sacs too, if your hands are steady. The deep chambers are thick with them.',
-    active: 'Four bundles of silk, two venom sacs. The deep spiders carry the best.',
+    summary: 'Harvest spider silk and venom from inside the Spider Den.',
+    intro: 'Spider silk sells better than anything I’ve carried. Venom glands too, if your hands are steady. Go through the arch — the gallery under it is thick with them.',
+    active: 'Four bundles of silk, two venom glands. The ones below the arch carry the best.',
     done: 'Steady hands after all. Pleasure doing business.',
     objectives: [
       { type: 'collect', item: 'Spider Silk', count: 4, label: 'Spider silk' },
-      { type: 'collect', item: 'Venom Sac', count: 2, label: 'Venom sacs' },
+      // 'Venom Sac' is a real item but NOTHING drops it and no one sells it, so
+      // this quest could never be finished. The spiders carry venom GLANDS.
+      { type: 'collect', item: 'Venom Gland', count: 2, label: 'Venom glands' },
     ],
     reward: { xp: 700, gold: 300 },
+  },
+
+  // ==========================================================================
+  // THE SPIDER DEN — the descent. `intothedark` only ever got you to the niche
+  // outside the mouth, because for a long time there was nothing behind it.
+  // There is now: eight chambers down to the brood.
+  // ==========================================================================
+  dw_denmouth: {
+    id: 'dw_denmouth', name: 'Down the Throat', giver: 'merchant', minLevel: 8, requires: ['intothedark'],
+    summary: 'Go through the arch, into the den, and find what my partners left in the larder.',
+    intro: 'You fetched my cache from the doorstep. My partners got further than that. There is a side chamber past the first gallery where they kept the good stock — cocoons hanging in it now, I am told. I am not going. You are.',
+    active: 'Through the arch. Past the gallery, into the larder.',
+    done: 'They kept better stock than I remembered. You have earned the difference.',
+    objectives: [
+      { type: 'reach', zone: 'spiderden', poi: 'gallery', label: 'Reach the webbed gallery' },
+      { type: 'chest', zone: 'spiderden', chest: 'den_larder', label: 'Open the larder cache' },
+      { type: 'kill', target: 'spider', count: 8, label: 'Cave spiders' },
+    ],
+    reward: { xp: 900, gold: 220 },
+  },
+  dw_deepden: {
+    id: 'dw_deepden', name: 'What the Shaft Goes Down To', giver: 'alric', minLevel: 10, requires: ['dw_denmouth'],
+    summary: 'Follow the shaft down to the hollow and the seep, and come back able to describe them.',
+    intro: 'Nine places on this map will kill you and I can name them all. I cannot name what is under that arch, and it has started bothering me. Go down the shaft. Find the bottom of it. Come back and tell me the shape of the place.',
+    active: 'Down the shaft: the hollow, then the seep beyond it.',
+    done: 'A hall, and a wet room with crystals in it. Good. Now I can name it.',
+    objectives: [
+      { type: 'reach', zone: 'spiderden', poi: 'hollow', label: 'Reach the hollow' },
+      { type: 'reach', zone: 'spiderden', poi: 'seep', label: 'Reach the seep' },
+      { type: 'chest', zone: 'spiderden', chest: 'den_seep', label: 'Open the cache in the seep' },
+      { type: 'kill', target: 'venom_spider', count: 10, label: 'Venom spiders' },
+    ],
+    reward: { xp: 1300, gold: 320, items: ['Pristine Silk'] },
+  },
+  dw_webbound: {
+    id: 'dw_webbound', name: 'The Web-Bound', giver: 'alric', minLevel: 13, requires: ['dw_deepden'],
+    summary: 'Something on the bone floor is wearing the last party that went down there.',
+    intro: 'You described a floor of bones. You did not describe what is standing on it, which tells me you did not look. Something down there is wrapped in enough silk to stand up on its own. Put it down.',
+    active: 'The bone floor, east off the hollow. Whatever is standing on it.',
+    done: 'Wrapped in silk and still moving. I have seen a great deal and I had not seen that.',
+    objectives: [
+      { type: 'slay', name: 'The Web-Bound', label: 'Destroy The Web-Bound' },
+      { type: 'collect', item: 'Sticky Webbing', count: 3, label: 'Silk from the wrapping' },
+    ],
+    reward: { xp: 1700, gold: 420, items: ['Bone Charm'] },
+  },
+  dw_denmother: {
+    id: 'dw_denmother', name: 'The Den Mother', giver: 'alric', minLevel: 14, requires: ['dw_webbound'],
+    summary: 'Everything in the den came from one chamber at the bottom of it. End that.',
+    intro: 'Egg clusters in every room, and nothing that laid them anywhere you looked. They all came from the same place. It is at the bottom, past the hollow, and it is still laying. Finish this before the woods have to.',
+    active: 'The brood chamber, at the very bottom. She is in it.',
+    done: 'Then it is done, and the Dark Woods is one horror shorter. That is not nothing.',
+    objectives: [
+      { type: 'reach', zone: 'spiderden', poi: 'brood', label: 'Reach the brood chamber' },
+      { type: 'slay', name: 'The Den Mother', label: 'Slay The Den Mother' },
+      { type: 'chest', zone: 'spiderden', chest: 'den_brood', label: 'Take what is in her nest' },
+    ],
+    reward: { xp: 2400, gold: 650, items: ['Spiderfang Dagger'] },
+  },
+
+  // ==========================================================================
+  // RAVENWATER POOL — the pool had nothing in it at all until recently, and
+  // nothing sent you to it either.
+  // ==========================================================================
+  dw_ravenwater: {
+    id: 'dw_ravenwater', name: 'Deep Waters', giver: 'alric', minLevel: 8, requires: ['shrine'],
+    summary: 'Walk the shore of Ravenwater and find out what is living in the dead trees.',
+    intro: 'The pool north-west of here. Dead trees standing in it, marsh all round the edge, and every so often somebody who fishes it does not come back up the path. Walk the shore. Tell me what is in there.',
+    active: 'The shore of Ravenwater. There is a cache somewhere on the bank, if the stories are right.',
+    done: 'Bats in the dead trees and spiders in the reeds. That is the half of it I can do something about.',
+    objectives: [
+      { type: 'reach', zone: 'darkwoods', poi: 'ravenwater', label: 'Reach Ravenwater Pool' },
+      { type: 'kill', target: 'bat', count: 8, label: 'Bats over the water' },
+      { type: 'chest', zone: 'darkwoods', chest: 'ravenmere', label: 'Find the cache on the bank' },
+    ],
+    reward: { xp: 850, gold: 200 },
+  },
+  dw_drowned: {
+    id: 'dw_drowned', name: 'The Drowned Warden', giver: 'alric', minLevel: 11, requires: ['dw_ravenwater'],
+    summary: 'Something has been at the bottom of Ravenwater long enough to go green.',
+    intro: 'You said bats and spiders. Somebody else said a shape standing in the shallows that did not move when they shouted at it, and was closer when they looked again. One of you is wrong and I would rather it was not you.',
+    active: 'Ravenwater. Whatever is standing in the shallows.',
+    done: 'Moss to the shoulders and still walking. The pool can keep its other secrets.',
+    objectives: [
+      { type: 'slay', name: 'The Drowned Warden', label: 'Put down The Drowned Warden' },
+    ],
+    reward: { xp: 1400, gold: 360, items: ['Crystalline Relic'] },
+  },
+
+  // ==========================================================================
+  // THE MURKFEN — the plank walks now go somewhere, so somebody should send
+  // you out along them.
+  // ==========================================================================
+  dw_plankroad: {
+    id: 'dw_plankroad', name: 'The Plank Road', giver: 'hermit', minLevel: 6, requires: ['rotfen'],
+    summary: 'Walk the plank road out across the fen and see what is left on the islands.',
+    intro: 'The walks hold. Mostly. There are two patches of dry ground out in the middle and men have been leaving things on both of them for longer than I have lived here. Scavengers are at one of the caches now. Get there first.',
+    active: 'Out along the planks. The cache is on the southern island.',
+    done: 'Dry, and you kept your feet. That puts you ahead of most.',
+    objectives: [
+      { type: 'chest', zone: 'darkwoods', chest: 'fencache', label: 'Open the cache on the island' },
+      { type: 'kill', target: 'goblin_scavenger', count: 9, label: 'Fen scavengers' },
+    ],
+    reward: { xp: 620, gold: 170 },
+  },
+
+  // ==========================================================================
+  // THE FALLEN CHAPEL — it grew a graveyard and an altar, and neither had a
+  // reason to walk into the nave.
+  // ==========================================================================
+  dw_reliquary: {
+    id: 'dw_reliquary', name: 'What the Chapel Kept', giver: 'rowan', minLevel: 8, requires: ['dw_rattlecap'],
+    summary: 'The chapel on the hill still has its altar. Find out whether it still has what was on it.',
+    intro: 'The east window is still standing up there, which means the altar under it is too. There was a reliquary on that altar when this was somebody’s chapel. I would rather we had it than whatever is nesting in the nave.',
+    active: 'The Fallen Chapel. The altar is at the east end, under the big window.',
+    done: 'Still in one piece after all this time. Keep the lamp lit on the way back down.',
+    objectives: [
+      { type: 'reach', zone: 'darkwoods', poi: 'chapel', label: 'Reach the Fallen Chapel' },
+      { type: 'chest', zone: 'darkwoods', chest: 'reliquary', label: 'Recover the reliquary' },
+      { type: 'kill', target: 'bat', count: 6, label: 'Clear the nave' },
+    ],
+    reward: { xp: 900, gold: 240 },
   },
 };
 

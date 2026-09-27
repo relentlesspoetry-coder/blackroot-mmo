@@ -404,6 +404,11 @@ const GOBLIN_DROPS = [
   ['Iron Arrowheads', 5, 10, [40, 25, 20, 8, 80, 20]],
   ['Cave Mushroom', 1, 2, [15, 12, 35, 25, 6, 20]],
   ['Goblin Tooth', 1, 1, [30, 35, 20, 30, 40, 12]],
+  // Thin the Trail asks a level-1 player for four goblin ears, and nothing in
+  // the game dropped one -- the item existed, so the quest checker passed it
+  // and the quest could never be finished. Common, because it is the second
+  // quest a new player takes.
+  ['Goblin Ear', 1, 1, [3, 3, 3, 3, 4, 4]],
   ['Uncut Quartz', 1, 1, [150, 40, 200, 200, 100, 60]],
   ['Rusty Dagger', 1, 1, [80, 200, 150, 250, 300, 150]],
   ['Worn Pickaxe', 1, 1, [300, 100, 500, 500, 750, 250]],

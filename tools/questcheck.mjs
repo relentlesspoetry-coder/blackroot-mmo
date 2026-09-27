@@ -8,8 +8,9 @@ import { QUESTS, QUEST_IDS, questProgress, canStart } from '../server/quests.js'
 import { ITEMS } from '../server/items.js';
 import { MONSTER_TEMPLATES } from '../server/balance.js';
 import { darkwoods } from '../server/zones/darkwoods.js';
+import { spiderden } from '../server/zones/spiderden.js';
 
-const ZONES = { darkwoods };   // one zone now
+const ZONES = { darkwoods, spiderden };
 
 // Lookups from the real world data.
 const npcs = new Set(), pois = new Set(), chests = new Set(), spawnTypes = new Set(), eliteNames = new Set(), dropItems = new Set();
@@ -26,6 +27,20 @@ for (const t of Object.values(MONSTER_TEMPLATES)) {
 }
 const canObtainItem = (name) => !!ITEMS[name] || dropItems.has(name);
 
+// What a player can actually come by: dropped by something that SPAWNS in a
+// zone, or picked up off the ground / a node rather than a corpse.
+const droppedBySpawning = new Set();
+for (const [key, t] of Object.entries(MONSTER_TEMPLATES)) {
+  if (!spawnTypes.has(key)) continue;
+  for (const d of [...(t.droptable || []), ...(t.loot || [])]) if (d.item) droppedBySpawning.add(d.item);
+}
+// Gathered rather than killed for: mined ore, fished, cooked, picked. These have
+// no drop table behind them, so the spawn test above would reject them wrongly.
+const gatherable = new Set([
+  'Glowcap', 'Browncap', 'Mooncap', 'Iron Ore', 'Rope', 'Supply Crate',
+  'Stolen Pendant', 'Egg', 'Feather', 'Cowhide', 'Leather Scraps',
+]);
+
 let errors = 0, warns = 0;
 const err = (id, m) => { console.log(`  ✗ [${id}] ${m}`); errors++; };
 const warn = (id, m) => { console.log(`  ! [${id}] ${m}`); warns++; };
@@ -37,7 +52,15 @@ for (const id of QUEST_IDS) {
   for (const r of (q.requires || [])) if (!QUESTS[r]) err(id, `requires unknown quest '${r}'`);
   for (const it of (q.reward?.items || [])) if (!ITEMS[it]) err(id, `reward item '${it}' not in ITEMS`);
   for (const o of q.objectives) {
-    if (o.type === 'collect') { if (!canObtainItem(o.item)) err(id, `collect item '${o.item}' is not obtainable`); }
+    if (o.type === 'collect') {
+      // "Is it a real item" is not the same question as "can a player get one".
+      // 'Venom Sac' is a defined item that nothing drops and nobody sells, and
+      // the Silk and Venom quest asked for two of them -- it passed this check
+      // for months and could never be finished.
+      if (!canObtainItem(o.item)) err(id, `collect item '${o.item}' is not obtainable`);
+      else if (!gatherable.has(o.item) && !droppedBySpawning.has(o.item))
+        err(id, `collect item '${o.item}' exists but nothing that spawns drops it`);
+    }
     else if (o.type === 'kill') { if (!MONSTER_TEMPLATES[o.target]) err(id, `kill target '${o.target}' has no template`); else if (!spawnTypes.has(o.target)) warn(id, `kill target '${o.target}' never spawns`); }
     else if (o.type === 'slay') { if (!eliteNames.has(o.name)) err(id, `slay target '${o.name}' is not a named elite`); }
     else if (o.type === 'reach') { if (!pois.has(`${o.zone}:${o.poi}`)) err(id, `reach POI '${o.zone}:${o.poi}' does not exist`); }
