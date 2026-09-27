@@ -6,7 +6,7 @@
 
 import { QUESTS, QUEST_IDS, questProgress, canStart, recordUse } from '../server/quests.js';
 import { ITEMS } from '../server/items.js';
-import { MONSTER_TEMPLATES, STARTING_INVENTORY } from '../server/balance.js';
+import { MONSTER_TEMPLATES, STARTING_INVENTORY, CLASSES, rollGear } from '../server/balance.js';
 import { ORES, oreFromModel, PICKAXES } from '../server/mining.js';
 import { FISH, RODS } from '../server/fishing.js';
 import { COOKABLES } from '../server/cooking.js';
@@ -64,8 +64,18 @@ for (const [zid, z] of Object.entries(ZONES)) {
   for (const o of (z.objects || [])) if (o.gives) note(o.gives.item, `${zid} object ${o.id}`);
   for (const c of (z.chests || [])) if (c.item) note(c.item, `${zid} chest ${c.id}`);
   // A vein's ore is the item; a fishing spot's tier decides which fish.
-  for (const oreKey of Object.keys(ORES)) {
-    if ((z.scatter || []).some(sc => oreFromModel(sc.m) === oreKey)) note(oreKey, `${zid} ore veins`);
+  //
+  // This read `sc.m` and noted the bare ore key. A scatter SPEC carries
+  // `model`; only a PLACED row carries `m`. So the test was undefined === 'Iron'
+  // for every vein in the world and the branch noted nothing -- and when it did
+  // fire it would have recorded 'Silver' while the item is called 'Silver Ore'.
+  // Two ways to be silently empty in one line. Iron Ore only looked fine
+  // because goblins happen to drop it; Silver, Gold and Coal come out of the
+  // rock and nothing else, so the moment a quest asked for silver the hole
+  // showed. (Which is how it was found: the check failed on a real quest.)
+  for (const sc of (z.scatter || [])) {
+    const ore = oreFromModel(sc.model || sc.m);
+    if (ore) note(`${ore} Ore`, `${zid} ${ore.toLowerCase()} veins`);
   }
   if ((z.fishingSpots || []).length) for (const [k, f] of Object.entries(FISH)) note(f.item || k, `${zid} fishing`);
 }
@@ -276,6 +286,70 @@ for (const id of QUEST_IDS) {
     const have = tools.filter(reachable);
     if (!have.length)
       err(usedBy[0], `${skill} is asked for but no ${skill} tool is obtainable anywhere (${tools.join(', ')})`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Every item the game defines must be reachable from somewhere.
+//
+// A defined item with no source is a trap lying in wait for whoever writes the
+// next quest: it passes "is this a real item", it autocompletes, it has a
+// value and a description, and it can never be held. 'Venom Sac' sat in ITEMS
+// like that until a quest asked for two of them. This sweep found three more
+// the same day -- the Mithril Pickaxe (the best mining tool in the game), the
+// Feathered Rod (the ONLY fishing upgrade) and Scout's Bandage, whose own
+// description names the NPC who was not giving it to anybody.
+{
+  const source = new Set([...gatherable, ...droppedBySpawning, 'Burnt Food']);
+  for (const id of QUEST_IDS) for (const it of (QUESTS[id].reward?.items || [])) source.add(it);
+  for (const c of Object.values(CLASSES || {})) if (c.startWeapon) source.add(c.startWeapon);
+  for (const [zid, z] of Object.entries(ZONES)) for (const c of (z.chests || [])) source.add(c.item || 'Smuggler’s Trinket');
+  // rollGear is a random table; sample it until it stops producing new items.
+  for (const t of spawnTypes) {
+    if (!MONSTER_TEMPLATES[t]) continue;
+    for (let i = 0; i < 3000; i++) {
+      for (const d of rollGear(t, false)) source.add(d.item);
+      for (const d of rollGear(t, true)) source.add(d.item);
+    }
+  }
+  // An ore tier the world has no veins for is not a broken item, it is a tier
+  // no zone implements yet -- Mithril, Adamantite and Runite need mining 30, 38
+  // and 46 and the richest seam anywhere here is Gold at 22. That is a real and
+  // checkable distinction rather than an excuse list: the ore must have NO vein
+  // in any zone AND sit above every vein that exists. The moment a zone puts a
+  // mithril seam down, or a quest asks for the ore, the ordinary rules apply
+  // again -- a collect objective for one still errors above.
+  const placedOres = new Set();
+  for (const z of Object.values(ZONES)) for (const sc of (z.scatter || [])) {
+    const o = oreFromModel(sc.model || sc.m); if (o) placedOres.add(o);
+  }
+  const topPlaced = Math.max(0, ...[...placedOres].map(o => ORES[o].level));
+  const future = (n) => {
+    const key = Object.keys(ORES).find(o => `${o} Ore` === n);
+    return !!key && !placedOres.has(key) && ORES[key].level > topPlaced;
+  };
+
+  const dead = Object.keys(ITEMS).filter(n => !source.has(n));
+  const notYet = dead.filter(future), broken = dead.filter(n => !future(n));
+  if (notYet.length)
+    console.log(`  · [items] not in this world yet, no zone has the seam: ${notYet.join(', ')} (top vein here is level ${topPlaced})`);
+  if (broken.length) {
+    for (const n of broken) console.log(`  ✗ [items] '${n}' is defined but nothing in the world can give it to you`);
+    errors += broken.length;
+  }
+}
+
+// A tool's tooltip states the level it needs. That number is written by hand
+// and the real one lives in mining.js / fishing.js, so they drift: all three
+// pickaxes claimed 10 / 25 / 45 while the code enforced 6 / 14 / 26, telling
+// players the best pickaxe in the game wanted a level almost twice what it did.
+{
+  for (const [tools, skill] of [[PICKAXES, 'mining'], [RODS, 'fishing']]) {
+    for (const [name, def] of Object.entries(tools)) {
+      const m = /needs (?:mining|fishing) (\d+)/i.exec(ITEMS[name]?.desc || '');
+      if (m && +m[1] !== def.level)
+        err('items', `'${name}' says it needs ${skill} ${m[1]}; the code requires ${def.level}`);
+    }
   }
 }
 

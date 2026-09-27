@@ -152,7 +152,9 @@ export const QUESTS = {
       { type: 'use', tag: 'signalfire', count: 3, label: 'Signal fires doused' },
       { type: 'kill', target: 'goblin_archer', count: 3, label: 'Goblin lookouts killed' },
     ],
-    reward: { xp: 450, gold: 110 },
+    // Scout's Bandage is described in ITEMS as "Lysa's field dressing" and was
+    // obtainable from nowhere at all. It is hers; she hands it over.
+    reward: { xp: 450, gold: 110, items: ["Scout's Bandage", "Scout's Bandage"] },
   },
   dw_rattlecap: {
     // Was minLevel 5, against a level 14 elite -- nine levels over your head,
@@ -399,8 +401,11 @@ export const QUESTS = {
     done: 'Steady hands after all. Pleasure doing business.',
     objectives: [
       { type: 'collect', item: 'Spider Silk', count: 4, label: 'Spider silk' },
-      // 'Venom Sac' is a real item but NOTHING drops it and no one sells it, so
-      // this quest could never be finished. The spiders carry venom GLANDS.
+      // This asked for a 'Venom Sac', which was a real entry in ITEMS that
+      // nothing dropped and nobody sold, so the quest could never be finished.
+      // The spiders carry venom GLANDS. The Sac has since been deleted -- a
+      // defined item with no source in the world is a trap lying in wait for
+      // whoever writes the next quest, and a check now refuses to allow one.
       { type: 'collect', item: 'Venom Gland', count: 2, label: 'Venom glands' },
     ],
     reward: { xp: 700, gold: 300 },
@@ -493,6 +498,32 @@ export const QUESTS = {
       { type: 'collect', item: 'Cooked Beef', count: 3, label: 'Beef, cooked' },
     ],
     reward: { xp: 260, gold: 70 },
+  },
+
+  deepwater: {
+    id: 'deepwater', name: 'The Deep Water', giver: 'hermit', minLevel: 10, requires: ['fenfish'],
+    summary: 'The shallow water was the easy part. The Hermit wants trout out of the deep spots.',
+    intro: 'Shrimp. Anybody can take shrimp out of a foot of water. The deep spots are different — Ravenwater, the far end of the fen, the black water under Crow Hill — and what is down there does not come up for a bent pin. Learn the water properly and bring me trout. Then I will give you the rod my father made, because you will have earned the use of it and I have not fished in years.',
+    active: 'The deep spots: Ravenwater, the far fen, the water under Crow Hill. Trout, not shrimp.',
+    done: 'Take it. It is feathered at the tip and it hooks what a plain rod misses. My father would rather it was wet than hung on a wall.',
+    objectives: [
+      { type: 'collect', item: 'Raw Trout', count: 5, label: 'Trout from the deep water' },
+      { type: 'collect', item: 'Raw Shrimp', count: 10, label: 'And shrimp, because he asked' },
+    ],
+    reward: { xp: 1300, gold: 300, items: ['Feathered Rod'] },
+  },
+  deepvein: {
+    id: 'deepvein', name: 'Down to the Silver', giver: 'dorn', minLevel: 10, requires: ['claimjumpers'],
+    summary: 'Dorn wants silver out of his claim, and he is paying in pickaxe.',
+    intro: 'You cleared the greenskins off my claim and you hauled my iron. Now the part I never got to. There is silver in that rock — thin seams of it, and slow, and you will want a proper level under you before you swing at one. Bring me three and I will put something in your hands that my father would have sold a field for.',
+    active: 'Silver seams. Two on the surface, two more in the den if you have the stomach for it.',
+    done: 'Mithril. Do not lose it, do not sell it, and do not let me catch you using it as a club.',
+    objectives: [
+      { type: 'collect', item: 'Silver Ore', count: 3, label: 'Silver ore' },
+      { type: 'collect', item: 'Iron Ore', count: 8, label: 'Iron, to pay the assay' },
+      { type: 'kill', target: 'goblin_miner', count: 5, label: 'Greenskins back on the claim' },
+    ],
+    reward: { xp: 1300, gold: 320, items: ['Mithril Pickaxe'] },
   },
 
   // ==========================================================================

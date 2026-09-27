@@ -255,14 +255,18 @@ export const ITEMS = {
     desc: 'A tree with a grip worn into it. Heavy going.' },
 
   // --- pickaxes (weapon slot; mining checks the bag, so you can swap freely) ---
+  // The "Needs mining N" in these read 10 / 25 / 45 while mining.js enforced
+  // 6 / 14 / 26 -- a tooltip telling you the best pickaxe in the game wanted
+  // level 45 when it wanted 26. They are checked against PICKAXES/RODS now, so
+  // the number in the text cannot drift from the number in the code again.
   'Bronze Pickaxe':       { slot: 'weapon',  atk: 1,  level: 1, value: 60,
     desc: 'Blunt, heavy, and the only thing between you and the rock.' },
   'Iron Pickaxe':         { slot: 'weapon',  atk: 2,  level: 1, value: 220,
-    desc: 'Bites deeper than bronze. Needs mining 10.' },
+    desc: 'Bites deeper than bronze. Needs mining 6.' },
   'Steel Pickaxe':        { slot: 'weapon',  atk: 3,  level: 3, value: 700,
-    desc: 'Properly tempered. Needs mining 25.' },
+    desc: 'Properly tempered. Needs mining 14.' },
   'Mithril Pickaxe':      { slot: 'weapon',  atk: 5,  level: 5, value: 2200,
-    desc: 'Light for its bite. Needs mining 45.' },
+    desc: 'Light for its bite. Needs mining 26.' },
 
   "Giant's Stone Maul":   { slot: 'weapon',  atk: 10, level: 7, value: 1400,
     desc: 'A boulder lashed to a shaft. Swings like weather.' },
@@ -322,10 +326,10 @@ export const ITEMS = {
   'Burnt Food':   { value: 1 },
   // --- fishing rods (tools; held in the weapon slot, but fishing checks the bag) ---
   'Fishing Rod':   { slot: 'weapon', atk: 0, level: 1, value: 40, desc: 'A simple rod. Find water and a fishing spot.' },
-  'Feathered Rod': { slot: 'weapon', atk: 0, level: 1, value: 260, desc: 'A finer rod — hooks the wary fish more often.' },
+  'Feathered Rod': { slot: 'weapon', atk: 0, level: 1, value: 260, desc: 'A finer rod — hooks the wary fish more often. Needs fishing 15.' },
   'Big Bones':    { value: 9 },
   'Spider Silk':  { value: 18 },
-  'Venom Sac':    { value: 26 },
+
   'Goblin Ear':   { value: 4 },
   // --- Dark Woods Outpost ---------------------------------------------------
   'Glowcap':      { value: 3,  desc: 'A mushroom that keeps a faint blue-green light of its own. Crushed into lantern oil it burns for days.' },
