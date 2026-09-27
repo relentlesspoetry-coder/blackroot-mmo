@@ -4264,7 +4264,7 @@ function updateSplashes(dt) {
   }
 }
 
-const _rtA = new THREE.Vector3(), _rtB = new THREE.Vector3();
+const _rtA = new THREE.Vector3(), _rtB = new THREE.Vector3(), _rtC = new THREE.Vector3();
 function updateFishingLines(dt) {
   const live = new Set();
   for (const [id, rec] of entityMeshes) {
@@ -4335,7 +4335,15 @@ function updateFishingLines(dt) {
     r.float.visible = true;
     // The line sags between rod tip and hook. A straight line looks like wire;
     // the sag is what makes it read as line under its own weight.
-    const drop = Math.max(0.05, _rtA.distanceTo(_rtB) * 0.12) * (1 - k * 0.8);
+    // How taut the line is. It was reading a `k` that belonged to the old
+    // single-branch version and went out of scope when the cast, bite, reel
+    // and wait were split apart -- so updateFishingLines threw a ReferenceError
+    // EVERY FRAME, and everything below this line, the hooked fish included,
+    // simply never ran. It cost 500 identical console errors a second and no
+    // other symptom, because the part that had already run still moved the
+    // float.
+    const taut = reel > 0 ? smooth(1 - reel) : 0;
+    const drop = Math.max(0.05, _rtA.distanceTo(_rtB) * 0.12) * (1 - taut * 0.8);
     for (let i = 0; i < LINE_PTS; i++) {
       const t = i / (LINE_PTS - 1);
       r.pos[i * 3]     = _rtA.x + (_rtB.x - _rtA.x) * t;
@@ -4349,17 +4357,40 @@ function updateFishingLines(dt) {
     if (want !== r.fishName) {
       if (r.fish) { r.group.remove(r.fish); r.fish = null; }
       r.fishName = want;
-      if (want) {
-        const key = itemModelName(want);
-        const g = cloneModel(key, 0.34, true);
-        if (g) { r.fish = g; r.group.add(g); }
-        else if (LOADED[key] === undefined) loadModels(['items/' + key]).catch(() => {});
-      }
+    }
+    // Keep trying until the model is actually in hand. This used to be a
+    // single attempt at the moment the reel began -- and the fish models are
+    // streamed on demand, so the first time you ever caught something the
+    // clone came back null, `fishName` was set anyway, and the retry could
+    // never fire again. Every reel-in after that was an empty line.
+    if (want && !r.fish) {
+      const key = itemModelName(want);
+      const g = cloneModel(key, 0.34, true);
+      if (g) { r.fish = g; r.group.add(g); }
+      else if (LOADED[key] === undefined) loadModels(['items/' + key]).catch(() => {});
     }
     if (r.fish) {
-      r.fish.position.copy(_rtB); r.fish.position.y -= 0.12;
-      r.fish.rotation.y = r.t * 7.5;            // twisting on the line
-      r.fish.rotation.z = Math.sin(r.t * 11) * 0.5;
+      // On the line for most of the haul, then SWUNG IN: over the last of the
+      // reel it leaves the hook and arcs to the angler's hand, because a fish
+      // that simply vanishes at the end of the pull was never landed, it was
+      // deleted.
+      const land = reel > 0 ? Math.max(0, (0.30 - reel) / 0.30) : 0;
+      if (land > 0) {
+        const hand = rig.handL || rig.armL || rig.weapon;
+        hand.getWorldPosition(_rtC);
+        const k = smooth(land);
+        r.fish.position.set(_rtB.x + (_rtC.x - _rtB.x) * k,
+                            _rtB.y + (_rtC.y - _rtB.y) * k + Math.sin(Math.PI * k) * 0.35,
+                            _rtB.z + (_rtC.z - _rtB.z) * k);
+        r.fish.rotation.y = r.t * 7.5 * (1 - k);          // stops thrashing as it is caught
+        r.fish.rotation.z = Math.sin(r.t * 11) * 0.5 * (1 - k);
+        r.fish.scale.setScalar(1 - k * 0.25);             // shrinks away into the bag
+      } else {
+        r.fish.position.copy(_rtB); r.fish.position.y -= 0.12;
+        r.fish.rotation.y = r.t * 7.5;            // twisting on the line
+        r.fish.rotation.z = Math.sin(r.t * 11) * 0.5;
+        r.fish.scale.setScalar(1);
+      }
     }
   }
   for (const id of [...fishRigs.keys()]) if (!live.has(id)) dropFishRig(id);
@@ -11389,7 +11420,7 @@ function animate() {
   _pf('water', () => updateWaterSurface(performance.now() / 1000));
   if (riverTex && !waterSurfaces.length) riverTex.offset.y = (riverTex.offset.y - dt * 0.12 + 1) % 1;
   _pf('fires', () => updateCampfires(dt));
-  // expanding ripple rings on fishing spots
+  // expanding ripple rings on fishing spots -- and the fish making them
   if (fishSpots.length) {
     const tf = performance.now() / 1000;
     for (const sp of fishSpots) {
@@ -11399,6 +11430,20 @@ function animate() {
         ring.scale.set(s, s, s);
         ring.material.opacity = Math.max(0, 0.55 * (1 - p));
       });
+      // A shoal is what a fishing spot IS, and until now the only evidence of
+      // one was three rings turning on the surface forever. Every so often
+      // something rises and breaks: a swirl and a splash, close in. Only near
+      // the camera, because nobody can see it from across the fen and a lake's
+      // worth of them every few seconds is not worth the draw calls.
+      sp.riseAt = sp.riseAt || (tf + 2 + Math.random() * 7);
+      if (tf >= sp.riseAt) {
+        sp.riseAt = tf + 4 + Math.random() * 9;
+        const cam = camera.position;
+        if ((cam.x - sp.x) ** 2 + (cam.z - sp.z) ** 2 < 70 * 70) {
+          const a = Math.random() * Math.PI * 2, rr = 0.4 + Math.random() * 1.1;
+          waterSplash(sp.x + Math.cos(a) * rr, sp.z + Math.sin(a) * rr, 0.55);
+        }
+      }
     }
   }
   // drifting fireflies / motes
