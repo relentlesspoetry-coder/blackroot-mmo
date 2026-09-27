@@ -8,7 +8,7 @@ import {
 } from '../server/balance.js';
 import { ITEMS, equipStats, expectedGear } from '../server/items.js';
 import { darkwoods } from '../server/zones/darkwoods.js';
-import { hiddencave } from '../server/zones/hiddencave.js';
+import { spiderden } from '../server/zones/spiderden.js';
 
 const GEAR = process.env.BARE ? () => ({ atk: 0, def: 0 }) : (l) => equipStats(expectedGear(l));
 
@@ -57,7 +57,7 @@ for (const [name, d] of Object.entries(ITEMS)) {
     pad(d.def ? '+' + d.def : '—', 6) + pad(d.level || 1, 4) + (d.value || 0) + ' gp');
 }
 
-for (const zone of [darkwoods, hiddencave]) {
+for (const zone of [darkwoods, spiderden]) {
   console.log(`\n=== ${zone.name} — expected fights ===`);
   console.log(pad('area', 26) + pad('mob', 19) + pad('mLv', 5) + pad('pLv', 5) +
               pad('mobHP', 7) + pad('kill s', 8) + pad('die s', 8) + pad('ratio', 7) + 'verdict');
@@ -81,7 +81,7 @@ for (const zone of [darkwoods, hiddencave]) {
 
 console.log('\n=== XP economy (one full clear, no respawns) ===');
 let total = 0;
-for (const zone of [darkwoods, hiddencave]) {
+for (const zone of [darkwoods, spiderden]) {
   let z = 0;
   for (const s of zone.spawns) z += s.count * scaledMonster(s.type, s.level).xp;
   for (const e of (zone.elites || [])) z += Math.round(scaledMonster(e.type, e.level).xp * ELITE.xp);

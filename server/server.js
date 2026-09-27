@@ -3031,9 +3031,15 @@ function useWorldObject(p, id) {
   // and off, and it does not care whose quest is running.
   if (o.toggle) {
     o._on = !o._on;
+    // Lighting one counts for the errand that asked; putting it out again does
+    // not un-count it. This branch returned before it ever reached recordUse,
+    // so a toggled object could not advance a quest at all -- 'Trail lanterns
+    // lit' sat at 0/3 however many lanterns you lit.
+    const moved = o._on ? recordUse(p, o) : [];
     send(p.ws, { t: 'event', kind: 'used', id: o.id, tag: o.tag || null,
       text: o._on ? (o.textOn || `You light the ${o.name.toLowerCase()}.`) : (o.textOff || `You put the ${o.name.toLowerCase()} out.`) });
     broadcastObjects(zone);
+    if (moved.length) notifyQuestProgress(p, moved); else sendQuests(p);
     return;
   }
   if (o.once && p.usedObjects.has(o.id)) return say(`You have already dealt with the ${o.name.toLowerCase()}.`);

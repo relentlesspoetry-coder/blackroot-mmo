@@ -7,7 +7,7 @@ import {
   xpForMiningLevel, miningLevelFromXp,
 } from '../server/mining.js';
 import { darkwoods } from '../server/zones/darkwoods.js';
-import { hiddencave } from '../server/zones/hiddencave.js';
+import { spiderden } from '../server/zones/spiderden.js';
 import { generateScatter } from '../server/worldgen.js';
 import { oreFromModel } from '../server/mining.js';
 
@@ -54,7 +54,7 @@ for (const l of [1, 5, 8, 12, 16, 22, 30, 38, 46]) {
 
 console.log('\n=== Veins in the world ===');
 let problems = 0;
-for (const zone of [darkwoods, hiddencave]) {
+for (const zone of [darkwoods, spiderden]) {
   const scatter = generateScatter(zone);
   const veins = scatter.filter(o => oreFromModel(o.m));
   const by = {};

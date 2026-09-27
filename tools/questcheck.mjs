@@ -4,9 +4,12 @@
 // each quest so the progress logic is exercised end-to-end. Exit code 1 on any
 // error, so it doubles as a CI gate.
 
-import { QUESTS, QUEST_IDS, questProgress, canStart } from '../server/quests.js';
+import { QUESTS, QUEST_IDS, questProgress, canStart, recordUse } from '../server/quests.js';
 import { ITEMS } from '../server/items.js';
 import { MONSTER_TEMPLATES } from '../server/balance.js';
+import { ORES, oreFromModel } from '../server/mining.js';
+import { FISH } from '../server/fishing.js';
+import { COOKABLES } from '../server/cooking.js';
 import { darkwoods } from '../server/zones/darkwoods.js';
 import { spiderden } from '../server/zones/spiderden.js';
 
@@ -14,11 +17,16 @@ const ZONES = { darkwoods, spiderden };
 
 // Lookups from the real world data.
 const npcs = new Set(), pois = new Set(), chests = new Set(), spawnTypes = new Set(), eliteNames = new Set(), dropItems = new Set();
+const objectIds = new Set(), objectTags = new Map();
 for (const [zid, z] of Object.entries(ZONES)) {
   for (const n of (z.npcs || [])) npcs.add(n.id);
   for (const p of (z.pois || [])) pois.add(`${zid}:${p.key}`);
   for (const c of (z.chests || [])) chests.add(`${zid}:${c.id}`);
   for (const s of (z.spawns || [])) spawnTypes.add(s.type);
+  for (const o of (z.objects || [])) {
+    objectIds.add(o.id);
+    if (o.tag) objectTags.set(o.tag, (objectTags.get(o.tag) || 0) + 1);
+  }
   for (const e of (z.elites || [])) { spawnTypes.add(e.type); if (e.name) eliteNames.add(e.name); }
 }
 for (const t of Object.values(MONSTER_TEMPLATES)) {
@@ -34,12 +42,34 @@ for (const [key, t] of Object.entries(MONSTER_TEMPLATES)) {
   if (!spawnTypes.has(key)) continue;
   for (const d of [...(t.droptable || []), ...(t.loot || [])]) if (d.item) droppedBySpawning.add(d.item);
 }
-// Gathered rather than killed for: mined ore, fished, cooked, picked. These have
-// no drop table behind them, so the spawn test above would reject them wrongly.
-const gatherable = new Set([
-  'Glowcap', 'Browncap', 'Mooncap', 'Iron Ore', 'Rope', 'Supply Crate',
-  'Stolen Pendant', 'Egg', 'Feather', 'Cowhide', 'Leather Scraps',
-]);
+// Gathered rather than killed: picked off a world object, mined out of a vein,
+// pulled out of the water, cooked, or lifted out of a chest.
+//
+// This USED to be a list I typed out by hand, and it was the same class of bug
+// it existed to catch. It excused 'Egg' and 'Feather' -- both of which drop
+// from chickens and nothing else, and no chicken spawned anywhere in the zone,
+// so Maggie's henhouse and the first quest in Alric's chain were both dead. The
+// list said they were fine because I had written them down. Derive it instead:
+// if the world does not actually hand the item over somewhere, nothing here
+// gets to say otherwise.
+const gatherable = new Set();
+const source = new Map();                       // item -> where it comes from
+const note = (item, where) => { if (!item) return; gatherable.add(item); if (!source.has(item)) source.set(item, where); };
+for (const [zid, z] of Object.entries(ZONES)) {
+  for (const o of (z.objects || [])) if (o.gives) note(o.gives.item, `${zid} object ${o.id}`);
+  for (const c of (z.chests || [])) if (c.item) note(c.item, `${zid} chest ${c.id}`);
+  // A vein's ore is the item; a fishing spot's tier decides which fish.
+  for (const oreKey of Object.keys(ORES)) {
+    if ((z.scatter || []).some(sc => oreFromModel(sc.m) === oreKey)) note(oreKey, `${zid} ore veins`);
+  }
+  if ((z.fishingSpots || []).length) for (const [k, f] of Object.entries(FISH)) note(f.item || k, `${zid} fishing`);
+}
+// Cooking turns a raw item into a cooked one, so the cooked side is obtainable
+// whenever the raw side is.
+for (const [raw, cooked] of Object.entries(COOKABLES)) {
+  const out = cooked.item || cooked;
+  if (typeof out === 'string' && (gatherable.has(raw) || dropItems.has(raw))) note(out, `cooked from ${raw}`);
+}
 
 let errors = 0, warns = 0;
 const err = (id, m) => { console.log(`  ✗ [${id}] ${m}`); errors++; };
@@ -68,21 +98,73 @@ for (const id of QUEST_IDS) {
     // The checker only knew the first five types while quests.js grew five
     // more, so every quest using them reported as broken whether it was or not
     // -- which made the tool useless exactly when the map was rebuilt under it.
-    else if (o.type === 'use') { if (!o.object && !o.tag) err(id, `use objective needs an object or a tag`); }
-    else if (o.type === 'gather' || o.type === 'avoid') { if (!o.tag) err(id, `${o.type} objective needs a tag`); }
-    else if (o.type === 'talk' || o.type === 'give') { if (!npcs.has(o.npc)) err(id, `${o.type} target '${o.npc}' is not a real NPC`); }
+    // A tag with nothing in the world wearing it is the quietest broken quest
+    // there is: no error anywhere, the line just never moves. Dark Woods
+    // shipped with zone.objects EMPTY and six quests asking it for glowcaps,
+    // lanterns, carts, berries, signal fires and a banner. Counting matters
+    // too -- 'use' with count 3 needs three DISTINCT tagged objects, because
+    // progress is the number of different ones you have touched.
+    else if (o.type === 'use') {
+      if (!o.object && !o.tag) err(id, `use objective needs an object or a tag`);
+      else if (o.object && !objectIds.has(o.object)) err(id, `use object '${o.object}' is not in any zone`);
+      else if (o.tag) {
+        const have = objectTags.get(o.tag) || 0, need = o.count || 1;
+        if (!have) err(id, `use tag '${o.tag}' — nothing in any zone carries it`);
+        else if (have < need) err(id, `use tag '${o.tag}' needs ${need} distinct objects, world has ${have}`);
+      }
+    }
+    else if (o.type === 'gather' || o.type === 'avoid') {
+      if (!o.tag) err(id, `${o.type} objective needs a tag`);
+      else if (!objectTags.has(o.tag)) err(id, `${o.type} tag '${o.tag}' — nothing in any zone carries it`);
+      // Gathering counts what the nodes HAND OVER, so a node that gives nothing
+      // can never fill a gather line however many times you pick it.
+      else if (o.type === 'gather') {
+        let yield_ = 0;
+        for (const z of Object.values(ZONES))
+          for (const ob of (z.objects || [])) if (ob.tag === o.tag && ob.gives) yield_ += (ob.gives.count || 1);
+        if (!yield_) err(id, `gather tag '${o.tag}' — its objects give nothing`);
+      }
+    }
+    else if (o.type === 'talk' || o.type === 'give') {
+      if (!npcs.has(o.npc)) err(id, `${o.type} target '${o.npc}' is not a real NPC`);
+      // Goods handed to a third party got no obtainability check at all, so a
+      // 'give' could ask for something the world never produces and the only
+      // symptom would be a player standing in front of Pib with nothing to
+      // hand him. Same test the collect lines get.
+      for (const g of (o.items || [])) {
+        if (!canObtainItem(g.item)) err(id, `give item '${g.item}' is not obtainable`);
+        else if (!gatherable.has(g.item) && !droppedBySpawning.has(g.item))
+          err(id, `give item '${g.item}' exists but nothing in the world hands it over`);
+      }
+    }
     else err(id, `unknown objective type '${o.type}'`);
   }
   // Simulate completing every objective; the quest must then report complete.
-  const p = { level: q.minLevel || 1, inventory: [], questKills: { [id]: {} }, questFlags: new Set(), openedChests: new Set(), questDone: new Set(), quests: new Map(), usedObjects: new Set(), talkedTo: new Set() };
+  const p = { level: q.minLevel || 1, inventory: [], questKills: { [id]: {} }, questFlags: new Set(), openedChests: new Set(), questDone: new Set(), quests: new Map([[id, {}]]), usedObjects: new Set(), talkedTo: new Set() };
+  // Every object in the world, so the 'use' and 'gather' lines can be walked
+  // with the REAL ones instead of invented ones.
+  const worldObjects = Object.values(ZONES).flatMap(zz => zz.objects || []);
   for (const o of q.objectives) {
     if (o.type === 'collect') for (let i = 0; i < (o.count || 1); i++) p.inventory.push(o.item);
     else if (o.type === 'kill') p.questKills[id][o.target] = (o.count || 1);
     else if (o.type === 'slay') p.questKills[id]['★' + o.name] = (o.count || 1);
     else if (o.type === 'reach') p.questFlags.add(`reach:${o.zone}:${o.poi}`);
     else if (o.type === 'chest') p.openedChests.add(`${o.zone}:${o.chest}`);
-    else if (o.type === 'use') { if (o.object) p.usedObjects.add(o.object); else for (let i = 0; i < (o.count || 1); i++) p.usedObjects.add(`${o.tag}:${i}`); }
-    else if (o.type === 'gather') p.questKills[id]['@' + o.tag] = (o.count || 1);
+    // Hand-filling usedObjects and questKills made this an assertion that
+    // questProgress agrees with itself -- it could not fail. Put the player's
+    // hands on the objects the zone actually contains and let recordUse, the
+    // same function the server calls, do the counting.
+    else if (o.type === 'use' || o.type === 'gather') {
+      const pool = o.object ? worldObjects.filter(w => w.id === o.object)
+                            : worldObjects.filter(w => w.tag === o.tag);
+      let touched = 0;
+      for (const w of pool) {
+        if (touched >= (o.count || 1)) break;
+        recordUse(p, w);
+        if (w.gives) for (let i = 0; i < (w.gives.count || 1); i++) p.inventory.push(w.gives.item);
+        touched++;
+      }
+    }
     else if (o.type === 'talk') p.questFlags.add(`talk:${o.npc}`);
     else if (o.type === 'give') p.questFlags.add(`give:${id}:${o.npc}`);
     // `avoid` is satisfied by doing nothing, which is already the start state.

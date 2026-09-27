@@ -981,7 +981,12 @@ function cloneModel(name, targetH, byMax) {
   const ref = byMax
     ? (Math.max(box.max.x - box.min.x, box.max.y - box.min.y, box.max.z - box.min.z) || 1)
     : ((box.max.y - box.min.y) || 1);
-  obj.scale.setScalar(targetH / ref);
+  // No target height means "leave it the size it was authored". It used to
+  // divide anyway -- null / ref is 0 -- so the model came back scaled to
+  // nothing: present in the scene, pickable, lit, and completely invisible.
+  // The only callers that pass null are the quest objects, which is why 79 of
+  // them could load their geometry and still not be there.
+  obj.scale.setScalar(targetH == null ? 1 : targetH / ref);
   obj.updateMatrixWorld(true);
   const box2 = new THREE.Box3().setFromObject(obj);
   obj.position.set(-(box2.min.x + box2.max.x) / 2, -box2.min.y, -(box2.min.z + box2.max.z) / 2);
@@ -10434,6 +10439,7 @@ if (location.search.includes('debug')) {
     get zone() { return zone; },
     get quests() { return questData; },
     get entities() { return entityMeshes; },
+    get objects() { return worldObjects; },   // quest objects, for checking they arrived
     get npcs() { return npcMeshes; },
     get wardrobe() { return wardrobe; }, wardrobePieces: (look) => lookPieces(look),
     get self() { return entityMeshes.get(myId); },

@@ -7,6 +7,8 @@
 import { darkwoods as z } from '../server/zones/darkwoods.js';
 import { spiderden } from '../server/zones/spiderden.js';
 import { terrainAt, terrainFieldAt, isSolid } from '../server/worldgen.js';
+import { ITEMS } from '../server/items.js';
+import { QUESTS } from '../server/quests.js';
 
 let failures = 0;
 const ok = (name, pass, detail) => {
@@ -269,10 +271,71 @@ console.log('\nThe Dark Woods — zone invariants\n');
   for (const o of (z.props || [])) used.add(o.m);
   for (const o of (z.decks || [])) used.add(o.m);
   for (const b of (z.structures || [])) for (const pc of b.pieces) used.add(pc.m);
+  // Objects were missing from this set, which is how they would have gone out
+  // placed-but-undownloaded: a glowcap clump you can click and cannot see.
+  for (const o of (z.objects || [])) { used.add(o.m); if (o.doused) used.add(o.doused); }
   const listed = new Set(z.models.map(m => m.split('/').pop()));
   const missing = [...used].filter(m => m && !listed.has(m));
   ok('everything placed is in the model manifest', missing.length === 0,
       missing.length ? missing.join(', ') : `${used.size} models placed`);
+}
+
+// --- quest objects ----------------------------------------------------------
+// zone.objects came out of the rebuild EMPTY and six quests wanted things from
+// it. Nothing complained: an empty list looks exactly like a list with nothing
+// wrong with it. These check the list exists, that what is in it can be walked
+// up to, and that the ones a quest names by id are still named that.
+{
+  const objs = z.objects || [];
+  ok('the zone has quest objects at all', objs.length > 0, `${objs.length} objects`);
+
+  const ids = new Set();
+  const dupes = objs.filter(o => ids.size === ids.add(o.id).size).map(o => o.id);
+  ok('every object id is unique', dupes.length === 0,
+      dupes.length ? dupes.join(', ') : `${ids.size} ids`);
+
+  // Buried in a cliff, sunk in the lake, or standing in the middle of a
+  // building -- all three make it unusable, and all three have happened to
+  // something else in this zone already.
+  const unreachable = objs.filter(o => isSolid(terrainAt(z, o.x, o.z))
+                                    || terrainAt(z, o.x, o.z) === 'W');
+  ok('every object stands on ground you can reach', unreachable.length === 0,
+      unreachable.length ? unreachable.map(o => o.id).join(', ') : `${objs.length} clear`);
+
+  // The reach is how close you must get. An object further from any walkable
+  // route than a player will ever wander is decoration.
+  const stranded = objs.filter(o => toPath(o.x, o.z) > 70);
+  ok('no object is stranded away from the path network', stranded.length === 0,
+      stranded.length ? stranded.map(o => `${o.id} ${toPath(o.x, o.z) | 0}u`).join(', ')
+                      : `furthest ${Math.max(...objs.map(o => toPath(o.x, o.z))) | 0}u off a path`);
+
+  // Two nodes in the same spot read as one, so a 'gather 6' that looks like it
+  // has ten sources can really have five.
+  let stacked = 0;
+  for (let i = 0; i < objs.length; i++) for (let j = i + 1; j < objs.length; j++)
+    if (Math.hypot(objs[i].x - objs[j].x, objs[i].z - objs[j].z) < 3.5) stacked++;
+  ok('no two objects stand on the same spot', stacked === 0, `${stacked} overlapping pairs`);
+
+  // Anything that hands an item over must hand over an item that exists.
+  const badGive = objs.filter(o => o.gives && !ITEMS[o.gives.item]);
+  ok('everything an object gives is a real item', badGive.length === 0,
+      badGive.length ? badGive.map(o => `${o.id} -> ${o.gives.item}`).join(', ')
+                     : `${objs.filter(o => o.gives).length} give items`);
+
+  // A once-only object gated behind a quest you cannot yet have is fine; one
+  // gated behind a quest that does not exist is a dead prop.
+  const ghostQuest = objs.filter(o => o.quest && !QUESTS[o.quest]);
+  ok('every object gated behind a quest names a real one', ghostQuest.length === 0,
+      ghostQuest.length ? ghostQuest.map(o => `${o.id} -> ${o.quest}`).join(', ')
+                        : `${objs.filter(o => o.quest).length} gated`);
+
+  // needDead names an elite by its display name. Misspell it and the object
+  // can never be used, because the kill it waits for never registers.
+  const eliteNames = new Set((z.elites || []).map(e => e.name));
+  const badDead = objs.filter(o => o.needDead && !eliteNames.has(o.needDead));
+  ok('every needDead names a real elite', badDead.length === 0,
+      badDead.length ? badDead.map(o => `${o.id} -> ${o.needDead}`).join(', ')
+                     : `${objs.filter(o => o.needDead).length} gated on a kill`);
 }
 
 // --- portals ----------------------------------------------------------------

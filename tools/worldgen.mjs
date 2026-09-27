@@ -5,6 +5,7 @@
 
 import { generateTrees, generateScatter, generateHanging, pointInPoly, dist2 } from '../server/worldgen.js';
 import { darkwoods } from '../server/zones/darkwoods.js';
+import { spiderden } from '../server/zones/spiderden.js';
 
 const pad = (s, n) => String(s).padEnd(n);
 let problems = 0;
@@ -83,11 +84,26 @@ for (const zone of [darkwoods]) {
     const by = {};
     for (const o of scatter) by[o.m] = (by[o.m] || 0) + 1;
     console.log(`scatter        ${scatter.length} / ${asked} asked   (${scatter.filter(o => o.c > 0).length} solid)`);
-    for (const spec of zone.scatter) {
-      const got = by[spec.model] || 0;
-      const short = got < spec.count;
-      console.log(`  ${pad(spec.model, 24)}${pad(got + '/' + spec.count, 9)}${short ? '  under-placed' : ''}`);
-      if (got === 0) flag(`${spec.model} placed nothing at all`);
+    // A placed piece records only its model, so it cannot be traced back to
+    // which spec asked for it. Comparing each spec's count against the model's
+    // TOTAL was nonsense for anything specified twice -- Dead_Bush is asked for
+    // in three places and reported as "97/14". Group by model and compare
+    // totals, which is the one comparison the data actually supports.
+    const want = {};
+    for (const spec of zone.scatter) want[spec.model] = (want[spec.model] || 0) + spec.count;
+    for (const model of Object.keys(want)) {
+      const got = by[model] || 0, count = want[model];
+      const where = zone.scatter.filter(s => s.model === model).map(s => s.near || 'zone-wide');
+      console.log(`  ${pad(model, 24)}${pad(got + '/' + count, 9)}${got < count ? '  under-placed' : ''}`);
+      // `got === 0` was too forgiving. Rejection sampling gives up quietly, so
+      // a model that placed 2 of its 16 looked the same as one that placed all
+      // 16 -- it printed "under-placed" in a column nobody reads and the build
+      // stayed green. Four of the Spider Den mouth's specs were in that state,
+      // one of them at zero, because the disc they shared could not hold what
+      // they asked for. Under 70% is a placement failure, not a note.
+      if (got === 0) flag(`${model} placed nothing at all (asked near ${where.join(', ')})`);
+      else if (got < count * 0.7)
+        flag(`${model} placed ${got} of ${count} — no room near ${where.join(', ')}`);
     }
   }
   if (zone.hanging) {
@@ -121,8 +137,8 @@ for (const zone of [darkwoods]) {
 // A portal names where it drops you in the destination zone, and that point
 // lives in the source zone's file — easy to leave behind when a zone is
 // relaid out.
-const ZONES = { darkwoods };   // one zone now
-for (const zone of [darkwoods]) {
+const ZONES = { darkwoods, spiderden };
+for (const zone of [darkwoods, spiderden]) {
   for (const portal of (zone.portals || [])) {
     const to = ZONES[portal.to];
     if (!to) { flag(`${zone.name}: portal leads to unknown zone "${portal.to}"`); continue; }

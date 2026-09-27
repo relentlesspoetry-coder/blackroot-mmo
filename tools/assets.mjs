@@ -10,14 +10,14 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { darkwoods } from '../server/zones/darkwoods.js';
-import { hiddencave } from '../server/zones/hiddencave.js';
+import { spiderden } from '../server/zones/spiderden.js';
 import { MONSTER_TEMPLATES } from '../server/balance.js';
 import { ITEMS, WEAPON_ITEMS } from '../server/items.js';
 import { ORES } from '../server/mining.js';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MODELS = path.join(ROOT, 'client', 'models');
-const ZONES = [darkwoods, hiddencave];
+const ZONES = [darkwoods, spiderden];
 
 let problems = 0;
 const flag = (msg) => { console.log('  !! ' + msg); problems++; };

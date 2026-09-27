@@ -26,6 +26,7 @@ Run:  python3 tools/build_darkwoods.py     (needs numpy)
 import heapq
 import json
 import math
+import random
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -203,6 +204,21 @@ TRAILS = [
 # enough to be the camp's grazing, far enough that the cows still spawn.
 SPAWN_ANCHORS = {
     'cowfield': (770, 470),      # open ground west of Witchlight Camp
+    'henyard':  (938, 505),      # Maggie's hens, 52 units east of the camp
+    # The walk BETWEEN landmarks was empty. Measured: nine hundred-metre cells
+    # of fully walkable ground with nothing in them at all, each 76 to 129
+    # units from the nearest landmark -- the zone was dense islands with dead
+    # ground in between. These nine anchors sit on open ground 22 to 49 units
+    # off a path, so what lives there is on the way rather than hidden.
+    'wood_north':  (793, 139),   # the north woods, chapel to Ravenwater
+    'wood_grim_w': (1018, 214),  # deep forest west of Grimroot
+    'wood_grim_e': (1151, 214),  # the cursed edge
+    'wood_mid_e':  (1018, 294),  # between chapel, Grimroot and the fen
+    'road_west':   (713, 374),   # the camp road, out toward Wolfsnag
+    'west_gate':   (349, 508),   # the last of the woods before the West Road
+    'wood_crow_n': (456, 642),   # the climb to Crow Hill
+    'wood_crow_s': (590, 775),   # south of Crow Hill, toward the Den
+    'south_road':  (1114, 749),  # the South Track, past Briar
 }
 
 SPAWNS = [
@@ -238,6 +254,22 @@ SPAWNS = [
     # open ground east of Witchlight Camp rather than being cut: far enough out
     # of the camp that they still spawn and are still killable.
     ('cowfield',               'cow', 1, 5, 30, 22),
+    # Maggie's hens. Two level-1 quests -- her henhouse and Alric's Feathers and
+    # Hide, the first quest in his chain -- ask for Eggs and Feathers, and those
+    # drop from ONE creature: the chicken. Not one had ever spawned in this
+    # zone, so both quests were unfinishable from the day the world was rebuilt.
+    ('henyard',            'chicken', 1, 7, 22, 14),
+    # --- the roads between places ---------------------------------------
+    ('wood_north',             'bat', 4, 5, 34, 26),
+    ('wood_north',          'spider', 5, 4, 32, 22),
+    ('wood_grim_w',         'spider', 8, 5, 34, 24),
+    ('wood_grim_e',   'venom_spider',12, 5, 34, 24),
+    ('wood_mid_e', 'goblin_scavenger',6, 5, 34, 26),
+    ('road_west',           'bandit', 8, 4, 32, 24),   # highwaymen on the camp road
+    ('west_gate',           'goblin', 7, 5, 34, 26),
+    ('wood_crow_n',          'guard',10, 2, 30, 20),   # hill ogres on the climb
+    ('wood_crow_s',   'goblin_archer',10, 4, 32, 24),
+    ('south_road',          'bandit',10, 5, 34, 26),
 ]
 
 # Scatter: `near` anchors a spec to a landmark, otherwise it is spread over the
@@ -288,9 +320,14 @@ SCATTER = [
     ('Twisted_Dead_Tree', 10, 'chapel', 28), ('Path_Lantern', 4, 'chapel', 28),
     # The graveyard. Half the chapel sheet is gravestones and there was not one
     # in the game -- the hilltop clearing was an empty lawn around a ruin.
-    ('Gravestone_Slab', 24, 'chapel', 27), ('Gravestone_Cross', 13, 'chapel', 27),
-    ('Gravestone_Broken', 11, 'chapel', 27), ('Tomb_Slab', 4, 'chapel', 24),
-    ('Gravestone_Tall', 2, 'chapel', 20),
+    # Same capacity arithmetic as the pass and the den mouth: inside 27 units
+    # of the chapel, once its own footprint is taken out, there is room for
+    # about forty stones and these asked for a hundred and sixteen. Seven of
+    # the twenty-four slabs were being dropped. A churchyard that outgrew its
+    # wall is the right answer here -- the graves spread out under the trees.
+    ('Gravestone_Slab', 24, 'chapel', 38), ('Gravestone_Cross', 13, 'chapel', 36),
+    ('Gravestone_Broken', 11, 'chapel', 40), ('Tomb_Slab', 4, 'chapel', 30),
+    ('Gravestone_Tall', 2, 'chapel', 24),
     # Grimroot Thicket: the sheet's "corruption growth" is a magic source, and
     # the cave kit's crystals are exactly that. Roots as the obstacle layer,
     # thorns as the chokepoint layer -- its elevation guide names both.
@@ -299,10 +336,16 @@ SCATTER = [
     # Wolfsnag Pass had NOTHING on it -- a named chokepoint dressed as empty
     # rock. The sheet gives it spiked barricades, bones and a warning at the
     # mouth: wild territory somebody has already tried to hold.
-    ('Banner_Wolf', 5, 'wolfsnag', 28),          # whose territory this is
-    ('Spike_Barricade', 10, 'wolfsnag', 28), ('Bone_Pile', 6, 'wolfsnag', 28),
-    ('Warning_Sign', 2, 'wolfsnag', 26), ('Dead_Bush', 12, 'wolfsnag', 28),
-    ('Rubble_Pile', 8, 'wolfsnag', 28),
+    # ...and then it had a tenth of it, because the pass is a DEFILE. Only
+    # 581 m2 within 28 units of it is standable -- room for about sixteen solid
+    # pieces, against the sixty these asked for -- so the barricades placed 3 of
+    # 10 and nobody was told. The dressing belongs on the APPROACHES anyway: you
+    # meet the warning sign and the barricades on the way in, not stacked in a
+    # four-metre gap where they would wall the road.
+    ('Banner_Wolf', 5, 'wolfsnag', 44),          # whose territory this is
+    ('Spike_Barricade', 10, 'wolfsnag', 52), ('Bone_Pile', 6, 'wolfsnag', 46),
+    ('Warning_Sign', 2, 'wolfsnag', 40), ('Dead_Bush', 12, 'wolfsnag', 50),
+    ('Rubble_Pile', 8, 'wolfsnag', 48),
     # Murkfen: dead trees standing in the marsh, rotted pilings where a walk
     # has gone, and lanterns along the ones that remain.
     ('Twisted_Dead_Tree', 24, 'murkfen', 50), ('Boardwalk_Piling', 12, 'murkfen', 50),
@@ -318,14 +361,23 @@ SCATTER = [
     # The Spider Den. The descent only pays off if there is something down
     # there: webs thicken and the nests appear as you reach the floor of the
     # hollow, so the bottom reads as inhabited rather than as a dip in a field.
-    ('Floor_Web', 16, 'spiderden', 30), ('Funnel_Web', 9, 'spiderden', 26),
-    ('Ground_Cocoon', 7, 'spiderden', 24), ('Hanging_Cocoon', 6, 'spiderden', 22),
-    ('Egg_Cluster', 6, 'spiderden', 20), ('Brood_Nest', 4, 'spiderden', 18),
-    ('Layered_Web_Nest', 3, 'spiderden', 16), ('Webbed_Bones', 8, 'spiderden', 26),
-    ('Webbed_Boulder', 7, 'spiderden', 30), ('Broken_Web_Strands', 11, 'spiderden', 34),
-    ('Stalagmite_Cluster', 9, 'spiderden', 32), ('Stalagmite_Large', 6, 'spiderden', 30),
-    ('Luminous_Mushrooms', 10, 'spiderden', 28), ('Rubble_Pile', 8, 'spiderden', 34),
-    ('Dead_Bush', 14, 'spiderden', 26),
+    # These radii are not a style choice, they are capacity. The mouth is 58%
+    # cliff, and the disc these used to share held about 111 pieces of dressing
+    # at the 3 m spacing the scatterer enforces -- while the specs below asked
+    # for 134. Rejection sampling gives up after count x 40 tries, so whatever
+    # sampled last simply got nothing and said nothing about it: Floor_Web
+    # placed 2 of 16, Webbed_Bones 1 of 8 and the ten Luminous_Mushrooms placed
+    # NONE. So the webbing spreads out from the entrance instead of ringing it,
+    # which is what an approach should look like anyway: thick at the mouth,
+    # thinning into the wood. The nests and egg clusters stay close in.
+    ('Floor_Web', 16, 'spiderden', 46), ('Funnel_Web', 9, 'spiderden', 40),
+    ('Ground_Cocoon', 7, 'spiderden', 32), ('Hanging_Cocoon', 6, 'spiderden', 28),
+    ('Egg_Cluster', 6, 'spiderden', 24), ('Brood_Nest', 4, 'spiderden', 20),
+    ('Layered_Web_Nest', 3, 'spiderden', 18), ('Webbed_Bones', 8, 'spiderden', 38),
+    ('Webbed_Boulder', 7, 'spiderden', 42), ('Broken_Web_Strands', 11, 'spiderden', 50),
+    ('Stalagmite_Cluster', 9, 'spiderden', 44), ('Stalagmite_Large', 6, 'spiderden', 40),
+    ('Luminous_Mushrooms', 10, 'spiderden', 44), ('Rubble_Pile', 8, 'spiderden', 48),
+    ('Dead_Bush', 14, 'spiderden', 52),
 ]
 
 # Pieces placed by hand rather than scattered: things whose exact spot and
@@ -695,7 +747,7 @@ MODEL_DIR = {
     'Small_Canvas_Tent': 'props', 'Supply_Pavilion': 'props', 'Camp_Lantern': 'props',
     'Cooking_Tripod': 'props', 'Supply_Crate': 'props', 'Water_Barrel': 'props',
     'Camp_Stool': 'props', 'Rolled_Bedroll': 'props', 'Goblin_Hide_Tent': 'props',
-    'Unlit_Fire_Pit': 'props',
+    'Unlit_Fire_Pit': 'props', 'Campfire': 'props', 'Brown_Mushrooms': 'cave',
 }
 
 TREE_SPECIES = ['Ancient_Forest_Tree', 'Broad_Crown_Oak', 'Tall_Leafy_Birch',
@@ -743,6 +795,97 @@ ELITES = [
     # Ravenwater's "deep, dark waters conceal hidden secrets". Something has
     # been down there long enough to go green.
     ('cave_giant',    'The Drowned Warden',     11, 'ravenwater', 9, -13),
+]
+
+
+# --------------------------------------------------------------- quest objects
+# The things a quest asks you to put your hands on: mushroom clumps to pick,
+# trail lanterns to light, a goblin's signal fire to kick out.
+#
+# The machinery for these survived the rebuild on both sides -- the server's
+# useWorldObject knows about gives / hurt / respawn / needDead, and the client
+# knows a lit lantern keeps its flame and a picked clump stays gone until it
+# grows back. What did not survive was the objects. `zone.objects` came out of
+# the new build empty, and SIX quests -- a quarter of the list -- ask for them:
+# Rowan's glowcaps and lanterns, Tessa's carts and her goblin's honeycake,
+# Lysa's signal fires, Rowan's banner and Fenwick's mushrooms. Every one of
+# them was unfinishable from the day Dark Woods was regenerated, and none of
+# them errored: an empty list is a quiet list.
+#
+# Nothing below is placed by pixel. Each kind states what it wants to stand
+# near -- a road, deep wood, a creek bank, a hilltop, a goblin camp -- and how
+# many of it there should be; the placement walks the routed paths and the
+# traced grid to find that ground. So it survives the next rebuild, the way the
+# bridges and gateways and jetties had to learn to.
+#
+# (key, n, model, where, gives, extra)
+#   where:  'road' / 'trail' along the routed lines, 'wood' deep forest off
+#           them, 'bank' dry ground at the water's edge, 'hill' a raised crown,
+#           'poi:<key>' inside a landmark.
+#   gives:  (item, count) pushed into the bag, or None.
+#   extra:  passed through to the emitted object -- respawn seconds, a light
+#           colour, hurt, the quest it is gated behind, the model it becomes
+#           once it is spent.
+NODES = [
+    # Rowan wants six glowcaps for lantern oil. They grow where it is darkest,
+    # which is off the road rather than on it.
+    ('glowcap', 16, 'Luminous_Mushrooms', 'wood', ('Glowcap', 1), dict(
+        name='Glowcap Cluster', respawn=150, light=0x4fe0a8, s=1.0, reach=3.2,
+        text='You twist the glowcaps loose. They go on shining in your bag.')),
+    # Fenwick's two safe ones. Browncaps are common and mooncaps are not.
+    ('browncap', 13, 'Brown_Mushrooms', 'wood', ('Browncap', 1), dict(
+        name='Browncaps', respawn=110, s=1.0, reach=3.2,
+        text='Browncaps. The safe ones, if Fenwick is to be believed.')),
+    ('mooncap', 9, 'Luminous_Mushrooms', 'wood', ('Mooncap', 1), dict(
+        name='Mooncaps', respawn=190, light=0x9fc8ff, s=0.78, reach=3.2,
+        text='Pale blue and cold to the touch. You pick them carefully.')),
+    # And the one he is paying you NOT to pick. It is deliberately in the same
+    # ground as the others and deliberately looks like money -- the bonus on
+    # Mushroom Business is for telling them apart. It bites.
+    ('rotcap', 10, 'Poison_Mushrooms', 'wood', ('Rotcap', 1), dict(
+        name='Rotcaps', respawn=140, s=0.95, reach=3.2, hurt=5,
+        text='Red, swollen, and it bursts. Fenwick warned you about these.')),
+    # "Sharp little berries from the creek bank" -- so, the creek bank.
+    ('redberry', 9, 'Red_Berry_Bush', 'bank', ('Redberry', 1), dict(
+        name='Redberry Bush', respawn=120, s=1.0, reach=3.4,
+        text='You strip a handful of redberries off the bush.')),
+    # Rowan's lanterns stand on the roads, which is the whole point of them:
+    # the light is for the people walking between places. Shared state -- your
+    # lantern stays lit for everyone who comes along after you.
+    ('lantern', 8, 'Path_Lantern', 'road', None, dict(
+        name='Trail Lantern', toggle=True, s=1.0, reach=3.6,
+        textOn='The wick catches. A circle of road comes back.',
+        textOff='You pinch the wick out. The dark closes in again.')),
+    # Tessa's missing supplies: three wagons that never arrived, standing where
+    # the road runs and the goblins do.
+    ('cart', 3, 'Farm_Handcart', 'road', None, dict(
+        name='Abandoned Handcart', once=True, s=1.0, reach=3.8,
+        quest='dw_supplies', idleText='A broken cart. Someone else\u2019s problem.',
+        text='Axle cut, not broken. Whoever took the load knew what they were doing.')),
+    # ...and the load itself, in the goblin camp at Briar Hollow.
+    ('crate', 6, 'Supply_Crate', 'poi:briar', ('Supply Crate', 1), dict(
+        name='Outpost Crate', respawn=200, s=1.0, reach=3.4,
+        quest='dw_supplies', idleText='Goblin spoil. Not yours to carry off.',
+        text='Outpost markings, still legible under the mud.')),
+    # Lysa's signal fires burn on the high ground, because that is where smoke
+    # is worth making. Doused, they become a cold pit and stay one.
+    ('signalfire', 3, 'Campfire', 'hill', None, dict(
+        name='Goblin Signal Fire', once=True, s=1.0, reach=4.0,
+        light=0xff8a3c, doused='Unlit_Fire_Pit', quest='dw_smoke',
+        idleText='A goblin watchfire. Someone is being told something.',
+        text='You kick the fire apart. Whatever it was saying, it has stopped.')),
+    # Chief Rattlecap's banner, and you are not cutting it down while he is
+    # still standing under it -- the server checks.
+    ('banner', 1, 'Banner_Wolf', 'poi:briar', None, dict(
+        name='Woodfang Banner', once=True, s=1.0, reach=3.6,
+        quest='dw_rattlecap', needDead='Chief Rattlecap',
+        idleText='Woodfang colours. Leave them until their chief is down.',
+        text='You cut the banner down. The hollow goes very quiet.')),
+    # One honeycake, in the camp larder, for one greedy goblin.
+    ('honeycake', 1, 'Water_Barrel', 'poi:camp', ('Honeycake', 1), dict(
+        name='Camp Larder', once=True, s=1.0, reach=3.2,
+        quest='dw_pib', idleText='Tessa keeps the larder counted. Stay out of it.',
+        text='One honeycake, still sticky. Pib had better be worth it.')),
 ]
 
 
@@ -1706,6 +1849,180 @@ def main():
         print(f'  {shoved} elite(s) moved onto ground they can stand on')
     A('  ],')
     A('')
+    # ----------------------------------------------------- quest objects
+    # The placement, not the authoring. Every candidate is measured off the
+    # routed paths and the traced grid, so a rebuild that moves a road moves
+    # the lanterns standing along it.
+    def path_dist(x, z):
+        best = 1e9
+        for _k, _a, _b, pts in paths:
+            for i in range(len(pts) - 1):
+                (x0, z0), (x1, z1) = pts[i], pts[i + 1]
+                vx, vz = x1 - x0, z1 - z0
+                L2 = vx * vx + vz * vz
+                t = 0.0 if L2 < 1e-9 else max(0.0, min(1.0, ((x - x0) * vx + (z - z0) * vz) / L2))
+                best = min(best, math.hypot(x - (x0 + vx * t), z - (z0 + vz * t)))
+        return best
+
+    def line_walk(kinds, step):
+        """Points every `step` metres along the routed lines, with a bearing."""
+        out, carry = [], 0.0
+        for kind, _a, _b, pts in paths:
+            if kind not in kinds:
+                continue
+            carry = 0.0
+            for i in range(len(pts) - 1):
+                (x0, z0), (x1, z1) = pts[i], pts[i + 1]
+                seg = math.hypot(x1 - x0, z1 - z0)
+                if seg < 1e-6:
+                    continue
+                yaw = math.atan2(x1 - x0, z1 - z0)
+                t = carry
+                while t < seg:
+                    f = t / seg
+                    out.append((x0 + (x1 - x0) * f, z0 + (z1 - z0) * f, yaw))
+                    t += step
+                carry = t - seg
+        return out
+
+    # Dry cells with water within two cells of them: the creek banks, without
+    # having to guess where a river ended up after it was traced.
+    def bank_cells():
+        out = []
+        for gz in range(1, H - 1):
+            for gx in range(1, W - 1):
+                if rows[gz][gx] not in '.fF':
+                    continue
+                wet = any(rows[gz + dz][gx + dx] in 'wW'
+                          for dz in (-2, -1, 0, 1, 2) for dx in (-2, -1, 0, 1, 2)
+                          if 0 <= gz + dz < H and 0 <= gx + dx < W)
+                if wet:
+                    out.append((minX + (gx + 0.5) * cell, minZ + (gz + 0.5) * cell))
+        return out
+
+    def wood_cells():
+        out = []
+        for gz in range(H):
+            for gx in range(W):
+                if rows[gz][gx] in 'Ff':
+                    out.append((minX + (gx + 0.5) * cell, minZ + (gz + 0.5) * cell))
+        return out
+
+    _banks, _woods = bank_cells(), wood_cells()
+    # A lantern inside the chapel wall or a bush inside a tent is the trees-in-
+    # the-tower bug again, so structure footprints are out of bounds.
+    pads = []
+    for key, fn in LAYOUTS:
+        ax, az = poi_world(key)
+        pads.append((ax, az, 17.0))
+    for key in ('chapel', 'crowhill', 'fenshrine'):
+        q = [t for t in POIS if t[0] == key]
+        if q:
+            wx, wz = world(q[0][3], q[0][4])
+            pads.append((wx, wz, 15.0))
+
+    def free_of_pads(x, z):
+        return all(math.hypot(x - px, z - pz) > r for px, pz, r in pads)
+
+    placed = []          # every object so far, so kinds do not stack on each other
+    obj_rows = []
+    rng = random.Random(90125)
+
+    def take(cands, n, minsep, kind_sep=5.0):
+        """Thin a candidate list down to n well-spread points."""
+        rng.shuffle(cands)
+        out = []
+        for c in cands:
+            x, z = c[0], c[1]
+            if not free_of_pads(x, z):
+                continue
+            if any(math.hypot(x - o[0], z - o[1]) < minsep for o in out):
+                continue
+            if any(math.hypot(x - o[0], z - o[1]) < kind_sep for o in placed):
+                continue
+            out.append(c)
+            placed.append((x, z))
+            if len(out) >= n:
+                break
+        return out
+
+    short = []
+    for key, n, model, where, gives, extra in NODES:
+        if where in ('road', 'trail'):
+            # Off to the verge, alternating sides, so a cart is beside the road
+            # rather than standing in it.
+            pts = line_walk({where}, 26.0)
+            cands = []
+            for i, (x, z, yaw) in enumerate(pts):
+                off = 3.4 if i % 2 else -3.4
+                cands.append((round(x + math.cos(yaw) * off, 1),
+                              round(z - math.sin(yaw) * off, 1), yaw))
+            got = take(cands, n, 55.0)
+        elif where == 'wood':
+            # Deep enough in to feel like foraging, near enough to find.
+            cands = [(round(x, 1), round(z, 1), 0.0) for x, z in _woods
+                     if 9.0 <= path_dist(x, z) <= 26.0]
+            got = take(cands, n, 34.0)
+        elif where == 'bank':
+            cands = [(round(x, 1), round(z, 1), 0.0) for x, z in _banks
+                     if path_dist(x, z) <= 34.0]
+            got = take(cands, n, 30.0)
+        elif where == 'hill':
+            crowns = sorted([h for h in hills if h[3] > 1.5], key=lambda h: -h[3])
+            cands = [(h[0], h[1], 0.0) for h in crowns]
+            got = take(cands, n, 40.0)
+        else:                                   # poi:<key>
+            ax, az = poi_world(where.split(':', 1)[1])
+            cands = []
+            for r in (13.0, 17.0, 21.0, 25.0):
+                for i in range(0, 360, 18):
+                    a = math.radians(i)
+                    x, z = round(ax + math.cos(a) * r, 1), round(az + math.sin(a) * r, 1)
+                    if cell_at(x, z) in '.fF':
+                        cands.append((x, z, a + math.pi))
+            # A landmark's own objects DO belong inside its pad.
+            saved, pads[:] = list(pads), []
+            got = take(cands, n, 6.0, kind_sep=4.0)
+            pads[:] = saved
+        if len(got) < n:
+            short.append(f'{key} {len(got)}/{n}')
+        for i, (x, z, yaw) in enumerate(got):
+            (gx, gz), _ = snap_to_ground(x, z)
+            # There is only one camp larder and one Woodfang banner, and the
+            # quests name them outright -- `object: 'banner'`, not a tag. So a
+            # kind with a single member keeps the bare id; only sets get
+            # numbered. questcheck compares the two lists now, which is how
+            # 'banner' vs 'banner_1' turned up at all.
+            oid = key if n == 1 else f'{key}_{i + 1}'
+            f = [f"id: '{oid}'", f"tag: '{key}'", f"m: '{model}'",
+                 f'x: {gx}', f'z: {gz}', f'yaw: {round(yaw, 3)}']
+            for k in ('name', 'text', 'textOn', 'textOff', 'idleText', 'quest',
+                      'needDead', 'doused'):
+                if k in extra:
+                    f.append(f"{k}: '{extra[k]}'")
+            for k in ('s', 'reach', 'respawn', 'hurt'):
+                if k in extra:
+                    f.append(f'{k}: {extra[k]}')
+            if extra.get('toggle'):
+                f.append('toggle: 1')
+            if extra.get('once'):
+                f.append('once: 1')
+            if 'light' in extra:
+                f.append(f"light: 0x{extra['light']:06x}")
+            if gives:
+                f.append(f"gives: {{ item: '{gives[0]}', count: {gives[1]} }}")
+            obj_rows.append('    { ' + ', '.join(f) + ' },')
+
+    A('  // What a quest asks you to put your hands on. Placed off the routed')
+    A('  // paths and the traced grid, never by pixel -- see NODES in the builder.')
+    A('  objects: [')
+    for r in obj_rows:
+        A(r)
+    A('  ],')
+    A('')
+    print(f'  {len(obj_rows)} quest objects placed'
+          + (f'  !! SHORT: {", ".join(short)}' if short else ''))
+
     # Everything placed anywhere has to be listed, or the client never downloads
     # it and the piece is simply absent -- placed, positioned, invisible. Moving
     # the camp furniture out of SCATTER and into LAYOUTS dropped it off this set
@@ -1713,7 +2030,9 @@ def main():
     used = sorted({m for m, *_ in SCATTER} | {pr[2] for pr in PROPS}
                   | {mk[0] for mk in MARKERS} | set(RUIN_KIT) | set(WETLAND_KIT)
                   | set(DARKWOODS_KIT) | {o[0] for o in ORE}
-                  | {piece[0] for _key, fn in LAYOUTS for piece in fn()})
+                  | {piece[0] for _key, fn in LAYOUTS for piece in fn()}
+                  | {n[2] for n in NODES}
+                  | {n[5]['doused'] for n in NODES if 'doused' in n[5]})
     models = [f'{MODEL_DIR[m]}/{m}' if m in MODEL_DIR else m for m in used] + TREE_SPECIES
     A('  models: [')
     for i in range(0, len(models), 4):
