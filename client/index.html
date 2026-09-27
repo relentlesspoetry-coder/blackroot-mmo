@@ -1532,15 +1532,19 @@ function bridgeLift(x, z) {
     const along = dx * sf + dz * cf;   // across the river (deck length axis)
     const across = dx * cf - dz * sf;  // along the deck's walkable width
     if (Math.abs(along) > bi.L / 2 || Math.abs(across) > bi.deckW / 2 + 0.4) continue;
-    // the bridge group is placed at world y = 0, so the arch height is absolute
-    return bi.archH * (1 - Math.pow(2 * along / bi.L, 2)) + 0.35;
+    // the arch is measured from the bridge group's own base, which sits on the
+    // river's surface at that crossing
+    return (bi.baseY || 0) + bi.archH * (1 - Math.pow(2 * along / bi.L, 2)) + 0.35;
   }
   return null;
 }
 // River channel profile: a carved bed so the water sits deep with banks rising
 // above it. terrainHeight is the ground height at (x,z) — 0 on flat land, the
 // water line at the shore, dropping to the bed under the water.
-const RIVER_WATER_Y = -0.5, RIVER_BED_Y = -2.2, RIVER_BANK = 4, RIVER_LIP = 2.0;
+// The level a still body of water sits at. Rivers no longer use it directly --
+// they carry their own profile and meet this where they run into a lake -- so
+// everything that wants "the water surface here" asks waterLevelAt(x, z).
+const RIVER_WATER_Y = -0.5, RIVER_BANK = 4, RIVER_LIP = 2.0;
 // How deep a swimmer sits, measured off the rig rather than guessed. In the
 // upright tread the shoulder joints sit 1.78 above the mesh origin and the head
 // 1.98, so dropping the origin 1.55 under the waterline puts the surface just
@@ -1626,14 +1630,99 @@ function terrainField(x, z, name) {
 }
 
 // Carve for ONE river.
-function riverHeightAt1(river, x, z) {
-  const half = riverWaterHalf(river.width);
-  const H = half + RIVER_LIP;
-  const d = distToPolyline(x, z, river.points);
-  if (d >= H) return 0;
-  if (d >= half) return RIVER_WATER_Y + (0 - RIVER_WATER_Y) * ((d - half) / RIVER_LIP);
-  const t = d / half;
-  return RIVER_BED_Y + (RIVER_WATER_Y - RIVER_BED_Y) * (t * t * t);
+// --- a river runs downhill --------------------------------------------------
+// The water used to be at one height for the whole map (-0.5) and the ground
+// was cut down to it wherever a river passed. On flat ground that is a river;
+// across a hillside it is a slot with a blue ribbon at the bottom. Measured
+// before this: Crowwater's banks reach 11.6 m against water at -0.5, a 12.1 m
+// trench, and Blackroot Creek 6.9 m.
+//
+// The traced bodies of water never had the problem, because the land FADES OUT
+// under them (see LF in terrainHeight) and their basins come out flat at the
+// waterline whatever the hills were doing. A river is a polyline with no traced
+// cells, so it got none of that. It does now, in the two parts it needs:
+//
+//   along its length   a profile read off the land it runs through, never
+//                      flowing uphill, pinned to the lake where it meets one
+//   across it          a VALLEY the land settles into, not a slot cut in it
+const LAKE_Y = RIVER_WATER_Y;   // the traced bodies; their basins are faded flat
+const RIVER_DEPTH = 1.7;        // surface to bed
+const RIVER_BELOW_BANK = 0.9;   // how far the surface sits below the bank top
+const RIVER_VALLEY = 17;        // over how far the land settles into the valley
+const RIVER_MOUTH = 10;         // over how far a river's level blends to a lake's
+
+// Nearest point on a polyline, with WHERE along it: the level varies with
+// distance downstream, so the plain distance is not enough.
+function nearestOnPolyline(x, z, pts) {
+  let bd = Infinity, bi = 0, bt = 0;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const ax = pts[i].x, az = pts[i].z, bx = pts[i + 1].x, bz = pts[i + 1].z;
+    const abx = bx - ax, abz = bz - az;
+    const t = Math.max(0, Math.min(1, ((x - ax) * abx + (z - az) * abz) / (abx * abx + abz * abz || 1)));
+    const d = Math.hypot(x - (ax + abx * t), z - (az + abz * t));
+    if (d < bd) { bd = d; bi = i; bt = t; }
+  }
+  return { dist: bd, i: bi, t: bt };
+}
+
+// The surface level at each point of a river's polyline.
+function riverProfile(r) {
+  if (r._prof) return r._prof;
+  const pts = r.points, n = pts.length;
+  const H = riverWaterHalf(r.width) + RIVER_LIP, OFF = H + 4;
+  const E = waterEdge();
+  // The land either side, read far enough out that the river's own valley has
+  // not lowered it, and the lower of the two banks -- water finds the low side.
+  const lvl = new Float64Array(n), inBody = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)];
+    let dx = b.x - a.x, dz = b.z - a.z; const L = Math.hypot(dx, dz) || 1; dx /= L; dz /= L;
+    const nx = -dz, nz = dx;
+    const bank = Math.min(landBaseY(pts[i].x + nx * OFF, pts[i].z + nz * OFF),
+                          landBaseY(pts[i].x - nx * OFF, pts[i].z - nz * OFF));
+    inBody[i] = terrainField(pts[i].x, pts[i].z, 'wet') >= E.marsh ? 1 : 0;
+    lvl[i] = inBody[i] ? LAKE_Y : bank - RIVER_BELOW_BANK;
+  }
+  // A river surface does not step: smooth, but never move a point the lake owns.
+  for (let pass = 0; pass < 10; pass++) {
+    const s = Float64Array.from(lvl);
+    for (let i = 1; i < n - 1; i++) if (!inBody[i]) lvl[i] = (s[i - 1] + 2 * s[i] + s[i + 1]) / 4;
+  }
+  // ...and it does not flow uphill. Walk from the high end to the low one,
+  // clamping each point to the one above it.
+  const step = lvl[0] >= lvl[n - 1] ? 1 : -1;
+  const from = step === 1 ? 1 : n - 2, to = step === 1 ? n : -1;
+  for (let i = from; i !== to; i += step) if (lvl[i] > lvl[i - step]) lvl[i] = lvl[i - step];
+  // The monotonic pass does not get to overrule a lake. Where the river is
+  // inside a traced body, the body's surface is the surface -- it caught the
+  // fen, where the banks either side are already below the waterline and the
+  // profile came out at -2.3 against a fen at -0.5, which drained it.
+  for (let i = 0; i < n; i++) if (inBody[i]) lvl[i] = LAKE_Y;
+  r._prof = lvl;
+  return lvl;
+}
+// The river's surface at (x, z), and how far off its centreline that is.
+function riverAt(r, x, z) {
+  const c = nearestOnPolyline(x, z, r.points), p = riverProfile(r);
+  const a = p[c.i], b = p[Math.min(p.length - 1, c.i + 1)];
+  return { dist: c.dist, level: a + (b - a) * c.t };
+}
+// The level of whatever water covers (x, z): a river's own surface inside its
+// corridor, the lake level outside, blended across the mouth so the two meet.
+function waterLevelAt(x, z) {
+  let best = null, bd = Infinity, bh = 0;
+  for (const r of worldRivers()) {
+    const c = riverAt(r, x, z);
+    if (c.dist < bd) { bd = c.dist; best = c; bh = riverWaterHalf(r.width) + RIVER_LIP; }
+  }
+  if (!best || bd >= bh + RIVER_MOUTH) return LAKE_Y;
+  const k = Math.min(1, Math.max(0, (bh + RIVER_MOUTH - bd) / RIVER_MOUTH));
+  const lvl = LAKE_Y + (best.level - LAKE_Y) * (k * k * (3 - 2 * k));
+  // Inside a lake or the fen you are standing in the BODY, whatever a stream
+  // running past is doing: a river may raise the surface locally, never lower
+  // it below the water the drawing already puts there.
+  if (terrainField(x, z, 'wet') >= waterEdge().marsh) return Math.max(lvl, LAKE_Y);
+  return lvl;
 }
 // ---- Relief ------------------------------------------------------------
 // The blueprint is a hilly woodland: 40 m at the fen up to 340 m on Crow Hill.
@@ -1683,7 +1772,10 @@ const WATER_CUT = 4.6, MARSH_CUT = 2.0;
 // that the shoreline had receded from and you still swam across.
 const WATER_EDGE_FALLBACK = { deep: 0.41, marsh: 0.44, fade: 0.41 };
 function waterEdge() { return (zone && zone.waterEdge) || WATER_EDGE_FALLBACK; }
-function terrainHeight(x, z) {
+// The land with no river in it: hills, rock, and the traced water cut. The
+// river profile is read off THIS, or a river would lower its own banks and
+// walk its level down the map.
+function landBaseY(x, z) {
   if (!zone || zone.enclosed) return 0;
   const wet = terrainField(x, z, 'wet'), rock = terrainField(x, z, 'rock');
   // Hills roll under everything; rock stands on them; water cuts through.
@@ -1703,8 +1795,27 @@ function terrainHeight(x, z) {
   const mFall = Math.log(0.5 / MARSH_CUT) / Math.log(E.marsh);
   y -= WATER_CUT * Math.pow(deep, dFall)
      + MARSH_CUT * Math.max(0, Math.pow(wet, mFall) - Math.pow(deep, mFall));
-  // Rivers are still polylines -- they are too narrow to trace as cells.
-  for (const r of worldRivers()) { const h = riverHeightAt1(r, x, z); if (h < 0 && h < y) y = h; }
+  return y;
+}
+function terrainHeight(x, z) {
+  if (!zone || zone.enclosed) return 0;
+  let y = landBaseY(x, z);
+  // Rivers are still polylines -- too narrow to trace as cells -- so they cut
+  // their own valley. Only ever DOWNWARD: where the river runs through ground
+  // already lower than its bed (the fen), the fen wins and the river simply
+  // becomes part of it, which is what the drawing shows.
+  for (const r of worldRivers()) {
+    const half = riverWaterHalf(r.width), H = half + RIVER_LIP;
+    const c = riverAt(r, x, z);
+    if (c.dist >= H + RIVER_VALLEY) continue;
+    const top = c.level + RIVER_BELOW_BANK;
+    let prof;
+    if (c.dist <= half) prof = c.level - RIVER_DEPTH * (1 - Math.pow(c.dist / half, 3));
+    else if (c.dist <= H) prof = c.level + (top - c.level) * ((c.dist - half) / RIVER_LIP);
+    else prof = top;
+    const k = Math.min(1, Math.max(0, (H + RIVER_VALLEY - c.dist) / RIVER_VALLEY));
+    y += (Math.min(prof, y) - y) * (k * k * (3 - 2 * k));
+  }
   // A ruin you can walk into needs a level floor. Each structure levels a
   // rectangle of ground and feathers it back into the hillside, so the nave is
   // flat and the walls are not standing on stilts at the downhill end.
@@ -1947,6 +2058,7 @@ function updateSky(dt) {
 function loadZone(zdata) {
   zone = zdata; lastRegionId = null;
   groundGrid = null; _gmH = null;  // the old zone's lattice is not this zone's ground
+  for (const r of (zone.rivers || (zone.river ? [zone.river] : []))) r._prof = null;
   buildTerrainFields();          // blur the traced classes once, for this zone
   buildSitePads();               // level the ground under every ruin
   // Sit the camera behind the character's spawn facing. Without this it
@@ -2338,66 +2450,9 @@ function buildDirtStones(dirtMesh, shapes, discs, polys) {
     im.setColorAt(i, col);
   }, { castShadow: false });
 }
-// `endFade` may be a number (both ends) or {start,end}. With `worldUV` the dirt
-// texture is mapped in world space, so overlapping ribbons (a trail joining the
-// road) sample the very same texels and the join is invisible.
-function buildStripRibbon(points, width, y, material, tile, feather, cutRiver, endFade, worldUV) {
-  const pts = smoothPoly(points, 8);
-  const hw = width / 2, T = tile || 5, fr = feather || 0;
-  const efS = typeof endFade === 'object' ? (endFade.start || 0) : (endFade || 0);
-  const efE = typeof endFade === 'object' ? (endFade.end || 0) : (endFade || 0);
-  const ef = Math.max(efS, efE);
-  // Cross-section vertex offsets (fraction of half-width) and their opacity.
-  // With a feather, add a transparent fringe on each side so the strip fades
-  // into whatever is under it (the path dissolving into grass at its edges).
-  const cols = fr > 0
-    ? [{ o: -(hw + fr), a: 0 }, { o: -hw, a: 1 }, { o: hw, a: 1 }, { o: hw + fr, a: 0 }]
-    : [{ o: -hw, a: 1 }, { o: hw, a: 1 }];
-  const N = cols.length;
-  const pos = [], uv = [], col = [], idx = [];
-  // Total length up front so the ends can be faded into the ground.
-  let total = 0; for (let i = 1; i < pts.length; i++) total += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z);
-  let dist = 0;
-  for (let i = 0; i < pts.length; i++) {
-    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
-    let dx = b.x - a.x, dz = b.z - a.z; const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
-    const nx = -dz, nz = dx; // left normal
-    if (i > 0) dist += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z);
-    const v = dist / T;
-    // Fade the strip out where it crosses the river, so the dirt path never
-    // paints over the water under the bridge (the bridge deck is the crossing).
-    let rowA = 1;
-    if (cutRiver) {
-      for (const r of worldRivers()) {
-        const rd = distToPolyline(pts[i].x, pts[i].z, r.points);
-        const edge = riverWaterHalf(r.width);
-        rowA = Math.min(rowA, Math.max(0, Math.min(1, (rd - edge) / 2.5))); // 0 over water -> 1 on the bank
-      }
-    }
-    // Taper the two ENDS to transparent so the path melts into the grass rather
-    // than stopping on a hard straight edge.
-    if (efS > 0) rowA *= Math.max(0, Math.min(1, dist / efS));
-    if (efE > 0) rowA *= Math.max(0, Math.min(1, (total - dist) / efE));
-    for (const c of cols) {
-      const px = pts[i].x + nx * c.o, pz = pts[i].z + nz * c.o;
-      pos.push(px, y, pz);
-      if (worldUV) uv.push(px / T, pz / T); else uv.push((c.o + hw + fr) / T, v);
-      col.push(1, 1, 1, c.a * rowA);
-    }
-  }
-  for (let i = 0; i < pts.length - 1; i++) {
-    for (let j = 0; j < N - 1; j++) {
-      const a = i * N + j, b = a + 1, c = (i + 1) * N + j, d = c + 1;
-      idx.push(a, b, c, b, d, c);
-    }
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  if (fr > 0 || ef > 0) g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
-  g.setIndex(idx); g.computeVertexNormals();
-  const m = new THREE.Mesh(g, material); m.receiveShadow = true; scene.add(m); return m;
-}
+// (buildStripRibbon lived here: a flat ribbon at a constant y, used only for
+// the river water. The water is one contoured surface now and nothing else
+// wants a sheet laid at a fixed altitude -- see groundMeshY on why.)
 
 // The dirt riverbank: a smooth ribbon that follows the river exactly (so its
 // edge tracks the water instead of the jagged per-triangle boundary of the
@@ -2446,178 +2501,166 @@ function buildTerrainWater() {
   const t0 = performance.now();
   const fine = T.cell / WATER_SUB;
   const FW = T.w * WATER_SUB;
-  // terrainHeight is by far the costly part of this, and both sheets want the
-  // same lattice, so it is sampled once and shared.
-  const hCache = new Map();
+  // terrainHeight is by far the costly part of this, so it is sampled once per
+  // lattice point and shared; so is the water level, which now varies.
+  const hCache = new Map(), lCache = new Map();
   const heightAt = (fj, fi) => {
     const k = fi * (FW + 1) + fj;
     let v = hCache.get(k);
     if (v === undefined) { v = terrainHeight(T.minX + fj * fine, T.minZ + fi * fine); hCache.set(k, v); }
     return v;
   };
-  // Both sheets sit AT the waterline; the deep one is lifted two centimetres so
-  // the pair cannot z-fight. (They used to be 22 cm apart, which put the shallow
-  // sheet's rim below the true waterline and buried its edge in the bank.)
+  const levelAt = (fj, fi) => {
+    const k = fi * (FW + 1) + fj;
+    let v = lCache.get(k);
+    if (v === undefined) { v = waterLevelAt(T.minX + fj * fine, T.minZ + fi * fine); lCache.set(k, v); }
+    return v;
+  };
   const EDGE = waterEdge();
-  // Over this much depth the water is its full colour; above the bed it pales
-  // toward SHORE_TINT. RIM_FEATHER is how far inside the waterline the sheet
-  // takes to reach full opacity -- the band that melts into the wet bank.
-  // Measured against the real profile at Ravenwater, which shelves from nothing
-  // at the bank to 3.8 m at twenty-five metres out. The first pass paled the
-  // water over 1.5 m of depth -- the first THIRTEEN metres of pool -- and by a
-  // factor of 1.74, which turned the whole margin into a washed-out grey-green
-  // that did not read as water at all. Concentrate it: about a metre of depth,
-  // a gentler tint, and a curve that keeps the pale in the last stride or two
-  // before the bank.
-  // Shallow water is PALER, and by enough to see. The first pass multiplied the
-  // base colour by 1.27 over one metre of depth with a power curve on top,
-  // which on a dark blue is a difference you have to be told about. This ramps
-  // a real turquoise across two and a half metres of depth -- at Ravenwater's
-  // shelf, the first twenty metres of pool.
+  // ONE sheet. There used to be two -- a 'deep' one at 0.93 alpha over a 'wet'
+  // one at 0.72, each its own marching-squares contour of its own field -- and
+  // where they overlapped their alphas stacked. That is the two-layer water:
+  // a darker blue band with a hard polygon edge lying across a paler one,
+  // neither of them the colour either sheet was meant to be. The river ribbon
+  // was a third layer on top of both.
+  //
+  // Depth already tells you everything the two sheets were trying to say, and
+  // it says it continuously: shallow water is pale because you are seeing the
+  // bed through it, deep water is its own colour, and the marsh is simply the
+  // shallow end of the same water. So there is one surface, contoured at the
+  // OUTER edge, and colour, opacity and wave height all come off depth.
   const SHALLOW_AT = 2.5, SHALLOW_POW = 1.15;
   const SHORE_TINT = { r: 1.58, g: 1.82, b: 1.66 };
-  // ...and a FOAM line right at the contour. This is the thing that makes
-  // water MEET land rather than stop on it: a bright band in the last third of
-  // a metre, brightest at the very edge. Without it the shore is a seam
-  // between two flat colours however carefully the alpha is tuned, which is
-  // what it still was.
+  // A foam line right at the contour: the thing that makes water MEET land
+  // rather than stop on it.
   const FOAM_DEPTH = 0.34, FOAM_LIFT = 0.85;
-  // Opacity: see-through enough at the very edge to melt into the wet bank,
-  // solid once there is real water over the bed. The FLOOR is not cosmetic --
-  // a sheet that goes fully clear over a carved pool is a window onto the dark
-  // bottom of a bowl, and that is what made the water look black. Tightened to
-  // a hairline to fix that, which then left a near-hard edge; this is the
-  // middle, and it is safe because the bed under shallow water is close,
-  // brown and lit.
+  // Opacity: see-through at the very edge so it melts into the wet bank, solid
+  // once there is real water over the bed. The FLOOR is not cosmetic -- a sheet
+  // that goes fully clear over a carved pool is a window onto the dark bottom
+  // of a bowl, which is what made the water look black.
   const DEPTH_OPAQUE = 0.75, ALPHA_FLOOR = 0.50, RIM_FEATHER = 0.55;
-  for (const [name, gate, surfaceY, colour, opacity] of [
-       ['deep', EDGE.deep,  RIVER_WATER_Y + 0.02, 0x2f7fb0, 0.93],
-       ['wet',  EDGE.marsh, RIVER_WATER_Y,        0x599ec2, 0.72]]) {
-    const index = new Map(), pos = [], uv = [], idx = [], col = [];
-    const phiCache = new Map();
-    const phiAt = (fj, fi) => {
-      const k = fi * (FW + 1) + fj;
-      let v = phiCache.get(k);
-      if (v === undefined) {
-        const x = T.minX + fj * fine, z = T.minZ + fi * fine;
-        const g = (terrainField(x, z, name) - gate) * 24;
-        v = Math.min(surfaceY - heightAt(fj, fi), g);
-        phiCache.set(k, v);
-      }
-      return v;
-    };
-    const vert = (x, z) => {
-      // weld to a centimetre so neighbouring cells share their edge vertices
-      const k = Math.round(x * 100) * 2097152 + Math.round(z * 100);
-      let v = index.get(k);
-      if (v === undefined) {
-        v = pos.length / 3; index.set(k, v);
-        pos.push(x, surfaceY, z);
-        uv.push(x / 9, z / 9);                        // world-space, so it tiles seamlessly
-        // Depth, and how far inside the waterline this vertex is. The rivers
-        // have had both since they were built -- a dirt shore and a rim that
-        // feathers into it -- while the traced BODIES of water were two flat
-        // sheets of one colour each, cut off square at the contour. Same water,
-        // two different standards.
-        //
-        //   shallow water is paler, because you are seeing the bed through it
-        //   and less of the column's own colour;
-        //   and the rim fades out instead of ending, so the sheet melts into
-        //   the wet bank rather than stopping on it like a laid carpet.
-        const depth = Math.max(0, surfaceY - terrainHeight(x, z));
-        const margin = Math.min(depth, (terrainField(x, z, name) - gate) * 24);
-        const shallow = Math.min(1, depth / SHALLOW_AT);          // 0 at the edge, 1 out deep
-        // Opacity off DEPTH, which is in metres and means something, with a
-        // floor so the sheet never becomes a window. Tightening the feather
-        // alone was not enough: 40% of the surface was still under 0.4 alpha,
-        // because `margin` mixes metres with a slow-growing field term. Water
-        // a metre deep hides its bed; water at the very edge is a thin film
-        // and should show the wet mud under it -- that is the blend.
-        const f = Math.min(1, Math.max(0, Math.min(depth / DEPTH_OPAQUE,
-                                                   margin / RIM_FEATHER)));
-        const a = ALPHA_FLOOR + (1 - ALPHA_FLOOR) * (f * f * (3 - 2 * f));
-        // lighten toward the shore, and break into foam at the waterline
-        const k2 = Math.pow(1 - shallow, SHALLOW_POW);
-        const foam = Math.max(0, 1 - depth / FOAM_DEPTH) * FOAM_LIFT;
-        col.push(1 + k2 * (SHORE_TINT.r - 1) + foam,
-                 1 + k2 * (SHORE_TINT.g - 1) + foam,
-                 1 + k2 * (SHORE_TINT.b - 1) + foam, a);
-      }
-      return v;
-    };
-    // Only the cells this body could possibly reach: the blurred field already
-    // spreads several cells past the traced water, and the gate stops there.
-    for (let gz = 0; gz < T.h; gz++) for (let gx = 0; gx < T.w; gx++) {
-      const cx = T.minX + (gx + 0.5) * T.cell, cz = T.minZ + (gz + 0.5) * T.cell;
-      if (terrainField(cx, cz, name) < gate * 0.55) continue;
-      // Fine tessellation is only worth paying for at the SHORE. Out in open
-      // water the surface is flat and the swell is 28 units from crest to crest,
-      // so a 2.5 m quad is already ten times finer than the wave needs -- the
-      // deviation across one is about a millimetre. Contouring the whole lake at
-      // a third of a cell cost 186k animated vertices and 23 ms a frame, which
-      // is most of a frame budget spent tessellating water nobody is standing on.
-      const q0 = gx * WATER_SUB, q1 = gz * WATER_SUB, qs = WATER_SUB;
-      const c00 = phiAt(q0, q1), c10 = phiAt(q0 + qs, q1);
-      const c11 = phiAt(q0 + qs, q1 + qs), c01 = phiAt(q0, q1 + qs);
-      if (c00 >= 0 && c10 >= 0 && c11 >= 0 && c01 >= 0) {
-        // wholly submerged: one quad, corners shared with its neighbours
-        const X0 = T.minX + gx * T.cell, X1 = X0 + T.cell;
-        const Z0 = T.minZ + gz * T.cell, Z1 = Z0 + T.cell;
-        const a = vert(X0, Z0), b = vert(X1, Z0), c = vert(X1, Z1), d = vert(X0, Z1);
-        idx.push(a, b, c, a, c, d);
-        continue;
-      }
-      if (c00 < 0 && c10 < 0 && c11 < 0 && c01 < 0
-          && phiAt(q0 + (qs >> 1), q1 + (qs >> 1)) < 0) continue;   // wholly dry
-      for (let sz = 0; sz < WATER_SUB; sz++) for (let sx = 0; sx < WATER_SUB; sx++) {
-        const fj = gx * WATER_SUB + sx, fi = gz * WATER_SUB + sz;
-        const x0 = T.minX + fj * fine, x1 = x0 + fine;
-        const z0 = T.minZ + fi * fine, z1 = z0 + fine;
-        // marching squares, filled: walk the four corners, keeping the ones
-        // under water and adding the crossing point wherever the edge between
-        // two corners passes through the waterline
-        const f = [phiAt(fj, fi), phiAt(fj + 1, fi), phiAt(fj + 1, fi + 1), phiAt(fj, fi + 1)];
-        const CX = [x0, x1, x1, x0], CZ = [z0, z0, z1, z1];
-        const poly = [];
-        for (let i = 0; i < 4; i++) {
-          const j = (i + 1) & 3;
-          if (f[i] >= 0) poly.push(CX[i], CZ[i]);
-          if ((f[i] >= 0) !== (f[j] >= 0)) {
-            const t = f[i] / (f[i] - f[j]);
-            poly.push(CX[i] + (CX[j] - CX[i]) * t, CZ[i] + (CZ[j] - CZ[i]) * t);
-          }
+  const DEEP_C = new THREE.Color(0x2f7fb0), SHALLOW_C = new THREE.Color(0x599ec2);
+  const _wc = new THREE.Color();
+
+  // How far inside the water's edge (x, z) is, in the same units the old gates
+  // used. Positive inside. A river counts as water inside its own channel: it
+  // is a polyline with no traced cells, so the field knows nothing about it.
+  const gateAt = (x, z) => {
+    let g = (terrainField(x, z, 'wet') - EDGE.marsh) * 24;
+    for (const r of worldRivers()) {
+      const H = riverWaterHalf(r.width);
+      const d = distToPolyline(x, z, r.points);
+      if (H - d > g) g = H - d;
+    }
+    return g;
+  };
+  const index = new Map(), pos = [], uv = [], idx = [], col = [], amp = [];
+  const phiCache = new Map();
+  const phiAt = (fj, fi) => {
+    const k = fi * (FW + 1) + fj;
+    let v = phiCache.get(k);
+    if (v === undefined) {
+      const x = T.minX + fj * fine, z = T.minZ + fi * fine;
+      v = Math.min(levelAt(fj, fi) - heightAt(fj, fi), gateAt(x, z));
+      phiCache.set(k, v);
+    }
+    return v;
+  };
+  const vert = (x, z) => {
+    // weld to a centimetre so neighbouring cells share their edge vertices
+    const k = Math.round(x * 100) * 2097152 + Math.round(z * 100);
+    let v = index.get(k);
+    if (v !== undefined) return v;
+    v = pos.length / 3; index.set(k, v);
+    const surfaceY = waterLevelAt(x, z);
+    pos.push(x, surfaceY, z);
+    uv.push(x / 9, z / 9);                        // world-space, so it tiles seamlessly
+    const depth = Math.max(0, surfaceY - terrainHeight(x, z));
+    const margin = Math.min(depth, gateAt(x, z));
+    const shallow = Math.min(1, depth / SHALLOW_AT);          // 0 at the edge, 1 out deep
+    // Opacity off DEPTH, which is in metres and means something, with a floor
+    // so the sheet never becomes a window.
+    const f = Math.min(1, Math.max(0, Math.min(depth / DEPTH_OPAQUE, margin / RIM_FEATHER)));
+    const a = ALPHA_FLOOR + (1 - ALPHA_FLOOR) * (f * f * (3 - 2 * f));
+    // The colour the two sheets used to be, now a ramp across the one: the
+    // marsh end pale, the middle of Ravenwater its full blue.
+    _wc.copy(SHALLOW_C).lerp(DEEP_C, shallow);
+    const k2 = Math.pow(1 - shallow, SHALLOW_POW);
+    const foam = Math.max(0, 1 - depth / FOAM_DEPTH) * FOAM_LIFT;
+    col.push(_wc.r * (1 + k2 * (SHORE_TINT.r - 1)) + foam,
+             _wc.g * (1 + k2 * (SHORE_TINT.g - 1)) + foam,
+             _wc.b * (1 + k2 * (SHORE_TINT.b - 1)) + foam, a);
+    // Swell where there is water to swell, stillness in the shallows: the two
+    // sheets did this with two amplitudes and a seam between them.
+    amp.push(0.35 + 0.65 * shallow);
+    return v;
+  };
+  // Only the cells water could possibly reach.
+  for (let gz = 0; gz < T.h; gz++) for (let gx = 0; gx < T.w; gx++) {
+    const cx = T.minX + (gx + 0.5) * T.cell, cz = T.minZ + (gz + 0.5) * T.cell;
+    if (terrainField(cx, cz, 'wet') < EDGE.marsh * 0.55
+        && !worldRivers().some(r => distToPolyline(cx, cz, r.points) < riverWaterHalf(r.width) + T.cell * 2)) continue;
+    // Fine tessellation is only worth paying for at the SHORE. Out in open
+    // water the surface is flat and the swell is tens of metres from crest to
+    // crest, so a 2.5 m quad is already far finer than the wave needs.
+    const q0 = gx * WATER_SUB, q1 = gz * WATER_SUB, qs = WATER_SUB;
+    const c00 = phiAt(q0, q1), c10 = phiAt(q0 + qs, q1);
+    const c11 = phiAt(q0 + qs, q1 + qs), c01 = phiAt(q0, q1 + qs);
+    if (c00 >= 0 && c10 >= 0 && c11 >= 0 && c01 >= 0) {
+      const X0 = T.minX + gx * T.cell, X1 = X0 + T.cell;
+      const Z0 = T.minZ + gz * T.cell, Z1 = Z0 + T.cell;
+      const a = vert(X0, Z0), b = vert(X1, Z0), c = vert(X1, Z1), d = vert(X0, Z1);
+      idx.push(a, b, c, a, c, d);
+      continue;
+    }
+    if (c00 < 0 && c10 < 0 && c11 < 0 && c01 < 0
+        && phiAt(q0 + (qs >> 1), q1 + (qs >> 1)) < 0) continue;   // wholly dry
+    for (let sz = 0; sz < WATER_SUB; sz++) for (let sx = 0; sx < WATER_SUB; sx++) {
+      const fj = gx * WATER_SUB + sx, fi = gz * WATER_SUB + sz;
+      const x0 = T.minX + fj * fine, x1 = x0 + fine;
+      const z0 = T.minZ + fi * fine, z1 = z0 + fine;
+      // marching squares, filled: walk the four corners, keeping the ones under
+      // water and adding the crossing point wherever an edge passes the line
+      const f = [phiAt(fj, fi), phiAt(fj + 1, fi), phiAt(fj + 1, fi + 1), phiAt(fj, fi + 1)];
+      const CX = [x0, x1, x1, x0], CZ = [z0, z0, z1, z1];
+      const poly = [];
+      for (let i = 0; i < 4; i++) {
+        const j = (i + 1) & 3;
+        if (f[i] >= 0) poly.push(CX[i], CZ[i]);
+        if ((f[i] >= 0) !== (f[j] >= 0)) {
+          const tt = f[i] / (f[i] - f[j]);
+          poly.push(CX[i] + (CX[j] - CX[i]) * tt, CZ[i] + (CZ[j] - CZ[i]) * tt);
         }
-        const n = poly.length / 2;
-        if (n < 3) continue;
-        const a = vert(poly[0], poly[1]);
-        for (let i = 1; i < n - 1; i++) {
-          idx.push(a, vert(poly[i * 2], poly[i * 2 + 1]), vert(poly[i * 2 + 2], poly[i * 2 + 3]));
-        }
+      }
+      const n = poly.length / 2;
+      if (n < 3) continue;
+      const a = vert(poly[0], poly[1]);
+      for (let i = 1; i < n - 1; i++) {
+        idx.push(a, vert(poly[i * 2], poly[i * 2 + 1]), vert(poly[i * 2 + 2], poly[i * 2 + 3]));
       }
     }
-    if (!idx.length) continue;
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));   // rgb tint + rim alpha
-    g.setAttribute('normal', new THREE.Float32BufferAttribute(new Float32Array(pos.length), 3));
-    g.setIndex(idx);
-    const tex = makeWaterTexture();
-    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    const amp = name === 'deep' ? 1 : 0.45;
-    const mat = waveify(detailize(new THREE.MeshStandardMaterial({ map: tex, color: colour,
-      roughness: 0.22, metalness: 0.35, transparent: true, opacity, side: THREE.DoubleSide,
-      vertexColors: true,            // depth tint + the rim that feathers into the bank
-      emissive: 0x0d3550, emissiveIntensity: 0.8 }), 'water', { scale: 4, strength: 0.5 }), amp);
-    const m = new THREE.Mesh(g, mat);
-    m.receiveShadow = true; m.userData.isWater = true; scene.add(m);
-    // keep the still positions; the swell is applied on top of them each frame
-    waterSurfaces.push({ mesh: m, tex, amp });
-    if (!riverMesh) { riverMesh = m; riverTex = tex; }
   }
+  if (!idx.length) return;
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));   // depth tint + rim alpha
+  g.setAttribute('waveAmp', new THREE.Float32BufferAttribute(amp, 1)); // swell out deep, still at the edge
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(new Float32Array(pos.length), 3));
+  g.setIndex(idx);
+  const tex = makeWaterTexture();
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  const mat = waveify(detailize(new THREE.MeshStandardMaterial({ map: tex, color: 0xffffff,
+    roughness: 0.22, metalness: 0.35, transparent: true, opacity: 1, side: THREE.DoubleSide,
+    vertexColors: true,            // the whole colour: depth tint, foam, and the rim alpha
+    emissive: 0x0d3550, emissiveIntensity: 0.8 }), 'water', { scale: 4, strength: 0.5 }), 1);
+  const m = new THREE.Mesh(g, mat);
+  m.receiveShadow = true; m.userData.isWater = true; scene.add(m);
+  waterSurfaces.push({ mesh: m, tex, amp: 1 });
+  riverMesh = m; riverTex = tex;
   updateWaterSurface(0);
-  console.log(`[world] water: ${waterSurfaces.map(w => w.mesh.geometry.attributes.position.count).join(' + ')}`
-    + ` shore vertices in ${(performance.now() - t0).toFixed(0)} ms`);
+  console.log(`[world] water: one surface, ${pos.length / 3} vertices`
+    + ` in ${(performance.now() - t0).toFixed(0)} ms`);
 }
 // Three travelling waves at different scales and bearings, summed. The normal
 // comes from the slope of that sum rather than from recomputing the mesh, which
@@ -2664,6 +2707,7 @@ function waveify(mat, amp) {
   // water rendered BLACK -- which is what it looks like when a shader reads a
   // uniform that was never set.
   const prevKey = mat.customProgramCacheKey;
+  mat.defines = Object.assign({}, mat.defines, { USE_WAVEAMP: '' });
   mat.customProgramCacheKey = () => (prevKey ? prevKey.call(mat) : '') + '|wave';
   const u = { value: 0 };
   mat.userData.waterTime = u;
@@ -2677,19 +2721,29 @@ function waveify(mat, amp) {
     sh.uniforms.uWaterTime = u;
     sh.uniforms.uWaterAmp = { value: amp };
     sh.vertexShader = sh.vertexShader
+      // `waveAmp` is per vertex: one surface carries the whole range from a
+      // still marsh edge to open water, where two sheets used to carry two
+      // fixed amplitudes and a seam between them. Meshes without the attribute
+      // fall back to 1.
       .replace('#include <common>', `#include <common>
-uniform float uWaterTime; uniform float uWaterAmp;`)
+uniform float uWaterTime; uniform float uWaterAmp;
+#ifdef USE_WAVEAMP
+  attribute float waveAmp;
+  #define WAVE_A (uWaterAmp * waveAmp)
+#else
+  #define WAVE_A uWaterAmp
+#endif`)
       // the normal comes from the analytic slope of the same sum, exactly as the
       // CPU version did -- that is what makes it read as water and not as a
       // tilted sheet
       .replace('#include <beginnormal_vertex>', `#include <beginnormal_vertex>
 {
-  float dhx = (${slope('x')}) * uWaterAmp;
-  float dhz = (${slope('z')}) * uWaterAmp;
+  float dhx = (${slope('x')}) * WAVE_A;
+  float dhz = (${slope('z')}) * WAVE_A;
   objectNormal = normalize(vec3(-dhx, 1.0, -dhz));
 }`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
-transformed.y += (${sum('sin')}) * uWaterAmp;`);
+transformed.y += (${sum('sin')}) * WAVE_A;`);
   };
   mat.needsUpdate = true;
   return mat;
@@ -2712,7 +2766,7 @@ function buildRiverShore(points, half) {
   // The ribbon sits on the ground mesh. It used to carry its own copy of the
   // channel profile and assume the land either side was at y = 0 -- true of a
   // flat map, and a floating shelf anywhere the terrain has a hill under it.
-  // terrainHeight already cuts the channel (riverHeightAt1), so following the
+  // terrainHeight already cuts the channel (the river valley), so following the
   // mesh gives the same bed for free and the banks come out where the land is.
   // Offsets across the ribbon and their alpha (1 = opaque dirt, 0 = faded into
   // grass). Only the outer rim (H -> H+FR) fades.
@@ -2851,22 +2905,16 @@ function buildZone() {
 
 
 // Rivers — deep flowing water sitting in the carved channel, one per river.
-  // Water over every traced cell the drawing paints blue. The terrain is
-  // already carved down for them, so this is the surface that fills the hollow:
-  // one sheet for deep water and a paler, shallower one for the fen.
+  // ALL the water, in one surface: every traced cell the drawing paints blue,
+  // and every river channel, contoured together off depth. The rivers used to
+  // get their own ribbon laid on top of the traced sheets, which is how a
+  // river mouth ended up with three translucent layers stacked on it.
   buildTerrainWater();
 
   for (const river of worldRivers()) {
-    const rtex = makeWaterTexture();
-    const waterMat = detailize(new THREE.MeshStandardMaterial({ map: rtex, color: 0x2f74a0, roughness: 0.3, metalness: 0.25, transparent: true, opacity: 0.96, side: THREE.DoubleSide,
-      vertexColors: true, // feathered rim (vertex-alpha) so the waterline melts into the shore
-      emissive: 0x11364f, emissiveIntensity: 0.9 }), 'water', { scale: 4, strength: 0.6 }); // faint sheen so it still reads as water at night
-    // Dirt bank (flush with the carved terrain, follows the river smoothly,
-    // feathers into grass) then flood the channel. The water core ends a little
-    // inside the waterline and feathers across it into the wet dirt.
+    // The dirt bank: flush with the carved terrain, follows the river, feathers
+    // into grass. The water itself is part of the single surface above.
     buildRiverShore(river.points, riverWaterHalf(river.width));
-    const water = buildStripRibbon(river.points, (riverWaterHalf(river.width) - 0.5) * 2, RIVER_WATER_Y, waterMat, 8, 1.7);
-    riverMesh = water; riverTex = rtex; // last river drives the shared flow animation
     // A body of water can carry several crossings (`bridges`); `bridge` is the
     // single-crossing shorthand.
     for (const br of (river.bridges || (river.bridge ? [river.bridge] : []))) {
@@ -2905,10 +2953,14 @@ function buildZone() {
           post.position.set(s * (deckW / 2 - 0.2), y + 0.75, z); bridge.add(post);
         }
       }
-      bridge.position.set(br.x, 0, br.z);
+      // A bridge stands on ITS river, not at y = 0. With the water at one
+      // height for the whole map that was the same thing; now a crossing high
+      // up the Crowwater has to rise with it or the deck is underground.
+      const baseY = waterLevelAt(br.x, br.z) - LAKE_Y;
+      bridge.position.set(br.x, baseY, br.z);
       bridge.rotation.y = phi;
       scene.add(bridge);
-      bridgeInfos.push({ x: br.x, z: br.z, phi, L, archH, deckW });
+      bridgeInfos.push({ x: br.x, z: br.z, phi, L, archH, deckW, baseY });
     }
   }
 
@@ -4113,7 +4165,7 @@ function buildDecks() {
     // on dry ground does it follow the terrain. Laying every span on the bed put
     // the ones over the fen two metres under the waterline -- a submerged
     // boardwalk you had to swim down to.
-    const y = Math.max(terrainHeight(d.x, d.z), RIVER_WATER_Y);
+    const y = Math.max(terrainHeight(d.x, d.z), waterLevelAt(d.x, d.z));
     deckInfos.push({ x: d.x, z: d.z, yaw: d.yaw || 0, len: (d.len || 4) + 0.3, w: (d.w || 2.4) - 0.3, y });
     return { m: d.m, x: d.x, z: d.z, y, r: d.yaw || 0, s: 1 };
   });
@@ -4155,7 +4207,7 @@ function buildScatter() {
   // three metres under, the same way the boardwalks did before they were fixed.
   const FLOATERS = /Lily_Pads/;
   placeInstances(zone.scatter || [],
-    o => (FLOATERS.test(o.m) ? Math.max(groundY(o.x, o.z), RIVER_WATER_Y + 0.04)
+    o => (FLOATERS.test(o.m) ? Math.max(groundY(o.x, o.z), waterLevelAt(o.x, o.z) + 0.04)
                              : groundY(o.x, o.z)));   // stand it on the terrain, not on Y=0
   // Hanging pieces are modelled downward from their origin, so they mount at
   // the ceiling rather than the floor.
@@ -4259,7 +4311,7 @@ function waterSplash(x, z, scale = 1) {
     splashes.push(s);
   }
   s.live = true; s.t = 0; s.scale = scale;
-  s.g.position.set(x, RIVER_WATER_Y + 0.03, z);
+  s.g.position.set(x, waterLevelAt(x, z) + 0.03, z);
   s.g.visible = true;
   s.vel = s.drops.map(() => {
     const a = Math.random() * Math.PI * 2, r = (0.6 + Math.random() * 0.9) * scale;
@@ -4301,7 +4353,7 @@ function updateFishingLines(dt) {
     const reel = e.fish.reel || 0, bite = e.fish.bite || 0, ph = e.fish.p || 0;
     const hx = e.fish.x != null ? e.fish.x : _rtA.x;
     const hz = e.fish.z != null ? e.fish.z : _rtA.z;
-    const WY = RIVER_WATER_Y + 0.02;
+    const WY = waterLevelAt(hx, hz) + 0.02;
     if (reel > 0) {
       // Coming in: the hook end is hauled from the water back to the rod tip,
       // eased so it accelerates out of the water rather than gliding.
@@ -5178,7 +5230,7 @@ function buildChest(ch) {
 // just above the river surface. Clickable; never depletes.
 function buildFishingSpots() {
   for (const sp of (zone.fishingSpots || [])) {
-    const g = new THREE.Group(); g.position.set(sp.x, RIVER_WATER_Y + 0.06, sp.z);
+    const g = new THREE.Group(); g.position.set(sp.x, waterLevelAt(sp.x, sp.z) + 0.06, sp.z);
     const ripples = [];
     for (let i = 0; i < 3; i++) {
       const ring = new THREE.Mesh(new THREE.RingGeometry(0.25, 0.45, 24),
@@ -5200,7 +5252,7 @@ function buildFishingSpots() {
     // with its bed three centimetres proud of the waterline: no sheet, and a
     // set of ripple rings turning on the grass.
     if (location.search.includes('debug')) {
-      const surface = RIVER_WATER_Y + 0.02, h = terrainHeight(sp.x, sp.z);
+      const surface = waterLevelAt(sp.x, sp.z) + 0.02, h = terrainHeight(sp.x, sp.z);
       const E = waterEdge();
       const inContour = terrainField(sp.x, sp.z, 'wet') >= E.marsh
                      || terrainField(sp.x, sp.z, 'deep') >= E.deep;
@@ -6893,11 +6945,11 @@ function renderWorld(dt) {
       // rather than standing on the bed three metres under.
       if (e.swim) {
         const bob = Math.sin(renderTime * 0.0016 + (x + z) * 0.08) * 0.09;
-        py = Math.max(py, RIVER_WATER_Y - SWIM_DEPTH + bob);
+        py = Math.max(py, waterLevelAt(x, z) - SWIM_DEPTH + bob);
         rec.swimT = Math.min(1, (rec.swimT || 0) + dt * 5);
       } else if (rec.swimT) {
         rec.swimT = Math.max(0, rec.swimT - dt * 5);
-        if (rec.swimT > 0) py = Math.max(py, RIVER_WATER_Y - SWIM_DEPTH) * rec.swimT + py * (1 - rec.swimT);
+        if (rec.swimT > 0) py = Math.max(py, waterLevelAt(x, z) - SWIM_DEPTH) * rec.swimT + py * (1 - rec.swimT);
       }
       rec.mesh.position.y = py;
       rec.mesh.rotation.y = yaw + (rec.mesh.userData.faceOffset || 0);
@@ -9693,7 +9745,7 @@ function addWakePiece(tex, x, z, opts) {
   const m = new THREE.Mesh(flatQuad(), new THREE.MeshBasicMaterial({
     map: tex, transparent: true, depthWrite: false, side: THREE.DoubleSide,
     color: opts.tint || 0xeaf7ff, opacity: 0 }));
-  m.position.set(x, RIVER_WATER_Y + (opts.lift || 0.03), z);
+  m.position.set(x, waterLevelAt(x, z) + (opts.lift || 0.03), z);
   m.rotation.y = opts.yaw != null ? opts.yaw : Math.random() * Math.PI * 2;
   m.scale.set(opts.r0, 1, opts.r0 * (opts.squash || 1));
   m.renderOrder = 3; scene.add(m);
@@ -11093,7 +11145,42 @@ respawnBtn.onclick = () => ws?.send(JSON.stringify({ t: 'respawn' }));
 if (location.search.includes('debug')) {
   window.__bk = {
     THREE,
-    terrainHeight, landHeight, groundY, groundMeshY, terrainAt, terrainField,   // terrain probes
+    terrainHeight, landHeight, landBaseY, groundY, groundMeshY, terrainAt, terrainField,   // terrain probes
+    waterLevelAt, riverProfile,                                    // water probes
+    // Is the water one coherent surface, and does each river run downhill?
+    // Both were wrong: two translucent sheets stacked into a third colour where
+    // they overlapped, and a level pinned to -0.5 whatever the land did.
+    waterReport() {
+      const sheets = [];
+      scene.traverse(o => { if (o.userData && o.userData.isWater) sheets.push(o); });
+      const rivers = (zone.rivers || []).map(r => {
+        const p = riverProfile(r), n = p.length, E = waterEdge();
+        // A point the drawing puts inside a lake or the fen takes that body's
+        // surface, so a step there is the river meeting still water, not the
+        // river climbing. Those are not counted.
+        const body = i => terrainField(r.points[i].x, r.points[i].z, 'wet') >= E.marsh;
+        let rises = 0, worstRise = 0, gorge = 0, gorgeAt = null;
+        for (let i = 1; i < n; i++) {
+          if (body(i) || body(i - 1)) continue;
+          const up = p[0] >= p[n - 1] ? p[i] - p[i - 1] : p[i - 1] - p[i];
+          if (up > 1e-6) { rises++; worstRise = Math.max(worstRise, up); }
+        }
+        for (let i = 0; i < n; i++) {
+          const q = r.points[i];
+          const a = r.points[Math.max(0, i - 1)], b = r.points[Math.min(n - 1, i + 1)];
+          let dx = b.x - a.x, dz = b.z - a.z; const L = Math.hypot(dx, dz) || 1; dx /= L; dz /= L;
+          const off = riverWaterHalf(r.width) + RIVER_LIP + 6;
+          const bank = Math.min(landBaseY(q.x - dz * off, q.z + dx * off),
+                                landBaseY(q.x + dz * off, q.z - dx * off));
+          if (bank - p[i] > gorge) { gorge = bank - p[i]; gorgeAt = [Math.round(q.x), Math.round(q.z)]; }
+        }
+        return { river: r.name, drop: +(Math.max(p[0], p[n - 1]) - Math.min(p[0], p[n - 1])).toFixed(1),
+          level: `${Math.min(...p).toFixed(1)} .. ${Math.max(...p).toFixed(1)} m`,
+          flowsUphillAt: rises, worstRise: +worstRise.toFixed(3),
+          deepestBankAboveWater: +gorge.toFixed(1), at: gorgeAt };
+      });
+      return { waterSheets: sheets.length, vertices: sheets.map(s => s.geometry.attributes.position.count), rivers };
+    },
     // Does everything laid ON the ground actually lie on it? Every vertex of
     // every ground decal against the ground mesh's own triangle under it. A
     // flat sheet over a hilly map shows up here as metres of gap; the answer
