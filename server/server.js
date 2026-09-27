@@ -10,6 +10,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { WebSocketServer } from 'ws';
 import { darkwoods } from './zones/darkwoods.js';
+import { spiderden } from './zones/spiderden.js';
 import {
   PLAYER, ELITE, MONSTER_TEMPLATES,
   xpForLevel, xpTotalForLevel, levelForXp, xpForKill, MAX_LEVEL, attackRoll, defenceRoll, hitChance, scaledMonster, rollLoot, REGEN,
@@ -25,6 +26,7 @@ import { isBardSpell, checkBardCast, castBard, spendSongCharges, songAmp, atkSpe
 import {
   dist2, closestOnPolyline, mulberry32, pointInPoly, polyCentroid, generateTrees, generateScatter, generateHanging,
   riversOf, bridgesOf, pathsOf, pathSpecsOf, closestOnPaths, terrainAt, terrainFieldAt, isSolid, isWater, terrainClearance, T_OFF, T_ROCK, T_DEEP, T_MARSH,
+  caveOutline,
 } from './worldgen.js';
 import {
   MINING, ORES, PICKAXES, oreFromModel, bestPickaxe, swingChance, swingTime,
@@ -88,7 +90,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLIENT_DIR = path.join(__dirname, '..', 'client');
 const PORT = process.env.PORT || 8080;
 
-const ZONES = { darkwoods };
+const ZONES = { darkwoods, spiderden };
 const START_ZONE = 'darkwoods';
 function zoneOf(ent) { return ZONES[ent.zoneId]; }
 
@@ -96,6 +98,16 @@ function zoneOf(ent) { return ZONES[ent.zoneId]; }
 // client read from the zone — bounds, boundary, POIs, paths, spawns, radii — is
 // multiplied in place, and content counts grow with area so density holds. Runs
 function buildWorld() {
+  // An underground zone is authored as rooms and tunnels; the engine only
+  // understands `boundary`, so trace the union of those shapes into one before
+  // anything -- collision, walls, spawn placement -- goes looking for it.
+  for (const zone of Object.values(ZONES)) {
+    if (zone.cavern && !zone.boundary) {
+      zone.boundary = caveOutline(zone.cavern, zone.bounds);
+      console.log(`[worldgen] ${zone.name}: ${zone.cavern.rooms.length} chambers traced into `
+        + `a ${zone.boundary.length}-point outline`);
+    }
+  }
   const z = darkwoods;
   z._trees = generateTrees(z);
   z._scatter = generateScatter(z);
@@ -476,6 +488,41 @@ function makeMonster(spec) {
   return m;
 }
 
+// A portal that lands you inside a wall is an entry loop, not a mistake you
+// notice later: collision shoves you back toward the arch you arrived through,
+// which sends you down again. The Spider Den's exit did exactly this once the
+// chokepoint squeeze put rock around its mouth. So every portal's landing spot
+// is checked against the world it lands in and moved if it has to be -- loudly,
+// because a portal that needed moving means the terrain under it changed.
+//
+// This runs with populate() rather than buildWorld(): standableAt reads consts
+// that are still in their temporal dead zone while buildWorld is running.
+function checkPortals() {
+  for (const zone of Object.values(ZONES)) {
+    for (const portal of (zone.portals || [])) {
+      const to = ZONES[portal.to];
+      if (!to || !portal.spawn) continue;
+      if (standableAt(to, portal.spawn.x, portal.spawn.z)) continue;
+      let moved = null;
+      for (let r = 2; r <= 40 && !moved; r += 2) {
+        for (let i = 0; i < 24; i++) {
+          const a = i / 24 * Math.PI * 2;
+          const nx = portal.spawn.x + Math.cos(a) * r, nz = portal.spawn.z + Math.sin(a) * r;
+          if (standableAt(to, nx, nz)) { moved = { x: +nx.toFixed(1), z: +nz.toFixed(1) }; break; }
+        }
+      }
+      if (moved) {
+        console.log(`[worldgen] portal into ${to.name} landed in solid ground at `
+          + `(${portal.spawn.x}, ${portal.spawn.z}); moved to (${moved.x}, ${moved.z})`);
+        portal.spawn.x = moved.x; portal.spawn.z = moved.z;
+      } else {
+        console.log(`[worldgen] !! portal into ${to.name} has nowhere to land near `
+          + `(${portal.spawn.x}, ${portal.spawn.z})`);
+      }
+    }
+  }
+}
+
 function populate() {
   for (const zoneId of Object.keys(ZONES)) {
     const zone = ZONES[zoneId];
@@ -631,6 +678,7 @@ function populateElite(zoneId, e) {
   elite.aggro = 10; // shorter leash; guards its circle
 }
 populate();
+checkPortals();
 
 // ---------------------------------------------------------------------------
 // Networking helpers

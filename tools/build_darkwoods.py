@@ -212,8 +212,9 @@ SPAWNS = [
     ('briar',           'bandit', 9, 6, 32, 22),
     ('briar',   'goblin_warrior',10, 4, 30, 18),
     ('briar',    'goblin_archer',10, 3, 30, 18),
-    ('spiderden',           'spider', 8, 8, 34, 24),
-    ('spiderden',     'venom_spider',10, 3, 30, 20),
+    # the hollow outside the mouth: what has come up out of it, not the den
+    ('spiderden',           'spider', 8, 5, 34, 24),
+    ('spiderden',     'venom_spider',10, 2, 30, 20),
     ('murkfen', 'goblin_scavenger', 5, 7, 50, 30),
     ('murkfen',           'spider', 6, 4, 46, 26),
     ('wolfsnag',           'guard', 9, 3, 34, 20),
@@ -736,10 +737,9 @@ CHESTS = [
 ELITES = [
     ('goblin_chief',  'Chief Rattlecap',        14, 'briar',    0, -6),
     ('cave_guardian', 'The Rootbound Guardian', 16, 'grimroot', 6,  4),
-    # The Spider Den is scattered with egg clusters, brood nests and hanging
-    # cocoons, and nothing had laid any of them -- the bestiary has carried a
-    # `broodmother` since before this zone and no zone ever used her.
-    ('broodmother',   'The Den Mother',         12, 'spiderden', -4, -7),
+    # The Den Mother has moved underground, where she belongs: the Spider Den is
+    # a real cave now (tools/build_spiderden.py) and she is in the brood chamber
+    # at the bottom of it. What is left up here is the approach.
     # Ravenwater's "deep, dark waters conceal hidden secrets". Something has
     # been down there long enough to go green.
     ('cave_giant',    'The Drowned Warden',     11, 'ravenwater', 9, -13),
@@ -1301,6 +1301,16 @@ def main():
     # The traced grid carries every cliff, so there are no separate collision
     # rocks -- but the client iterates both of these without a guard, and an
     # absent array is a crash rather than an empty one.
+    # The way into the Spider Den. Its sheet is a cave network you descend, and
+    # for a long time the arch was decoration with a bowl of webs behind it --
+    # there was no in. Standing in the arch now takes you to zone 2.
+    A('  portals: [')
+    arch = [pr for pr in PROPS if pr[2] == 'Rock_Arch'][0]
+    awx, awz = world(arch[0], arch[1])
+    A(f"    {{ x: {awx}, z: {round(awz + 1.5, 1)}, r: 4.2, to: 'spiderden', "
+      "spawn: { x: 0, z: -136, yaw: 3.14 } },")
+    A('  ],')
+    A('')
     A('  rocks: [],')
     A('  hazards: [],')
     A('  treeCount: 4200,')

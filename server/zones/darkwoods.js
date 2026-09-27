@@ -105,6 +105,10 @@ export const darkwoods = {
     { kind: 'trail', from: 'raven_east', to: 'chapel', points: [{ x: -138.8, z: -199.9 }, { x: -118.8, z: -199.9 }, { x: -103.8, z: -184.9 }, { x: -68.8, z: -184.9 }, { x: -63.8, z: -179.9 }, { x: -48.8, z: -179.9 }, { x: -38.8, z: -187.4 }, { x: 6.2, z: -187.4 }, { x: 31.2, z: -199.9 }] },
   ],
 
+  portals: [
+    { x: -0.4, z: 252.3, r: 4.2, to: 'spiderden', spawn: { x: 0, z: -136, yaw: 3.14 } },
+  ],
+
   rocks: [],
   hazards: [],
   treeCount: 4200,
@@ -117,8 +121,8 @@ export const darkwoods = {
     { type: 'bandit', level: 9, count: 6, cx: 231.4, cz: 153.7, r: 32, roam: 22 },
     { type: 'goblin_warrior', level: 10, count: 4, cx: 231.4, cz: 153.7, r: 30, roam: 18 },
     { type: 'goblin_archer', level: 10, count: 3, cx: 231.4, cz: 153.7, r: 30, roam: 18 },
-    { type: 'spider', level: 8, count: 8, cx: -0.4, cz: 273.3, r: 34, roam: 24 },
-    { type: 'venom_spider', level: 10, count: 3, cx: -0.4, cz: 273.3, r: 30, roam: 20 },
+    { type: 'spider', level: 8, count: 5, cx: -0.4, cz: 273.3, r: 34, roam: 24 },
+    { type: 'venom_spider', level: 10, count: 2, cx: -0.4, cz: 273.3, r: 30, roam: 20 },
     { type: 'goblin_scavenger', level: 5, count: 7, cx: 276.2, cz: -1.8, r: 50, roam: 30 },
     { type: 'spider', level: 6, count: 4, cx: 276.2, cz: -1.8, r: 46, roam: 26 },
     { type: 'guard', level: 9, count: 3, cx: -250.8, cz: -40.7, r: 34, roam: 20 },
@@ -600,7 +604,6 @@ export const darkwoods = {
   elites: [
     { type: 'goblin_chief', name: 'Chief Rattlecap', level: 14, cx: 231.4, cz: 147.7 },
     { type: 'cave_guardian', name: 'The Rootbound Guardian', level: 16, cx: 281.2, cz: -157.4 },
-    { type: 'broodmother', name: 'The Den Mother', level: 12, cx: -4.4, cz: 266.3 },
     { type: 'cave_giant', name: 'The Drowned Warden', level: 11, cx: -226.2, cz: -187.4 },
   ],
 

@@ -320,6 +320,180 @@ export function generateScatter(zone) {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// Caves. Rooms are lumpy blobs, tunnels are curved capsules between them, and
+// caveOutline marches the union into the one `boundary` polygon the engine
+// already uses for collision and walls -- so an underground zone needs nothing
+// downstream that a surface zone does not already have.
+//
+// Restored from before the engine purge for the Spider Den, which its concept
+// sheet calls "a hidden cave network ... webbed tunnels descend into darkness"
+// and which had been standing in as a dip in a field with cobwebs on it.
+//
+// The seam-fusing helpers that lived alongside these (mergeOutlines,
+// roughenOutline) are deliberately NOT back: they existed to weld two surface
+// zones into one, that world is gone, and one of them had a sign bug that
+// produced a bowtie polygon and an invisible wall.
+//
+// The tunnel graph must stay a TREE -- see caveOutline for why.
+// ---------------------------------------------------------------------------
+
+export function roomRadius(room, angle) {
+  return room.r * wobble(room.key || 'room', angle, room.rough != null ? room.rough : 0.34);
+}
+
+export function roomShape(room) {
+  const seed = room.key || 'room';
+  return {
+    axis: hash(seed + 'x') * Math.PI,                    // orientation
+    stretch: 1.15 + hash(seed + 'y') * 0.45,             // 1.15 to 1.6 long axis
+  };
+}
+
+export function tunnelPath(cav, t) {
+  const a = cav.rooms.find(r => r.key === t.from), b = cav.rooms.find(r => r.key === t.to);
+  if (!a || !b) return null;
+  const mx = (a.x + b.x) / 2, mz = (a.z + b.z) / 2;
+  const dx = b.x - a.x, dz = b.z - a.z;
+  const len = Math.hypot(dx, dz) || 1;
+  const bend = (hash(t.from + t.to) - 0.5) * 2 * (t.bend != null ? t.bend : 0.3) * len;
+  return { a, b, c: { x: mx + (-dz / len) * bend, z: mz + (dx / len) * bend } };
+}
+
+export function tunnelSamples(cav, t, n = 24) {
+  const p = tunnelPath(cav, t);
+  if (!p) return [];
+  const out = [];
+  for (let i = 0; i <= n; i++) out.push(quadPoint(p, i / n));
+  return out;
+}
+
+export function inCavern(cav, x, z) {
+  for (const r of cav.rooms) {
+    let dx = x - r.x, dz = z - r.z;
+    if (Math.abs(dx) > r.r * 2 || Math.abs(dz) > r.r * 2) continue;   // cheap reject
+    const sh = roomShape(r);
+    // Into the room's own frame, then squash the long axis so the radial test
+    // below describes an elongated blob rather than a disc.
+    const ca = Math.cos(-sh.axis), sa = Math.sin(-sh.axis);
+    const lx = (dx * ca - dz * sa) / sh.stretch, lz = dx * sa + dz * ca;
+    const d = Math.hypot(lx, lz);
+    if (d <= roomRadius(r, Math.atan2(lz, lx))) return true;
+  }
+  for (const t of cav.tunnels) {
+    const p = tunnelPath(cav, t);
+    if (!p) continue;
+    const baseW = (t.w || cav.tunnelWidth || 12) / 2;
+    const steps = 14;
+    for (let i = 0; i <= steps; i++) {
+      const s = i / steps;
+      const q = quadPoint(p, s);
+      const dx = x - q.x, dz = z - q.z;
+      // Passages pinch and open along their length rather than running at one
+      // constant width.
+      const w = baseW * (0.7 + 0.5 * Math.abs(Math.sin(s * 5.1 + hash(t.from + t.to + 'w') * 6.283)));
+      if (dx * dx + dz * dz <= w * w) return true;
+    }
+  }
+  return false;
+}
+
+export function caveOutline(cav, bounds, opts = {}) {
+  const step = opts.step || 2.5;
+  const x0 = bounds.minX, x1 = bounds.maxX, z0 = bounds.minZ, z1 = bounds.maxZ;
+  const nx = Math.ceil((x1 - x0) / step), nz = Math.ceil((z1 - z0) / step);
+  const at = (i, j) => inCavern(cav, x0 + i * step, z0 + j * step);
+
+  const grid = [];
+  for (let i = 0; i <= nx; i++) {
+    grid[i] = [];
+    for (let j = 0; j <= nz; j++) grid[i][j] = at(i, j);
+  }
+
+  // Each cell contributes edge segments between midpoints of its sides.
+  const key = (p) => p[0].toFixed(2) + ',' + p[1].toFixed(2);
+  const segs = [];
+  for (let i = 0; i < nx; i++) {
+    for (let j = 0; j < nz; j++) {
+      const tl = grid[i][j], tr = grid[i + 1][j], br = grid[i + 1][j + 1], bl = grid[i][j + 1];
+      const code = (tl ? 8 : 0) | (tr ? 4 : 0) | (br ? 2 : 0) | (bl ? 1 : 0);
+      if (code === 0 || code === 15) continue;
+      const X = x0 + i * step, Z = z0 + j * step;
+      const T = [X + step / 2, Z], R = [X + step, Z + step / 2];
+      const B = [X + step / 2, Z + step], L = [X, Z + step / 2];
+      const push = (a, b) => segs.push([a, b]);
+      switch (code) {
+        case 1: case 14: push(L, B); break;
+        case 2: case 13: push(B, R); break;
+        case 3: case 12: push(L, R); break;
+        case 4: case 11: push(T, R); break;
+        case 6: case 9:  push(T, B); break;
+        case 7: case 8:  push(L, T); break;
+        case 5: push(L, T); push(B, R); break;
+        case 10: push(T, R); push(L, B); break;
+      }
+    }
+  }
+  if (!segs.length) return [];
+
+  // Chain segments end-to-end into the longest closed ring.
+  const adj = new Map();
+  for (const [a, b] of segs) {
+    for (const [p, q] of [[a, b], [b, a]]) {
+      const k = key(p);
+      if (!adj.has(k)) adj.set(k, { pt: p, next: [] });
+      adj.get(k).next.push(q);
+    }
+  }
+  const used = new Set();
+  let best = [];
+  for (const startKey of adj.keys()) {
+    if (used.has(startKey)) continue;
+    const ring = [];
+    let cur = adj.get(startKey).pt, curKey = startKey;
+    while (true) {
+      used.add(curKey);
+      ring.push(cur);
+      const node = adj.get(curKey);
+      if (!node) break;
+      const nxt = node.next.find(p => !used.has(key(p)));
+      if (!nxt) break;
+      cur = nxt; curKey = key(nxt);
+    }
+    if (ring.length > best.length) best = ring;
+  }
+
+  // Ramer-Douglas-Peucker: the raw ring is thousands of 2.5-unit steps, and
+  // the client turns every edge into a wall mesh.
+  const tol = opts.tolerance || 1.1;
+  const simplify = (pts) => {
+    if (pts.length < 3) return pts;
+    const d2 = (p, a, b) => {
+      const vx = b[0] - a[0], vz = b[1] - a[1];
+      const len2 = vx * vx + vz * vz || 1;
+      let s = ((p[0] - a[0]) * vx + (p[1] - a[1]) * vz) / len2;
+      s = s < 0 ? 0 : s > 1 ? 1 : s;
+      const dx = p[0] - (a[0] + vx * s), dz = p[1] - (a[1] + vz * s);
+      return dx * dx + dz * dz;
+    };
+    const keep = new Array(pts.length).fill(false);
+    keep[0] = keep[pts.length - 1] = true;
+    const stack = [[0, pts.length - 1]];
+    while (stack.length) {
+      const [lo, hi] = stack.pop();
+      let far = -1, fd = tol * tol;
+      for (let i = lo + 1; i < hi; i++) {
+        const d = d2(pts[i], pts[lo], pts[hi]);
+        if (d > fd) { fd = d; far = i; }
+      }
+      if (far > 0) { keep[far] = true; stack.push([lo, far], [far, hi]); }
+    }
+    return pts.filter((_, i) => keep[i]);
+  };
+
+  return simplify(best).map(p => ({ x: +p[0].toFixed(1), z: +p[1].toFixed(1) }));
+}
+
 export function generateHanging(zone) {
   if (!zone.hanging) return [];
   const b = zone.bounds, rng = mulberry32((zone.scatterSeed || 7) + 991);

@@ -5,6 +5,7 @@
 //
 // Exits non-zero if any invariant fails, so it can gate a build.
 import { darkwoods as z } from '../server/zones/darkwoods.js';
+import { spiderden } from '../server/zones/spiderden.js';
 import { terrainAt, terrainFieldAt, isSolid } from '../server/worldgen.js';
 
 let failures = 0;
@@ -272,6 +273,33 @@ console.log('\nThe Dark Woods — zone invariants\n');
   const missing = [...used].filter(m => m && !listed.has(m));
   ok('everything placed is in the model manifest', missing.length === 0,
       missing.length ? missing.join(', ') : `${used.size} models placed`);
+}
+
+// --- portals ----------------------------------------------------------------
+// A portal that lands you inside a wall is an entry LOOP: collision shoves you
+// back toward the arch you came through, which sends you down again. The Spider
+// Den's exit did this once the chokepoint squeeze put rock around its mouth.
+{
+  const ZONES = { darkwoods: z, spiderden };
+  const bad = [];
+  for (const [zid, zone] of Object.entries(ZONES)) {
+    for (const p of (zone.portals || [])) {
+      const to = ZONES[p.to];
+      if (!to) { bad.push(`${zid} -> unknown zone '${p.to}'`); continue; }
+      if (!p.spawn) { bad.push(`${zid} -> ${p.to} has no spawn`); continue; }
+      if (to.terrain && isSolid(terrainAt(to, p.spawn.x, p.spawn.z)))
+        bad.push(`${zid} -> ${p.to} lands in solid ground`);
+      // and it must not drop you back inside the portal you came out of
+      for (const back of (to.portals || [])) {
+        if (back.to !== zid) continue;
+        const d = Math.hypot(back.x - p.spawn.x, back.z - p.spawn.z);
+        if (d < back.r + 2) bad.push(`${zid} -> ${p.to} lands ${d.toFixed(1)}u from the return portal (r ${back.r}) — a loop`);
+      }
+    }
+  }
+  const total = Object.values(ZONES).reduce((n, zz) => n + (zz.portals || []).length, 0);
+  ok('portals land somewhere you can stand, clear of the way back', bad.length === 0,
+      bad.length ? bad.join('; ') : `${total} portals`);
 }
 
 console.log(`\n${failures ? failures + ' FAILED' : 'all invariants hold'}\n`);
