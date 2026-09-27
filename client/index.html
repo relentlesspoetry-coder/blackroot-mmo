@@ -2575,7 +2575,7 @@ function buildZone() {
   // and only serve to keep the camera from slipping past the edge.
   const enclosed = zone.enclosed;
   const wallMat = enclosed
-    ? new THREE.MeshStandardMaterial({ color: 0x24272e, roughness: 1, flatShading: true })
+    ? new THREE.MeshStandardMaterial({ color: 0x3a3d42, roughness: 1, flatShading: true })
     : new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
   const h = enclosed ? (zone.ceilingY || 13) + 2 : 8;
   if (zone.boundary) {
@@ -2605,7 +2605,7 @@ function buildZone() {
   }
   if (enclosed) {
     const cy = zone.ceilingY || 13;
-    const ceil = new THREE.Mesh(new THREE.PlaneGeometry(W, D), detailize(new THREE.MeshStandardMaterial({ color: 0x555a63, roughness: 1 }), 'rock', { scale: 4 }));
+    const ceil = new THREE.Mesh(new THREE.PlaneGeometry(W, D), detailize(new THREE.MeshStandardMaterial({ color: 0x4c4f55, roughness: 1 }), 'rock', { scale: 4 }));
     ceil.rotation.x = Math.PI / 2; ceil.position.set(cx, cy, cz); scene.add(ceil);
     // Line the boundary with natural rock so the walls read as piled stone, not
     // flat panels. The dark boxes above stay as a light/camera occluder behind.
@@ -2805,14 +2805,33 @@ function buildLowPolyGround(W, D, cx, cz) {
   // --- The cave keeps the faceted, clipped, stone-textured floor. ---
   if (zone.enclosed) {
     const src = geo.toNonIndexed().attributes.position;
-    const pal = [[0.15, 0.16, 0.19], [0.12, 0.13, 0.16], [0.2, 0.19, 0.15], [0.17, 0.19, 0.23]];
+    // A GRADIENT rather than four flat tints: the floor darkens toward the
+    // walls and opens out pale in the middle of a chamber, which is what makes
+    // a room read as a room. The old palette was four bluish values inside a
+    // tenth of each other and came out as one flat slab.
+    const poly = zone.boundary || [];
+    const toWall = (x, zz) => {
+      let m = 1e9;
+      for (let i = 0; i < poly.length; i++) {
+        const a = poly[i], bp = poly[(i + 1) % poly.length];
+        const dx = bp.x - a.x, dz = bp.z - a.z, L2 = dx * dx + dz * dz || 1;
+        const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (zz - a.z) * dz) / L2));
+        const ex = x - (a.x + dx * t), ez = zz - (a.z + dz * t);
+        const d = ex * ex + ez * ez;
+        if (d < m) m = d;
+      }
+      return Math.sqrt(m);
+    };
     const positions = [], colors = [], uvs = [];
     for (let i = 0; i < src.count; i += 3) {
       const mxw = (src.getX(i) + src.getX(i + 1) + src.getX(i + 2)) / 3 + cx;
       const mzw = (src.getZ(i) + src.getZ(i + 1) + src.getZ(i + 2)) / 3 + cz;
       if (zone.boundary && !inBoundary(mxw, mzw)) continue;
-      const p = pal[Math.floor(rng() * pal.length)], j = 0.9 + rng() * 0.2;
-      c.setRGB(0.6 + p[0] * 0.7, 0.6 + p[1] * 0.7, 0.6 + p[2] * 0.7).multiplyScalar(j);
+      // 0 at the wall, 1 out in the open; eased so the darkening hugs the edge
+      const t = poly.length ? Math.min(1, toWall(mxw, mzw) / 16) : 0.6;
+      const ramp = t * t * (3 - 2 * t);
+      const g = 0.27 + ramp * 0.30 + (rng() - 0.5) * 0.055;   // neutral grey
+      c.setRGB(g, g * 1.005, g * 1.02);                        // a hair cool, not blue
       for (let k = 0; k < 3; k++) {
         const lx = src.getX(i + k), lz = src.getZ(i + k);
         positions.push(lx, src.getY(i + k), lz); colors.push(c.r, c.g, c.b); uvs.push((lx + W / 2) / 8, (lz + D / 2) / 8);
@@ -3037,8 +3056,41 @@ function buildDetails() {
     return a;
   };
 
-  // The cave's floor detail is authored geometry now — stalagmites, boulders,
-  // rubble, mushrooms and crystals all arrive through zone.scatter.
+  // Detail density scales with zone area so the bigger woods stay full.
+  const areaK0 = Math.min(3.2, ((b.maxX - b.minX) * (b.maxZ - b.minZ)) / 37800);
+
+  // Underground the floor is stone, so it gets GRIT rather than grass. This
+  // used to fall through to buildGrass(), which tests terrainAt() to decide
+  // where grass may grow -- and a cave has no terrain grid at all, so every
+  // sample came back as open ground and the Spider Den came out carpeted in
+  // green tufts. Loose stone in three sizes, shaded off the same grey ramp as
+  // the floor so the grit and the ground read as one material.
+  if (zone.enclosed) {
+    const grit = (count, rad, lo, hi) => {
+      const pts = gen(Math.round(count * areaK0), 0.6);
+      if (!pts.length) return;
+      const geo = new THREE.IcosahedronGeometry(rad, 0);
+      const col = new THREE.Color();
+      const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: true });
+      // one colour per stone, spread along the same neutral ramp the floor uses
+      const cols = new Float32Array(pts.length * 3);
+      for (let i = 0; i < pts.length; i++) {
+        const g = lo + Math.random() * (hi - lo);
+        col.setRGB(g, g * 1.005, g * 1.02);
+        cols[i * 3] = col.r; cols[i * 3 + 1] = col.g; cols[i * 3 + 2] = col.b;
+      }
+      const im = instScatter(geo, mat, pts, p => rad * p.s * 0.45, 0.62);
+      if (im) for (const m of (Array.isArray(im) ? im : [im])) {
+        if (m && m.instanceColor === undefined) {
+          m.instanceColor = new THREE.InstancedBufferAttribute(cols.slice(0, m.count * 3), 3);
+        }
+      }
+    };
+    grit(1400, 0.17, 0.30, 0.52);     // gravel
+    grit(520, 0.34, 0.26, 0.46);      // stones
+    grit(150, 0.62, 0.22, 0.40);      // the odd loose rock
+    return;
+  }
 
   // Little blades of grass across the whole zone. (This replaced the old solid
   // cone "grass tufts" and "ferns", which read as weird green pyramids/blobs.)
@@ -4996,10 +5048,10 @@ function makeMonsterMesh(type, elite) {
     // move and they just slide along the ground.
     else if (HUMANOID_SPLIT.has(type)) splitHumanoid(g, null);
     mergeRigidParts(g);
-    // Most GLB characters face -Z (flip with MODEL_YAW); the Chicken, the cow and
-    // the humanoid mobs (goblins, bandits) face +Z, so they need no flip or they
-    // walk backwards.
-    g.userData.faceOffset = (type === 'chicken' || type === 'cluckifer' || type === 'hell_chick' || type === 'brood_chick' || type === 'cow' || HUMANOID_SPLIT.has(type)) ? 0 : MODEL_YAW;
+    // Most GLB characters face -Z (flip with MODEL_YAW); the ones in
+    // FACES_FORWARD already face +Z and must NOT be flipped, or they walk
+    // backwards. See the set for how that list was arrived at.
+    g.userData.faceOffset = (FACES_FORWARD.has(type) || HUMANOID_SPLIT.has(type)) ? 0 : MODEL_YAW;
     g.userData.rig = buildRig(g, RIG_STYLE[type] || 'biped');
     // Split humanoid mobs face +Z and punch with alternating hands (see the
     // generic biped branch in animateEntity).
@@ -5336,6 +5388,18 @@ const RIG_STYLE = {
 const HUMANOID_SPLIT = new Set([
   'goblin', 'goblin_scavenger', 'goblin_warrior', 'goblin_archer',
   'goblin_shaman', 'goblin_miner', 'goblin_chief', 'bandit',
+]);
+// Models that already face +Z, our forward, and so take no MODEL_YAW flip.
+//
+// The spiders are here because they were flipped and walked backwards -- and
+// they are here on measurement, not on a second guess. In Cave_Spider the fangs
+// and pedipalps sit at z +0.45..+0.80 and the abdomen bristles at z -0.13..-0.68;
+// the front legs reach z +1.37 and the back legs -1.10. Venom and Crystal are
+// the same rig, and the Broodmother's front legs reach +0.72 against -1.10 at
+// the back. Head forward is +Z on all four.
+const FACES_FORWARD = new Set([
+  'chicken', 'cluckifer', 'hell_chick', 'brood_chick', 'cow',
+  'spider', 'venom_spider', 'crystal_spider', 'broodmother',
 ]);
 // bob = vertical rise per step, roll = side-to-side sway, stride = metres per
 // step (drives cadence from real speed, so nothing moonwalks).
