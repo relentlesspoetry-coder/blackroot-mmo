@@ -5400,6 +5400,12 @@ const HUMANOID_SPLIT = new Set([
 const FACES_FORWARD = new Set([
   'chicken', 'cluckifer', 'hell_chick', 'brood_chick', 'cow',
   'spider', 'venom_spider', 'crystal_spider', 'broodmother',
+  // The bat is modelled UPRIGHT and its parts are all called Body_n, so the
+  // name-based check that settled the spiders had nothing to go on. Read off
+  // the geometry instead: the ears sit at y 0.70..0.99, the feet at y -0.74,
+  // the wings span x +-2.10, and the snout is at z +0.29..+0.37. The face is on
+  // the +Z side, so the flip was making it fly tail first.
+  'bat',
 ]);
 // bob = vertical rise per step, roll = side-to-side sway, stride = metres per
 // step (drives cadence from real speed, so nothing moonwalks).
