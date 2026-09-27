@@ -2575,7 +2575,7 @@ function buildZone() {
   // and only serve to keep the camera from slipping past the edge.
   const enclosed = zone.enclosed;
   const wallMat = enclosed
-    ? new THREE.MeshStandardMaterial({ color: 0x3a3d42, roughness: 1, flatShading: true })
+    ? new THREE.MeshStandardMaterial({ color: 0xb4b8bf, roughness: 1, flatShading: true, vertexColors: true })
     : new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
   const h = enclosed ? (zone.ceilingY || 13) + 2 : 8;
   if (zone.boundary) {
@@ -2584,7 +2584,21 @@ function buildZone() {
       for (let i = 0; i < poly.length; i++) {
         const a = poly[i], bpt = poly[(i + 1) % poly.length];
         const dx = bpt.x - a.x, dz = bpt.z - a.z, len = Math.hypot(dx, dz);
-        const wall = new THREE.Mesh(new THREE.BoxGeometry(len + 2, h, 3), wallMat);
+        const wgeo = new THREE.BoxGeometry(len + 2, h, 3);
+        // Vertical gradient up each panel -- pale where it meets the floor,
+        // going to near black under the ceiling. A cave wall is not one value.
+        {
+          const pos = wgeo.attributes.position, col = [];
+          const mid = (a.x + bpt.x) / 2, midz = (a.z + bpt.z) / 2;
+          const base = caveGrey(mid, midz, 0.72, 1.18);
+          for (let v = 0; v < pos.count; v++) {
+            const t = Math.max(0, Math.min(1, (pos.getY(v) + h / 2) / h));   // 0 floor .. 1 ceiling
+            const g = base * (0.95 - 0.62 * t * t);
+            col.push(g, g * 1.01, g * 1.05);
+          }
+          wgeo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+        }
+        const wall = new THREE.Mesh(wgeo, wallMat);
         wall.position.set((a.x + bpt.x) / 2, h / 2, (a.z + bpt.z) / 2);
         wall.rotation.y = Math.atan2(-dz, dx);
         wall.castShadow = wall.receiveShadow = enclosed;
@@ -2605,7 +2619,17 @@ function buildZone() {
   }
   if (enclosed) {
     const cy = zone.ceilingY || 13;
-    const ceil = new THREE.Mesh(new THREE.PlaneGeometry(W, D), detailize(new THREE.MeshStandardMaterial({ color: 0x4c4f55, roughness: 1 }), 'rock', { scale: 4 }));
+    const cgeo = new THREE.PlaneGeometry(W, D, 40, 40);
+    {
+      const pos = cgeo.attributes.position, col = [];
+      for (let v = 0; v < pos.count; v++) {
+        // plane is built in XY then rotated, so its local y IS world z
+        const g = caveGrey(pos.getX(v) + cx, pos.getY(v) + cz, 0.42, 0.92);
+        col.push(g, g * 1.01, g * 1.05);
+      }
+      cgeo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    }
+    const ceil = new THREE.Mesh(cgeo, detailize(new THREE.MeshStandardMaterial({ color: 0xc6cad1, roughness: 1, vertexColors: true }), 'rock', { scale: 4 }));
     ceil.rotation.x = Math.PI / 2; ceil.position.set(cx, cy, cz); scene.add(ceil);
     // Line the boundary with natural rock so the walls read as piled stone, not
     // flat panels. The dark boxes above stay as a light/camera occluder behind.
@@ -2827,11 +2851,13 @@ function buildLowPolyGround(W, D, cx, cz) {
       const mxw = (src.getX(i) + src.getX(i + 1) + src.getX(i + 2)) / 3 + cx;
       const mzw = (src.getZ(i) + src.getZ(i + 1) + src.getZ(i + 2)) / 3 + cz;
       if (zone.boundary && !inBoundary(mxw, mzw)) continue;
-      // 0 at the wall, 1 out in the open; eased so the darkening hugs the edge
-      const t = poly.length ? Math.min(1, toWall(mxw, mzw) / 16) : 0.6;
-      const ramp = t * t * (3 - 2 * t);
-      const g = 0.27 + ramp * 0.30 + (rng() - 0.5) * 0.055;   // neutral grey
-      c.setRGB(g, g * 1.005, g * 1.02);                        // a hair cool, not blue
+      // Two gradients multiplied: how far from a wall you are (the floor
+      // darkens into the corners) and the cave's own slow drift, so one end of
+      // a chamber is lighter than the other. A single ramp still reads flat.
+      const t = poly.length ? Math.min(1, toWall(mxw, mzw) / 18) : 0.6;
+      const edge = 0.46 + (t * t * (3 - 2 * t)) * 0.54;
+      const g = caveGrey(mxw, mzw, 0.30, 0.68, 0.05) * edge;
+      c.setRGB(g, g * 1.01, g * 1.04);                         // a hair cool, not blue
       for (let k = 0; k < 3; k++) {
         const lx = src.getX(i + k), lz = src.getZ(i + k);
         positions.push(lx, src.getY(i + k), lz); colors.push(c.r, c.g, c.b); uvs.push((lx + W / 2) / 8, (lz + D / 2) / 8);
@@ -3721,6 +3747,17 @@ function buildPoi(p) {
 }
 
 // ---- Natural cave walls: line the boundary polygon with rock boulders ----
+// One grey ramp for the whole cave, so the floor, the walls and the ceiling are
+// obviously the same rock. Two sine octaves give a slow drift across a chamber
+// (one side lighter than the other) and a finer mottle on top of it; the caller
+// decides how dark the band is and how much of the ramp it uses.
+function caveGrey(x, z, lo, hi, jitter = 0) {
+  const slow = Math.sin(x * 0.031) * Math.cos(z * 0.037) + Math.sin((x + z) * 0.019);
+  const fine = Math.sin(x * 0.17 + 1.7) * Math.cos(z * 0.21 - 0.6);
+  const t = (slow / 2 + fine * 0.35) / 1.35 * 0.5 + 0.5;       // 0..1
+  return lo + Math.max(0, Math.min(1, t)) * (hi - lo) + (jitter ? (Math.random() - 0.5) * jitter : 0);
+}
+
 function buildCaveWalls(poly, ceilY, yBase = 0) {
   // Push boulders out along each edge's OWN normal (not from the centroid) — for
   // a multi-room cave with narrow tunnels, centroid-push shoves boulders across
@@ -3752,8 +3789,17 @@ function buildCaveWalls(poly, ceilY, yBase = 0) {
     const list = places[model]; if (!list.length) continue;
     const parts = bakeModel(model, ceilY * (model === 'Wall_Boulder_Tall' ? 1.3 : 0.95));
     if (!parts) continue;
+    // Per-instance grey, or the wall is one flat colour repeated two hundred
+    // times -- which is exactly what it looked like: a band of identical rock.
+    const tintC = new THREE.Color();
     for (const part of parts) {
-      chunkedInstances(part.geo, part.mat, list, (o, i, im) => { q.setFromAxisAngle(UP, o.r); sc.set(o.s, o.s, o.s); mtx.compose(new THREE.Vector3(o.x, yBase, o.z), q, sc); im.setMatrixAt(i, mtx); });
+      chunkedInstances(part.geo, part.mat, list, (o, i, im) => {
+        q.setFromAxisAngle(UP, o.r); sc.set(o.s, o.s, o.s);
+        mtx.compose(new THREE.Vector3(o.x, yBase, o.z), q, sc); im.setMatrixAt(i, mtx);
+        const g = caveGrey(o.x, o.z, 0.55, 1.35, 0.16);
+        tintC.setRGB(g, g * 1.01, g * 1.04);
+        im.setColorAt(i, tintC);
+      });
     }
   }
 }
