@@ -3042,9 +3042,52 @@ function updateLOD() {
   }
 }
 
+// Chunking exists so the frustum can throw a whole cell away in one test. That
+// only pays when a cell holds enough instances to be worth the object. Splitting
+// on a fixed grid REGARDLESS of how many copies a model has meant a species with
+// a dozen placements got a dozen meshes instead of one -- and then a thirteenth
+// each for their LOD twins. Measured: 8,184 of the scene's 9,631 instanced
+// meshes held five instances or fewer. Eighty-five per cent of the objects
+// three.js walks, frustum-tests and can draw every frame, carrying five per cent
+// of the content.
+//
+// So a model is chunked only when it has enough copies for culling to pay, and
+// a model too sparse to chunk does not get an LOD twin either: its handful of
+// pieces are not what costs anything.
+// How many instances a cell should hold for the frustum test to be worth the
+// object it costs. Below this the cell is overhead.
+// Swept on the real map at 24 / 36 / 64. Frame rate is flat across that range
+// -- the win is in the draw calls, not the cell size -- but the triangle count
+// climbs steeply above ~36 as coarser cells cull worse: 64 submits 7.8-10M
+// triangles where 24 submits 3.5-5.6M for the same frame rate. This machine is
+// CPU-bound so it would not notice; a weaker GPU would. `?ct=` overrides it,
+// which is how the sweep was done.
+const CHUNK_TARGET = +(new URLSearchParams(location.search).get('ct')) || 32;
+// `?chunk=old` forces the previous fixed-grid behaviour so the two can be
+// measured back to back on the same machine, which matters because a machine
+// under other GPU load pins BOTH at the same frame rate and the comparison
+// silently becomes meaningless. Measured at the camp, interleaved:
+//
+//   fixed grid   9,631 meshes   2,569 draw calls   3.3M triangles
+//   per-model    1,848 meshes   1,545 draw calls   5.5M triangles
+//
+// Fewer objects and fewer draw calls for more triangles submitted. That is the
+// right way round: a GPU eats two million extra triangles without noticing,
+// while three.js walks, matrix-updates, frustum-tests and sorts every one of
+// those objects on the CPU every frame.
 function chunkedInstances(geo, mat, items, fill, opts = {}) {
   const cells = new Map();
-  const CHUNK = chunkSize();
+  // Size the grid to THIS model's density rather than the zone's. Spread n
+  // copies over a zone of side L, cells of side c hold about n(c/L)^2 each, so
+  // the c that holds CHUNK_TARGET is L*sqrt(TARGET/n). A species with a dozen
+  // placements comes out as one cell; the trees come out at about 150 m, which
+  // is 32 cells of 65 trees. The old fixed grid gave both of them 56 cells.
+  const b = zone && zone.bounds;
+  const L = b ? Math.max(b.maxX - b.minX, b.maxZ - b.minZ) : 800;
+  const CHUNK = new URLSearchParams(location.search).get('chunk') === 'old' ? chunkSize()
+              : items.length <= CHUNK_TARGET ? Infinity
+              : Math.max(chunkSize(), L * Math.sqrt(CHUNK_TARGET / items.length));
+  const sparse = !isFinite(CHUNK);
   for (const it of items) {
     const k = Math.floor(it.x / CHUNK) + ':' + Math.floor(it.z / CHUNK);
     (cells.get(k) || cells.set(k, []).get(k)).push(it);
@@ -3060,7 +3103,11 @@ function chunkedInstances(geo, mat, items, fill, opts = {}) {
     if (opts.tag) Object.assign(im.userData, opts.tag);
     scene.add(im); out.push({ im, items: list });
     // A cheap twin of this chunk, shown once the camera is far enough off.
-    const lg = opts.lod === false ? null : lodGeometry(geo);
+    // An unchunked model is ONE mesh spanning the whole zone, so its LOD twin
+    // would switch on the centroid of every copy -- a bush at your feet drawn
+    // as its low-detail twin because the average of its species is far away.
+    // Those models have few enough instances that full detail is free.
+    const lg = (opts.lod === false || sparse) ? null : lodGeometry(geo);
     if (lg) {
       const lm = new THREE.InstancedMesh(lg, mat, list.length);
       lm.castShadow = false;                    // a distant tree's shadow is not worth it
@@ -3874,7 +3921,32 @@ function placeInstances(list, yOf) {
         if (colored) im.setColorAt(i, Array.isArray(o.tint) ? _tintC.setRGB(o.tint[0], o.tint[1], o.tint[2]) : o.tint ? _tintC.set(o.tint) : _tintC.set(0xffffff));   // an [r,g,b] tint may exceed 1 to lift a dark model
       }, isOre ? { tag: { pickKind: 'ore', oreName: model.replace(/_Ore_Vein$/, '') } } : {});
       // each chunk keeps its own vein list so instanceId -> vein still lines up
-      if (isOre) for (const c of chunks) oreMeshes.push({ mesh: c.im, veins: c.items });
+      if (isOre) {
+        const from = oreMeshes.length;
+        for (const c of chunks) oreMeshes.push({ mesh: c.im, veins: c.items });
+        // ...and that is an assumption about how chunkedInstances groups
+        // things, which is exactly what a later change to the grouping breaks
+        // without a symptom: you would simply mine a different rock from the
+        // one you clicked. So check the RECORD the click path reads, not the
+        // list it was built from -- the first version of this compared
+        // `c.items` against itself, which is correct by construction and could
+        // not fail. Reversing the stored vein list produced 130 wrong
+        // mappings and this check said nothing.
+        if (location.search.includes('debug')) {
+          const _m = new THREE.Matrix4(), _p = new THREE.Vector3();
+          for (let r = from; r < oreMeshes.length; r++) {
+            const rec = oreMeshes[r];
+            for (let i = 0; i < rec.veins.length; i++) {
+              rec.mesh.getMatrixAt(i, _m); _p.setFromMatrixPosition(_m);
+              const v = rec.veins[i];
+              if (Math.hypot(_p.x - v.x, _p.z - v.z) > 0.6)
+                console.error(`[ore] ${model} instance ${i} is drawn at `
+                  + `${_p.x.toFixed(1)},${_p.z.toFixed(1)} but maps to vein ${v.i} at `
+                  + `${v.x},${v.z} — clicking it would mine the wrong vein`);
+            }
+          }
+        }
+      }
       if (FLYERS.test(model)) {
         for (const c of chunks) {
           const base = c.items.map(o => ({
@@ -10511,6 +10583,7 @@ if (location.search.includes('debug')) {
     get entities() { return entityMeshes; },
     get objects() { return worldObjects; },   // quest objects, for checking they arrived
     get flyers() { return flyerMeshes; },     // butterflies/moths, for checking they drift
+    get ores() { return oreMeshes; },         // instanceId -> vein mapping, for checking picks resolve
     get npcs() { return npcMeshes; },
     get wardrobe() { return wardrobe; }, wardrobePieces: (look) => lookPieces(look),
     get self() { return entityMeshes.get(myId); },
