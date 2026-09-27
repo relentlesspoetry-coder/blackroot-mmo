@@ -7,7 +7,7 @@
 import { readFileSync } from 'fs';
 import { darkwoods as z } from '../server/zones/darkwoods.js';
 import { spiderden } from '../server/zones/spiderden.js';
-import { terrainAt, terrainFieldAt, isSolid } from '../server/worldgen.js';
+import { terrainAt, terrainFieldAt, isSolid, rockSolidAt, rockRiseAt, rockEdgeOf } from '../server/worldgen.js';
 import { ITEMS } from '../server/items.js';
 import { FISH, TIERS } from '../server/fishing.js';
 import { QUESTS } from '../server/quests.js';
@@ -261,7 +261,7 @@ console.log('\nThe Dark Woods — zone invariants\n');
       for (const rr of [1.6, 2.4, 3.2, 4.0, FISH_REACH - 0.1]) {
         const x = f.x + Math.cos(ang) * rr, zz = f.z + Math.sin(ang) * rr;
         if (onDeck(x, zz)) return false;                       // the planks
-        if (isSolid(terrainAt(z, x, zz))) continue;            // cliff or off-map
+        if (terrainAt(z, x, zz) === ' ' || rockSolidAt(z, x, zz)) continue;   // cliff or off-map
         if (wadeDepth(x, zz) < SWIM_IN) return false;          // you can stand here
       }
     }
@@ -292,7 +292,7 @@ console.log('\nThe Dark Woods — zone invariants\n');
     ...(z.chests || []).map(c => ['chest ' + c.id, c.x, c.z]),
     ...(z.elites || []).map(e => ['elite ' + e.name, e.cx, e.cz]),
     ...(z.npcs || []).map(n => ['npc ' + n.name, n.x, n.z]),
-  ].filter(([, x, zz]) => isSolid(terrainAt(z, x, zz)));
+  ].filter(([, x, zz]) => terrainAt(z, x, zz) === ' ' || rockSolidAt(z, x, zz));
   ok('chests, elites and NPCs stand on reachable ground', sealedIn.length === 0,
       sealedIn.length ? sealedIn.map(r => r[0]).join(', ')
                       : `${z.chests.length} chests, ${z.elites.length} elites, ${z.npcs.length} npcs`);
@@ -403,7 +403,8 @@ console.log('\nThe Dark Woods — zone invariants\n');
       // cave is the walkable part, so anything outside the chambers and the
       // tunnels is inside solid rock.
       if (zone.enclosed) { if (!inCavern(zone, o.x, o.z)) sealed.push(`${zid}:${o.id}`); }
-      else if (isSolid(terrainAt(zone, o.x, o.z)) || terrainAt(zone, o.x, o.z) === 'W')
+      else if (terrainAt(zone, o.x, o.z) === ' ' || terrainAt(zone, o.x, o.z) === 'W'
+               || rockSolidAt(zone, o.x, o.z))
         sealed.push(`${zid}:${o.id}`);
     }
     for (let i = 0; i < objs.length; i++) for (let j = i + 1; j < objs.length; j++)
@@ -458,7 +459,7 @@ console.log('\nThe Dark Woods — zone invariants\n');
       const to = ZONES[p.to];
       if (!to) { bad.push(`${zid} -> unknown zone '${p.to}'`); continue; }
       if (!p.spawn) { bad.push(`${zid} -> ${p.to} has no spawn`); continue; }
-      if (to.terrain && isSolid(terrainAt(to, p.spawn.x, p.spawn.z)))
+      if (to.terrain && (terrainAt(to, p.spawn.x, p.spawn.z) === ' ' || rockSolidAt(to, p.spawn.x, p.spawn.z)))
         bad.push(`${zid} -> ${p.to} lands in solid ground`);
       // and it must not drop you back inside the portal you came out of
       for (const back of (to.portals || [])) {
@@ -473,25 +474,55 @@ console.log('\nThe Dark Woods — zone invariants\n');
       bad.length ? bad.join('; ') : `${total} portals`);
 }
 
-// A road through rock is not a road. This is cheap and it guards the one edit
-// that could quietly break every route: the build now turns walkable ground
-// into rock wherever the client draws more than five metres of cliff over it,
-// and a road crossing the skirt of a crag is exactly where that would land.
+// The whole point of rockEdge: what blocks and what is drawn are one shape.
+// Before it, 371 cells blocked while standing under 2 m proud (an invisible
+// wall) and 310 cells of walkable ground had over 4 m of crag drawn on them (a
+// player inside a cliff). The first is now impossible by construction -- solid
+// IS the field level -- so what is worth guarding is the second: the only
+// ground you may walk on with a cliff over your head is a road, which is the
+// one authored exception, and there should not be much of it.
 {
-  let onRock = 0, samples = 0;
+  const E = rockEdgeOf(z), wall = E.rise * E.solid ** 2;
+  const T2 = z.terrain;
+  let blind = 0, through = 0, offPath = [];
+  for (let gz = 0; gz < T2.h; gz++) for (let gx = 0; gx < T2.w; gx++) {
+    if (T2.rows[gz][gx] === ' ') continue;
+    const x = T2.minX + (gx + 0.5) * T2.cell, zz = T2.minZ + (gz + 0.5) * T2.cell;
+    const h = rockRiseAt(z, x, zz), solid = rockSolidAt(z, x, zz);
+    if (solid && h < wall - 0.01) blind++;
+    if (!solid && h > wall + 0.01) { through++; if (toPath(x, zz) > 5) offPath.push(`(${x.toFixed(0)}, ${zz.toFixed(0)})`); }
+  }
+  ok('nothing blocks that is not drawn, and nothing drawn is walked through',
+    blind === 0 && offPath.length === 0,
+    `${blind} invisible walls, ${through} cells under a cliff you can walk (all on roads`
+    + `${offPath.length ? ' EXCEPT ' + offPath.slice(0, 5).join(' ') : ''})`);
+}
+
+// A road through rock is not a road. Since rock blocks by the DRAWN field now,
+// a road can never be blocked -- it is the one authored exception to that rule
+// (worldgen.rockSolidAt), because a 3-5 m chokepoint is narrower than the blur
+// can resolve. So the thing to guard is that the exception stays a safety net
+// and not a crutch: a road must never be buried in a mountain. Measured: 18 of
+// 5,289 samples lean on it at all, the worst under 4.9 m of stone.
+{
+  let worst = 0, worstAt = null, leaning = 0, samples = 0;
   for (const p of (z.paths || [])) {
     for (let i = 0; i < p.points.length - 1; i++) {
       const a = p.points[i], b = p.points[i + 1];
       const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.z - a.z)));
       for (let k = 0; k <= n; k++) {
-        const t2 = k / n, c = terrainAt(z, a.x + (b.x - a.x) * t2, a.z + (b.z - a.z) * t2);
+        const t2 = k / n, x = a.x + (b.x - a.x) * t2, zz = a.z + (b.z - a.z) * t2;
         samples++;
-        if (c === 'R' || c === ' ') onRock++;
+        if (terrainAt(z, x, zz) === ' ') { worst = Infinity; worstAt = `${p.from}->${p.to} off the map`; continue; }
+        const h = rockRiseAt(z, x, zz);
+        if (h > rockEdgeOf(z).rise * rockEdgeOf(z).solid ** 2) leaning++;
+        if (h > worst) { worst = h; worstAt = `${p.from}->${p.to} at (${x.toFixed(0)}, ${zz.toFixed(0)})`; }
       }
     }
   }
-  ok('no road or trail runs through rock', onRock === 0,
-    `${samples} samples along ${(z.paths || []).length} routes, ${onRock} in the stone`);
+  const BURIED = 8;
+  ok('no road is buried in rock', worst <= BURIED,
+    `${samples} samples, ${leaning} lean on the road exemption, worst ${Number.isFinite(worst) ? worst.toFixed(1) + ' m' : 'off-map'} — ${worstAt}`);
 }
 
 // The three "can you reach it" invariants above work on the 2.5 m terrain grid

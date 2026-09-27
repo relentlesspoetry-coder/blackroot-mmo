@@ -1656,7 +1656,13 @@ function landHeight(x, z) {
 // A single unit of marsh cut is not a marsh, it is a damp lawn: the fen's floor
 // has to sit a wader's depth below the waterline so the sheet actually covers
 // it. Deep water is cut harder still so Ravenwater reads as deep.
-const ROCK_RISE = 17, WATER_CUT = 4.6, MARSH_CUT = 2.0;
+// How tall the drawn rock stands. This is not a drawing choice on its own any
+// more: the server blocks where the rock FIELD reaches `rockEdge.solid`, so
+// this number and that one together decide where the wall is, and both come
+// from the zone. See rockEdge in worldgen.js.
+const ROCK_EDGE_FALLBACK = { rise: 17, solid: 0.5 };
+function rockEdge() { return (zone && zone.rockEdge) || ROCK_EDGE_FALLBACK; }
+const WATER_CUT = 4.6, MARSH_CUT = 2.0;
 // Where the shoreline goes, as a contour of the traced wetness field.
 //
 // The cut used to be linear in that field, and linear puts the bowl's RIM in the
@@ -1692,7 +1698,7 @@ function terrainHeight(x, z) {
   // cells of the zone were like that. With the land faded, the shoreline is the
   // edge contour and nothing else, and the two sides cannot disagree.
   const LF = Math.max(0, 1 - wet / E.fade);
-  let y = LF * (landHeight(x, z) + ROCK_RISE * rock * rock);
+  let y = LF * (landHeight(x, z) + rockEdge().rise * rock * rock);
   const dFall = Math.log(0.5 / WATER_CUT) / Math.log(E.deep);
   const mFall = Math.log(0.5 / MARSH_CUT) / Math.log(E.marsh);
   y -= WATER_CUT * Math.pow(deep, dFall)

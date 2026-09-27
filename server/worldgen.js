@@ -137,6 +137,50 @@ export function pathSpecsOf(zone) {
 export function pathsOf(zone) { return pathSpecsOf(zone).map(p => p.points); }
 // How wide the forest is kept back from each kind.
 export function pathClearOf(kind) { return kind === 'trail' ? 3 : 6; }
+// How wide the WALKING surface is -- the same half-widths the builder cuts a
+// path with. A road is walkable by definition (see rockSolidAt), so this is the
+// width of that exemption, not a drawing measurement.
+export function pathWalkOf(kind) { return kind === 'trail' ? 2.4 : 3.4; }
+// True if (x,z) is on a road or trail.
+export function onPath(zone, x, z) {
+  for (const p of pathSpecsOf(zone)) {
+    if (!p.points || p.points.length < 2) continue;
+    if (closestOnPolyline(x, z, p.points).dist <= pathWalkOf(p.kind)) return true;
+  }
+  return false;
+}
+
+// --- rock -----------------------------------------------------------------
+// What blocks is the rock the client DRAWS, not the cell the blueprint was
+// traced into. Those are different shapes: the drawn height is the cell grid
+// put through a four-pass blur, and blurring shrinks a stringy shape, so a
+// one-cell spur of traced rock draws as a metre-high swell. Blocking by the
+// cell meant 371 cells of invisible wall and 310 cells of ground with a cliff
+// standing on it, and no edit to the cells could close that gap -- opening a
+// thin spur lowers the field around what is left and exposes the next one.
+//
+// So there is one level, here, and client, server and builder all use it: rock
+// blocks where the field reaches `solid`. At 0.5 -- the half-level a blur puts
+// at the edge of the shape it came from -- you are stopped exactly at the drawn
+// edge of the rock, and the wall you are stopped by is rise * 0.5^2 = 4.25 m
+// tall. This is the same arrangement as `waterEdge`, for the same reason.
+const ROCK_EDGE_FALLBACK = { rise: 17, solid: 0.5 };
+export function rockEdgeOf(zone) { return (zone && zone.rockEdge) || ROCK_EDGE_FALLBACK; }
+// How much rock the client draws standing at (x,z), in metres.
+export function rockRiseAt(zone, x, z) {
+  const E = rockEdgeOf(zone), f = terrainFieldAt(zone, x, z, 'rock');
+  return E.rise * f * f;
+}
+// Is (x,z) inside the rock? A road is not: the blueprint's chokepoints are
+// three to five metres of gap through a cliff, which is narrower than the blur
+// can resolve, so a pass would read as solid stone with a road painted on it.
+// The road is the authored exception and it is only consulted where the field
+// would otherwise block, so it costs nothing on open ground.
+export function rockSolidAt(zone, x, z) {
+  if (!zone || !zone.terrain) return false;
+  if (terrainFieldAt(zone, x, z, 'rock') < rockEdgeOf(zone).solid) return false;
+  return !onPath(zone, x, z);
+}
 // Nearest point on ANY of a zone's roads.
 export function closestOnPaths(x, z, zone) {
   let best = null;
@@ -318,7 +362,10 @@ export function generateScatter(zone) {
       // perched out of reach -- and an ore vein in a cliff face is a node that
       // can never be mined. Wolfsnag had 55 of its 65 pieces there, seventeen
       // of them ore, once its chokepoints squeezed the open ground away.
-      if (isSolid(terrainAt(zone, x, z))) continue;
+      // The cliff is the one the client DRAWS, which is what a player sees a
+      // vein sticking out of, so this asks rockSolidAt and not the cell.
+      { const c = terrainAt(zone, x, z);
+        if (c === T_OFF || c === T_DEEP || rockSolidAt(zone, x, z)) continue; }
       if ((zone.rocks || []).some(o => dist2(x, z, o.x, o.z) < (o.r + 1.5) ** 2)) continue;
       if ((zone.chests || []).some(c => dist2(x, z, c.x, c.z) < 16)) continue;
       if (dist2(x, z, zone.spawn.x, zone.spawn.z) < 64) continue;

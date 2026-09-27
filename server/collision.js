@@ -9,7 +9,7 @@
 import { PLAYER } from './balance.js';
 import {
   dist2, closestOnPolyline, pointInPoly, polyCentroid,
-  riversOf, bridgesOf, pathsOf, terrainAt, isSolid, T_OFF, T_ROCK, T_DEEP,
+  riversOf, bridgesOf, pathsOf, terrainAt, rockSolidAt, T_OFF, T_DEEP,
 } from './worldgen.js';
 
 const PLAYER_RADIUS = PLAYER.radius;
@@ -67,7 +67,11 @@ function standableAt(zone, x, z) {
   if (x < b.minX || x > b.maxX || z < b.minZ || z > b.maxZ) return false;
   if (zone.boundary && !pointInPoly(x, z, zone.boundary)) return false;
   for (const o of (zone.rocks || [])) if (dist2(x, z, o.x, o.z) < o.r * o.r) return false;
-  if (zone.terrain && isSolid(terrainAt(zone, x, z))) return false;
+  if (zone.terrain) {
+    const c = terrainAt(zone, x, z);
+    if (c === T_OFF || c === T_DEEP) return false;
+    if (rockSolidAt(zone, x, z)) return false;
+  }
   for (const r of riversOf(zone)) {
     if (closestOnPolyline(x, z, r.points).dist < r.width / 2 + RIVER_BANK) {
       // standing on a bridge deck is fine
@@ -91,12 +95,15 @@ function resolveCollision(zone, ent, radius) {
 
   // Every river is solid (with a passable bridge deck). The fused world can hold
   // several, each with its own bridge frame cached on the river object.
-  // The traced terrain decides what is solid: rock and anything off the map
-  // always, and deep water for whatever cannot swim. A player can, so for them
-  // the lakes and the channels are places to go rather than walls.
+  // What blocks is the rock the client DRAWS (worldgen.rockSolidAt), not the
+  // traced cell: see the note on rockEdge there. Off-map and -- for anything
+  // that cannot swim -- deep water are still cell tests, because both of those
+  // are what the drawing says and neither is blurred into view. A player can
+  // swim, so for them the lakes and channels are places to go, not walls.
   const hereC = zone.terrain ? terrainAt(zone, ent.x, ent.z) : T_OFF;
   const swims = !!ent.canSwim;
-  const blocked = hereC === T_OFF || hereC === T_ROCK || (hereC === T_DEEP && !swims);
+  const inStone = (x, z, c) => c === T_OFF || (c === T_DEEP && !swims) || rockSolidAt(zone, x, z);
+  const blocked = zone.terrain ? inStone(ent.x, ent.z, hereC) : true;
   if (zone.terrain && blocked) {
     const step = zone.terrain.cell;
     let bx = null, bz = null, bd = Infinity;
@@ -104,8 +111,7 @@ function resolveCollision(zone, ent, radius) {
       const n = Math.max(8, Math.round(2 * Math.PI * r / step));
       for (let i = 0; i < n; i++) {
         const a = 2 * Math.PI * i / n, nx = ent.x + Math.cos(a) * r, nz = ent.z + Math.sin(a) * r;
-        const c = terrainAt(zone, nx, nz);
-        if (c === T_OFF || c === T_ROCK || (c === T_DEEP && !swims)) continue;
+        if (inStone(nx, nz, terrainAt(zone, nx, nz))) continue;
         const d = (nx - ent.x) ** 2 + (nz - ent.z) ** 2;
         if (d < bd) { bd = d; bx = nx; bz = nz; }
       }
