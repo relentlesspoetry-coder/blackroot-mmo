@@ -1370,6 +1370,71 @@ def main():
     d['rows'] = rows
     print(f'  carved {carved} rock cells into passes along the roads')
 
+    _fld = {}
+
+    def _field(name):
+        if name in _fld:
+            return _fld[name]
+        want = {'wet': 'Ww', 'deep': 'W', 'rock': 'R'}[name]
+        raw = [[1.0 if rows[gz][gx] in want else 0.0 for gx in range(W)] for gz in range(H)]
+        R = int(WATER_EDGE['blur'])
+
+        def hpass(src):
+            dst = [[0.0] * W for _ in range(H)]
+            for gz in range(H):
+                row = src[gz]
+                for gx in range(W):
+                    lo, hi = max(0, gx - R), min(W - 1, gx + R)
+                    dst[gz][gx] = sum(row[lo:hi + 1]) / (hi - lo + 1)
+            return dst
+
+        def vpass(src):
+            dst = [[0.0] * W for _ in range(H)]
+            for gx in range(W):
+                col = [src[gz][gx] for gz in range(H)]
+                for gz in range(H):
+                    lo, hi = max(0, gz - R), min(H - 1, gz + R)
+                    dst[gz][gx] = sum(col[lo:hi + 1]) / (hi - lo + 1)
+            return dst
+        # TWO separable box blurs -- four passes -- which is what both
+        # worldgen.terrainFieldAt and the client's buildTerrainFields do. One
+        # separable blur is a visibly different field: at the Ravenwater shore
+        # it read 0.437 where the game reads 0.514, which is the difference
+        # between "dry, stand here" and "water, you are swimming", and it is
+        # why the first two attempts at snapping the fishing spots put them
+        # somewhere the runtime disagreed with.
+        out = vpass(hpass(raw))
+        out = vpass(hpass(out))
+        _fld[name] = out
+        return out
+
+    def field_at(wx, wz, name):
+        """Bilinear between cell CENTRES -- byte for byte what
+        worldgen.terrainFieldAt does at runtime.
+
+        This sampled the containing cell instead, and that one difference put
+        the answers either side of the waterline: 1.6 m from the Ravenwater
+        spot the cell read 0.429 (dry, stand here) while the interpolated value
+        the game actually uses read above 0.44 (water, you would be swimming).
+        Two implementations of one rule is the same mistake as two copies of
+        the waterline, which is what put the fishing spots on grass to begin
+        with."""
+        g = _field(name)
+        fx = (wx - minX) / cell - 0.5
+        fz = (wz - minZ) / cell - 0.5
+        x0 = math.floor(fx)
+        z0 = math.floor(fz)
+        tx, tz = fx - x0, fz - z0
+
+        def at(ix, iz):
+            if ix < 0 or iz < 0 or ix >= W or iz >= H:
+                return 0.0
+            return g[iz][ix]
+        a = at(x0, z0) * (1 - tx) + at(x0 + 1, z0) * tx
+        b = at(x0, z0 + 1) * (1 - tx) + at(x0 + 1, z0 + 1) * tx
+        return a * (1 - tz) + b * tz
+
+
     # --- and then squeeze the chokepoints back shut -----------------------
     # The carve is one-directional: it takes rock OUT of the road's way. At a
     # chokepoint that is only half the job, because a defile needs rock on both
@@ -1382,6 +1447,13 @@ def main():
     # cell inside a chokepoint that is not within reach of the road becomes
     # rock, which leaves exactly the slot the road threads.
     rowlist = [list(r) for r in rows]
+    landmark_keep = []
+    for key, name, sub, px, py, kind, r in POIS:
+        lx, lz = world(px, py)
+        landmark_keep.append((lx, lz, CLEAR.get(key, 24)))
+    for key, name, sub, px, py, side in EXITS:
+        lx, lz = world(px, py)
+        landmark_keep.append((lx, lz, 26.0))
     squeezed = 0
     for cname, cpx, cpy, cw in CHOKEPOINTS:
         awx, awz = world(cpx, cpy)
@@ -1416,6 +1488,14 @@ def main():
                     continue
                 wx = minX + (gx + 0.5) * cell
                 wz = minZ + (gz + 0.5) * cell
+                # A chokepoint squeezes the ROAD, never a landmark's own ground.
+                # Grimroot Thicket's pin and its chokepoint are the same point on
+                # the blueprint, so the squeeze closed the clearing down to a
+                # single 2.5 m slot -- and the Magic_Tree that IS the landmark
+                # has a 6.7 m collision radius, which plugged it solid. The
+                # thicket was a place you could see and not enter.
+                if any(math.hypot(wx - lx, wz - lz) < lr for lx, lz, lr in landmark_keep):
+                    continue
                 near = 1e9
                 for _k, _a, _b, pts in paths:
                     for i in range(len(pts) - 1):
@@ -1434,6 +1514,228 @@ def main():
     rows = [''.join(r) for r in rowlist]
     d['rows'] = rows
     print(f'  squeezed {squeezed} cells back to rock at {len(CHOKEPOINTS)} chokepoints')
+
+    # --- ground with a cliff drawn over it blocks -------------------------
+    # The grid blocks by the cell; the client draws by the BLURRED cell, so the
+    # two shapes never quite coincide and the gap between them is what the map
+    # feels wrong about. Measured here: 310 cells of walkable ground carried
+    # more than 4 m of drawn rock -- that is a player walking INTO a crag -- and
+    # 371 rock cells (4.9%) stood less than 2 m proud, an invisible wall.
+    #
+    # Only one of those two can be fixed by editing cells. Blocking the ground
+    # under a drawn cliff is a straight correction and it is done here: 310 down
+    # to about 200 in one pass, and every new block is at the foot of five
+    # metres of visible stone.
+    #
+    # The invisible walls cannot be. They come from THIN rock: a blur of radius
+    # 3 needs a mass several cells thick before the field approaches 1, so a one
+    # or two cell spur draws as a low swell and blocks like a cliff. Opening
+    # those cells lowers the field around what is left and exposes a new fringe:
+    # measured 370, 289, 216, 179 ... cells a pass, still eating sixty a pass
+    # after fourteen, and a morphological open of the hairlines took the count
+    # from 371 to 381. There is no cell edit that closes this gap. Closing it
+    # properly means making the FIELD the thing that blocks -- one level shared
+    # by client, server and builder, the way `waterEdge` already is -- and that
+    # is a change to what walkability means, not a repair.
+    ROCK_RISE = 17.0          # client: y += ROCK_RISE * rock^2
+    CLOSE_OVER = 5.0
+    rowlist = [list(r) for r in rows]
+    _fld.clear()
+    closed = 0
+    for gz in range(H):
+        for gx in range(W):
+            if rows[gz][gx] not in '.f':
+                continue
+            wx = minX + (gx + 0.5) * cell
+            wz = minZ + (gz + 0.5) * cell
+            if ROCK_RISE * field_at(wx, wz, 'rock') ** 2 > CLOSE_OVER:
+                rowlist[gz][gx] = 'R'
+                closed += 1
+    rows = [''.join(r) for r in rowlist]
+    d['rows'] = rows
+    _fld.clear()
+    print(f'  {closed} cells of walkable ground had a cliff drawn over them; they block now')
+
+    # --- and then make sure nothing got walled in -------------------------
+    # Carving and squeezing are both local edits, and a local edit can close a
+    # basin: Wolfsnag Pass came out as a bowl of open ground with rock all the
+    # way round it, holding a POI, a quest-giver and a chest. The build did not
+    # notice, because the only reachability it checked was of the ROUTING nodes
+    # -- and those are snapped to the mainland before routing, so they are on
+    # the right side of the wall by construction while the landmark is not.
+    #
+    # So: flood the map, find every pocket the flood never reached, and cut the
+    # cheapest corridor out of each one that either holds something authored or
+    # is big enough to be somewhere. The corridor is one cell -- 2.5 m -- so a
+    # reconnected defile stays a defile.
+    MIN_POCKET = 16                      # 100 m2: below this it is a crevice
+    keep_cells = set()
+    for key, name, sub, px, py, kind, r in POIS:
+        keep_cells.add(to_cell(px, py))
+    for key, name, sub, px, py, side in EXITS:
+        keep_cells.add(to_cell(px, py))
+    for key, (px, py) in WAYPOINTS.items():
+        keep_cells.add(to_cell(px, py))
+    for key, (px, py) in SPAWN_ANCHORS.items():
+        keep_cells.add(to_cell(px, py))
+
+    def _anchor_world(key):
+        if key in WAYPOINTS:
+            return world(*WAYPOINTS[key])
+        if key in SPAWN_ANCHORS:
+            return world(*SPAWN_ANCHORS[key])
+        q = [r for r in POIS if r[0] == key]
+        return world(q[0][3], q[0][4]) if q else None
+
+    def _cell_of_world(wx, wz):
+        return (int((wx - minX) / cell), int((wz - minZ) / cell))
+
+    for tbl, take in ((NPCS, lambda r: (r[4], r[5], r[6])),
+                      (CHESTS, lambda r: (r[1], r[2], r[3])),
+                      (ELITES, lambda r: (r[3], r[4], r[5]))):
+        for row in tbl:
+            akey, adx, adz = take(row)
+            aw = _anchor_world(akey)
+            if aw:
+                keep_cells.add(_cell_of_world(aw[0] + adx, aw[1] + adz))
+
+    rowlist = [list(r) for r in rows]
+
+    def components():
+        seen_c = {}
+        comps = []
+        for z0 in range(H):
+            for x0 in range(W):
+                if not walkable(x0, z0) or (x0, z0) in seen_c:
+                    continue
+                stack, cells = [(x0, z0)], []
+                seen_c[(x0, z0)] = len(comps)
+                while stack:
+                    x, z = stack.pop()
+                    cells.append((x, z))
+                    for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                        nx, nz = x + dx, z + dz
+                        if 0 <= nx < W and 0 <= nz < H and (nx, nz) not in seen_c \
+                           and walkable(nx, nz):
+                            seen_c[(nx, nz)] = len(comps)
+                            stack.append((nx, nz))
+                comps.append(cells)
+        return comps, seen_c
+
+    def carve_to_main(cells, main_set):
+        """Dijkstra out of a pocket, paying one per rock cell; carve what it crosses."""
+        INF = 10 ** 9
+        best = {c: 0 for c in cells}
+        prev = {c: None for c in cells}
+        done = set()
+        pq = [(0, c) for c in cells]
+        heapq.heapify(pq)
+        goal = None
+        while pq:
+            cost, cur = heapq.heappop(pq)
+            if cur in done or cost > best.get(cur, INF):
+                continue
+            done.add(cur)
+            if cur in main_set:
+                goal = cur
+                break
+            x, z = cur
+            for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                nx, nz = x + dx, z + dz
+                if not (0 <= nx < W and 0 <= nz < H):
+                    continue
+                ch = rowlist[nz][nx]
+                if ch == ' ' or ch == 'W':        # off-map, or a swim: not a corridor
+                    continue
+                step = 0 if walkable(nx, nz) else 1
+                nc = cost + step
+                if nc < best.get((nx, nz), INF):
+                    best[(nx, nz)] = nc
+                    prev[(nx, nz)] = cur
+                    heapq.heappush(pq, (nc, (nx, nz)))
+        if goal is None:
+            return 0
+        # Widen as it goes. A single-cell corridor is 2.5 m, which a 0.6 m body
+        # fits through on paper and nothing else does: the reachability lattice
+        # steps 1.25 m and can miss it entirely, the client draws the cliff
+        # closing over the top of it, and one tree in the slot shuts it. Three
+        # cells -- 7.5 m -- is a pass you can see and walk.
+        cut = 0
+        cur = goal
+        while cur is not None:
+            x, z = cur
+            for dx, dz in ((0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)):
+                nx, nz = x + dx, z + dz
+                if 0 <= nx < W and 0 <= nz < H and rowlist[nz][nx] == 'R':
+                    rowlist[nz][nx] = '.'
+                    cut += 1
+            cur = prev.get(cur)
+        return cut
+
+    comps, owner = components()
+    main_idx = owner.get(camp_cell)
+    main_set = set(comps[main_idx])
+    opened = 0
+    walled = []
+    left = []
+    for i, cells in enumerate(comps):
+        if i == main_idx:
+            continue
+        holds = any(c in keep_cells for c in cells)
+        if not holds and len(cells) < MIN_POCKET:
+            left.append(len(cells))
+            continue
+        cut = carve_to_main(cells, main_set)
+        if cut:
+            opened += 1
+            continue
+        wx = sum(minX + (c[0] + 0.5) * cell for c in cells) / len(cells)
+        wz = sum(minZ + (c[1] + 0.5) * cell for c in cells) / len(cells)
+        # No dry way in. If it touches water it is an island and a player swims
+        # to it -- both of Ravenwater's are, and the sheet draws them. If it does
+        # not, it is drawn land the map cannot be walked to from anywhere, and
+        # leaving it is worse than losing it: the client grasses it over and the
+        # player finds a lawn behind an invisible wall. Erase it to off-map.
+        wet = any(rowlist[nz][nx] in 'Ww'
+                  for x, z in cells
+                  for nx, nz in ((x + 1, z), (x - 1, z), (x, z + 1), (x, z - 1))
+                  if 0 <= nx < W and 0 <= nz < H)
+        if wet:
+            walled.append((len(cells), round(wx), round(wz), 'an island; swim'))
+            continue
+        for x, z in cells:
+            rowlist[z][x] = ' '
+        walled.append((len(cells), round(wx), round(wz), 'no way in at all; erased'))
+    rows = [''.join(r) for r in rowlist]
+    d['rows'] = rows
+    print(f'  {len(comps) - 1} pockets off the mainland: opened {opened} with a corridor, '
+          f'{len(walled)} sealed by water or the map edge, {len(left)} crevices left alone')
+    for n, wx, wz, note in sorted(walled, reverse=True):
+        print(f'    {n * cell * cell:.0f} m2 around ({wx}, {wz}): {note}')
+
+    # A landmark is emitted where you can STAND, not where the pin is. East
+    # Path's pin fell outside the drawn map -- 44 m of void between it and the
+    # nearest ground -- so the road stopped at the map edge while the marker
+    # floated off it, and nobody could find the way out. The routing node is
+    # already snapped to walkable ground; the marker now agrees with it.
+    final_main = main_component(camp_cell)
+    stood = []
+
+    def stand_world(key, px, py):
+        wx, wz = world(px, py)
+        gx0, gz0 = to_cell(px, py)
+        # Water is not a wall: a player swims. Ravenwater's marker belongs on the
+        # black pool the sheet draws, not dragged 44 m onto the bank, so only a
+        # pin in the rock or off the edge of the drawing gets moved.
+        if (gx0, gz0) in final_main or rows[gz0][gx0] in 'Ww':
+            return wx, wz
+        gx, gz = nodes.get(key, (-1, -1))
+        if (gx, gz) in final_main:
+            sx = round(minX + (gx + 0.5) * cell, 1)
+            sz = round(minZ + (gz + 0.5) * cell, 1)
+            stood.append((key, round(math.hypot(sx - wx, sz - wz), 1)))
+            return sx, sz
+        return wx, wz
 
     # --- bridges ----------------------------------------------------------
     # A bridge belongs where a road MEETS a river, and nowhere else. Placing them
@@ -1510,22 +1812,38 @@ def main():
     # The outline of everything the trace calls land, as a ray cast out from the
     # middle. The zone is broadly convex, so this follows the drawn edge closely
     # and cannot come out self-intersecting the way a marching outline can.
+    # 96 rays, but each vertex is the FURTHEST land in its whole sector rather
+    # than the land on one ray. A ray every 3.75 degrees is 26 m apart out at the
+    # rim, and the chord between two rays cuts the corner off every bulge of
+    # drawn land -- which is an invisible wall standing on ground the blueprint
+    # says you can walk: 766 m2 of it in one piece on the south-west rim, plus
+    # eight smaller slices. Circumscribing instead can only ever include VOID,
+    # and void is off-map terrain, which collision already refuses. So the
+    # polygon is now a backstop and the trace does the work, which is the right
+    # way round.
     cx0, cz0 = W / 2, H / 2
+    NRAY, SUB = 96, 7
     boundary = []
-    for i in range(96):
-        a = i / 96 * math.tau
-        hit = None
-        rmax = math.hypot(W, H)
-        r = rmax
-        while r > 2:
-            x, z = int(cx0 + math.cos(a) * r), int(cz0 + math.sin(a) * r)
-            if 0 <= x < W and 0 <= z < H and rows[z][x] != ' ':
-                hit = (x, z)
-                break
-            r -= 1
-        if hit:
-            boundary.append((round(minX + (hit[0] + 0.5) * cell, 1),
-                             round(minZ + (hit[1] + 0.5) * cell, 1)))
+    rmax = math.hypot(W, H)
+    for i in range(NRAY):
+        best = None
+        for s in range(SUB):
+            a = (i + (s - (SUB - 1) / 2) / SUB) / NRAY * math.tau
+            r = rmax
+            while r > 2:
+                x, z = int(cx0 + math.cos(a) * r), int(cz0 + math.sin(a) * r)
+                if 0 <= x < W and 0 <= z < H and rows[z][x] != ' ':
+                    break
+                r -= 1
+            if r > 2 and (best is None or r > best):
+                best = r
+        if best is None:
+            continue
+        # half a cell of slack, so the rim cell's own centre is safely inside
+        a = i / NRAY * math.tau
+        rr = best + 0.75
+        boundary.append((round(minX + (cx0 + math.cos(a) * rr + 0.5) * cell, 1),
+                         round(minZ + (cz0 + math.sin(a) * rr + 0.5) * cell, 1)))
 
     # --- write it out -----------------------------------------------------
     L = []
@@ -1566,14 +1884,17 @@ def main():
     A('')
     A('  pois: [')
     for key, name, sub, px, py, kind, r in POIS:
-        wx, wz = world(px, py)
+        wx, wz = stand_world(key, px, py)
         A(f"    {{ key: '{key}', name: '{name}', note: '{sub}', "
           f"x: {wx}, z: {wz}, kind: '{kind}', r: {r} }},")
     for key, name, sub, px, py, side in EXITS:
-        wx, wz = world(px, py)
+        wx, wz = stand_world(key, px, py)
         A(f"    {{ key: '{key}', name: '{name}', note: '{sub}', "
           f"x: {wx}, z: {wz}, kind: 'exit', side: '{side}', r: 14 }},")
     A('  ],')
+    if stood:
+        print('  markers moved onto ground you can stand on: '
+              + ', '.join(f'{k} ({d} u)' for k, d in stood))
     A('')
     A('  rivers: [')
     for name, width, wp in rivers_w:
@@ -1905,7 +2226,24 @@ def main():
         else:
             spin = 0.0
         cs, sn = math.cos(spin), math.sin(spin)
-        for model, dx0, dz0, yaw0, sc, coll in fn():
+        pieces = fn()
+        # A GATE HAS TO BE A HOLE. The fence ring is laid with its panels
+        # abutting -- that is what makes it a fence rather than a row of posts
+        # -- and the gate was then placed ON TOP of it rather than instead of
+        # it. Measured: the widest gap in either farmyard ring was eleven
+        # CENTIMETRES, so both were sealed and a player could not get in.
+        # Maggie's henhouse quest sends you in there for eggs.
+        #
+        # The same lesson as the camp palisade, which learned it by having its
+        # gateways cut by the roads that actually run through it: do not author
+        # an opening, REMOVE what is standing in it.
+        gates = [(dx0, dz0) for m, dx0, dz0, *_ in pieces if m.endswith('_Gate')]
+        GATE_HALF = 1.6              # Farm_Gate is 1.85 m wide; clear a little more
+        for model, dx0, dz0, yaw0, sc, coll in pieces:
+            if coll > 0 and not model.endswith('_Gate') \
+               and any(math.hypot(dx0 - gx, dz0 - gz) < GATE_HALF for gx, gz in gates):
+                gateways += 1
+                continue
             dx, dz = dx0 * cs + dz0 * sn, -dx0 * sn + dz0 * cs
             yaw = yaw0 + spin
             wx, wz = round(ax + dx, 1), round(az + dz, 1)
@@ -1946,70 +2284,6 @@ def main():
     # ripple rings on grass, and a player stood in a field casting into it.
     # This is the same lesson as the 766 cells of swimming on dry land, in the
     # one place that had not learned it yet.
-    _fld = {}
-
-    def _field(name):
-        if name in _fld:
-            return _fld[name]
-        want = ('Ww' if name == 'wet' else 'W')
-        raw = [[1.0 if rows[gz][gx] in want else 0.0 for gx in range(W)] for gz in range(H)]
-        R = int(WATER_EDGE['blur'])
-
-        def hpass(src):
-            dst = [[0.0] * W for _ in range(H)]
-            for gz in range(H):
-                row = src[gz]
-                for gx in range(W):
-                    lo, hi = max(0, gx - R), min(W - 1, gx + R)
-                    dst[gz][gx] = sum(row[lo:hi + 1]) / (hi - lo + 1)
-            return dst
-
-        def vpass(src):
-            dst = [[0.0] * W for _ in range(H)]
-            for gx in range(W):
-                col = [src[gz][gx] for gz in range(H)]
-                for gz in range(H):
-                    lo, hi = max(0, gz - R), min(H - 1, gz + R)
-                    dst[gz][gx] = sum(col[lo:hi + 1]) / (hi - lo + 1)
-            return dst
-        # TWO separable box blurs -- four passes -- which is what both
-        # worldgen.terrainFieldAt and the client's buildTerrainFields do. One
-        # separable blur is a visibly different field: at the Ravenwater shore
-        # it read 0.437 where the game reads 0.514, which is the difference
-        # between "dry, stand here" and "water, you are swimming", and it is
-        # why the first two attempts at snapping the fishing spots put them
-        # somewhere the runtime disagreed with.
-        out = vpass(hpass(raw))
-        out = vpass(hpass(out))
-        _fld[name] = out
-        return out
-
-    def field_at(wx, wz, name):
-        """Bilinear between cell CENTRES -- byte for byte what
-        worldgen.terrainFieldAt does at runtime.
-
-        This sampled the containing cell instead, and that one difference put
-        the answers either side of the waterline: 1.6 m from the Ravenwater
-        spot the cell read 0.429 (dry, stand here) while the interpolated value
-        the game actually uses read above 0.44 (water, you would be swimming).
-        Two implementations of one rule is the same mistake as two copies of
-        the waterline, which is what put the fishing spots on grass to begin
-        with."""
-        g = _field(name)
-        fx = (wx - minX) / cell - 0.5
-        fz = (wz - minZ) / cell - 0.5
-        x0 = math.floor(fx)
-        z0 = math.floor(fz)
-        tx, tz = fx - x0, fz - z0
-
-        def at(ix, iz):
-            if ix < 0 or iz < 0 or ix >= W or iz >= H:
-                return 0.0
-            return g[iz][ix]
-        a = at(x0, z0) * (1 - tx) + at(x0 + 1, z0) * tx
-        b = at(x0, z0 + 1) * (1 - tx) + at(x0 + 1, z0 + 1) * tx
-        return a * (1 - tz) + b * tz
-
     def water_drawn(wx, wz, margin=0.0):
         """True where the client would draw water and the server would let you
         swim -- the contour, not the cell.

@@ -582,3 +582,75 @@ function quadPoint(p, s) {
 }
 function signedArea(poly) { let a = 0; for (let i = 0; i < poly.length; i++) { const p = poly[i], q = poly[(i + 1) % poly.length]; a += p.x * q.z - q.x * p.z; } return a / 2; }
 function ccw(poly) { return signedArea(poly) > 0 ? poly.slice() : poly.slice().reverse(); }
+
+// ---------------------------------------------------------------------------
+// Everything a zone needs standing up before collision, spawning or a tool can
+// ask a question about it: the forest, the dressing, the walls a structure is
+// assembled from. Exported because tools must prepare a zone the same way the
+// server does -- a check run against an unprepared zone cannot see a tree.
+// ---------------------------------------------------------------------------
+export function prepareZone(z) {
+  z._trees = generateTrees(z);
+  z._scatter = generateScatter(z);
+  // Anything the zone places by hand goes down after the scatter and is not
+  // rejection-sampled: a camp that was laid out is a camp, not a suggestion.
+  for (const pr of (z.props || [])) z._scatter.push({ i: z._scatter.length, m: pr.m, x: pr.x, z: pr.z, s: pr.s || 1, r: pr.yaw || 0, c: pr.c || 0 });
+  // Trees the zone asks for by hand -- ones inside a clearing the forest was
+  // told to keep out of -- join the generated forest, so they get the same
+  // trunk collision and the same species-for-a-position as any other tree.
+  for (const tr of (z.trees || [])) z._trees.push({ x: tr.x, z: tr.z, s: tr.s || 1, r: tr.r != null ? tr.r : +(Math.random() * 6).toFixed(2) });
+  // Collision follows the PIECES a structure is assembled from, not a bounding
+  // box: a modular ruin is a row of walls with gaps in it, and the gaps are the
+  // point -- they are where the building fell down and where you walk in. Only
+  // the ground course collides; an upper course of a tower is something you look
+  // at. A piece's `gap` is a doorway at the middle of its run.
+  z._walls = [];
+  z.pads = [];
+  for (const b of (z.structures || [])) {
+    const c = Math.cos(b.yaw || 0), sn = Math.sin(b.yaw || 0);
+    for (const pc of (b.pieces || [])) {
+      if (!pc.wall || (pc.dy || 0) > 0.01) continue;
+      const yaw = (b.yaw || 0) + (pc.yaw || 0);
+      // The piece's run is along its own X, half a length either side of centre
+      // -- and with the SAME sign the client draws it: three.js rotation.y by t
+      // sends local +X to (cos t, -sin t). Positions used the opposite sign, so
+      // any structure with a non-zero yaw had collision standing somewhere the
+      // stone was not.
+      const hx = Math.cos(yaw) * pc.wall / 2, hz = -Math.sin(yaw) * pc.wall / 2;
+      const px = b.x + pc.dx * c + pc.dz * sn;
+      const pz = b.z - pc.dx * sn + pc.dz * c;
+      z._walls.push({ x1: px - hx, z1: pz - hz, x2: px + hx, z2: pz + hz,
+        r: 0.45, gap: pc.gap || 0 });
+    }
+    // A ruin you can walk into needs a level floor, or the interior is a slope
+    // with a wall standing on stilts at the low end.
+    if (b.padW) z.pads.push({ minX: b.x - b.padW, maxX: b.x + b.padW,
+      minZ: b.z - b.padD, maxZ: b.z + b.padD, fr: 16 });
+  }
+  if (z._walls.length) console.log(`[worldgen] ${z._walls.length} wall segments and ${z.pads.length} pads from ${(z.structures || []).length} structures`);
+
+  // Reeds and sedge grow with their feet in the water. A fern, a stump or a
+  // berry bush does not, and each of those models is built on its own pad of
+  // earth -- so one standing in the Murkfen is a floating clod of dirt in open
+  // water. Anything not on the list goes if its cell is wet.
+  // Things that belong standing IN the water rather than beside it. The dead
+  // trees are here because Ravenwater's and Murkfen's concept sheets both lead
+  // on them -- "twisted, dead trees rise from the water", "submerged trees
+  // visible beneath surface" -- and the cull would otherwise drag every one of
+  // them back onto the bank and leave the pool bare.
+  const WADERS = /Pond_Reeds|Meadow_Sedge|Web|Cocoon|Egg_Cluster|Brood_Nest|Boardwalk|Twisted_Dead_Tree|Lily_Pads|Rock_Spire/;
+  const beforeN = z._scatter.length;
+  z._scatter = z._scatter.filter(o => {
+    if (WADERS.test(o.m)) return true;
+    return !isWater(terrainAt(z, o.x, o.z));
+  });
+  const drowned = beforeN - z._scatter.length;
+  if (drowned) console.log(`[worldgen] pulled ${drowned} pieces of dressing out of the water`);
+
+  // The map pane shows the region you are standing in; there is only one.
+  z.regions = [{ id: z.id, name: z.name, subtitle: z.subtitle,
+    bounds: { ...z.bounds }, boundary: (z.boundary || []).map(p => ({ x: p.x, z: p.z })) }];
+  z._cen = null;
+  console.log(`[worldgen] ${z.name}: ${z.bounds.maxX - z.bounds.minX} x ${z.bounds.maxZ - z.bounds.minZ} units, ` +
+    `${z._trees.length} trees, ${z._scatter.length} scatter, ${(z.pois || []).length} landmarks`);
+}

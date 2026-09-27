@@ -473,5 +473,46 @@ console.log('\nThe Dark Woods — zone invariants\n');
       bad.length ? bad.join('; ') : `${total} portals`);
 }
 
+// A road through rock is not a road. This is cheap and it guards the one edit
+// that could quietly break every route: the build now turns walkable ground
+// into rock wherever the client draws more than five metres of cliff over it,
+// and a road crossing the skirt of a crag is exactly where that would land.
+{
+  let onRock = 0, samples = 0;
+  for (const p of (z.paths || [])) {
+    for (let i = 0; i < p.points.length - 1; i++) {
+      const a = p.points[i], b = p.points[i + 1];
+      const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.z - a.z)));
+      for (let k = 0; k <= n; k++) {
+        const t2 = k / n, c = terrainAt(z, a.x + (b.x - a.x) * t2, a.z + (b.z - a.z) * t2);
+        samples++;
+        if (c === 'R' || c === ' ') onRock++;
+      }
+    }
+  }
+  ok('no road or trail runs through rock', onRock === 0,
+    `${samples} samples along ${(z.paths || []).length} routes, ${onRock} in the stone`);
+}
+
+// The three "can you reach it" invariants above work on the 2.5 m terrain grid
+// with no body, which is a weaker question than the game asks: they all passed
+// while Huntress Sela stood in a sealed basin, the wolfden chest could not be
+// opened and the East Path exit sat 44 m off the map. The real test floods the
+// map at body resolution through the server's own collision, which costs about
+// 40 seconds -- too slow to run on every save, so it lives in its own tool and
+// runs here on request.
+if (process.argv.includes('--walk')) {
+  const { ready, report } = await import('./walkcheck.mjs');
+  for (const zone of [z, spiderden]) {
+    const bad = report(ready(zone), 6);
+    ok(`${zone.name}: everything can be walked to with a body`, bad.length === 0,
+      bad.length ? bad.map(b => `${b.kind} ${b.id}`).join(', ') : 'flood-filled at 1.25 m');
+  }
+} else {
+  console.log('\n  NOTE  the three reachability invariants above use 2.5 m cells and no body.');
+  console.log('        For the real question — can a player WALK there — run:');
+  console.log('          node tools/walkcheck.mjs        (or: node tools/zonecheck.mjs --walk)');
+}
+
 console.log(`\n${failures ? failures + ' FAILED' : 'all invariants hold'}\n`);
 process.exit(failures ? 1 : 0);
