@@ -2615,94 +2615,85 @@ def main():
                     return True
         return False
 
-    def pull_to_bank(x, z, limit=70.0):
-        """Put the spot in the water BESIDE a bank, rather than trying to drag
-        a spot in open water inward until a bank happens to come into range.
+    def on_deck(x, z):
+        """Actually standing ON the planks, rather than beside them."""
+        for m, dx, dz, dyaw, dw in deck_rows:
+            cs, sn = math.cos(dyaw), math.sin(dyaw)
+            ox, oz = x - dx, z - dz
+            if abs(ox * cs + oz * sn) <= 2.0 and abs(-ox * sn + oz * cs) <= dw / 2:
+                return True
+        return False
 
-        Pulling inward kept failing on Ravenwater's south end, where the marsh
-        shelves so gently that the drawn waterline is twenty-six metres from
-        anywhere you can stand. Built the other way round there is nothing to
-        fail: find the nearest place a player can actually stand, step out from
-        it into the water, and stop while the bank is still within casting
-        reach. The spot is beside a bank by construction.
+    def place_spot(x, z, limit=60.0):
+        """Where a fishing spot belongs: in the water, at the EDGE of it, within
+        a cast of somewhere a person is standing.
+
+        This used to be three passes that each fixed one thing and undid the
+        next -- snap onto water, wade out until it is deep enough, then drag
+        back until a bank is in range -- and the last of them deliberately took
+        the FURTHEST offset still within reach, which is how spots ended up as
+        far out as the rule allowed. Three of them also came to rest on top of
+        the fen's plank walks, because the water test knows about the contour
+        and nothing about the planks, so the ripples were drawn on the decking.
+
+        One pass and one objective instead: of every position that is properly
+        in the water, is not on the boarding, and has somewhere to stand within
+        casting reach, take the one nearest the place the sheet put it, and
+        among those the one closest in to the bank. A fishing spot is a thing
+        at the water's edge.
         """
-        if has_bank(x, z):
-            return (x, z), 0.0
-        bank, bd = None, 1e18
-        rings = int(limit / cell)
-        for ring in range(1, rings):
-            for i in range(max(8, ring * 8)):
-                a = i / max(8, ring * 8) * math.tau
-                bx = x + math.cos(a) * ring * cell
-                bz = z + math.sin(a) * ring * cell
-                if not (standable(bx, bz) or near_deck(bx, bz)):
+        STAND_OFF = 3.0          # how far out from the bank we would like it
+        best, bscore = None, 1e18
+        step = cell / 2
+        rings = int(limit / step)
+        for ring in range(0, rings):
+            n = max(8, ring * 10)
+            for i in range(n):
+                a = i / n * math.tau
+                cx = x + math.cos(a) * ring * step
+                cz = z + math.sin(a) * ring * step
+                if on_deck(cx, cz):
+                    continue                      # not on the planks
+                if not water_drawn(cx, cz, WET_MARGIN):
+                    continue                      # and in real water, not a damp field
+                # how far to the nearest place a person can be
+                stand = 1e18
+                for j in range(24):
+                    b = j / 24 * math.tau
+                    for rr in (0.8, 1.6, 2.4, 3.2, 4.0, FISH_REACH - 0.2):
+                        sx, sz = cx + math.cos(b) * rr, cz + math.sin(b) * rr
+                        if standable(sx, sz) or near_deck(sx, sz):
+                            stand = min(stand, rr)
+                            break
+                if stand > FISH_REACH - 0.2:
                     continue
-                d = math.hypot(bx - x, bz - z)
-                if d < bd:
-                    bd, bank = d, (bx, bz)
-            if bank:
-                break
-        if not bank:
-            print(f'    !! nowhere to stand within {limit:.0f}u of ({x:.1f},{z:.1f})')
-            return (x, z), 0.0
-        # Step out from that bank into the water, keeping it within reach, and
-        # take the furthest offset that is still both wet and reachable -- the
-        # spot wants to be IN the water, not lapping at the edge of it.
-        ux, uz = (x - bank[0]) / bd, (z - bank[1]) / bd
-        best = None
-        for out in [i * 0.3 for i in range(3, 15)]:      # 0.9 m .. 4.2 m out
-            cx, cz = bank[0] + ux * out, bank[1] + uz * out
-            if water_drawn(cx, cz) and has_bank(cx, cz):
-                best = (cx, cz)
+                d = math.hypot(cx - x, cz - z)
+                score = d + abs(stand - STAND_OFF) * 1.5
+                if score < bscore:
+                    bscore, best = score, (cx, cz, stand)
+            if best and ring * step > bscore:
+                break                              # no further ring can win
         if not best:
-            print(f'    !! no water within reach of the bank at ({bank[0]:.1f},{bank[1]:.1f})')
-            return (x, z), 0.0
-        return (round(best[0], 1), round(best[1], 1)), math.hypot(best[0] - x, best[1] - z)
-
-    def wade_out(x, z, limit=30.0):
-        """Nudge a spot off the bare edge of the contour until there is water
-        over the bed, not just a wet field."""
-        if water_drawn(x, z, WET_MARGIN):
-            return (x, z), 0.0
-        best, bd = None, 1e18
-        for ring in range(1, int(limit / cell)):
-            for i in range(max(8, ring * 8)):
-                a = i / max(8, ring * 8) * math.tau
-                px2 = x + math.cos(a) * ring * cell
-                pz2 = z + math.sin(a) * ring * cell
-                if not water_drawn(px2, pz2, WET_MARGIN):
-                    continue
-                d = math.hypot(px2 - x, pz2 - z)
-                if d < bd:
-                    bd, best = d, (px2, pz2)
-            if best:
-                break
-        if not best:
-            return (x, z), 0.0
-        return (round(best[0], 1), round(best[1], 1)), bd
+            print(f'    !! nowhere to fish within {limit:.0f}u of ({x:.1f},{z:.1f})')
+            return (x, z), 0.0, -1.0
+        return (round(best[0], 1), round(best[1], 1)), math.hypot(best[0] - x, best[1] - z), best[2]
 
     A('  fishingSpots: [')
     moved = 0
-    pulled = 0
+    offs = []
     for fid, px, py, tier in FISHING:
         # the jetty spot rides with the jetty, which is computed off the walk
         wx, wz = jetty_at if fid == 'fs_jetty' else world(px, py)
-        (wx, wz), shift = snap_to_water(wx, wz)
+        (wx, wz), shift, stand = place_spot(wx, wz)
         if shift > 0.5:
             moved += 1
-        (wx, wz), wade = wade_out(wx, wz)
-        if wade > 0.5:
-            moved += 1
-        (wx, wz), drag = pull_to_bank(wx, wz)
-        if drag > 0.5:
-            pulled += 1
+        offs.append(stand)
         A(f"    {{ id: '{fid}', x: {wx}, z: {wz}, tier: {tier} }},")
     A('  ],')
-    if pulled:
-        print(f'  {pulled} fishing spot(s) pulled in to within casting reach of a bank')
     A('')
-    if moved:
-        print(f'  {moved} fishing spot(s) snapped onto water')
+    good = [o for o in offs if o >= 0]
+    print(f'  {len(FISHING)} fishing spots, {moved} moved onto the water\'s edge; '
+          f'a bank is {min(good):.1f}-{max(good):.1f} m away from each')
     A('  campfires: [')
     # Crow Hill's sheet draws a lit watchfire on the overlook platform -- the
     # thing that makes an abandoned lookout read as still watched. Its fire is

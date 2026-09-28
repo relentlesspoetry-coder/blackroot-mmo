@@ -15,6 +15,12 @@ import { MOB_ART } from '../server/balance.js';
 import { existsSync } from 'fs';
 
 let failures = 0;
+const { resolveCollision: resolveCollisionFn } = await import('../server/collision.js');
+const segMin = (x, zz, pts) => { let b = Infinity;
+  for (let i = 0; i < pts.length - 1; i++) b = Math.min(b, segDistPts(x, zz, pts[i], pts[i + 1])); return b; };
+const segDistPts = (x, zz, a, b) => { const dx = b.x - a.x, dz = b.z - a.z, L2 = dx * dx + dz * dz || 1;
+  const t2 = Math.max(0, Math.min(1, ((x - a.x) * dx + (zz - a.z) * dz) / L2));
+  return Math.hypot(x - (a.x + dx * t2), zz - (a.z + dz * t2)); };
 const ok = (name, pass, detail) => {
   console.log(`  ${pass ? 'PASS' : 'FAIL'}  ${name}${detail ? '  — ' + detail : ''}`);
   if (!pass) failures++;
@@ -531,6 +537,53 @@ for (const zone of [z, spiderden]) {
     steepWalkable.length === 0 && gentleBlocked === 0,
     `${gentleBlocked} gentle cells blocking, ${steepWalkable.length} steep cells walkable off-road`
     + (steepWalkable.length ? ' at ' + steepWalkable.slice(0, 4).join(' ') : ''));
+}
+
+// A fishing spot belongs IN the water, at the edge of it, within a cast of
+// somewhere a person is standing -- and not on top of the fen's plank walks,
+// which is where three of them had come to rest, ripples drawn on the decking.
+// The builder places them; this asks the runtime whether they landed.
+{
+  const REACH = 4.5, MIN_DEPTH = 0.30, SWIM_IN = 0.82, DEEP_RAMP = 0.29;
+  const E = z.waterEdge;
+  const onDeck = (x, zz) => {
+    for (const r of (z.rivers || [])) for (const b of (r.bridges || []))
+      if (Math.hypot(x - b.x, zz - b.z) < ((b.span || 12) / 2)) return true;
+    for (const d of (z.decks || [])) {
+      const dx = x - d.x, dz = zz - d.z, sn = Math.sin(d.yaw || 0), cs = Math.cos(d.yaw || 0);
+      if (Math.abs(dx * cs + dz * sn) <= (d.len || 4) / 2 && Math.abs(-dx * sn + dz * cs) <= (d.w || 2.4) / 2) return true;
+    }
+    return false;
+  };
+  const depthAt = (x, zz) => {
+    if (onDeck(x, zz)) return 0;
+    let d = 0;
+    const dg = terrainFieldAt(z, x, zz, 'deep'), wg = terrainFieldAt(z, x, zz, 'wet');
+    if (dg >= E.deep) { const q = Math.min(1, (dg - E.deep) / DEEP_RAMP); d = Math.max(d, 0.30 + 0.70 * (q * q * (3 - 2 * q))); }
+    else if (wg >= E.marsh) d = 0.35;
+    for (const r of (z.rivers || [])) {
+      const dd = segMin(x, zz, r.points);
+      if (dd < r.width / 2) d = Math.max(d, Math.min(1, 0.45 + (1 - dd / (r.width / 2)) * 0.8));
+    }
+    return d;
+  };
+  const bad = [];
+  for (const sp of (z.fishingSpots || [])) {
+    const d = depthAt(sp.x, sp.z);
+    if (onDeck(sp.x, sp.z)) { bad.push(`${sp.id} is on the planks`); continue; }
+    if (d < MIN_DEPTH) { bad.push(`${sp.id} has ${d.toFixed(2)} m of water`); continue; }
+    let near = Infinity;
+    for (let a = 0; a < 360 && near > REACH; a += 4) for (let r = 0.5; r <= REACH; r += 0.25) {
+      const x = sp.x + Math.cos(a * Math.PI / 180) * r, zz = sp.z + Math.sin(a * Math.PI / 180) * r;
+      if (depthAt(x, zz) >= SWIM_IN) continue;
+      const probe = { x, z: zz, y: 0, canSwim: true };
+      resolveCollisionFn(z, probe, 0.6);
+      if (Math.hypot(probe.x - x, probe.z - zz) <= 0.05) { near = Math.min(near, r); break; }
+    }
+    if (near > REACH) bad.push(`${sp.id} is ${near === Infinity ? '>' + REACH : near.toFixed(1)} m from anywhere to stand`);
+  }
+  ok('every fishing spot is in water at the edge, off the planks, within a cast',
+    bad.length === 0, bad.length ? bad.join('; ') : `${(z.fishingSpots || []).length} spots`);
 }
 
 // A road through rock is not a road. Since rock blocks by the DRAWN field now,

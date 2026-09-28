@@ -5130,22 +5130,78 @@ function buildChest(ch) {
 
 // Fishing spots — a patch of disturbed water (ripple rings + bubbles) that sits
 // just above the river surface. Clickable; never depletes.
+// A fishing spot's bubbles. One geometry and one material for all of them,
+// and an InstancedMesh per spot so a whole shoal's worth is one draw call.
+// What is down there decides what comes up. A shoal of shrimp sends up a lot of
+// very fine bubbles; a pike is one big fish and sends up a few fat ones. The
+// tier IS the fish (fishForTier), so the spot reads as what it holds before
+// you have even right-clicked it.
+//
+//   tier          n    radius (m)      across
+//   1 Shrimp     18    0.011-0.019     2-4 cm
+//   2 Trout      15    0.015-0.026     3-5 cm
+//   3 Salmon     12    0.020-0.034     4-7 cm
+//   4 Pike        9    0.026-0.044     5-9 cm
+function bubbleSpec(tier) {
+  const k = Math.max(0, Math.min(3, (tier | 0) - 1));
+  return { n: [18, 15, 12, 9][k], r0: [0.011, 0.015, 0.020, 0.026][k],
+           r1: [0.019, 0.026, 0.034, 0.044][k], spread: [0.55, 0.68, 0.80, 0.95][k] };
+}
+const BUBBLE_DEPTH = 0.45;
+// How far above the STILL waterline the spot sits. The swell is a sum of three
+// travelling waves and the crest is their amplitudes added: 0.085 + 0.060 +
+// 0.032 = 0.177 m. Sitting at 0.05 meant a crest rolled over the rings and
+// swallowed the whole thing for a second every few seconds. This clears it.
+const SPOT_LIFT = 0.20;
+const _bubMtx = new THREE.Matrix4();
+let _bubGeo = null, _bubMat = null;
+function bubbleGeo() { if (!_bubGeo) _bubGeo = new THREE.SphereGeometry(1, 7, 5); return _bubGeo; }
+function bubbleMat() {
+  if (!_bubMat) _bubMat = new THREE.MeshStandardMaterial({ color: 0xe8f6f7, roughness: 0.15,
+    metalness: 0.0, transparent: true, opacity: 0.78, depthWrite: false,
+    emissive: 0x6d9298, emissiveIntensity: 0.9 });
+  return _bubMat;
+}
 function buildFishingSpots() {
   for (const sp of (zone.fishingSpots || [])) {
-    const g = new THREE.Group(); g.position.set(sp.x, waterLevelAt(sp.x, sp.z) + 0.06, sp.z);
-    const ripples = [];
-    for (let i = 0; i < 3; i++) {
-      const ring = new THREE.Mesh(new THREE.RingGeometry(0.25, 0.45, 24),
-        new THREE.MeshBasicMaterial({ color: 0xbfe4ef, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false }));
-      ring.rotation.x = -Math.PI / 2; g.add(ring); ripples.push(ring);
+    const g = new THREE.Group(); g.position.set(sp.x, waterLevelAt(sp.x, sp.z) + SPOT_LIFT, sp.z);
+    // A fishing spot is BUBBLES: something down there, working, sending them
+    // up. They were three hard RingGeometry annuli inside a flat pale disc --
+    // a target painted on the water rather than anything happening in it.
+    //
+    // The bubbles start below the surface and rise to it, so they are seen
+    // THROUGH the water for most of their life (the sheet is transparent and
+    // writes no depth, so they show under it, tinted) and break at the top.
+    const spec = bubbleSpec(sp.tier);
+    const bub = new THREE.InstancedMesh(bubbleGeo(), bubbleMat(), spec.n);
+    bub.frustumCulled = false; bub.renderOrder = 2; g.add(bub);
+    const bubs = [];
+    for (let i = 0; i < spec.n; i++) {
+      const a = Math.random() * Math.PI * 2, rr = Math.sqrt(Math.random()) * spec.spread;
+      bubs.push({ x: Math.cos(a) * rr, z: Math.sin(a) * rr,
+        r: spec.r0 + Math.random() * (spec.r1 - spec.r0),
+        // small bubbles rise slower than big ones, which is also true
+        v: 0.22 + Math.random() * 0.20 + spec.r1 * 1.6,
+        ph: Math.random(), wob: Math.random() * 6.283 });
     }
-    // A wider, always-clickable disc so the tiny rings are easy to hit.
-    const pad = new THREE.Mesh(new THREE.CircleGeometry(1.4, 20),
-      new THREE.MeshBasicMaterial({ color: 0x7fc9dd, transparent: true, opacity: 0.14, side: THREE.DoubleSide, depthWrite: false }));
+    // And the surface they break on: a couple of soft, small rings off the
+    // same texture the splashes use, so the bursting reads from above too.
+    const ripples = [];
+    for (let i = 0; i < 2; i++) {
+      const ring = new THREE.Mesh(flatQuad(), new THREE.MeshBasicMaterial({
+        map: makeRippleTexture(), color: 0xcfe8ee, transparent: true, opacity: 0,
+        depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
+      ring.renderOrder = 3; g.add(ring); ripples.push(ring);
+    }
+    // The click target. Wide, so the rings are easy to hit, and INVISIBLE --
+    // it is there for the cursor, not for the eye.
+    const pad = new THREE.Mesh(new THREE.CircleGeometry(1.7, 18),
+      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
     pad.rotation.x = -Math.PI / 2; g.add(pad);
     g.traverse(o => { if (o.isMesh) { o.userData.pickKind = 'fishspot'; o.userData.pickId = sp.id; } });
     scene.add(g);
-    fishSpots.push({ id: sp.id, tier: sp.tier, x: sp.x, z: sp.z, ripples, phase: Math.random() * 6 });
+    fishSpots.push({ id: sp.id, tier: sp.tier, x: sp.x, z: sp.z, ripples, bub, bubs,
+      ringScale: 0.8 + spec.spread * 0.7, phase: Math.random() * 6 });
     // Is there actually WATER here? zonecheck can ask the blurred field, but
     // the sheet is only built where the surface is above the GROUND as well,
     // and the builder cannot evaluate terrainHeight -- it lives here. So the
@@ -11489,12 +11545,33 @@ function animate() {
   // expanding ripple rings on fishing spots -- and the fish making them
   if (fishSpots.length) {
     const tf = performance.now() / 1000;
+    const _bm = _bubMtx;
     for (const sp of fishSpots) {
+      // the bubbles, rising from below and breaking at the top
+      if (sp.bub) {
+        for (let i = 0; i < sp.bubs.length; i++) {
+          const b = sp.bubs[i];
+          // 0 at the bed, 1 where it breaks. The column is deepened by the
+          // lift so the bubbles still start under the water rather than
+          // hanging in the air above it.
+          const p = (tf * b.v / (BUBBLE_DEPTH + SPOT_LIFT) + b.ph) % 1;
+          // A bubble wanders as it rises and swells a little as the pressure
+          // comes off it, then thins to nothing as it breaks.
+          const wob = Math.sin(tf * 2.1 + b.wob) * 0.045 * p;
+          const s = b.r * (0.72 + 0.5 * p) * (1 - Math.max(0, p - 0.92) / 0.08);
+          _bm.makeScale(Math.max(1e-4, s), Math.max(1e-4, s), Math.max(1e-4, s));
+          _bm.setPosition(b.x + wob, -(BUBBLE_DEPTH + SPOT_LIFT) * (1 - p),
+                          b.z + Math.cos(tf * 1.7 + b.wob) * 0.045 * p);
+          sp.bub.setMatrixAt(i, _bm);
+        }
+        sp.bub.instanceMatrix.needsUpdate = true;
+      }
+      // and the rings they leave on the surface
       sp.ripples.forEach((ring, i) => {
-        const p = (tf * 0.6 + sp.phase + i / sp.ripples.length) % 1;
-        const s = 0.3 + p * 1.6;
-        ring.scale.set(s, s, s);
-        ring.material.opacity = Math.max(0, 0.55 * (1 - p));
+        const p = (tf * 0.5 + sp.phase + i / sp.ripples.length) % 1;
+        const s = (0.20 + (1 - (1 - p) * (1 - p)) * 1.25) * (sp.ringScale || 1);
+        ring.scale.set(s, 1, s);
+        ring.material.opacity = 0.26 * Math.sin(p * Math.PI) * Math.min(1, p * 6);
       });
       // A shoal is what a fishing spot IS, and until now the only evidence of
       // one was three rings turning on the surface forever. Every so often
