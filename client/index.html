@@ -1798,7 +1798,7 @@ function loadZone(zdata) {
   fishSpots.length = 0; cookFires.length = 0; campfireFx.length = 0;
   npcMarkLayer.innerHTML = ''; npcMarkEls.clear();
   closeDialogue();
-  fireflies = null; critters = []; targetId = null; cullChunks.length = 0;
+  fireflies = null; fireflyLights.length = 0; critters = []; targetId = null; cullChunks.length = 0;
   for (const [, gr] of graveMeshes) if (gr.plate) gr.plate.remove(); graveMeshes.clear();   // rebuilt from the next snapshot in the new scene
 
   const e = zone.env || {};
@@ -3578,6 +3578,19 @@ function makeSoftDot() {
 // build, and at this count it is a fraction of a millisecond.
 const FIREFLY_N = 14000;
 const FIREFLY_GREEN = new THREE.Color(0.38, 1.0, 0.26);   // yellow-green, as they are
+// Real light, from a FEW of them.
+//
+// You cannot ask a renderer for fourteen thousand point lights, and adding or
+// removing lights recompiles every material that can see them -- so the pool is
+// a fixed size, made once, and each frame the brightest fireflies near the
+// camera borrow it. The sprite is what you look at; these are what the grass
+// sees. Kept dim and short on purpose: a campfire here is intensity 1.6 over
+// 22 m, and a firefly that reads anywhere near that is a lantern, not an
+// insect. This is a pool of light about a pace across.
+const FIREFLY_LIGHTS = 8;
+const FIREFLY_LIGHT_RANGE = 4.0;
+const FIREFLY_LIGHT_MAX = 0.20;
+const fireflyLights = [];
 function buildFireflies() {
   const b = zone.bounds, n = FIREFLY_N;
   const geo = new THREE.BufferGeometry();
@@ -3614,6 +3627,13 @@ function buildFireflies() {
   fireflies.userData = { base, phase, rate, n };
   fireflies.frustumCulled = false;   // one object spanning the zone; its bounds are the zone
   scene.add(fireflies);
+  fireflyLights.length = 0;
+  for (let i = 0; i < FIREFLY_LIGHTS; i++) {
+    const l = new THREE.PointLight(FIREFLY_GREEN, 0, FIREFLY_LIGHT_RANGE, 2);
+    l.castShadow = false;
+    scene.add(l);
+    fireflyLights.push(l);
+  }
 }
 
 // Clone an animated critter model at a small target size, keeping its wing
@@ -12090,7 +12110,14 @@ function animate() {
     const nf = Math.max(0, Math.min(1, ((1 - dayness) - 0.38) / 0.22));
     const night = nf * nf * (3 - 2 * nf);
     fireflies.visible = night > 0.01;
+    if (!fireflies.visible) { for (const L of fireflyLights) L.intensity = 0; }
     if (fireflies.visible) {
+      // The pool goes to whichever are brightest and nearest: a firefly two
+      // paces away mid-flash is worth lighting, one forty metres off is not,
+      // however bright. Chosen in the loop that is already walking all of them
+      // rather than in a second pass.
+      const cx = camera.position.x, cy = camera.position.y, cz = camera.position.z;
+      const top = [];
       for (let i = 0; i < ud.n; i++) {
         arr[i * 3] = ud.base[i * 3] + Math.sin(t * 0.5 + ud.phase[i]) * 1.4;
         arr[i * 3 + 1] = ud.base[i * 3 + 1] + Math.sin(t * 0.9 + ud.phase[i] * 2) * 0.6;
@@ -12106,6 +12133,21 @@ function animate() {
         cArr[i * 3] = FIREFLY_GREEN.r * glow;
         cArr[i * 3 + 1] = FIREFLY_GREEN.g * glow;
         cArr[i * 3 + 2] = FIREFLY_GREEN.b * glow;
+        if (glow > 0.25) {
+          const dx = arr[i * 3] - cx, dy = arr[i * 3 + 1] - cy, dz = arr[i * 3 + 2] - cz;
+          const d2 = dx * dx + dy * dy + dz * dz;
+          if (d2 < 900) {                                   // 30 m: past that it lights nothing you can see
+            const score = glow / (1 + d2);
+            if (top.length < FIREFLY_LIGHTS) { top.push({ i, glow, score }); top.sort((a, b) => a.score - b.score); }
+            else if (score > top[0].score) { top[0] = { i, glow, score }; top.sort((a, b) => a.score - b.score); }
+          }
+        }
+      }
+      for (let k = 0; k < FIREFLY_LIGHTS; k++) {
+        const L = fireflyLights[k], pick = top[k];
+        if (!pick) { L.intensity = 0; continue; }
+        L.position.set(arr[pick.i * 3], arr[pick.i * 3 + 1], arr[pick.i * 3 + 2]);
+        L.intensity = pick.glow * FIREFLY_LIGHT_MAX * night;
       }
       fireflies.geometry.attributes.position.needsUpdate = true;
       fireflies.geometry.attributes.color.needsUpdate = true;
