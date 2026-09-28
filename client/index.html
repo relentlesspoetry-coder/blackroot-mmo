@@ -2264,15 +2264,15 @@ function buildTerrainWater() {
   // lid. At 0.86 the shapes below show through as shapes without the bed
   // coming back as a window -- which is the failure at the other end, and what
   // made the water look black when the floor was tuned too low.
-  // The FLOOR was 0.50, and it was doing the opposite of its job at the
-  // shallow end. It exists so a carved pool does not go clear and become a
-  // window onto the dark bottom of a bowl -- but it is applied where `f` is
-  // small, which is shallow water and the rim, and twenty centimetres over a
-  // flat mud shelf is the clearest water in the zone, not the murkiest. At
-  // Murkfen, where the shelf runs 20-70 cm deep for tens of metres, 57%
-  // opacity over dark mud read as a flat grey PLATE laid on the bank, with a
-  // hard edge where the shelf ended. Real shallow water shows its bed.
-  const DEPTH_OPAQUE = 0.75, ALPHA_FLOOR = 0.22, ALPHA_CEIL = 0.86, RIM_FEATHER = 0.55;
+  // The FLOOR was briefly dropped to 0.22 to stop a shallow shelf reading as a
+  // flat plate. That was the wrong lever and it cost two things at once: the
+  // bed showed straight through, so the margin read as dry mud with a pane of
+  // glass over it, and the cell texture and its animation went with it --
+  // they are multiplied into the diffuse, so a sheet that contributes a fifth
+  // of the pixel contributes a fifth of its texture too. The hard edge was
+  // never the opacity. It was the sheet stopping short of the waterline; see
+  // GATE_SLACK below.
+  const DEPTH_OPAQUE = 0.75, ALPHA_FLOOR = 0.50, ALPHA_CEIL = 0.86, RIM_FEATHER = 0.55;
   // Cold BLUE. These are sRGB and three linearises them, so a hex that looks
   // like a mid tone lands near black in the working space -- both of these
   // were picked from the LINEAR values they need to end up at (deep
@@ -2340,6 +2340,14 @@ function buildTerrainWater() {
     let v = phiCache.get(k);
     if (v === undefined) {
       const x = T.minX + fj * fine, z = T.minZ + fi * fine;
+      // Tried and measured: letting the ground height define the edge for a
+      // few metres past the traced gate (GATE_SLACK) is WORSE, not better.
+      // phi is interpolated linearly across a 0.83 m cell, and out on the bank
+      // the ground climbs faster than that line, so every metre of sheet won
+      // that way is sheet stretched over rising ground. At 4 m of slack the
+      // triangles with ground poking through went from 61 to 1,912, the worst
+      // from 24 cm to 89 cm, and the shoreline left under water with no water
+      // on it got worse too -- 348 cells to 730. The clamp stays.
       v = Math.min(levelAt(fj, fi) - heightAt(fj, fi), gateAt(x, z));
       phiCache.set(k, v);
     }
