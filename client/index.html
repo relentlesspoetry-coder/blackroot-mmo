@@ -3554,24 +3554,65 @@ function makeSoftDot() {
   return new THREE.CanvasTexture(cv);
 }
 
+// Fireflies. They come out at night, they drift, and each one BLINKS on its
+// own clock -- which is the whole character of the thing: a field of fireflies
+// is not a field of lamps, it is a field of sparks going on and off out of step
+// with each other.
+//
+// The blink is per-point, so the material carries vertex colours rather than
+// one colour for all of them: with additive blending a colour of zero is an
+// invisible point, so writing the envelope into the colour turns each spark on
+// and off without touching the geometry or splitting the draw call. All of
+// them together are still one THREE.Points and one draw.
+//
+// FIREFLY_N is high because they are spread over the whole zone and you only
+// ever see the ones near you: 605,000 m2 of woodland, and a 40 m circle around
+// the player is under 1% of it. At 160 -- what this was, as an always-on warm
+// mote -- you would stand in the dark and see one.
+// Sized from what you SEE, not from what sounds like a lot. A 40 m circle
+// around the player is 5,027 m2, which is 0.83% of the zone's 605,000 -- and
+// only about an eighth of them are mid-flash at any instant. So the count you
+// need for a couple of dozen sparks around you is a couple of dozen divided by
+// 0.13, divided by 0.0083: twenty-odd thousand. They are one THREE.Points and
+// one draw call whatever the number; the per-frame cost is measured below the
+// build, and at this count it is a fraction of a millisecond.
+const FIREFLY_N = 14000;
+const FIREFLY_GREEN = new THREE.Color(0.38, 1.0, 0.26);   // yellow-green, as they are
 function buildFireflies() {
-  const b = zone.bounds, n = 160;
+  const b = zone.bounds, n = FIREFLY_N;
   const geo = new THREE.BufferGeometry();
-  const pos = new Float32Array(n * 3), base = new Float32Array(n * 3), phase = new Float32Array(n);
+  const pos = new Float32Array(n * 3), base = new Float32Array(n * 3);
+  const phase = new Float32Array(n), rate = new Float32Array(n), col = new Float32Array(n * 3);
+  // Over LAND. Placed anywhere in bounds they sit out over the middle of
+  // Ravenwater and the fen, blinking above open water where nothing lives --
+  // and every one wasted out there is one missing from the wood you are
+  // standing in. The raw cell, like buildGrass uses, not the blurred field.
+  const onLand = (x, z) => (!zone.boundary || inBoundary(x, z))
+    && !'WwR '.includes(terrainAt(x, z))
+    // ...and the DRAWN waterline as well as the cell. The cell is 2.5 m and the
+    // shore is a curve through it, so the two disagree by a couple of metres
+    // along every bank -- which put 9% of them out over the water anyway.
+    && waterLevelAt(x, z) - terrainHeight(x, z) <= 0.05
+    && !zone.rocks.some(o => Math.hypot(x - o.x, z - o.z) < o.r);
   for (let i = 0; i < n; i++) {
     let x, z, tries = 0;
     do { x = b.minX + Math.random() * (b.maxX - b.minX); z = b.minZ + Math.random() * (b.maxZ - b.minZ); }
-    while (zone.boundary && !inBoundary(x, z) && ++tries < 10);
-    const y = 1 + Math.random() * 4;
+    while (!onLand(x, z) && ++tries < 24);
+    // Low, where the grass is, rather than scattered up into the canopy.
+    const y = (groundY ? groundY(x, z) : 0) + 0.35 + Math.random() * 1.9;
     pos[i * 3] = base[i * 3] = x; pos[i * 3 + 1] = base[i * 3 + 1] = y; pos[i * 3 + 2] = base[i * 3 + 2] = z;
     phase[i] = Math.random() * 6.3;
+    // Each on its own clock, or they pulse in unison and read as one throbbing
+    // light rather than as a hundred separate insects.
+    rate[i] = 0.7 + Math.random() * 1.6;
   }
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  const color = 0xffe08a;
-  const mat = new THREE.PointsMaterial({ color, size: 0.7, map: makeSoftDot(), transparent: true, opacity: 0.9,
-    blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true });
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  const mat = new THREE.PointsMaterial({ size: 0.45, map: makeSoftDot(), transparent: true, opacity: 1,
+    vertexColors: true, blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true });
   fireflies = new THREE.Points(geo, mat);
-  fireflies.userData = { base, phase, n };
+  fireflies.userData = { base, phase, rate, n };
+  fireflies.frustumCulled = false;   // one object spanning the zone; its bounds are the zone
   scene.add(fireflies);
 }
 
@@ -12038,15 +12079,37 @@ function animate() {
       }
     }
   }
-  // drifting fireflies / motes
+  // Fireflies: drift, blink, and only after dark.
   if (fireflies) {
-    const t = performance.now() / 1000, ud = fireflies.userData, arr = fireflies.geometry.attributes.position.array;
-    for (let i = 0; i < ud.n; i++) {
-      arr[i * 3] = ud.base[i * 3] + Math.sin(t * 0.5 + ud.phase[i]) * 1.4;
-      arr[i * 3 + 1] = ud.base[i * 3 + 1] + Math.sin(t * 0.9 + ud.phase[i] * 2) * 0.6;
-      arr[i * 3 + 2] = ud.base[i * 3 + 2] + Math.cos(t * 0.4 + ud.phase[i]) * 1.4;
+    const t = performance.now() / 1000, ud = fireflies.userData;
+    const arr = fireflies.geometry.attributes.position.array;
+    const cArr = fireflies.geometry.attributes.color.array;
+    // The same day/night curve the critters use, with the same quick crossfade:
+    // out through dusk, night and dawn, gone in daylight.
+    const dayness = Math.max(0, Math.sin((typeof worldTime === 'number' ? worldTime : 0.5) * Math.PI * 2 - Math.PI / 2) * 0.5 + 0.5);
+    const nf = Math.max(0, Math.min(1, ((1 - dayness) - 0.38) / 0.22));
+    const night = nf * nf * (3 - 2 * nf);
+    fireflies.visible = night > 0.01;
+    if (fireflies.visible) {
+      for (let i = 0; i < ud.n; i++) {
+        arr[i * 3] = ud.base[i * 3] + Math.sin(t * 0.5 + ud.phase[i]) * 1.4;
+        arr[i * 3 + 1] = ud.base[i * 3 + 1] + Math.sin(t * 0.9 + ud.phase[i] * 2) * 0.6;
+        arr[i * 3 + 2] = ud.base[i * 3 + 2] + Math.cos(t * 0.4 + ud.phase[i]) * 1.4;
+        // A short flash, not a sine: sin^8 of its own clock sits near zero for
+        // most of the cycle and spikes briefly, which is what a firefly does.
+        // The 0.12 floor is the ember between flashes -- take it to zero and
+        // the field reads as empty dark with the occasional spark appearing
+        // from nowhere.
+        const sN = Math.max(0, Math.sin(t * ud.rate[i] + ud.phase[i]));
+        const s2 = sN * sN, s4 = s2 * s2;
+        const glow = (0.12 + 0.88 * s4 * s4) * night;
+        cArr[i * 3] = FIREFLY_GREEN.r * glow;
+        cArr[i * 3 + 1] = FIREFLY_GREEN.g * glow;
+        cArr[i * 3 + 2] = FIREFLY_GREEN.b * glow;
+      }
+      fireflies.geometry.attributes.position.needsUpdate = true;
+      fireflies.geometry.attributes.color.needsUpdate = true;
     }
-    fireflies.geometry.attributes.position.needsUpdate = true;
   }
   _pf('critters', () => updateCritters(dt));
   _pf('cull', () => cullFarChunks(camera));
