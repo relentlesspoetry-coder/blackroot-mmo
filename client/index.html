@@ -2850,9 +2850,18 @@ function buildRiverShore(points, half) {
   g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
   g.setIndex(idx); g.computeVertexNormals();
+  // No emissive. It carried emissive 0x241a10 at 0.35, put there to make the
+  // shore visible at night, and at night it was more than half of everything
+  // the shore was: emissive is not scaled by light, so as the sun went down the
+  // bank kept its glow while the land around it went out. Measured on the
+  // Crowwater at midnight it sat at 15.2 of 255 against grass at 10.3 -- the
+  // bank brighter than the ground it is cut into, which never happens at noon
+  // (73.5 against 82.1). Every root, bush and blade standing on a lit strip in
+  // a dark wood then reads as a HOLE PUNCHED IN THE BANK, which is exactly what
+  // it was reported as. Unlit it sits at 6.2 against grass at 8.0, the same
+  // slightly-darker-than-the-land it has in daylight, at every hour.
   const mat = detailize(new THREE.MeshStandardMaterial({ color: 0x9c7a52, roughness: 1,
     vertexColors: true, transparent: true, depthWrite: false, // rim alpha melts the dirt into grass
-    emissive: 0x241a10, emissiveIntensity: 0.35,
     polygonOffset: true, polygonOffsetFactor: -2 }), 'dirt', { scale: 2 });
   const m = new THREE.Mesh(g, mat); m.receiveShadow = true; m.userData.isGround = true;
   m.userData.groundDecal = { name: 'river shore', lift: 0.03 };

@@ -390,6 +390,39 @@ const PARSED = [];
     'FLYERS is derived from CRITTER_KIND');
 }
 
+// Nothing that is part of the ground may emit its own light.
+//
+// The river shore carried emissive 0x241a10 at 0.35 to make it visible at
+// night. Emissive is not scaled by light, so as the sun went down the bank kept
+// its glow while the land around it went out: measured on the Crowwater at
+// midnight the shore sat at 15.2 of 255 against grass at 10.3, brighter than
+// the ground it is cut into, which never happens at noon (73.5 against 82.1).
+// Every root and bush standing on a lit strip in a dark wood then reads as a
+// hole punched in the bank -- which is what it was reported as, twice.
+{
+  const cli = readFileSync(new URL('../client/index.html', import.meta.url), 'utf8');
+  const bad = [];
+  let seen = 0;
+  const re = /userData\.(?:groundDecal|isGround)\s*=/g;
+  for (let m; (m = re.exec(cli));) {
+    const back = cli.slice(Math.max(0, m.index - 1600), m.index);
+    const at = back.lastIndexOf('new THREE.MeshStandardMaterial(');
+    if (at < 0) continue;
+    seen++;
+    const lit = back.slice(at);
+    // `0\b` would have matched the 0 in `0.35` -- which is how the first
+    // version of this check passed the very material it was written for.
+    if (/\bemissive(?:Map)?\s*:/.test(lit) && !/\bemissiveIntensity\s*:\s*0(?![.\d])/.test(lit)) {
+      const line = cli.slice(0, m.index).split('\n').length;
+      bad.push(`the ground material before client/index.html:${line} emits`);
+    }
+  }
+  ok('no part of the ground glows in the dark', seen > 0 && bad.length === 0,
+    !seen ? 'found no ground materials to check -- the check has come unstuck from the code'
+    : bad.length ? bad.join('; ')
+    : `${seen} ground materials, every one of them lit rather than lighting`);
+}
+
 // --- the sky ----------------------------------------------------------------
 // The sky has to reach everywhere you can stand.
 //
