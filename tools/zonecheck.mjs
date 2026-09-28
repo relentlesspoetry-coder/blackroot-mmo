@@ -7,7 +7,7 @@
 import { readFileSync } from 'fs';
 import { darkwoods as z } from '../server/zones/darkwoods.js';
 import { spiderden } from '../server/zones/spiderden.js';
-import { terrainAt, terrainFieldAt, isSolid, rockSolidAt, rockRiseAt, rockEdgeOf } from '../server/worldgen.js';
+import { terrainAt, terrainFieldAt, isSolid, rockSolidAt, rockRiseAt, rockEdgeOf, groundSlopeAt } from '../server/worldgen.js';
 import { ITEMS } from '../server/items.js';
 import { FISH, TIERS } from '../server/fishing.js';
 import { QUESTS } from '../server/quests.js';
@@ -74,14 +74,29 @@ console.log('\nThe Dark Woods — zone invariants\n');
     const sends = /function zoneForClient[\s\S]*?\n\}/.exec(src);
     ok('the client is sent waterEdge', !!(sends && /waterEdge/.test(sends[0])),
         sends && /waterEdge/.test(sends[0]) ? 'in zoneForClient' : 'zoneForClient does not send it');
-    // and the client's fallback must agree with the zone, for the case where
-    // an older zone file has none.
-    const cli = readFileSync(new URL('../client/index.html', import.meta.url), 'utf8');
-    const fb = /WATER_EDGE_FALLBACK = \{([^}]*)\}/.exec(cli);
+    // and the fallback in the shared module must agree with the zone, for the
+    // case where an older zone file has none. It used to live in the client,
+    // in the client's own copy of the terrain maths; there is one copy now and
+    // this is where it is.
+    const sh = readFileSync(new URL('../shared/terrain.js', import.meta.url), 'utf8');
+    const fb = /WATER_EDGE_FALLBACK = \{([^}]*)\}/.exec(sh);
     const num = (k) => { const m = fb && new RegExp(k + ':\\s*([0-9.]+)').exec(fb[1]); return m ? +m[1] : null; };
     const same = fb && num('deep') === E.deep && num('marsh') === E.marsh && num('fade') === E.fade;
-    ok("the client's fallback waterline matches the zone", !!same,
+    ok('the shared fallback waterline matches the zone', !!same,
         fb ? `fallback deep ${num('deep')} marsh ${num('marsh')} fade ${num('fade')}` : 'no fallback found');
+    // The client must IMPORT that module rather than carry its own maths. This
+    // is the whole point of shared/terrain.js: the client drew the ground and
+    // the server decided what you could walk on, each from its own copy, and
+    // the copies drifted -- 766 cells of swimming on dry land, fishing spots
+    // rippling on grass, 371 cells of invisible wall.
+    const cli = readFileSync(new URL('../client/index.html', import.meta.url), 'utf8');
+    const imports = /import \* as TERRAIN from '\/shared\/terrain\.js'/.test(cli);
+    const ownMaths = ['function terrainHeight(', 'function landBaseY(', 'function groundMeshY(',
+                      'function terrainFieldAt(', 'function riverProfile(']
+                     .filter(s => cli.includes(s));
+    ok('the client imports the shared terrain and keeps no copy of it',
+      imports && ownMaths.length === 0,
+      !imports ? 'no import of /shared/terrain.js' : ownMaths.length ? `own copy of: ${ownMaths.join(', ')}` : 'one implementation');
   }
   // The real test has to reproduce the CLIENT's shoreline, which is the ground
   // crossing the waterline -- not just restate the server's rule, which would
@@ -493,28 +508,29 @@ for (const zone of [z, spiderden]) {
       : `${types.size} monster types`);
 }
 
-// The whole point of rockEdge: what blocks and what is drawn are one shape.
-// Before it, 371 cells blocked while standing under 2 m proud (an invisible
-// wall) and 310 cells of walkable ground had over 4 m of crag drawn on them (a
-// player inside a cliff). The first is now impossible by construction -- solid
-// IS the field level -- so what is worth guarding is the second: the only
-// ground you may walk on with a cliff over your head is a road, which is the
-// one authored exception, and there should not be much of it.
+// What blocks is what is STEEP, and the steepness is measured on the surface
+// the player can see. (There used to be a check here that nothing blocks
+// without drawn rock over it and nothing drawn is walked through; it was for
+// the rule where rock blocked by how much of it was under you, and under the
+// slope rule the two quantities are unrelated by design. The invariant that
+// replaced it is "every object stands somewhere you can reach", which uses
+// rockSolidAt and caught a glowcap on a 43-degree face the moment the rule
+// changed.)
 {
-  const E = rockEdgeOf(z), wall = E.rise * E.solid ** 2;
-  const T2 = z.terrain;
-  let blind = 0, through = 0, offPath = [];
-  for (let gz = 0; gz < T2.h; gz++) for (let gx = 0; gx < T2.w; gx++) {
+  const T2 = z.terrain, E2 = rockEdgeOf(z);
+  let steepWalkable = [], gentleBlocked = 0;
+  for (let gz = 0; gz < T2.h; gz += 2) for (let gx = 0; gx < T2.w; gx += 2) {
     if (T2.rows[gz][gx] === ' ') continue;
     const x = T2.minX + (gx + 0.5) * T2.cell, zz = T2.minZ + (gz + 0.5) * T2.cell;
-    const h = rockRiseAt(z, x, zz), solid = rockSolidAt(z, x, zz);
-    if (solid && h < wall - 0.01) blind++;
-    if (!solid && h > wall + 0.01) { through++; if (toPath(x, zz) > 5) offPath.push(`(${x.toFixed(0)}, ${zz.toFixed(0)})`); }
+    const steep = groundSlopeAt(z, x, zz) > E2.walkSlope;
+    const blocks = rockSolidAt(z, x, zz);
+    if (steep && !blocks && toPath(x, zz) > 5) steepWalkable.push(`(${x.toFixed(0)}, ${zz.toFixed(0)})`);
+    if (!steep && blocks) gentleBlocked++;
   }
-  ok('nothing blocks that is not drawn, and nothing drawn is walked through',
-    blind === 0 && offPath.length === 0,
-    `${blind} invisible walls, ${through} cells under a cliff you can walk (all on roads`
-    + `${offPath.length ? ' EXCEPT ' + offPath.slice(0, 5).join(' ') : ''})`);
+  ok('what blocks is what is too steep to walk, and only that',
+    steepWalkable.length === 0 && gentleBlocked === 0,
+    `${gentleBlocked} gentle cells blocking, ${steepWalkable.length} steep cells walkable off-road`
+    + (steepWalkable.length ? ' at ' + steepWalkable.slice(0, 4).join(' ') : ''));
 }
 
 // A road through rock is not a road. Since rock blocks by the DRAWN field now,

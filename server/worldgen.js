@@ -32,19 +32,25 @@ export function bridgesOf(river) {
 // is answered by reading one cell, so the world matches the drawing instead
 // of approximating it with circles and lines.
 // ---------------------------------------------------------------------------
-export const T_OFF = ' ', T_DEEP = 'W', T_MARSH = 'w', T_ROCK = 'R',
-             T_DENSE = 'F', T_WOOD = 'f', T_OPEN = '.';
+// The grid, the blurred fields and everything about where the ground IS come
+// from shared/terrain.js -- the same module the client imports over HTTP. They
+// used to be two copies of the same maths, and the copies drifted: the server
+// blurred every field at one radius and the client at two, which happened not
+// to matter yet and was one edit away from mattering.
+import {
+  T_OFF, T_DEEP, T_MARSH, T_ROCK, T_DENSE, T_WOOD, T_OPEN,
+  terrainAt, isWater, terrainFieldAt, waterEdgeOf, rockEdgeOf, rockRiseAt,
+  landHeight, landBaseY, terrainHeight, groundMeshY, groundSlopeAt, tooSteep,
+  waterLevelAt, riverProfile, latticeOf, resetTerrain, MAX_WALK_SLOPE, walkSlopeOf,
+} from '../shared/terrain.js';
+export {
+  T_OFF, T_DEEP, T_MARSH, T_ROCK, T_DENSE, T_WOOD, T_OPEN,
+  terrainAt, isWater, terrainFieldAt, waterEdgeOf, rockEdgeOf, rockRiseAt,
+  landHeight, landBaseY, terrainHeight, groundMeshY, groundSlopeAt, tooSteep,
+  waterLevelAt, riverProfile, latticeOf, resetTerrain, MAX_WALK_SLOPE, walkSlopeOf,
+};
 
 export function terrainOf(zone) { return zone && zone.terrain; }
-// The class at (x,z). Off the grid reads as off the map.
-export function terrainAt(zone, x, z) {
-  const t = zone && zone.terrain;
-  if (!t) return T_OPEN;
-  const gx = Math.floor((x - t.minX) / t.cell), gz = Math.floor((z - t.minZ) / t.cell);
-  if (gz < 0 || gz >= t.h || gx < 0 || gx >= t.w) return T_OFF;
-  return t.rows[gz][gx] || T_OFF;
-}
-export function isWater(c) { return c === T_DEEP || c === T_MARSH; }
 
 // The wetness field the SHORELINE is drawn from -- box-blurred twice over a few
 // cells, then sampled bilinear. This has to be here, and has to match the client
@@ -53,50 +59,7 @@ export function isWater(c) { return c === T_DEEP || c === T_MARSH; }
 // Deciding swimming from cells while drawing the shore from the contour left 766
 // cells of open ground you swam across. Both sides now read `zone.waterEdge`,
 // which the zone generator writes, so the levels cannot drift apart.
-const FIELD_SRC = {
-  deep: c => (c === T_DEEP ? 1 : 0),
-  wet: c => ((c === T_DEEP || c === T_MARSH) ? 1 : 0),
-  rock: c => (c === T_ROCK ? 1 : 0),
-};
-export function terrainFieldAt(zone, x, z, name) {
-  const t = zone && zone.terrain;
-  if (!t) return 0;
-  const R = (zone.waterEdge && zone.waterEdge.blur) || 3;
-  let F = zone._fields;
-  if (!F) {
-    F = zone._fields = {};
-    for (const [key, of] of Object.entries(FIELD_SRC)) {
-      const raw = new Float32Array(t.w * t.h);
-      for (let gz = 0; gz < t.h; gz++) {
-        for (let gx = 0; gx < t.w; gx++) raw[gz * t.w + gx] = of(t.rows[gz][gx] || T_OFF);
-      }
-      const tmp = new Float32Array(t.w * t.h), out = new Float32Array(t.w * t.h);
-      const pass = (src, dst, horiz) => {
-        for (let gz = 0; gz < t.h; gz++) for (let gx = 0; gx < t.w; gx++) {
-          let sum = 0, n = 0;
-          for (let d = -R; d <= R; d++) {
-            const ix = horiz ? gx + d : gx, iz = horiz ? gz : gz + d;
-            if (ix < 0 || ix >= t.w || iz < 0 || iz >= t.h) continue;
-            sum += src[iz * t.w + ix]; n++;
-          }
-          dst[gz * t.w + gx] = n ? sum / n : 0;
-        }
-      };
-      pass(raw, tmp, true); pass(tmp, out, false);
-      pass(out, tmp, true); pass(tmp, out, false);
-      F[key] = out;
-    }
-  }
-  const g = F[name];
-  if (!g) return 0;
-  const fx = (x - t.minX) / t.cell - 0.5, fz = (z - t.minZ) / t.cell - 0.5;
-  const x0 = Math.floor(fx), z0 = Math.floor(fz), tx = fx - x0, tz = fz - z0;
-  const at = (ix, iz) => (iz < 0 || iz >= t.h || ix < 0 || ix >= t.w) ? 0 : g[iz * t.w + ix];
-  const a = at(x0, z0) * (1 - tx) + at(x0 + 1, z0) * tx;
-  const b = at(x0, z0 + 1) * (1 - tx) + at(x0 + 1, z0 + 1) * tx;
-  return a * (1 - tz) + b * tz;
-}
-// Solid ground you cannot enter: deep water, rock, and off the map.
+// (the fields live in shared/terrain.js now)
 export function isSolid(c) { return c === T_DEEP || c === T_ROCK || c === T_OFF; }
 // Distance from (x,z) out to the nearest cell that is not `ok`, capped at
 // `max`. Used to keep things a sensible distance off water, rock and the rim.
@@ -164,21 +127,21 @@ export function onPath(zone, x, z) {
 // at the edge of the shape it came from -- you are stopped exactly at the drawn
 // edge of the rock, and the wall you are stopped by is rise * 0.5^2 = 4.25 m
 // tall. This is the same arrangement as `waterEdge`, for the same reason.
-const ROCK_EDGE_FALLBACK = { rise: 17, solid: 0.5 };
-export function rockEdgeOf(zone) { return (zone && zone.rockEdge) || ROCK_EDGE_FALLBACK; }
-// How much rock the client draws standing at (x,z), in metres.
-export function rockRiseAt(zone, x, z) {
-  const E = rockEdgeOf(zone), f = terrainFieldAt(zone, x, z, 'rock');
-  return E.rise * f * f;
-}
-// Is (x,z) inside the rock? A road is not: the blueprint's chokepoints are
-// three to five metres of gap through a cliff, which is narrower than the blur
-// can resolve, so a pass would read as solid stone with a road painted on it.
-// The road is the authored exception and it is only consulted where the field
-// would otherwise block, so it costs nothing on open ground.
+// (rockEdgeOf / rockRiseAt live in shared/terrain.js now)
+// Is (x,z) somewhere the ground is too steep to walk? This used to ask how
+// much ROCK was under you, and that was the wrong quantity: measured across
+// every cell that blocked, 47% were gentler than 30 degrees and 735 of them
+// were flat -- a grassy mound you walked into like a wall. What stops a person
+// is steepness, and the steepness of the surface the player can SEE.
+//
+// A road is the authored exception. The blueprint's chokepoints are three to
+// five metres of gap through a cliff, narrower than the blurred field can
+// resolve, so without it a pass reads as solid stone with a road painted on
+// it. It is consulted only where the ground would otherwise block, so it costs
+// nothing on open ground.
 export function rockSolidAt(zone, x, z) {
   if (!zone || !zone.terrain) return false;
-  if (terrainFieldAt(zone, x, z, 'rock') < rockEdgeOf(zone).solid) return false;
+  if (!tooSteep(zone, x, z)) return false;
   return !onPath(zone, x, z);
 }
 // Nearest point on ANY of a zone's roads.

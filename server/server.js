@@ -91,6 +91,8 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLIENT_DIR = path.join(__dirname, '..', 'client');
+// The modules both sides import. The browser gets them at /shared/*.
+const SHARED_DIR = path.join(__dirname, '..', 'shared');
 const PORT = process.env.PORT || 8080;
 
 const ZONES = { darkwoods, spiderden };
@@ -3074,8 +3076,15 @@ const httpServer = http.createServer((req, res) => {
   try { urlPath = decodeURIComponent(req.url.split('?')[0]); }
   catch { res.writeHead(400); res.end('Bad request'); return; }
   if (urlPath === '/') urlPath = '/index.html';
-  const filePath = path.join(CLIENT_DIR, path.normalize(urlPath).replace(/^(\.\.[/\\])+/, ''));
-  if (!filePath.startsWith(CLIENT_DIR)) { res.writeHead(403); res.end('Forbidden'); return; }
+  // /shared/* is the one thing outside the client directory the browser may
+  // have: the modules the client and the server both import, so that there is
+  // one implementation of the world's shape and not two that drift.
+  const clean = path.normalize(urlPath).replace(/^(\.\.[/\\])+/, '');
+  const root = clean.startsWith('/shared/') || clean.startsWith('\\shared\\') ? SHARED_DIR : CLIENT_DIR;
+  const filePath = root === SHARED_DIR
+    ? path.join(SHARED_DIR, clean.slice('/shared'.length))
+    : path.join(CLIENT_DIR, clean);
+  if (!filePath.startsWith(root)) { res.writeHead(403); res.end('Forbidden'); return; }
   fs.readFile(filePath, (err, data) => {
     if (err) { res.writeHead(404); res.end('Not found'); return; }
     res.writeHead(200, { 'Content-Type': MIME[path.extname(filePath)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });   // always revalidate: a refresh gets the current build

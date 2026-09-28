@@ -1068,14 +1068,13 @@ FORD_COST = 26.0
 # so all three agree by construction rather than by coincidence.
 WATER_EDGE = {'deep': 0.41, 'marsh': 0.44, 'fade': 0.41, 'blur': 3}
 # Where rock stops being scenery and starts being a wall. `rise` is how tall the
-# client draws it (y += rise * field^2); `solid` is the field level at which the
-# server refuses to let you through. They are one pair of numbers because they
-# describe one thing -- the cliff -- and the map was full of the gap between
-# them when they were two: 371 traced rock cells blocked while standing under
-# 2 m proud, and 310 cells of walkable ground had over 4 m of drawn crag on
-# them. 0.5 is the level a blur leaves at the edge of the shape it came from,
-# so you are stopped at the drawn edge, by a wall rise * 0.25 = 4.25 m high.
-ROCK_EDGE = {'rise': 17.0, 'solid': 0.5}
+# client draws it (y += rise * field^2). They are one pair of numbers because
+# they describe one thing -- the cliff.
+# `walkSlope` is rise over run: 0.84 is 40 degrees. Blocking by how much ROCK
+# was under you was the wrong quantity -- measured across every cell that
+# blocked, 47% were gentler than 30 degrees and 735 were flat, which is a grassy
+# mound you walk into like a wall. What stops a person is steepness.
+ROCK_EDGE = {'rise': 17.0, 'walkSlope': 0.84}
 
 DECK_COST = 2.4
 
@@ -1252,7 +1251,7 @@ def main():
     # --- what you can walk on --------------------------------------------
     # Not the traced cell: the rock the client DRAWS. The grid is the drawing,
     # the blur is what the drawing becomes on screen, and the wall is where that
-    # reaches ROCK_EDGE['solid'] -- the same rule the server applies through
+    # is steeper than ROCK_EDGE['walkSlope'] -- the same rule the server applies through
     # worldgen.rockSolidAt, off the same two numbers written into the zone.
     # A road is the authored exception: a chokepoint is three to five metres of
     # gap through a cliff, which is narrower than the blur can resolve, so
@@ -1265,18 +1264,28 @@ def main():
         if _wm['key'] == key:
             return _wm['g']
         _fld.clear()
-        lvl = ROCK_EDGE['solid']
+        rise = ROCK_EDGE['rise']
+        lim = ROCK_EDGE['walkSlope']
         rock = _field('rock')
+        # The slope of the DRAWN ground, which is what stops a person. Only the
+        # rock term is taken: the hills are broad smooth domes and the water
+        # cuts are shallow, so the rock rise is where all the steepness is. It
+        # is an approximation and it is used only to decide where the builder
+        # may put things -- tools/walkcheck.mjs asks the real collision.
+        h = [[rise * frow[gx] ** 2 for gx in range(W)] for frow in rock]
         g = [[False] * W for _ in range(H)]
         for gz in range(H):
             grow = g[gz]
             rrow = rows[gz]
-            frow = rock[gz]
             for gx in range(W):
                 ch = rrow[gx]
                 if ch == ' ' or ch == 'W':
                     continue
-                grow[gx] = frow[gx] < lvl
+                gx0, gx1 = max(0, gx - 1), min(W - 1, gx + 1)
+                gz0, gz1 = max(0, gz - 1), min(H - 1, gz + 1)
+                dx = (h[gz][gx1] - h[gz][gx0]) / ((gx1 - gx0) * cell or 1)
+                dz = (h[gz1][gx] - h[gz0][gx]) / ((gz1 - gz0) * cell or 1)
+                grow[gx] = math.hypot(dx, dz) <= lim
         for kind, _a, _b, pts in paths:
             half = ROAD_CUT if kind == 'road' else TRAIL_CUT
             rc = max(1, int(half / cell))
@@ -1302,9 +1311,27 @@ def main():
         """Somewhere you can stand, at the cell's own centre."""
         return 0 <= gx < W and 0 <= gz < H and walk_grid()[gz][gx]
 
+    # Somewhere you can PUT something. Deliberately stricter than dry_walk: the
+    # builder measures the slope from the blurred rock field on 2.5 m centres,
+    # and the game measures it on the ground MESH, whose triangles amplify the
+    # local gradient -- a shoulder that reads 32 degrees here came out at 43 in
+    # the game and a glowcap ended up on a cliff face. Routing and reachability
+    # still use the real limit; only placement backs off, because a mushroom
+    # two metres further down the slope costs nothing and a mushroom you cannot
+    # reach costs a quest.
+    PLACE_SLOPE = 0.45
+    def place_slope(wx, wz):
+        rise = ROCK_EDGE['rise']
+        hh = lambda x, z: rise * field_at(x, z, 'rock') ** 2
+        dx = (hh(wx + cell, wz) - hh(wx - cell, wz)) / (2 * cell)
+        dz = (hh(wx, wz + cell) - hh(wx, wz - cell)) / (2 * cell)
+        return math.hypot(dx, dz)
+
     def stand_at(wx, wz):
-        """The same question at world coordinates."""
-        return dry_walk(int((wx - minX) / cell), int((wz - minZ) / cell))
+        """The same question at world coordinates, for placing something."""
+        if not dry_walk(int((wx - minX) / cell), int((wz - minZ) / cell)):
+            return False
+        return place_slope(wx, wz) <= PLACE_SLOPE
 
     def walkable_cell(px, py):
         cx, cz = to_cell(px, py)
@@ -2398,10 +2425,12 @@ def main():
                     gx, gz = gx0 + dx, gz0 + dz
                     if gx < 0 or gz < 0 or gx >= W or gz >= H:
                         continue
-                    if not dry_walk(gx, gz):
-                        continue
                     cx = minX + (gx + 0.5) * cell
                     cz = minZ + (gz + 0.5) * cell
+                    # stand_at, not dry_walk: this is where something is going
+                    # to be PUT, and the slope margin is the whole point.
+                    if not stand_at(cx, cz):
+                        continue
                     dd = math.hypot(cx - wx, cz - wz)
                     if found is None or dd < found[1]:
                         found = ((cx, cz), dd)
@@ -2787,12 +2816,11 @@ def main():
     A(f"  waterEdge: {{ deep: {WATER_EDGE['deep']}, marsh: {WATER_EDGE['marsh']}, "
       f"fade: {WATER_EDGE['fade']}, blur: {WATER_EDGE['blur']} }},")
     A('')
-    A('  // Rock: how tall the client draws it, and the field level at which it')
-    A('  // stops you. One pair of numbers for one cliff -- the client draws by')
-    A(f'  // the field and the server blocks by it, so the wall is always the'
-      f' {ROCK_EDGE["rise"] * ROCK_EDGE["solid"] ** 2:.2f} m')
-    A('  // of stone you can see. A road is the one exception: see rockSolidAt.')
-    A(f"  rockEdge: {{ rise: {ROCK_EDGE['rise']}, solid: {ROCK_EDGE['solid']} }},")
+    A('  // Rock: how tall the client draws it, and how steep is too steep to')
+    A('  // walk. One pair of numbers for one cliff -- the client draws by')
+    A('  // the field; the server stops you where that surface is steeper than')
+    A(f'  // walkSlope ({math.degrees(math.atan(ROCK_EDGE["walkSlope"])):.0f} degrees). A road is the one exception: see rockSolidAt.')
+    A(f"  rockEdge: {{ rise: {ROCK_EDGE['rise']}, walkSlope: {ROCK_EDGE['walkSlope']} }},")
     A('')
     A('  // Traced straight off the drawing: one character per cell.')
     A("  // ' ' off-map   W deep water   w marsh   R rock   F dense forest   f wood   . open")

@@ -767,6 +767,8 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
+// The world's shape: the SAME module the server imports, served at /shared/.
+import * as TERRAIN from '/shared/terrain.js';
 
 // ---------------------------------------------------------------------------
 // 3D model assets (GLB). Loaded once up front.
@@ -1537,21 +1539,11 @@ function bridgeLift(x, z) {
 // The level a still body of water sits at. Rivers no longer use it directly --
 // they carry their own profile and meet this where they run into a lake -- so
 // everything that wants "the water surface here" asks waterLevelAt(x, z).
-const RIVER_WATER_Y = -0.5, RIVER_BANK = 4, RIVER_LIP = 2.0;
 // How deep a swimmer sits, measured off the rig rather than guessed. In the
 // upright tread the shoulder joints sit 1.78 above the mesh origin and the head
 // 1.98, so dropping the origin 1.55 under the waterline puts the surface just
 // below the shoulders: head, neck and shoulders clear, the rest of the body in.
 const SWIM_DEPTH = 1.55;
-// Half-width of the water surface: the whole carved channel is flooded, so the
-// water reaches out to `river half-width + RIVER_BANK`. A dedicated smooth dirt
-// shore ribbon (buildRiverShore) forms the visible dirt border out to
-// `half + RIVER_LIP`; the coarse terrain here is only ever seen UNDER the water
-// or the ribbon, so it just needs to stay below them.
-function riverWaterHalf(width) { return width / 2 + RIVER_BANK; }
-// The world can hold several rivers now (fused zones). Helpers return every
-// river / path; single-river zones still work via the legacy fields.
-function worldRivers() { return (zone && (zone.rivers || (zone.river ? [zone.river] : []))) || []; }
 // A path is either a bare list of points (a road) or { points, kind }, where
 // kind is 'road' (a major path -- wide, worn) or 'trail' (a minor one).
 function pathSpecs() {
@@ -1559,320 +1551,35 @@ function pathSpecs() {
   return raw.map(p => Array.isArray(p) ? { points: p, kind: 'road' } : { points: p.points, kind: p.kind || 'road' });
 }
 function worldPaths() { return pathSpecs().map(p => p.points); }
-// ---- Terrain grid ------------------------------------------------------
-// The ground is the blueprint, traced cell by cell (server/zones/*.js
-// `terrain`). Every question about a point is one lookup.
-const T_OFF = ' ', T_DEEP = 'W', T_MARSH = 'w', T_ROCK = 'R',
-      T_DENSE = 'F', T_WOOD = 'f', T_OPEN = '.';
-function terrainAt(x, z) {
-  const t = zone && zone.terrain;
-  if (!t) return T_OPEN;
-  const gx = Math.floor((x - t.minX) / t.cell), gz = Math.floor((z - t.minZ) / t.cell);
-  if (gz < 0 || gz >= t.h || gx < 0 || gx >= t.w) return T_OFF;
-  return t.rows[gz][gx] || T_OFF;
-}
-// Smooth 0..1 fields off the grid. A cell is 2.5 m, so interpolating over one
-// of them drops the ground 2.4 units in a single step -- a wall, which is what
-// made the banks terrace and the bridges hang. Each field is box-blurred over
-// a few cells ONCE when the zone loads, then sampled bilinear, so a shore
-// falls away over ten metres instead of two and a half.
-const FIELD_BLUR = { deep: 3, wet: 3, rock: 3, dense: 2, open: 2 };
-const FIELD_OF = {
-  deep:  c => c === T_DEEP ? 1 : 0,
-  wet:   c => (c === T_DEEP || c === T_MARSH) ? 1 : 0,
-  rock:  c => c === T_ROCK ? 1 : 0,
-  dense: c => c === T_DENSE ? 1 : (c === T_WOOD ? 0.45 : 0),
-  open:  c => c === T_OPEN ? 1 : 0,
-};
-let fields = null;
-function buildTerrainFields() {
-  fields = null;
-  const t = zone && zone.terrain; if (!t) return;
-  fields = {};
-  for (const [name, f] of Object.entries(FIELD_OF)) {
-    const raw = new Float32Array(t.w * t.h);
-    for (let gz = 0; gz < t.h; gz++) for (let gx = 0; gx < t.w; gx++) raw[gz * t.w + gx] = f(t.rows[gz][gx] || T_OFF);
-    // separable box blur, twice, which is close enough to a gaussian
-    const R = FIELD_BLUR[name], tmp = new Float32Array(t.w * t.h), out = new Float32Array(t.w * t.h);
-    const pass = (src, dst, horiz) => {
-      for (let gz = 0; gz < t.h; gz++) for (let gx = 0; gx < t.w; gx++) {
-        let sum = 0, n = 0;
-        for (let d = -R; d <= R; d++) {
-          const ix = horiz ? gx + d : gx, iz = horiz ? gz : gz + d;
-          if (ix < 0 || ix >= t.w || iz < 0 || iz >= t.h) continue;
-          sum += src[iz * t.w + ix]; n++;
-        }
-        dst[gz * t.w + gx] = n ? sum / n : 0;
-      }
-    };
-    pass(raw, tmp, true); pass(tmp, out, false);
-    pass(out, tmp, true); pass(tmp, out, false);
-    fields[name] = out;
-  }
-}
-function terrainField(x, z, name) {
-  const t = zone && zone.terrain; if (!t) return 0;
-  if (!fields) buildTerrainFields();
-  const g = fields && fields[name]; if (!g) return 0;
-  const fx = (x - t.minX) / t.cell - 0.5, fz = (z - t.minZ) / t.cell - 0.5;
-  const x0 = Math.floor(fx), z0 = Math.floor(fz), tx = fx - x0, tz = fz - z0;
-  const at = (ix, iz) => (iz < 0 || iz >= t.h || ix < 0 || ix >= t.w) ? 0 : g[iz * t.w + ix];
-  const a = at(x0, z0) * (1 - tx) + at(x0 + 1, z0) * tx;
-  const b = at(x0, z0 + 1) * (1 - tx) + at(x0 + 1, z0 + 1) * tx;
-  return a * (1 - tz) + b * tz;
-}
 
-// Carve for ONE river.
-// --- a river runs downhill --------------------------------------------------
-// The water used to be at one height for the whole map (-0.5) and the ground
-// was cut down to it wherever a river passed. On flat ground that is a river;
-// across a hillside it is a slot with a blue ribbon at the bottom. Measured
-// before this: Crowwater's banks reach 11.6 m against water at -0.5, a 12.1 m
-// trench, and Blackroot Creek 6.9 m.
-//
-// The traced bodies of water never had the problem, because the land FADES OUT
-// under them (see LF in terrainHeight) and their basins come out flat at the
-// waterline whatever the hills were doing. A river is a polyline with no traced
-// cells, so it got none of that. It does now, in the two parts it needs:
-//
-//   along its length   a profile read off the land it runs through, never
-//                      flowing uphill, pinned to the lake where it meets one
-//   across it          a VALLEY the land settles into, not a slot cut in it
-const LAKE_Y = RIVER_WATER_Y;   // the traced bodies; their basins are faded flat
-const RIVER_DEPTH = 1.7;        // surface to bed
-const RIVER_BELOW_BANK = 0.9;   // how far the surface sits below the bank top
-const RIVER_VALLEY = 17;        // over how far the land settles into the valley
-const RIVER_MOUTH = 10;         // over how far a river's level blends to a lake's
-
-// Nearest point on a polyline, with WHERE along it: the level varies with
-// distance downstream, so the plain distance is not enough.
-function nearestOnPolyline(x, z, pts) {
-  let bd = Infinity, bi = 0, bt = 0;
-  for (let i = 0; i < pts.length - 1; i++) {
-    const ax = pts[i].x, az = pts[i].z, bx = pts[i + 1].x, bz = pts[i + 1].z;
-    const abx = bx - ax, abz = bz - az;
-    const t = Math.max(0, Math.min(1, ((x - ax) * abx + (z - az) * abz) / (abx * abx + abz * abz || 1)));
-    const d = Math.hypot(x - (ax + abx * t), z - (az + abz * t));
-    if (d < bd) { bd = d; bi = i; bt = t; }
-  }
-  return { dist: bd, i: bi, t: bt };
-}
-
-// The surface level at each point of a river's polyline.
-function riverProfile(r) {
-  if (r._prof) return r._prof;
-  const pts = r.points, n = pts.length;
-  const H = riverWaterHalf(r.width) + RIVER_LIP, OFF = H + 4;
-  const E = waterEdge();
-  // The land either side, read far enough out that the river's own valley has
-  // not lowered it, and the lower of the two banks -- water finds the low side.
-  const lvl = new Float64Array(n), inBody = new Uint8Array(n);
-  for (let i = 0; i < n; i++) {
-    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)];
-    let dx = b.x - a.x, dz = b.z - a.z; const L = Math.hypot(dx, dz) || 1; dx /= L; dz /= L;
-    const nx = -dz, nz = dx;
-    const bank = Math.min(landBaseY(pts[i].x + nx * OFF, pts[i].z + nz * OFF),
-                          landBaseY(pts[i].x - nx * OFF, pts[i].z - nz * OFF));
-    inBody[i] = terrainField(pts[i].x, pts[i].z, 'wet') >= E.marsh ? 1 : 0;
-    lvl[i] = inBody[i] ? LAKE_Y : bank - RIVER_BELOW_BANK;
-  }
-  // A river surface does not step: smooth, but never move a point the lake owns.
-  for (let pass = 0; pass < 10; pass++) {
-    const s = Float64Array.from(lvl);
-    for (let i = 1; i < n - 1; i++) if (!inBody[i]) lvl[i] = (s[i - 1] + 2 * s[i] + s[i + 1]) / 4;
-  }
-  // ...and it does not flow uphill. Walk from the high end to the low one,
-  // clamping each point to the one above it.
-  const step = lvl[0] >= lvl[n - 1] ? 1 : -1;
-  const from = step === 1 ? 1 : n - 2, to = step === 1 ? n : -1;
-  for (let i = from; i !== to; i += step) if (lvl[i] > lvl[i - step]) lvl[i] = lvl[i - step];
-  // The monotonic pass does not get to overrule a lake. Where the river is
-  // inside a traced body, the body's surface is the surface -- it caught the
-  // fen, where the banks either side are already below the waterline and the
-  // profile came out at -2.3 against a fen at -0.5, which drained it.
-  for (let i = 0; i < n; i++) if (inBody[i]) lvl[i] = LAKE_Y;
-  r._prof = lvl;
-  return lvl;
-}
-// The river's surface at (x, z), and how far off its centreline that is.
-function riverAt(r, x, z) {
-  const c = nearestOnPolyline(x, z, r.points), p = riverProfile(r);
-  const a = p[c.i], b = p[Math.min(p.length - 1, c.i + 1)];
-  return { dist: c.dist, level: a + (b - a) * c.t };
-}
-// The level of whatever water covers (x, z): a river's own surface inside its
-// corridor, the lake level outside, blended across the mouth so the two meet.
-function waterLevelAt(x, z) {
-  let best = null, bd = Infinity, bh = 0;
-  for (const r of worldRivers()) {
-    const c = riverAt(r, x, z);
-    if (c.dist < bd) { bd = c.dist; best = c; bh = riverWaterHalf(r.width) + RIVER_LIP; }
-  }
-  if (!best || bd >= bh + RIVER_MOUTH) return LAKE_Y;
-  const k = Math.min(1, Math.max(0, (bh + RIVER_MOUTH - bd) / RIVER_MOUTH));
-  const lvl = LAKE_Y + (best.level - LAKE_Y) * (k * k * (3 - 2 * k));
-  // Inside a lake or the fen you are standing in the BODY, whatever a stream
-  // running past is doing: a river may raise the surface locally, never lower
-  // it below the water the drawing already puts there.
-  if (terrainField(x, z, 'wet') >= waterEdge().marsh) return Math.max(lvl, LAKE_Y);
-  return lvl;
-}
-// ---- Relief ------------------------------------------------------------
-// The blueprint is a hilly woodland: 40 m at the fen up to 340 m on Crow Hill.
-// The zone authors that as a handful of broad domes (`hills`), summed and
-// smoothed. Held at about a quarter of the blueprint's true relief -- at 1:1
-// the slopes are a wall to a third-person camera -- so the land rolls and the
-// high ground still reads as high ground.
-function worldHills() { return (zone && zone.hills) || []; }
-function landHeight(x, z) {
-  let h = 0;
-  for (const k of worldHills()) {
-    const d = Math.hypot(x - k.x, z - k.z);
-    if (d >= k.r) continue;
-    const t = 1 - d / k.r;
-    h += k.h * t * t * (3 - 2 * t);          // smoothstep dome, flat at the top and the foot
-  }
-  return h;
-}
-// Rock stands above the land it sits on; water cuts down through it.
-// A single unit of marsh cut is not a marsh, it is a damp lawn: the fen's floor
-// has to sit a wader's depth below the waterline so the sheet actually covers
-// it. Deep water is cut harder still so Ravenwater reads as deep.
-// How tall the drawn rock stands. This is not a drawing choice on its own any
-// more: the server blocks where the rock FIELD reaches `rockEdge.solid`, so
-// this number and that one together decide where the wall is, and both come
-// from the zone. See rockEdge in worldgen.js.
-const ROCK_EDGE_FALLBACK = { rise: 17, solid: 0.5 };
-function rockEdge() { return (zone && zone.rockEdge) || ROCK_EDGE_FALLBACK; }
-const WATER_CUT = 4.6, MARSH_CUT = 2.0;
-// Where the shoreline goes, as a contour of the traced wetness field.
-//
-// The cut used to be linear in that field, and linear puts the bowl's RIM in the
-// wrong place: with a 4.6 unit cut the ground crosses the waterline at a wetness
-// of about 0.11, so the lake filled to nearly twice its drawn area. Pinning the
-// crossing to 0.5 instead overshot the other way -- the field is box-blurred, and
-// blurring SHRINKS a stringy shape, so the 0.5 contour of the fen encloses a
-// fifth less than the cells it came from.
-//
-// So the edge levels are the ones measured to reproduce the drawing's own areas:
-// the deep water covers 5.58% of the zone and the whole wetted area 7.23%, and
-// these two contours come out at 5.6% and 7.2%. The exponents then follow from
-// them -- WATER_CUT * DEEP_EDGE^DEEP_FALL = 0.5 -- so the ground rises through
-// the waterline exactly where the drawing says the bank is.
-// These come from the ZONE (`waterEdge`), because the server reads the same two
-// numbers to decide when you are swimming. They used to live only here, and the
-// server went on using the raw cell grid -- which left 766 cells of open ground
-// that the shoreline had receded from and you still swam across.
-const WATER_EDGE_FALLBACK = { deep: 0.41, marsh: 0.44, fade: 0.41 };
-function waterEdge() { return (zone && zone.waterEdge) || WATER_EDGE_FALLBACK; }
-// The land with no river in it: hills, rock, and the traced water cut. The
-// river profile is read off THIS, or a river would lower its own banks and
-// walk its level down the map.
-function landBaseY(x, z) {
-  if (!zone || zone.enclosed) return 0;
-  const wet = terrainField(x, z, 'wet'), rock = terrainField(x, z, 'rock');
-  // Hills roll under everything; rock stands on them; water cuts through.
-  const deep = terrainField(x, z, 'deep');
-  const E = waterEdge();
-  // Land (and the rock standing on it) fades out completely by the time the
-  // wetness reaches the shoreline level. That is not cosmetic -- it is what
-  // makes "the ground is under the waterline" and "the drawing says water here"
-  // the SAME test. They used to differ: a lake lapping a hillside had ground
-  // above the waterline inside its own drawn edge, so the client drew no water
-  // while the server, which only knows the drawing, still made you swim. 561
-  // cells of the zone were like that. With the land faded, the shoreline is the
-  // edge contour and nothing else, and the two sides cannot disagree.
-  const LF = Math.max(0, 1 - wet / E.fade);
-  let y = LF * (landHeight(x, z) + rockEdge().rise * rock * rock);
-  const dFall = Math.log(0.5 / WATER_CUT) / Math.log(E.deep);
-  const mFall = Math.log(0.5 / MARSH_CUT) / Math.log(E.marsh);
-  y -= WATER_CUT * Math.pow(deep, dFall)
-     + MARSH_CUT * Math.max(0, Math.pow(wet, mFall) - Math.pow(deep, mFall));
-  return y;
-}
-function terrainHeight(x, z) {
-  if (!zone || zone.enclosed) return 0;
-  let y = landBaseY(x, z);
-  // Rivers are still polylines -- too narrow to trace as cells -- so they cut
-  // their own valley. Only ever DOWNWARD: where the river runs through ground
-  // already lower than its bed (the fen), the fen wins and the river simply
-  // becomes part of it, which is what the drawing shows.
-  for (const r of worldRivers()) {
-    const half = riverWaterHalf(r.width), H = half + RIVER_LIP;
-    const c = riverAt(r, x, z);
-    if (c.dist >= H + RIVER_VALLEY) continue;
-    const top = c.level + RIVER_BELOW_BANK;
-    let prof;
-    if (c.dist <= half) prof = c.level - RIVER_DEPTH * (1 - Math.pow(c.dist / half, 3));
-    else if (c.dist <= H) prof = c.level + (top - c.level) * ((c.dist - half) / RIVER_LIP);
-    else prof = top;
-    const k = Math.min(1, Math.max(0, (H + RIVER_VALLEY - c.dist) / RIVER_VALLEY));
-    y += (Math.min(prof, y) - y) * (k * k * (3 - 2 * k));
-  }
-  // A ruin you can walk into needs a level floor. Each structure levels a
-  // rectangle of ground and feathers it back into the hillside, so the nave is
-  // flat and the walls are not standing on stilts at the downhill end.
-  if (sitePads) for (const p of sitePads) {
-    const dx = Math.abs(x - p.x) - p.hw, dz = Math.abs(z - p.z) - p.hd;
-    if (dx >= p.fr || dz >= p.fr) continue;
-    const d = Math.hypot(Math.max(dx, 0), Math.max(dz, 0));
-    if (d >= p.fr) continue;
-    const t = 1 - d / p.fr;
-    y += (p.y - y) * (t * t * (3 - 2 * t));
-  }
-  return y;
-}
-// Each pad's level is read off the UNPADDED ground, or the second ruin would be
-// levelled against the first one's apron.
-let sitePads = null;
-function buildSitePads() {
-  sitePads = null;
-  const pads = (zone && zone.pads || []).map(p => ({
-    x: (p.minX + p.maxX) / 2, z: (p.minZ + p.maxZ) / 2,
-    hw: (p.maxX - p.minX) / 2, hd: (p.maxZ - p.minZ) / 2, fr: p.fr || 16, y: 0 }));
-  for (const p of pads) p.y = terrainHeight(p.x, p.z);
-  sitePads = pads;
-}
-// Height an entity should stand at: on a bridge use its deck, else the terrain.
-// --- the surface you can actually SEE ---------------------------------------
-// terrainHeight is a continuous function; the ground MESH is a lattice of
-// triangles sampling it every ~2.5 m. They are not the same surface, and
-// anything that sits on the ground has to follow the triangles -- the function
-// dips below them in every hollow and rises above them over every crest, so a
-// crate placed by the function is a crate half-buried in the slope it stands
-// on. (A thing laid at a constant y is worse again: the dirt field was one
-// flat sheet at y = 0.05 across a map with 15 hills on it. 60% of its vertices
-// were underground and 22% floated, which is why a trail simply vanished the
-// moment it left level ground.)
-//
-// This reproduces the mesh exactly -- the same lattice, and the same diagonal
-// three.js splits each quad along -- so the answer is the height of the very
-// triangle being drawn under that point. The lattice heights are memoised, so
-// it is also cheaper than terrainHeight for anything asked more than once.
-let groundGrid = null;          // set by buildLowPolyGround
-let _gmH = null;                // lattice heights, NaN = not yet computed
-function groundLatticeY(i, j) {
-  const G = groundGrid, k = j * (G.nx + 1) + i;
-  let v = _gmH[k];
-  if (v !== v) { v = terrainHeight(G.minX + i * G.dx, G.minZ + j * G.dz); _gmH[k] = v; }
-  return v;
-}
-function groundMeshY(x, z) {
-  const G = groundGrid;
-  if (!G) return terrainHeight(x, z);
-  const fx = (x - G.minX) / G.dx, fz = (z - G.minZ) / G.dz;
-  const i = Math.max(0, Math.min(G.nx - 1, Math.floor(fx)));
-  const j = Math.max(0, Math.min(G.nz - 1, Math.floor(fz)));
-  const u = fx - i, v = fz - j;
-  // three.js PlaneGeometry splits each quad (a,b,d)(b,c,d) with the diagonal
-  // running from (i, j+1) to (i+1, j) -- the line u + v = 1.
-  if (u + v <= 1) {
-    const h00 = groundLatticeY(i, j);
-    return h00 + u * (groundLatticeY(i + 1, j) - h00) + v * (groundLatticeY(i, j + 1) - h00);
-  }
-  const h11 = groundLatticeY(i + 1, j + 1);
-  return h11 + (1 - u) * (groundLatticeY(i, j + 1) - h11) + (1 - v) * (groundLatticeY(i + 1, j) - h11);
-}
+// --- the shape of the world -------------------------------------------------
+// Everything about where the ground is lives in ONE module, imported by the
+// server directly and by this page over HTTP. It used to live in both, in two
+// copies of the same maths that were never quite the same shape -- 766 cells of
+// swimming on dry land, fishing spots rippling on grass, 371 cells of invisible
+// wall. The wrappers below just bind the current `zone` so every call site here
+// reads the way it always did.
+const {
+  T_OFF, T_DEEP, T_MARSH, T_ROCK, T_DENSE, T_WOOD, T_OPEN,
+  RIVER_WATER_Y, RIVER_BANK, RIVER_LIP, LAKE_Y, WATER_CUT, MARSH_CUT,
+  MAX_WALK_SLOPE, riverWaterHalf, distToPolyline, nearestOnPolyline, isWater,
+  walkSlopeOf,
+} = TERRAIN;
+const terrainAt     = (x, z) => TERRAIN.terrainAt(zone, x, z);
+const terrainField  = (x, z, n) => TERRAIN.terrainFieldAt(zone, x, z, n);
+const worldRivers   = () => TERRAIN.riversOf(zone);
+const worldHills    = () => TERRAIN.hillsOf(zone);
+const waterEdge     = () => TERRAIN.waterEdgeOf(zone);
+const rockEdge      = () => TERRAIN.rockEdgeOf(zone);
+const landHeight    = (x, z) => TERRAIN.landHeight(zone, x, z);
+const landBaseY     = (x, z) => TERRAIN.landBaseY(zone, x, z);
+const terrainHeight = (x, z) => TERRAIN.terrainHeight(zone, x, z);
+const groundMeshY   = (x, z) => TERRAIN.groundMeshY(zone, x, z);
+const groundSlopeAt = (x, z) => TERRAIN.groundSlopeAt(zone, x, z);
+const waterLevelAt  = (x, z) => TERRAIN.waterLevelAt(zone, x, z);
+const riverProfile  = (r) => TERRAIN.riverProfile(zone, r);
+const riverAt       = (r, x, z) => TERRAIN.riverAt(zone, r, x, z);
+const rockRiseAt    = (x, z) => TERRAIN.rockRiseAt(zone, x, z);
 // Where the ground is, for everything that stands on it.
 function groundY(x, z) { const b = bridgeLift(x, z); return b !== null ? b : groundMeshY(x, z); }
 let worldTime = 0.35, worldWeather = 'clear';
@@ -2050,10 +1757,7 @@ function updateSky(dt) {
 // and on every zone transition.
 function loadZone(zdata) {
   zone = zdata; lastRegionId = null;
-  groundGrid = null; _gmH = null;  // the old zone's lattice is not this zone's ground
-  for (const r of (zone.rivers || (zone.river ? [zone.river] : []))) r._prof = null;
-  buildTerrainFields();          // blur the traced classes once, for this zone
-  buildSitePads();               // level the ground under every ruin
+  TERRAIN.resetTerrain(zone);    // fields, pads, lattice and river profiles, for THIS zone
   // Sit the camera behind the character's spawn facing. Without this it
   // defaulted to yaw 0 and every new player spawned staring at the north
   // boundary wall with the entire zone behind them.
@@ -2130,17 +1834,7 @@ function inBoundary(x, z) {
   return pointInPoly(x, z, poly);
 }
 
-function distToPolyline(x, z, pts) {
-  let best = Infinity;
-  for (let i = 0; i < pts.length - 1; i++) {
-    const ax = pts[i].x, az = pts[i].z, bx = pts[i + 1].x, bz = pts[i + 1].z;
-    const abx = bx - ax, abz = bz - az;
-    const t = Math.max(0, Math.min(1, ((x - ax) * abx + (z - az) * abz) / (abx * abx + abz * abz || 1)));
-    const cx = ax + abx * t, cz = az + abz * t;
-    best = Math.min(best, Math.hypot(x - cx, z - cz));
-  }
-  return best;
-}
+// (distToPolyline moved to shared/terrain.js with the rest of the world shape.)
 
 const poiWorld = []; // {name, x, z, kind, optional, hidden} for label projection
 
@@ -3052,13 +2746,13 @@ function fbm2(x, z, seed) {
 function buildLowPolyGround(W, D, cx, cz) {
   // A vertex every 2.5 m in the open air: the terrain grid is traced at 1.5
   // zone units (~2.5 m), and a coarser mesh cannot show a cliff edge that fine.
-  const seg = Math.max(24, Math.round(Math.max(W, D) / (zone.enclosed ? 6 : 2.5)));
+  // The lattice comes from the shared module, which derives it from the zone's
+  // own bounds -- so the mesh drawn here and the height the server reads are
+  // the same surface by construction rather than by agreement.
+  const L = TERRAIN.latticeOf(zone);
+  const seg = L.nx;
   const geo = new THREE.PlaneGeometry(W, D, seg, seg);
   geo.rotateX(-Math.PI / 2);
-  // Remember the lattice so anything laid on the ground can follow the same
-  // triangles (groundMeshY).
-  groundGrid = { minX: cx - W / 2, minZ: cz - D / 2, dx: W / seg, dz: D / seg, nx: seg, nz: seg };
-  _gmH = new Float32Array((seg + 1) * (seg + 1)).fill(NaN);
   const rng = mulberry32(9), c = new THREE.Color();
   const half = (zone.river && !zone.enclosed) ? riverWaterHalf(zone.river.width) : 0;
 

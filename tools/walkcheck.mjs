@@ -31,10 +31,11 @@ export function walkable(z, step = STEP, radius = R) {
   let openN = 0;
   for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
     const x = xOf(i), zz = zOf(j);
-    // Cheap reject first: rock and off-map are solid whatever else is there
-    // (deep water is NOT -- a player swims). An optimisation only; anything it
-    // lets through still faces the real collision below.
-    if (z.terrain) { const c = terrainAt(z, x, zz); if (c === T_ROCK || c === T_OFF) continue; }
+    // Cheap reject: off the map is off the map. It used to reject traced ROCK
+    // cells too, which was right while rock blocked by the cell and wrong the
+    // moment it blocked by SLOPE -- 3,083 rock cells are gentle enough to walk
+    // and this check would have gone on calling them solid.
+    if (z.terrain && terrainAt(z, x, zz) === T_OFF) continue;
     if (navBlocked(z, x, zz, radius, true)) continue;
     open[j * W + i] = 1; openN++;
   }
