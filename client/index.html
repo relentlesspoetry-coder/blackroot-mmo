@@ -3492,12 +3492,48 @@ function crossBladeGeo(w, h) {
 }
 // Small, dense, textured grass tufts — scattered singles plus little clumps,
 // each a randomised shade of green.
+// Wind, shared by everything that bends in it. One number, advanced once a
+// frame; the swaying itself happens per vertex on the GPU, so nothing here
+// costs anything per blade -- which matters when there are 893,000 of them.
+const windClock = { value: 0 };
+const BLADE_H = 0.4;
 function buildGrass() {
   const b = zone.bounds, rng = mulberry32((zone.treeSeed || 1) + 271);
-  const geo = crossBladeGeo(0.15, 0.4);
+  const geo = crossBladeGeo(0.15, BLADE_H);
   const mat = new THREE.MeshStandardMaterial({
     side: THREE.DoubleSide, vertexColors: true, roughness: 1,
   });
+  // A field of grass that does not move is the thing that reads as plain --
+  // not the colour, and not the density. It was already three scales of colour
+  // noise, a grain at 2.6 m and nearly a million blades, and it still looked
+  // like a carpet, because a meadow is never still.
+  //
+  // The bend is on the TIP: weighted by height squared, so the root stays put
+  // and the blade leans rather than sliding. Two frequencies, a slow one and a
+  // faster one at less than half the weight, so it breathes and gusts instead
+  // of ticking. The phase comes off the blade's own world position, which is
+  // what makes the gust travel ACROSS the field rather than every blade in the
+  // zone leaning at the same instant.
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.uWind = windClock;
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nuniform float uWind;')
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+{
+  vec3 iw = vec3(0.0);
+  #ifdef USE_INSTANCING
+    iw = instanceMatrix[3].xyz;
+  #endif
+  float up = clamp(position.y / ${BLADE_H.toFixed(3)}, 0.0, 1.0);
+  float bend = up * up;
+  float g1 = sin(uWind * 1.05 + iw.x * 0.32 + iw.z * 0.26);
+  float g2 = sin(uWind * 2.30 + iw.x * 0.90 - iw.z * 0.74);
+  float sway = (g1 + 0.45 * g2) * 0.075 * bend;
+  transformed.x += sway;
+  transformed.z += sway * 0.55;
+}`);
+  };
+  mat.customProgramCacheKey = () => 'grasswind';
   const ok = (x, z) => (!zone.boundary || inBoundary(x, z)) &&
     worldRivers().every(r => distToPolyline(x, z, r.points) >= riverWaterHalf(r.width) + RIVER_LIP) &&
     // The raw cell, not the blurred field: the blur reaches ~25 m past the
@@ -12124,6 +12160,7 @@ function animate() {
       }
     }
   }
+  windClock.value = performance.now() / 1000;
   // Fireflies: drift, blink, and only after dark.
   if (fireflies) {
     const t = performance.now() / 1000, ud = fireflies.userData;
