@@ -2206,7 +2206,17 @@ let waterSurfaces = [];
 // How far past the waterline the dirt bank reaches, measured in the blurred
 // water field rather than in metres -- which is what makes a shallow shelving
 // pool get a wide beach and a cut bank get a narrow one.
-const BANK_BAND = 0.11;
+// How wide the grass-to-mud blend is, in units of the wet field. It was 0.11,
+// which at Murkfen's field gradient is about four metres -- and the ground is
+// coloured PER VERTEX on a 2.5 m lattice, so the whole transition was carried
+// by a vertex and a half. That is why the bank read as dirt and grass fighting
+// over the ground in hard polygons: you were seeing the triangles, because
+// there were not enough of them to hide a gradient in.
+//
+// Widened so the blend spans three or four vertices instead, and broken up
+// with noise below, because a shoreline that fades evenly still reads as a
+// band rather than as ground.
+const BANK_BAND = 0.20;
 const _bankC = new THREE.Color();
 function buildTerrainWater() {
   waterSurfaces = [];
@@ -2628,29 +2638,47 @@ varying vec2 vWaterXZ; varying float vDepth; varying float vSwell; varying float
 // move as one body of water however differently they are scaled. A lake gets
 // the ambient breath; a river gets its own downstream on top, which is what
 // vFlow carries.
-vec2 waterDrift() { return vFlow * uFlowSpeed + vec2(0.035, 0.026); }
+// The ambient drift was 0.035 m/s, and it is in metres per second, so the
+// surface pattern moved THREE AND A HALF CENTIMETRES a second across a cell
+// four metres wide -- two minutes to travel its own width. Measured against a
+// parked camera, a second of it changed the rendered water by 0.02 of 255:
+// the sheet was, to the eye, standing perfectly still. Water that still is not
+// water. At 0.30 m/s a cell crosses in about thirteen seconds, which reads as
+// a fen breathing rather than as a river.
+vec2 waterDrift() { return vFlow * uFlowSpeed + vec2(0.30, 0.22); }
 vec2 rippleUV1() { return (vWaterXZ + waterDrift() * uWaterTime) * WCELL1; }
-vec2 rippleUV2() { return (vWaterXZ + (waterDrift() * 0.62 + vec2(-0.05, 0.03)) * uWaterTime) * WCELL2; }`)
+// The second layer runs at a different speed AND a different angle, so the two
+// never lock into one sliding sheet -- which is what a single scrolling texture
+// always looks like, and the reason there are two.
+vec2 rippleUV2() { return (vWaterXZ + (waterDrift() * 0.47 + vec2(-0.13, 0.09)) * uWaterTime) * WCELL2; }
+// The cells, centred on zero: positive where they cross and brighten.
+float waterCaustic() {
+  return texture2D(uRipple, rippleUV1()).r * 0.62
+       + texture2D(uRipple, rippleUV2()).r * 0.38 - 0.5;
+}`)
       // Caustics: the cells brighten the water where they cross. Multiplied
       // into the diffuse so the depth tint underneath still shows through.
       .replace('#include <map_fragment>', `#include <map_fragment>
 {
-  float c1 = texture2D(uRipple, rippleUV1()).r;
-  float c2 = texture2D(uRipple, rippleUV2()).r;
-  float caustic = c1 * 0.62 + c2 * 0.38 - 0.5;      // centred, so it darkens as well as lifts
+  float caustic = waterCaustic();
   // ...but not evenly. Centred on zero the cells cut as hard as they lift, and
   // the dark half of a four-metre cell at this scale is a DASH -- the whole
   // pool came out covered in short dark scratches, which is the one thing the
   // texture was there to avoid. The troughs are worth less than the crests
   // because light in water is scattered up, not down.
   float lift = caustic > 0.0 ? caustic : caustic * 0.40;
-  diffuseColor.rgb *= 1.0 + uCaustic * lift;
+  // 1.6, because the water is DARK. Measured across open water the sheet sits
+  // at a linear 0.047 with the cells moving it by 6 of 255 -- present in the
+  // numbers and invisible on the screen, since everything is compressed down
+  // at that end. The multiply has to be bigger on dark water to show the same
+  // amount of texture as it would on bright.
+  diffuseColor.rgb *= 1.0 + uCaustic * lift * 1.6;
   // And the cells have a COLOUR, not just a brightness. Light coming up
   // through moving water is bluer than the water around it, and a texture that
   // only multiplies the base is a texture you read as shading rather than as
   // anything in the water. Weighted hard to blue -- the near-neutral tint this
   // replaces was doing the same job as the multiply above it.
-  diffuseColor.rgb += vec3(0.028, 0.098, 0.170) * max(0.0, caustic) * uCaustic * 3.0;
+  diffuseColor.rgb += vec3(0.028, 0.098, 0.170) * max(0.0, caustic) * uCaustic * 5.0;
 }`)
       // A broken normal off the gradient of the same two layers. This is what
       // the specular catches, and it is the difference between a lake and a
@@ -2688,6 +2716,22 @@ vec2 rippleUV2() { return (vWaterXZ + (waterDrift() * 0.62 + vec2(-0.05, 0.03)) 
   // on it -- which is exactly why it must not be a flat grey wash. It is warm,
   // it is weaker than it was, and the broken normal above breaks it up.
   totalEmissiveRadiance += vec3(0.09, 0.16, 0.26) * f * uFresnel;
+  // ...and the cells go in HERE as well, not only into the diffuse.
+  //
+  // This is why the water read as having no texture and no animation however
+  // hard the diffuse was driven. Diffuse is multiplied by the light, and in
+  // the Dark Woods the light on a horizontal surface at dusk is nearly
+  // nothing, so a pattern living only in the diffuse is a pattern multiplied
+  // by nearly nothing. The Fresnel sheen above is emissive, which is not,
+  // which is why THAT was the only thing on the water -- and it is smooth, so
+  // what you saw was a smooth sheet.
+  //
+  // Emissive is the wrong word for it physically; what it means here is "not
+  // scaled by how lit this face is", which is exactly right for light coming
+  // up through moving water.
+  float cc = waterCaustic();
+  totalEmissiveRadiance += vec3(0.035, 0.075, 0.105) * max(0.0, cc) * uCaustic;
+  totalEmissiveRadiance -= vec3(0.012, 0.020, 0.028) * max(0.0, -cc) * uCaustic;
   diffuseColor.a = clamp(diffuseColor.a + f * uFresnel * 0.25, 0.0, 1.0);
 }
 // --- where it meets the land -------------------------------------------
@@ -3129,7 +3173,14 @@ function buildLowPolyGround(W, D, cx, cz) {
     {
       const wetF = terrainField(wx, wz, 'wet');
       // full mud from the waterline in; fading out across BANK_BAND of field
-      const t = (wetF - (EW.marsh - BANK_BAND)) / BANK_BAND;
+      let t = (wetF - (EW.marsh - BANK_BAND)) / BANK_BAND;
+      // ...with the fringe pushed in and out, so grass runs down to the water
+      // in tongues and mud reaches up between them. An even ramp makes a band
+      // with two edges; this makes a shore. Same idea as the ragged fringe on
+      // the mining scrapes in buildDirtField, at a coarser scale because this
+      // one is carried by the terrain's own vertices.
+      const ragged = (fbm2(wx * 1.7 - 613, wz * 1.7 + 277, 59) - 0.5) * 0.55;
+      t = t + ragged * (1 - Math.abs(t * 2 - 1));   // only where it is actually blending
       bed = Math.max(bed, Math.min(1, Math.max(0, t)));
     }
     const onBed = bed > 0.995;
