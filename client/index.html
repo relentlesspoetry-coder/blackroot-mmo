@@ -3749,7 +3749,7 @@ function buildFireflies() {
 
 // Clone an animated critter model at a small target size, keeping its wing
 // nodes named so the GLB's flap/hover clips still bind to the clone.
-function makeCritter(name, size, flapRate) {
+function makeCritter(name, size) {
   const src = LOADED[name]; if (!src) return null;
   const root = src.clone(true);
   const box = new THREE.Box3().setFromObject(root);
@@ -3761,7 +3761,7 @@ function makeCritter(name, size, flapRate) {
   // up toward the sky. The wrap still owns heading (yaw) and position.
   root.rotation.x = -Math.PI / 2;
   const wrap = new THREE.Group(); wrap.add(root);
-  let mixer = null;
+  let mixer = null, action = null;
   const clips = LOADED_ANIM[name];
   if (clips && clips.length) {
     mixer = new THREE.AnimationMixer(root);
@@ -3775,10 +3775,51 @@ function makeCritter(name, size, flapRate) {
       const wingTracks = clip.tracks.filter(tr => /wing/i.test(tr.name.split('.')[0]));
       if (wingTracks.length) clip = new THREE.AnimationClip('flap', clip.duration, wingTracks);
     }
-    const act = mixer.clipAction(clip); act.play(); act.time = Math.random() * clip.duration;
-    mixer.timeScale = flapRate || 1; // real butterfly/moth wingbeats are quick
+    action = mixer.clipAction(clip); action.play(); action.time = Math.random() * clip.duration;
   }
-  return { wrap, root, mixer };
+  wrap.rotation.order = 'YXZ';   // yaw, then bank about its own axis
+  return { wrap, root, mixer, action };
+}
+// --- the pool ---------------------------------------------------------------
+// A BODY is the expensive half of a critter: a cloned model, its wing nodes, a
+// mixer, and the two dozen materials makeCritter has to clone so each one can
+// carry its own opacity. An INSECT is the cheap half: an anchor, a heading and
+// a speed, and no THREE objects at all.
+//
+// There were 122 bodies, one per anchor, all built at load and kept for the
+// zone's life -- 2,686 cloned materials, 44% of every material in the scene --
+// while about eight insects are close enough to see at any moment. Now a body
+// is LENT to an insect as it fades in and handed back as it fades out, so the
+// zone holds as many bodies as were ever wanted at once and not one more.
+//
+// The pool grows on demand rather than to a number I guessed: ask for a body,
+// and if none is free one is built and joins the pool for good. Whatever the
+// peak turns out to be, that is the size.
+const critterBodies = new Map();        // model -> { free: [], made: 0 }
+function bodyPool(model) {
+  let p = critterBodies.get(model);
+  if (!p) { p = { free: [], made: 0 }; critterBodies.set(model, p); }
+  return p;
+}
+function takeBody(model, flap) {
+  const p = bodyPool(model);
+  let body = p.free.pop();
+  if (!body) {
+    const k = CRITTER_KIND[model]; if (!k) return null;
+    body = makeCritter(model, k.size); if (!body) return null;
+    p.made++;
+  }
+  if (body.mixer) body.mixer.timeScale = flap;
+  // A fresh phase on every loan, or two insects handed bodies in the same
+  // frame beat their wings in lockstep for as long as they are both up.
+  if (body.action) body.action.time = Math.random() * body.action.getClip().duration;
+  body.wrap.visible = true;
+  scene.add(body.wrap);
+  return body;
+}
+function dropBody(model, body) {
+  scene.remove(body.wrap);
+  bodyPool(model).free.push(body);
 }
 // Butterflies (day) and moths (night) drifting around the woods, fading in and
 // out with the day-night cycle.
@@ -3807,26 +3848,31 @@ const CRITTER_KIND = {
 };
 function buildCritters() {
   critters = [];
+  critterBodies.clear();                         // bodies belong to the zone that lent them
   for (const a of (zone.scatter || [])) {
     const k = CRITTER_KIND[a.m]; if (!k || !LOADED[a.m]) continue;
-    const c = makeCritter(a.m, k.size, k.flap * (0.85 + Math.random() * 0.3)); if (!c) continue;
-    c.kind = k.kind; c.hx = a.x; c.hz = a.z; c.x = a.x; c.z = a.z;
-    c.face = k.faces > 0 ? 0 : Math.PI;          // head-first, whichever way this model is built
-    c.wrap.position.set(a.x, (groundY ? groundY(a.x, a.z) : 0) + 1.5, a.z);
-    // Wander state. A butterfly does not fly a circle, and both paths this
-    // replaces did exactly that: a fixed Lissajous in one and a one-metre ring
-    // in the other. Same loop for ever, one speed, always upright -- a model
-    // carried round on a wire.
-    c.dir = Math.random() * 6.28; c.turn = 0;
-    c.range = 6 + Math.random() * 10;            // how far it strays from home
-    c.cruise = (k.kind === 'moth' ? 0.9 : 0.7) * (0.75 + Math.random() * 0.6);
-    c.speed = c.cruise; c.ph = Math.random() * 6.28;
-    c.yb = k.yLo + Math.random() * (k.yHi - k.yLo);
-    c.wrap.rotation.order = 'YXZ';               // yaw, then bank about its own axis
-    c.wrap.visible = false;
-    critters.push(c);                            // NOT added to the scene -- see updateCritters
+    // Where it is, is a pair of NUMBERS, not a transform on a model it may not
+    // currently own. That also kills a trap the old shape had: an unlent
+    // critter's wrap kept whatever position it was last left at, so anything
+    // reading the wrap rather than c.x got an answer from the wrong place.
+    critters.push({
+      model: a.m, kind: k.kind, body: null,
+      face: k.faces > 0 ? 0 : Math.PI,           // head-first, whichever way this model is built
+      flap: k.flap * (0.85 + Math.random() * 0.3),
+      hx: a.x, hz: a.z, x: a.x, z: a.z,
+      // Wander state. A butterfly does not fly a circle, and both paths this
+      // replaces did exactly that: a fixed Lissajous in one and a one-metre
+      // ring in the other. Same loop for ever, one speed, always upright -- a
+      // model carried round on a wire.
+      dir: Math.random() * 6.28, turn: 0,
+      range: 6 + Math.random() * 10,             // how far it strays from home
+      cruise: (k.kind === 'moth' ? 0.9 : 0.7) * (0.75 + Math.random() * 0.6),
+      speed: 0, ph: Math.random() * 6.28,
+      yb: k.yLo + Math.random() * (k.yHi - k.yLo),
+    });
+    critters[critters.length - 1].speed = critters[critters.length - 1].cruise;
   }
-  console.log(`[world] ${critters.length} critters, each with its own wingbeat`);
+  console.log(`[world] ${critters.length} critters sharing a pool of bodies`);
 }
 // A moth is half a metre across. Past this it is a handful of pixels deep in
 // the fog, and it costs a mixer update, a walk of its materials and a draw call
@@ -3858,21 +3904,25 @@ function updateCritters(dt) {
     const d = Math.hypot(c.x - camera.position.x, c.z - camera.position.z);
     const near = Math.max(0, Math.min(1, (CRITTER_FAR - d) / CRITTER_FADE));
     const op = ft * ft * (3 - 2 * ft) * near;
-    const vis = op > 0.06;
-    // In and OUT OF THE SCENE, not merely visible and invisible. 122 dormant
-    // clones left in the graph cost 0.84 ms a frame while drawing nothing:
-    // measured with the A/B alternated so thermal drift could not fake it,
-    // 5.07 ms a frame with them in against 4.23 with them out, same parked
-    // camera, and the same 315 draw calls and 4.75 M triangles either way --
-    // so not one pixel of it. About a third is the renderer's matrix walk,
-    // which recurses into a subtree whether or not it is visible; the rest is
-    // the per-object work that scales with the graph. The churn is a handful
-    // of add/removes a second, because the fade band is 15 m wide and a moth
-    // crosses it at about a metre a second.
-    if (vis !== !!c.wrap.parent) { if (vis) scene.add(c.wrap); else scene.remove(c.wrap); }
-    c.wrap.visible = vis;
-    if (!vis) continue;
-    if (c.mixer) c.mixer.update(dt);
+    // Hysteresis: harder to take a body than to keep one. Without the gap an
+    // insect hovering on the threshold takes and hands back a body every frame,
+    // and since a loan re-randomises the wingbeat phase that reads as a stutter
+    // rather than as a flap. Both ends are down in the 4-6% opacity range where
+    // nothing is really visible anyway.
+    const vis = op > (c.body ? 0.04 : 0.06);
+    // Hand the body back the moment it stops being worth drawing, and take one
+    // as it comes back into range. Dormant bodies are not merely hidden, they
+    // are not in the scene at all: 122 of them left in the graph cost 0.84 ms a
+    // frame while drawing nothing, measured with the A/B alternated so thermal
+    // drift could not fake it -- 5.07 ms a frame with them in against 4.23 with
+    // them out, at the same parked camera and with the same 315 draw calls and
+    // 4.75 M triangles either way, so not one pixel of it. The churn is a
+    // handful of loans a second: the fade band is 15 m wide and a moth crosses
+    // it at about a metre a second.
+    if (!vis) { if (c.body) { dropBody(c.model, c.body); c.body = null; } continue; }
+    if (!c.body) { c.body = takeBody(c.model, c.flap); if (!c.body) continue; }
+    const wrap = c.body.wrap;
+    if (c.body.mixer) c.body.mixer.update(dt);
     // Wander: the heading drifts, the speed varies, and it leans into its own
     // turns. Home is a pull that grows with distance rather than a leash that
     // switches on, so it strays and comes back instead of orbiting.
@@ -3891,12 +3941,12 @@ function updateCritters(dt) {
     const z = c.z + Math.cos(c.dir) * c.speed * dt;
     const y = (groundY ? groundY(x, z) : 0) + c.yb + Math.sin(t * 1.9 + c.ph) * 0.28;
     c.x = x; c.z = z;
-    c.wrap.position.set(x, y, z);
+    wrap.position.set(x, y, z);
     // Head-first, and banked. Which way round that is depends on the model --
     // see `faces` in CRITTER_KIND.
-    c.wrap.rotation.y = c.dir + c.face;
-    c.wrap.rotation.z = Math.max(-0.6, Math.min(0.6, -c.turn * 0.5));
-    c.root.traverse(o => { if (o.isMesh && o.material) o.material.opacity = op; });
+    wrap.rotation.y = c.dir + c.face;
+    wrap.rotation.z = Math.max(-0.6, Math.min(0.6, -c.turn * 0.5));
+    c.body.root.traverse(o => { if (o.isMesh && o.material) o.material.opacity = op; });
   }
 }
 
@@ -11856,6 +11906,15 @@ if (location.search.includes('debug')) {
     get entities() { return entityMeshes; },
     get objects() { return worldObjects; },   // quest objects, for checking they arrived
     get flyers() { return critters; },        // butterflies/moths, for checking they flap and drift
+    // How many bodies the pool ever had to build, against how many insects
+    // want one. The whole point of the pool is that the first number stays
+    // small, so it is worth being able to read it.
+    critterPool() {
+      const out = [];
+      for (const [model, p] of critterBodies)
+        out.push({ model, built: p.made, idle: p.free.length, lent: p.made - p.free.length });
+      return { insects: critters.length, bodies: out };
+    },
     get ores() { return oreMeshes; },         // instanceId -> vein mapping, for checking picks resolve
     get fishRigs() { return fishRigs; },      // line / float / hooked fish, for checking the reel-in
     // The wandering pool: how many are in the water near you, and where.
