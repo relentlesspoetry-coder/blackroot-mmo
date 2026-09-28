@@ -91,6 +91,25 @@ HOLLOWS = [
     # (the Murkfen needs no hollow now -- its own 60 m contour is the basin)
 ]
 
+# Hand-placed rises, in WORLD metres rather than blueprint pixels, for the few
+# places the contours leave a shoreline sitting within centimetres of the water
+# line. Murkfen's spit was one: the ground you stand on ran 0.4 to 0.5 m UNDER
+# the fen on its eastern side, so the water sheet was drawn across it and
+# finished in a face hanging over the mud. Arguing with the water surface there
+# was the wrong end of it -- a shore is dry because the ground is higher, so
+# this is the ground being higher.
+#
+# (x, z, radius, height). Sized by simulating the dome against the real terrain
+# before building it: at r 10 / h 1.1 it dries about 80 m2 of shallow margin and
+# nothing that was over a metre deep, while r 12 / h 1.3 starts filling water
+# that is meant to be there.
+BANKS = [
+    (233.0, 6.0, 13.0, 2.0),   # Murkfen: the spit east of the landing
+]
+# How much of a bank's radius is stamped dry in the trace. The rest is the
+# dome's skirt, which the blur feathers into the water.
+BANK_CORE = 0.8
+
 # --- the water ------------------------------------------------------------
 # Lakes and marsh come out of the trace; these are the CHANNELS, which are one
 # or two pixels wide on the drawing and would vanish into any grid.
@@ -1094,7 +1113,56 @@ NODES = [
 
 def load_grid():
     d = json.loads(GRID.read_text())
+    stamp_banks(d)
     return d
+
+
+def stamp_banks(d):
+    """Write the BANKS into the traced grid, as LAND.
+
+    A dome on its own does nothing inside traced water, and it took a while to
+    see why. landBaseY multiplies the hills by
+
+        LF = max(0, 1 - wet / fade)
+
+    so the moment the wetness passes the shoreline level the land height is
+    multiplied by ZERO -- deliberately, because that is what keeps "the ground
+    is under the waterline" and "the drawing says water here" the same test.
+    The bank at Murkfen sat at wet 0.468 against a fade of 0.41, so its 1.1 m
+    was erased before anything drew it.
+
+    The drawing is the source of truth for where water is, so a bank has to be
+    in the drawing. Stamping it into the grid here rather than repainting
+    darkwoods.trace.png keeps the blueprint the artist's, and every reader
+    follows from the one edit: the blurred fields, the water sheet, the swim
+    test, the walk grid and the hills all read this grid.
+
+    The stamped core is smaller than the dome. The core says "this is land" and
+    the blur feathers it out; the dome gives the ground its shape over the same
+    ground. Stamping the full radius would put a hard disc of dry cells in the
+    fen, which is the same mistake in the other direction.
+    """
+    if not BANKS:
+        return
+    cell, W, H = d['cell'], d['w'], d['h']
+    minX, minZ = d['minX'], d['minZ']
+    rows = [list(r) for r in d['rows']]
+    changed = 0
+    for bx, bz, r, _h in BANKS:
+        core = r * BANK_CORE
+        for gz in range(H):
+            cz = minZ + (gz + 0.5) * cell
+            if abs(cz - bz) > core:
+                continue
+            for gx in range(W):
+                cx = minX + (gx + 0.5) * cell
+                if math.hypot(cx - bx, cz - bz) > core:
+                    continue
+                if rows[gz][gx] in 'Ww':
+                    rows[gz][gx] = '.'
+                    changed += 1
+    d['rows'] = [''.join(r) for r in rows]
+    print(f'  {changed} cells stamped to land by {len(BANKS)} bank(s)')
 
 
 def make_xform(d):
@@ -1915,6 +1983,8 @@ def main():
     for px, py, r, depth in HOLLOWS:
         wx, wz = world(px, py)
         hills.append((round(wx, 1), round(wz, 1), float(r), float(depth)))
+    for wx, wz, r, h in BANKS:
+        hills.append((wx, wz, float(r), float(h)))
     for px, py, m in CONTOURS:
         wx, wz = world(px, py)
         hgt = (m - REF_M) / (HIGH_M - LOW_M) * MAX_RISE
