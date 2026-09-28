@@ -3497,6 +3497,57 @@ function crossBladeGeo(w, h) {
 // costs anything per blade -- which matters when there are 893,000 of them.
 const windClock = { value: 0 };
 const BLADE_H = 0.4;
+// What bends. A fern does, a barrel does not, and the scatter list is both --
+// 122 kinds of it, plants mixed in with fences, crates, boulders and ore. Read
+// off the model name, the way DETAIL_RULES picks a grain off it.
+//
+// Mushrooms and lily pads are the two that catch a plant word and should not
+// move with it: a mushroom is stiff, and a lily pad lies on water and would
+// need to bob rather than lean.
+const SWAY_MODEL = /bush|fern|plant|patch|clump|bramble|reed|sedge|hydrangea|bellflower|hosta|foxglove|wildflower|goldenrod|poppy|heather|lavender|sage|rose|hedgerow|grass|shrub|clover|strawberry|thorn|nettle|vine|barley|wheat/i;
+// Anchored to word parts, because the unanchored version caught Darkroot_Bush
+// on the "root" inside its own name and left the only purple bush in the zone
+// standing rigid in a moving thicket.
+const NO_SWAY_MODEL = /(^|_)(mushrooms?|lily|stumps?|roots?|boulders?|rocks?|logs?|spire)(_|$)/i;
+// The same gust, on anything that stands in it.
+//
+// CHAINED, not assigned: these materials already carry detailize's
+// onBeforeCompile, and three caches programs by the material's parameters plus
+// customProgramCacheKey -- so replacing either one silently hands some other
+// material's shader to this one. waveify learnt that on the water, where the
+// lake got the river's program and rendered black. Same pattern here: keep the
+// old hook, call it first, and add to the key rather than overwrite it.
+function windify(mat, h, amp) {
+  if (!mat || mat.userData.windified) return mat;
+  mat.userData.windified = true;
+  const prev = mat.onBeforeCompile;
+  const prevKey = mat.customProgramCacheKey;
+  mat.customProgramCacheKey = () => (prevKey ? prevKey.call(mat) : '') + '|wind';
+  mat.onBeforeCompile = (sh) => {
+    if (prev) prev(sh);
+    sh.uniforms.uWind = windClock;
+    sh.uniforms.uWindH = { value: h };
+    sh.uniforms.uWindAmp = { value: amp };
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nuniform float uWind; uniform float uWindH; uniform float uWindAmp;')
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+{
+  vec3 iw = vec3(0.0);
+  #ifdef USE_INSTANCING
+    iw = instanceMatrix[3].xyz;
+  #endif
+  float up = clamp(position.y / max(uWindH, 0.001), 0.0, 1.0);
+  float bend = up * up;
+  float g1 = sin(uWind * 1.05 + iw.x * 0.32 + iw.z * 0.26);
+  float g2 = sin(uWind * 2.30 + iw.x * 0.90 - iw.z * 0.74);
+  float sway = (g1 + 0.45 * g2) * uWindAmp * bend;
+  transformed.x += sway;
+  transformed.z += sway * 0.55;
+}`);
+  };
+  mat.needsUpdate = true;
+  return mat;
+}
 function buildGrass() {
   const b = zone.bounds, rng = mulberry32((zone.treeSeed || 1) + 271);
   const geo = crossBladeGeo(0.15, BLADE_H);
@@ -4308,6 +4359,23 @@ function placeInstances(list, yOf) {
     if (!parts) continue;
     const items = byModel[model];
     const isOre = /_Ore_Vein$/.test(model);
+    // Plants lean in the same gust the grass does, so the two read as one wind
+    // rather than as a moving lawn with frozen shrubs standing in it.
+    if (SWAY_MODEL.test(model) && !NO_SWAY_MODEL.test(model)) {
+      // How far it leans is a FRACTION OF ITS OWN HEIGHT, not a fixed distance.
+      // At a flat 7 cm a 1.75 m thorn bush moved 4% of its height and read as
+      // standing still next to grass leaning 19% of its own -- measured at 12
+      // of 255 against the grass's 98. What separates them is not size, it is
+      // whether the stem is woody: a fern bends from the base, a bush hardly
+      // bends at all and mostly shivers at the tips.
+      const woody = /bush|bramble|thorn|hedgerow|shrub|rose|sage|box/i.test(model);
+      const lean = woody ? 0.055 : 0.13;
+      for (const part of parts) {
+        if (!part.geo.boundingBox) part.geo.computeBoundingBox();
+        const h = Math.max(0.15, part.geo.boundingBox.max.y - part.geo.boundingBox.min.y);
+        windify(part.mat, h, Math.min(0.22, lean * h));
+      }
+    }
     // Per-instance colour (tinted pebbles, fading veins) needs the whole buffer
     // filled: setColorAt() creates it zeroed, which would turn every untinted
     // instance black. Meshes that never use it don't get one at all.
