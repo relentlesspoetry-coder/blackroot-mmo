@@ -2213,10 +2213,36 @@ let waterSurfaces = [];
 // over the ground in hard polygons: you were seeing the triangles, because
 // there were not enough of them to hide a gradient in.
 //
-// Widened so the blend spans three or four vertices instead, and broken up
-// with noise below, because a shoreline that fades evenly still reads as a
-// band rather than as ground.
+// Widened so the blend spans three or four vertices instead. It stays a clean
+// monotonic ramp -- see the note where it is used.
 const BANK_BAND = 0.20;
+// How much of (x, z) is water-worn bank rather than sward: 1 at the waterline,
+// falling to 0 where the grass takes over.
+//
+// ONE definition, because two things read it and they have to agree about
+// where the bank is: the ground's colour, and whether a blade of grass may
+// stand there. They did not, and the result was green blades planted down the
+// middle of the mud -- grass growing on a beach, which is what you get when
+// the thing that PAINTS the shore and the thing that PLANTS on it are asking
+// different questions.
+function bankMud(x, z) {
+  let bed = 0;
+  for (const r of worldRivers()) {
+    const d = distToPolyline(x, z, r.points) - riverWaterHalf(r.width);
+    if (d < 0.5) return 1;
+    bed = Math.max(bed, 1 - Math.min(1, d / RIVER_BANK));   // the river's own margin
+  }
+  // Full mud from the waterline in, fading out across BANK_BAND of the field.
+  // A MONOTONIC ramp, and deliberately not a noisy one: breaking the fringe up
+  // was tried and reverted. On paper it makes grass run down to the water in
+  // tongues; on a 2.5 m lattice it makes long thin green slivers lying in the
+  // mud, because a vertex the noise pushes back to grass takes 2.5 m of
+  // triangle with it. Anything that varies along the shore needs finer
+  // geometry than the shore has.
+  const EW = waterEdge();
+  const t = (terrainField(x, z, 'wet') - (EW.marsh - BANK_BAND)) / BANK_BAND;
+  return Math.max(bed, Math.min(1, Math.max(0, t)));
+}
 const _bankC = new THREE.Color();
 function buildTerrainWater() {
   waterSurfaces = [];
@@ -3163,26 +3189,7 @@ function buildLowPolyGround(W, D, cx, cz) {
     // earth, then grass -- and because it is driven off the blurred field, a
     // gently shelving pool like Ravenwater gets a wide beach and a steep bank
     // gets a narrow one, for free.
-    const EW = waterEdge();
-    let bed = 0;
-    for (const r of worldRivers()) {
-      const d = distToPolyline(wx, wz, r.points) - riverWaterHalf(r.width);
-      if (d < 0.5) { bed = 1; break; }
-      bed = Math.max(bed, 1 - Math.min(1, d / RIVER_BANK));      // the river's own margin
-    }
-    {
-      const wetF = terrainField(wx, wz, 'wet');
-      // full mud from the waterline in; fading out across BANK_BAND of field
-      let t = (wetF - (EW.marsh - BANK_BAND)) / BANK_BAND;
-      // ...with the fringe pushed in and out, so grass runs down to the water
-      // in tongues and mud reaches up between them. An even ramp makes a band
-      // with two edges; this makes a shore. Same idea as the ragged fringe on
-      // the mining scrapes in buildDirtField, at a coarser scale because this
-      // one is carried by the terrain's own vertices.
-      const ragged = (fbm2(wx * 1.7 - 613, wz * 1.7 + 277, 59) - 0.5) * 0.55;
-      t = t + ragged * (1 - Math.abs(t * 2 - 1));   // only where it is actually blending
-      bed = Math.max(bed, Math.min(1, Math.max(0, t)));
-    }
+    const bed = bankMud(wx, wz);
     const onBed = bed > 0.995;
     const rock = terrainField(wx, wz, 'rock');
     if (rock > 0.02) {                                                     // bare stone on the walls
@@ -3472,6 +3479,13 @@ function buildGrass() {
     // water and the rock (it exists to round off HEIGHT), and testing it here
     // stripped the grass and the undergrowth off a third of the map.
     !'WwR '.includes(terrainAt(x, z)) &&
+    // ...and not standing in the bank. The cell test above only keeps grass
+    // out of the water ITSELF, and the mud margin is dry land by that test, so
+    // blades were planted right down to the waterline -- grass on a beach.
+    // Same bankMud() the ground's colour uses, so the blades stop exactly
+    // where the ground stops being green, and thin out over the last of it
+    // rather than ending on a line.
+    bankMud(x, z) < 0.12 + rng() * 0.26 &&
     !zone.rocks.some(o => Math.hypot(x - o.x, z - o.z) < o.r);
   const onPathSkip = (x, z) => worldPaths().some(p => distToPolyline(x, z, p) < 2.2) && rng() > 0.12;
   const spots = [];
