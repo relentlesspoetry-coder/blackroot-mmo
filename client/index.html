@@ -3605,6 +3605,13 @@ function buildFireflies() {
   const geo = new THREE.BufferGeometry();
   const pos = new Float32Array(n * 3), base = new Float32Array(n * 3);
   const phase = new Float32Array(n), rate = new Float32Array(n), col = new Float32Array(n * 3);
+  // Where it is now and which way it is going, kept apart from where it was
+  // born. The old drift was read straight off the spawn point every frame --
+  // sin of the clock times 1.4 m -- so a firefly could not leave it however
+  // long you watched. It orbited a spot the size of a dinner table for ever.
+  const cx_ = new Float32Array(n), cz_ = new Float32Array(n);
+  const dir = new Float32Array(n), spd = new Float32Array(n);
+  const wob = new Float32Array(n), hgt = new Float32Array(n);
   // Over LAND. Placed anywhere in bounds they sit out over the middle of
   // Ravenwater and the fen, blinking above open water where nothing lives --
   // and every one wasted out there is one missing from the wood you are
@@ -3623,19 +3630,26 @@ function buildFireflies() {
     // Low, where the grass is, rather than scattered up into the canopy -- but
     // never so low that the drift can take one under the turf. The bob below is
     // +-0.55, so the floor here has to clear it.
-    const y = (groundY ? groundY(x, z) : 0) + 0.7 + Math.random() * 1.7;
-    pos[i * 3] = base[i * 3] = x; pos[i * 3 + 1] = base[i * 3 + 1] = y; pos[i * 3 + 2] = base[i * 3 + 2] = z;
+    const g = groundY ? groundY(x, z) : 0;
+    hgt[i] = 0.7 + Math.random() * 1.7;           // how high above the ground it rides
+    pos[i * 3] = base[i * 3] = x; pos[i * 3 + 1] = base[i * 3 + 1] = g; pos[i * 3 + 2] = base[i * 3 + 2] = z;
+    cx_[i] = x; cz_[i] = z;
     phase[i] = Math.random() * 6.3;
     // Each on its own clock, or they pulse in unison and read as one throbbing
     // light rather than as a hundred separate insects.
     rate[i] = 0.7 + Math.random() * 1.6;
+    dir[i] = Math.random() * 6.283;
+    spd[i] = 0.18 + Math.random() * 0.34;         // slow: a drift, not a commute
+    wob[i] = 0.25 + Math.random() * 0.5;          // how fast its heading wanders
   }
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
   const mat = new THREE.PointsMaterial({ size: 0.13, map: makeSoftDot(), transparent: true, opacity: 1,
     vertexColors: true, blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true });
   fireflies = new THREE.Points(geo, mat);
-  fireflies.userData = { base, phase, rate, n };
+  fireflies.userData = { base, phase, rate, n, cx: cx_, cz: cz_, dir, spd, wob, hgt,
+                         // how far it may stray from where it was born
+                         range: 18 };
   fireflies.frustumCulled = false;   // one object spanning the zone; its bounds are the zone
   scene.add(fireflies);
   fireflyLights.length = 0;
@@ -12130,18 +12144,35 @@ function animate() {
       const cx = camera.position.x, cy = camera.position.y, cz = camera.position.z;
       const top = [];
       for (let i = 0; i < ud.n; i++) {
-        const fx = ud.base[i * 3] + Math.sin(t * 0.5 + ud.phase[i]) * 1.4;
-        let fy = ud.base[i * 3 + 1] + Math.sin(t * 0.9 + ud.phase[i] * 2) * 0.55;
-        const fz = ud.base[i * 3 + 2] + Math.cos(t * 0.4 + ud.phase[i]) * 1.4;
-        const dx = fx - cx, dy = fy - cy, dz = fz - cz;
-        const d2 = dx * dx + dy * dy + dz * dz;
-        // The drift wanders 1.4 m sideways, and on a slope that is enough to
-        // put one inside the hill it set out from -- its height was fixed once,
-        // at build, against the ground it was born on. Re-checked here for the
-        // ones near enough to see: 14,000 terrain lookups a frame would not be
-        // free, and nobody can tell that a firefly forty metres off is a
-        // hand's breadth into a bank.
-        if (d2 < 2500) fy = Math.max(fy, groundY(fx, fz) + 0.15);
+        // Wander. The heading turns on its own slow clock -- a sine rather than
+        // a random walk, because 14,000 calls to Math.random a frame buys
+        // nothing a smooth curve does not, and a curve is what an insect flies.
+        // Home is a pull that grows with distance, so it strays and comes back
+        // rather than either orbiting or leaving: without it they would spread
+        // out over the night and end up over the water and off the map, which
+        // is what the land-only placement went to the trouble of avoiding.
+        let a = ud.dir[i] + Math.sin(t * ud.wob[i] + ud.phase[i]) * dt * 1.4;
+        const hx = ud.base[i * 3] - ud.cx[i], hz = ud.base[i * 3 + 2] - ud.cz[i];
+        const home = Math.sqrt(hx * hx + hz * hz);
+        if (home > ud.range * 0.5) {
+          const want = Math.atan2(hx, hz);
+          const off = ((want - a + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+          a += off * Math.min(1, (home - ud.range * 0.5) / ud.range) * dt * 1.6;
+        }
+        ud.dir[i] = a;
+        const fx = ud.cx[i] + Math.sin(a) * ud.spd[i] * dt;
+        const fz = ud.cz[i] + Math.cos(a) * ud.spd[i] * dt;
+        ud.cx[i] = fx; ud.cz[i] = fz;
+        const dx = fx - cx, dz = fz - cz;
+        const d2flat = dx * dx + dz * dz;
+        // Height rides on the GROUND, not on the height it was born at: it is
+        // moving now, and the ground under it moves with it. Looked up only
+        // within 70 m -- 14,000 terrain lookups a frame is not free, and at
+        // that distance the spawn ground is close enough that nobody can tell.
+        const gy = d2flat < 4900 ? groundY(fx, fz) : ud.base[i * 3 + 1];
+        const fy = gy + ud.hgt[i] + Math.sin(t * 0.9 + ud.phase[i] * 2) * 0.5;
+        const dy = fy - cy;
+        const d2 = d2flat + dy * dy;
         arr[i * 3] = fx; arr[i * 3 + 1] = fy; arr[i * 3 + 2] = fz;
         // A short flash, not a sine: sin^8 of its own clock sits near zero for
         // most of the cycle and spikes briefly, which is what a firefly does.
