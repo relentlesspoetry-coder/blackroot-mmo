@@ -431,6 +431,44 @@ const GOBLIN_DROPS = [
 // on this line and questcheck could not see it.
 export const STARTING_INVENTORY = ['Fishing Rod', 'Bronze Pickaxe'];
 
+// What a monster LOOKS like: its model and how tall it stands. This lives with
+// the templates because the server has to know it -- a zone's model list is
+// built from the monsters that spawn in it, and when this table was only in
+// the client not one mob model was ever requested. Every monster in the game
+// rendered as the red placeholder box.
+export const MOB_ART = {
+  goblin:           { model: 'Goblin', h: 2.0 },
+  bandit:           { model: 'Bandit', h: 2.3 },
+  guard:            { model: 'Hill_Ogre', h: 3.0 },
+  spider:           { model: 'Cave_Spider', h: 1.6 },
+  venom_spider:     { model: 'Venom_Spider', h: 1.7 },
+  crystal_spider:   { model: 'Crystal_Spider', h: 1.8 },
+  bat:              { model: 'Bat', h: 1.0 },
+  cave_giant:       { model: 'Moss_Cave_Giant', h: 3.4 },
+  crystal_giant:    { model: 'Crystal_Cave_Giant', h: 3.6 },
+  cave_guardian:    { model: 'Cave_Guardian', h: 3.9 },
+  broodmother:      { model: 'Cave_Broodmother', h: 2.8 },
+  cow:              { model: 'Cow', h: 2.0 },
+  chicken:          { model: 'Chicken', h: 1.1 },
+  goblin_scavenger: { model: 'Goblin_Scavenger', h: 1.9 },
+  goblin_warrior:   { model: 'Goblin_Warrior', h: 2.2 },
+  goblin_archer:    { model: 'Goblin_Archer', h: 2.1 },
+  goblin_shaman:    { model: 'Goblin_Shaman', h: 2.1 },
+  goblin_miner:     { model: 'Goblin_Miner', h: 2.0 },
+  goblin_chief:     { model: 'Goblin_Chief', h: 2.6 },
+  ember_dragon:     { model: 'Ember_Dragon', h: 4.6 },
+  frost_dragon:     { model: 'Frost_Dragon', h: 4.8 },
+  venom_dragon:     { model: 'Venom_Dragon', h: 4.4 },
+  // Cluckifer and his brood; the eggs use the Egg item model.
+  cluckifer:        { model: 'Chicken', h: 3.8 },
+  hell_chick:       { model: 'Chicken', h: 0.75 },
+  brood_chick:      { model: 'Chicken', h: 0.85 },
+  ruin_egg:         { model: 'Egg', h: 1.4 },
+  rotten_egg:       { model: 'Egg', h: 1.7 },
+};
+// The boss set can turn up in any zone, so its art always ships.
+export const ALWAYS_ART = ['cluckifer', 'hell_chick', 'brood_chick', 'ruin_egg', 'rotten_egg'];
+
 export const MONSTER_TEMPLATES = {
   goblin: { name: 'Goblin', hp: 35, dmg: [2, 5], speed: 4.5, aggro: 12, xp: 28, respawn: 25,
     droptable: buildDropTable(GOBLIN_DROPS, GOB.scavenger) },

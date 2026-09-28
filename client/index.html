@@ -879,23 +879,16 @@ const LOADED_ANIM = {}; // model key -> GLTF animation clips (kept for animated 
 // zone (server/zones/*.js) and fetched on entry. Loading all 73 models up front
 // doubled the wait on the login button for assets most players never see.
 const CORE_MODELS = ['items/Coins', 'human/Male_Base', 'human/Female_Base'];
-const MOB_MODEL = {
-  goblin: { model: 'Goblin', h: 2.0 }, bandit: { model: 'Bandit', h: 2.3 }, guard: { model: 'Hill_Ogre', h: 3.0 },
-  spider: { model: 'Cave_Spider', h: 1.6 }, cow: { model: 'Cow', h: 2.0 }, chicken: { model: 'Chicken', h: 1.1 },
-  // Cluckifer and his brood (the chicken, giant / tiny, in black and red; the eggs are the Egg item model)
-  cluckifer: { model: 'Chicken', h: 3.8 }, hell_chick: { model: 'Chicken', h: 0.75 }, brood_chick: { model: 'Chicken', h: 0.85 },
-  ruin_egg: { model: 'Egg', h: 1.4 }, rotten_egg: { model: 'Egg', h: 1.7 },
-  venom_spider: { model: 'Venom_Spider', h: 1.7 }, crystal_spider: { model: 'Crystal_Spider', h: 1.8 },
-  bat: { model: 'Bat', h: 1.0 },
-  cave_giant: { model: 'Moss_Cave_Giant', h: 3.4 }, crystal_giant: { model: 'Crystal_Cave_Giant', h: 3.6 },
-  cave_guardian: { model: 'Cave_Guardian', h: 3.9 },
-  broodmother: { model: 'Cave_Broodmother', h: 2.8 },
-  goblin_scavenger: { model: 'Goblin_Scavenger', h: 1.9 }, goblin_warrior: { model: 'Goblin_Warrior', h: 2.2 },
-  goblin_archer: { model: 'Goblin_Archer', h: 2.1 }, goblin_shaman: { model: 'Goblin_Shaman', h: 2.1 },
-  goblin_miner: { model: 'Goblin_Miner', h: 2.0 }, goblin_chief: { model: 'Goblin_Chief', h: 2.6 },
-  ember_dragon: { model: 'Ember_Dragon', h: 4.6 }, frost_dragon: { model: 'Frost_Dragon', h: 4.8 },
-  venom_dragon: { model: 'Venom_Dragon', h: 4.4 },
-};
+// What a monster looks like comes from the SERVER (balance.js MOB_ART), sent
+// with the zone -- because the server is what decides which models a zone has
+// to ship, and while this table lived only here not one of them was ever
+// requested. Every monster rendered as the red placeholder box.
+function mobArt(type) {
+  const a = zone && zone.mobArt && zone.mobArt[type];
+  if (a) return a;
+  if (location.search.includes('debug')) console.error(`[mob] no art for '${type}' — the server did not send it`);
+  return null;
+}
 // Eleven tree models are in the library and five of them were being used. The
 // species for a given tree was chosen by hashing its position, which spreads
 // the SAME five uniformly over the whole map -- so every wood in the zone had
@@ -5662,8 +5655,8 @@ function paintEgg(g, type) {
   });
 }
 function makeMonsterMesh(type, elite) {
-  const map = MOB_MODEL[type] || { model: 'Goblin', h: 2 };
-  const g = cloneModel(map.model, map.h * (elite && type !== 'cluckifer' ? 1.4 : 1));
+  const map = mobArt(type);
+  const g = map && cloneModel(map.model, map.h * (elite && type !== 'cluckifer' ? 1.4 : 1));
   if (g) {
     if (type === 'chicken' || type === 'cluckifer' || type === 'hell_chick' || type === 'brood_chick') splitChickenParts(g);
     if (type === 'cluckifer' || type === 'hell_chick' || type === 'brood_chick') paintDevilChicken(g, type);
@@ -5695,9 +5688,16 @@ function makeMonsterMesh(type, elite) {
     });
     return g;
   }
+  // Last resort. It is TAGGED, so that if the model turns up a moment later
+  // (streamed in behind the zone) the box is thrown away and the real monster
+  // built -- the ground items have done this since they were written, and the
+  // entities never did, so a spider that spawned a frame early stayed a red
+  // box for the rest of the session.
   const fb = new THREE.Group();
   const body = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1.4), new THREE.MeshStandardMaterial({ color: 0xaa4444 }));
   body.position.y = 0.8; fb.add(body);
+  fb.userData.placeholderFor = map ? map.model : null;
+  if (location.search.includes('debug')) console.error(`[mob] '${type}' has no model loaded (${map ? map.model : 'no art'}) — drawing the placeholder box`);
   return fb;
 }
 // A figure is rebuilt when anything about how they look changes — including
@@ -5710,6 +5710,17 @@ function ensureMesh(ent, kind) {
   if (rec && kind === 'player' && rec.lookKey !== lookKeyOf(ent)) {
     const old = rec.mesh;
     scene.remove(old); if (rec.medFx) endMeditationFx(rec); if (rec.medFx2) endMeditationFx2(rec);
+    entityMeshes.delete(ent.id);
+    rec = ensureMesh(ent, kind);
+    rec.mesh.position.copy(old.position); rec.mesh.rotation.copy(old.rotation);
+    return rec;
+  }
+  // A monster built before its model finished streaming is a placeholder box.
+  // Throw it away the moment the real model is there.
+  if (rec && kind === 'monster' && rec.mesh.userData.placeholderFor
+      && LOADED[rec.mesh.userData.placeholderFor]) {
+    const old = rec.mesh;
+    scene.remove(old);
     entityMeshes.delete(ent.id);
     rec = ensureMesh(ent, kind);
     rec.mesh.position.copy(old.position); rec.mesh.rotation.copy(old.rotation);

@@ -11,6 +11,8 @@ import { terrainAt, terrainFieldAt, isSolid, rockSolidAt, rockRiseAt, rockEdgeOf
 import { ITEMS } from '../server/items.js';
 import { FISH, TIERS } from '../server/fishing.js';
 import { QUESTS } from '../server/quests.js';
+import { MOB_ART } from '../server/balance.js';
+import { existsSync } from 'fs';
 
 let failures = 0;
 const ok = (name, pass, detail) => {
@@ -472,6 +474,23 @@ console.log('\nThe Dark Woods — zone invariants\n');
   const total = Object.values(ZONES).reduce((n, zz) => n + (zz.portals || []).length, 0);
   ok('portals land somewhere you can stand, clear of the way back', bad.length === 0,
       bad.length ? bad.join('; ') : `${total} portals`);
+}
+
+// Every monster a zone can spawn needs art, and the art has to be a file that
+// exists. This table lived in the client, so the server never knew a zone had
+// to ship Cave_Spider with it -- not one mob model was ever requested and every
+// monster in the game rendered as the red placeholder box.
+for (const zone of [z, spiderden]) {
+  const types = new Set();
+  for (const s of (zone.spawns || [])) types.add(s.type);
+  for (const e of (zone.elites || [])) types.add(e.type);
+  const noArt = [...types].filter(t2 => !MOB_ART[t2]);
+  const noFile = [...types].filter(t2 => MOB_ART[t2]
+    && !existsSync(new URL(`../client/models/${MOB_ART[t2].model}.glb`, import.meta.url)));
+  ok(`${zone.name}: every monster has art on disk`, noArt.length === 0 && noFile.length === 0,
+    noArt.length || noFile.length
+      ? `no art: ${noArt.join(', ') || 'none'}; no file: ${noFile.map(t2 => MOB_ART[t2].model).join(', ') || 'none'}`
+      : `${types.size} monster types`);
 }
 
 // The whole point of rockEdge: what blocks and what is drawn are one shape.

@@ -15,7 +15,7 @@ import {
   PLAYER, ELITE, MONSTER_TEMPLATES,
   xpForLevel, xpTotalForLevel, levelForXp, xpForKill, MAX_LEVEL, attackRoll, defenceRoll, hitChance, scaledMonster, rollLoot, REGEN,
   TICK, CLASSES, DEFAULT_CLASS, classDef, classStats, abilityCost,
-  maxHit, MEDITATION, meditationHealPerTick, rollGear, STARTING_INVENTORY } from './balance.js';
+  maxHit, MEDITATION, meditationHealPerTick, rollGear, STARTING_INVENTORY, MOB_ART, ALWAYS_ART } from './balance.js';
 import { ITEMS, SLOTS, SLOT_INFO, DOLL, itemDef, slotOf, valueOf, equipStats, slotsFor, emptySlots, stackable, bagStacks } from './items.js';
 import { weaponProfile, swingSeconds, weaponRange, swingBand, resolveAttack, facing,
          MOB_ARCH, MOB_DEF, archOf, addThreat, threatOf, dropThreat, clearThreat, taunt, topThreat, decayThreat } from './combat.js';
@@ -1835,10 +1835,16 @@ const DROWN_DPS = 7;          // once the breath is gone
 // stroke, combat dropped, breath draining. So the question is asked once, here,
 // and it covers the boardwalks too -- the client lifts you onto those and the
 // server never knew they existed.
-function onDeck(zone, x, z) {
+// `grow` widens every deck by that much. Standing on a plank is a HARD test --
+// on it or not -- and it sets the water depth to zero, so a player at the edge
+// of a boardwalk crossed a 0-to-1 step with every centimetre of collision
+// jitter. The depth hysteresis below cannot help with that: both of its
+// thresholds are crossed in the same tick. Someone already dry keeps their
+// footing a little past the planks, which closes it.
+function onDeck(zone, x, z, grow = 0) {
   for (const r of riversOf(zone)) {
     for (const b of bridgesOf(r)) {
-      const span = b.span || 12;
+      const span = (b.span || 12) + 2 * grow;
       if (dist2(x, z, b.x, b.z) < (span * span) / 4) return true;
     }
   }
@@ -1846,7 +1852,7 @@ function onDeck(zone, x, z) {
     const dx = x - d.x, dz = z - d.z;
     const sn = Math.sin(d.yaw || 0), cs = Math.cos(d.yaw || 0);
     const along = dx * cs + dz * sn, across = -dx * sn + dz * cs;
-    if (Math.abs(along) <= (d.len || 4) / 2 && Math.abs(across) <= (d.w || 2.4) / 2) return true;
+    if (Math.abs(along) <= (d.len || 4) / 2 + grow && Math.abs(across) <= (d.w || 2.4) / 2 + grow) return true;
   }
   return false;
 }
@@ -1857,8 +1863,8 @@ function onDeck(zone, x, z) {
 // over a fighter's head. Shoulders on a 1.8 m man are about 1.5 m, so the ramp
 // is shortened to put the line there: you wade to your chest and swim past it.
 const DEEP_RAMP = 0.29;
-function waterDepthAt(zone, x, z) {
-  if (onDeck(zone, x, z)) return 0;                // dry feet: you are on the planks
+function waterDepthAt(zone, x, z, deckGrow = 0) {
+  if (onDeck(zone, x, z, deckGrow)) return 0;      // dry feet: you are on the planks
   let d = 0;
   if (zone.terrain) {
     // The SAME contour the client draws its shoreline from -- not the raw cell.
@@ -1898,9 +1904,30 @@ function waterDepthAt(zone, x, z) {
 // find your feet again only once you are properly back on the shelf. Without
 // it a player stood on the line flickers in and out, which spammed the chat.
 const SWIM_IN = 0.82, SWIM_OUT = 0.55;
+// How long the new answer has to hold before the state actually changes. The
+// depth hysteresis handles a player drifting across the swim line; this handles
+// the case it cannot -- an input that JUMPS, like stepping off the edge of a
+// plank walk, where both thresholds are crossed in one tick and the state
+// flickers at the tick rate. The chat filled with "You wade in and start to
+// swim. / You climb out, dripping." over and over. A third of a second is not
+// noticeable on a real transition and no flicker survives it.
+const SWIM_DWELL = 0.35;
 function swimNow(zone, p) {
-  const d = waterDepthAt(zone, p.x, p.z);
-  return p.swimming ? d > SWIM_OUT : d >= SWIM_IN;
+  // Always a boolean. `p.swimming` is undefined on a fresh player, and while
+  // the dwell below was holding, returning it raw made `undefined !== false`
+  // true in the caller -- so every tick of the hold announced "You climb out,
+  // dripping." Six of them on every login, which is the same chat spam this
+  // dwell was added to stop.
+  const now = !!p.swimming;
+  // Dry feet keep their footing a little past the planks; a swimmer has to be
+  // properly on them to count as out.
+  const d = waterDepthAt(zone, p.x, p.z, now ? 0 : 0.4);
+  const want = now ? d > SWIM_OUT : d >= SWIM_IN;
+  if (want === now) { p.swimHold = 0; return now; }
+  p.swimHold = (p.swimHold || 0) + DT;
+  if (p.swimHold < SWIM_DWELL) return now;
+  p.swimHold = 0;
+  return want;
 }
 function moveMult(p) {
   let m = p.swimming ? SWIM_SPEED : 1;
@@ -3056,6 +3083,21 @@ const httpServer = http.createServer((req, res) => {
   });
 });
 
+// Every model a zone needs: its scenery list plus the art of every monster
+// that spawns in it (and the boss set, which can turn up anywhere).
+function mobModelsFor(zone) {
+  const out = new Set(zone.models || []);
+  const types = new Set(ALWAYS_ART);
+  for (const s of (zone.spawns || [])) types.add(s.type);
+  for (const e of (zone.elites || [])) types.add(e.type);
+  for (const s of (zone._editSpawns || [])) types.add(s.type);
+  for (const t of types) {
+    const art = MOB_ART[t];
+    if (art) out.add(art.model);
+    else console.warn(`[worldgen] ${zone.name}: no art for monster type '${t}'`);
+  }
+  return [...out];
+}
 function zoneForClient(zone) {
   return {
     id: zone.id, name: zone.name, subtitle: zone.subtitle, spawn: zone.spawn,
@@ -3079,7 +3121,13 @@ function zoneForClient(zone) {
     trees: zone._trees || [],
     scatter: zone._scatter || [],
     hanging: zone._hanging || [],
-    models: zone.models || [],
+    // The zone's models, PLUS the art for everything that can stand in it. The
+    // zone file lists scenery only, so not one mob model was ever requested and
+    // every monster in the game came out as the red placeholder box. Derived
+    // from the spawns rather than listed, so adding a monster to a zone brings
+    // its model with it.
+    models: mobModelsFor(zone),
+    mobArt: MOB_ART,
     structures: zone.structures || [],
     pads: zone.pads || [],
     decks: zone.decks || [],
