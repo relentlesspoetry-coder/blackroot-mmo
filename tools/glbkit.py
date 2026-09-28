@@ -26,6 +26,8 @@ from pathlib import Path
 import numpy as np
 import trimesh
 
+from glbrepair import fix_winding
+
 
 def flat_normals(m):
     """Per-face normals, by giving every face its own three vertices.
@@ -60,7 +62,14 @@ def save(out_dir, name, parts, roughness=0.95, pbr=None):
         m = trimesh.util.concatenate(members) if len(members) > 1 else members[0].copy()
         m.merge_vertices()          # weld the duplicates the parts arrive with
         faces += len(m.faces)
-        flat_normals(m)             # ...then split them again, per face
+        # Winding BEFORE normals, because the normal is derived from it: a
+        # part built inside out gets normals pointing into itself, and no
+        # amount of care further down fixes that. Ruin_Gable was exactly this
+        # -- one eight-face shell wound backwards, lit from within.
+        wound, st = fix_winding(np.asarray(m.vertices), np.asarray(m.faces))
+        if st['faces_changed']:
+            m.faces = wound
+        flat_normals(m)             # ...then split the vertices, per face
         metallic, rough = pbr(colour) if pbr else (0.0, roughness)
         m.visual = trimesh.visual.TextureVisuals(material=trimesh.visual.material.PBRMaterial(
             name=f'{name}_{i}',

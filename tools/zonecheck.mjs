@@ -121,6 +121,7 @@ console.log('\nThe Dark Woods — zone invariants\n');
 // model in the game passes through, so that is where it is fixed -- and this
 // check is what says the fix is still there. It counts the assets that depend
 // on it so the number is visible rather than assumed.
+const PARSED = [];
 {
   const glbs = [];
   const walk = (d) => { for (const e of readdirSync(d, { withFileTypes: true })) {
@@ -134,13 +135,15 @@ console.log('\nThe Dark Woods — zone invariants\n');
   for (const f of glbs) {
     const d = readFileSync(f);
     if (d.length < 12 || d.toString('utf8', 0, 4) !== 'glTF') continue;
-    let off = 12, js = null;
+    let off = 12, js = null, bin = null;
     while (off + 8 <= d.length) {
       const len = d.readUInt32LE(off), ty = d.readUInt32LE(off + 4);
-      if (ty === 0x4E4F534A) { js = JSON.parse(d.toString('utf8', off + 8, off + 8 + len)); break; }
+      if (ty === 0x4E4F534A) js = JSON.parse(d.toString('utf8', off + 8, off + 8 + len));
+      else if (ty === 0x004E4942) bin = d.subarray(off + 8, off + 8 + len);
       off += 8 + len;
     }
     if (!js) continue;
+    PARSED.push([relative(modelDir, f), js, bin]);
     let n = 0;
     for (const m of (js.meshes || [])) for (const pr of (m.primitives || [])) if (!('NORMAL' in (pr.attributes || {}))) n++;
     if (n) { missing += n; files++; bare.push(`${relative(modelDir, f)} (${n})`); }
@@ -156,7 +159,7 @@ console.log('\nThe Dark Woods — zone invariants\n');
   ok('nothing reaches the renderer without normals', fixes,
     (fixes ? 'the loader computes any that are missing' : 'THE LOADER DOES NOT COMPUTE MISSING NORMALS -- those meshes render black')
       + (missing ? `; ${missing} primitives still ship none: ${bare.join(', ')}`
-                   + ' -- repair with: python3 tools/glbnormals.py <file>'
+                   + ' -- repair with: python3 tools/glbrepair.py <file>'
                  : `; all ${glbs.length} GLBs ship their own`));
 }
 
@@ -177,6 +180,98 @@ console.log('\nThe Dark Woods — zone invariants\n');
     if (!/trimesh\.Scene\(\)/.test(src)) continue;          // not a kit exporter
     if (!/import glbkit/.test(src) || /scene\.export\(/.test(src)) rogue.push(f);
   }
+// Nothing is wound inside out.
+//
+// Mirroring half a model without reversing its triangles leaves that half
+// enclosing NEGATIVE volume: its faces point into itself, so it lights from
+// within, and on a single-sided material it is simply not there. The moth's
+// wings were this, and so were four spiders' second legs, the Fighter's left
+// pauldron, the Broodmother's right horn and both her tibias, two of the
+// chicken's shells and one generated ruin gable -- every one of them a
+// mirrored part, which is the signature.
+//
+// Two different faults, measured separately, because they are not repaired
+// the same way: triangles DISAGREEING with their neighbours along a seam, and
+// a shell that agrees with itself but faces inward. Both need the edge table,
+// and the edge table has to be built on WELDED positions -- a duplicated
+// vertex down a seam makes it look like a boundary and hides everything on
+// the other side.
+{
+  const F32 = (js, bin, i) => {          // accessor -> Float32Array rows of `comps`
+    const a = js.accessors[i], bv = js.bufferViews[a.bufferView];
+    const comps = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4 }[a.type];
+    const base = (bv.byteOffset || 0) + (a.byteOffset || 0);
+    const stride = bv.byteStride || comps * 4;
+    const out = new Float32Array(a.count * comps);
+    for (let k = 0; k < a.count; k++)
+      for (let c = 0; c < comps; c++) out[k * comps + c] = bin.readFloatLE(base + k * stride + c * 4);
+    return out;
+  };
+  const IDX = (js, bin, i) => {
+    const a = js.accessors[i], bv = js.bufferViews[a.bufferView];
+    const base = (bv.byteOffset || 0) + (a.byteOffset || 0);
+    const rd = a.componentType === 5125 ? (o) => bin.readUInt32LE(o)
+             : a.componentType === 5123 ? (o) => bin.readUInt16LE(o)
+             : (o) => bin.readUInt8(o);
+    const w = a.componentType === 5125 ? 4 : a.componentType === 5123 ? 2 : 1;
+    const out = new Uint32Array(a.count);
+    for (let k = 0; k < a.count; k++) out[k] = rd(base + k * w);
+    return out;
+  };
+  const bad = [];
+  for (const [name, js, bin] of PARSED) {
+    if (!bin) continue;
+    let seams = 0, inverted = 0;
+    for (const mesh of (js.meshes || [])) for (const pr of (mesh.primitives || [])) {
+      if ((pr.mode ?? 4) !== 4 || pr.indices === undefined) continue;
+      const pos = F32(js, bin, pr.attributes.POSITION), idx = IDX(js, bin, pr.indices);
+      const nv = pos.length / 3, nf = idx.length / 3;
+      // weld by position, to a micrometre
+      const weld = new Int32Array(nv), seenPos = new Map();
+      for (let v = 0; v < nv; v++) {
+        const k = `${Math.round(pos[v*3]*1e6)},${Math.round(pos[v*3+1]*1e6)},${Math.round(pos[v*3+2]*1e6)}`;
+        let w = seenPos.get(k); if (w === undefined) { w = seenPos.size; seenPos.set(k, w); }
+        weld[v] = w;
+      }
+      // union-find over welded vertices: one set per connected shell
+      const par = new Int32Array(seenPos.size).map((_, i) => i);
+      const find = (x) => { while (par[x] !== x) { par[x] = par[par[x]]; x = par[x]; } return x; };
+      const uni = (a2, b2) => { a2 = find(a2); b2 = find(b2); if (a2 !== b2) par[a2] = b2; };
+      const edge = new Map();
+      for (let f = 0; f < nf; f++) {
+        const w0 = weld[idx[f*3]], w1 = weld[idx[f*3+1]], w2 = weld[idx[f*3+2]];
+        uni(w0, w1); uni(w1, w2);
+        for (const [u, v] of [[w0, w1], [w1, w2], [w2, w0]]) {
+          const lo = Math.min(u, v), hi = Math.max(u, v), k = lo * 4294967296 + hi;
+          const e = edge.get(k);
+          if (e === undefined) edge.set(k, { n: 1, fwd: u < v ? 1 : 0 });
+          else { e.n++; if ((u < v ? 1 : 0) === e.fwd) e.same = true; }
+        }
+      }
+      const openShell = new Set();
+      for (const [k, e] of edge) {
+        if (e.n === 2 && e.same) seams++;
+        if (e.n !== 2) openShell.add(find(Math.floor(k / 4294967296)));
+      }
+      const vol = new Map();
+      for (let f = 0; f < nf; f++) {
+        const a2 = idx[f*3], b2 = idx[f*3+1], c2 = idx[f*3+2];
+        const cx = pos[b2*3+1]*pos[c2*3+2] - pos[b2*3+2]*pos[c2*3+1];
+        const cy = pos[b2*3+2]*pos[c2*3]   - pos[b2*3]  *pos[c2*3+2];
+        const cz = pos[b2*3]  *pos[c2*3+1] - pos[b2*3+1]*pos[c2*3];
+        const s2 = pos[a2*3]*cx + pos[a2*3+1]*cy + pos[a2*3+2]*cz;
+        const g = find(weld[a2]);
+        vol.set(g, (vol.get(g) || 0) + s2);
+      }
+      for (const [g, v] of vol) if (!openShell.has(g) && v < -1e-9) inverted++;
+    }
+    if (seams || inverted) bad.push(`${name} (${[seams && `${seams} seams`, inverted && `${inverted} inside out`].filter(Boolean).join(', ')})`);
+  }
+  ok('nothing is wound inside out', bad.length === 0,
+    bad.length ? `${bad.join('; ')} -- repair with: python3 tools/glbrepair.py <file>`
+               : `${PARSED.length} GLBs, every closed shell facing out and every seam agreeing`);
+}
+
   ok('every generated kit exports through glbkit', asks && rogue.length === 0,
     !asks ? 'glbkit.py does not ask trimesh for normals'
           : rogue.length ? `${rogue.join(', ')} build a scene and export it themselves`
