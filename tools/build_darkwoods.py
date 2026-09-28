@@ -99,12 +99,15 @@ HOLLOWS = [
 # was the wrong end of it -- a shore is dry because the ground is higher, so
 # this is the ground being higher.
 #
-# (x, z, radius, height). Sized by simulating the dome against the real terrain
-# before building it: at r 10 / h 1.1 it dries about 80 m2 of shallow margin and
-# nothing that was over a metre deep, while r 12 / h 1.3 starts filling water
-# that is meant to be there.
+# (x, z, radius, height). Sized by building it and measuring, because the two
+# things that decide the answer -- the field blur and LF -- are not visible from
+# the numbers. r 13 / h 2.0 got the crown 0.40 m out of the water, which is a
+# wet flat rather than a bank; r 15 / h 3.0 gives 0.90 m and puts the waterline
+# at x 240; r 18 / h 3.6 gives 1.36 m but carries the shore out to x 244, which
+# is under the boardwalk, and a walkway standing on dry land is a worse fault
+# than the one being fixed.
 BANKS = [
-    (233.0, 6.0, 13.0, 2.0),   # Murkfen: the spit east of the landing
+    (233.0, 6.0, 15.0, 3.0),   # Murkfen: the spit east of the landing
 ]
 # How much of a bank's radius is stamped dry in the trace. The rest is the
 # dome's skirt, which the blur feathers into the water.
@@ -2271,7 +2274,12 @@ def main():
                 return (bx + (bx - ax) / seg_len * over, bz + (bz - az) / seg_len * over)
 
             start, end = -LANDFALL, total + LANDFALL
-            n = max(2, int(round((end - start) / SPAN)))
+            # CEIL, not round. Rounding down stretches the step past SPAN --
+            # measured at 4.10, 4.17 and 4.24 m against a 4.0 m span, which is
+            # a seam you can see through at every joint. Ceiling can only make
+            # the step shorter than SPAN, and SPAN is already shorter than the
+            # span, so consecutive decks always overlap.
+            n = max(2, int(math.ceil((end - start) / SPAN)))
             prev_yaw = None
             for k in range(n):
                 d0 = start + (end - start) * k / n

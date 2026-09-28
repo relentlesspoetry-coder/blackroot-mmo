@@ -147,7 +147,7 @@ def corner(seed):
 def jetty_head(seed):
     """The wide end of a walk: somewhere to stand and fish from."""
     rng = np.random.default_rng(seed)
-    p = deck(seed, planks=11, length=UNIT, width=3.6, missing=1, rail='rope', posts=False)
+    p = deck(seed, planks=11, length=UNIT, width=3.6, missing=0, rail='rope', posts=False)
     for sx in (-1, 1):
         for sz in (-1, 1):
             p.append(box(0.26, 2.1, 0.26, (sx * 1.7, DECK_Y - 1.05, sz * 1.5), WOOD_DARK,
@@ -173,10 +173,16 @@ def piling(seed):
 def main():
     made = [
         # the same generator, different numbers -- that is the variation
-        ('Boardwalk_A', deck(11, planks=9, missing=1, moss=0.25, rail=None)),
-        ('Boardwalk_B', deck(23, planks=8, gap=0.09, warp=0.055, missing=2, moss=0.45, rail=None)),
+        # `missing` is 0 on every walking span. A hole in the planks is an
+        # excellent detail on a ruin and a bad one on a floor: the deck is solid
+        # to walk on, so a gap you can see through is the game telling you a lie
+        # about where you may put your feet. The weathering carries the age
+        # instead -- warp, moss and the gaps between boards, none of which read
+        # as somewhere you would fall.
+        ('Boardwalk_A', deck(11, planks=9, missing=0, moss=0.25, rail=None)),
+        ('Boardwalk_B', deck(23, planks=8, gap=0.09, warp=0.055, missing=0, moss=0.45, rail=None)),
         ('Boardwalk_C', deck(37, planks=10, gap=0.04, warp=0.02, missing=0, moss=0.12, rail='low')),
-        ('Boardwalk_D', deck(51, planks=9, warp=0.045, missing=1, moss=0.35, rail='rope')),
+        ('Boardwalk_D', deck(51, planks=9, warp=0.045, missing=0, moss=0.35, rail='rope')),
         ('Boardwalk_Corner', corner(67)),
         ('Boardwalk_Jetty', jetty_head(83)),
         ('Boardwalk_Piling', piling(97)),
