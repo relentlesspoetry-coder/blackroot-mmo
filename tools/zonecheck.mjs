@@ -156,6 +156,7 @@ console.log('\nThe Dark Woods — zone invariants\n');
   ok('nothing reaches the renderer without normals', fixes,
     (fixes ? 'the loader computes any that are missing' : 'THE LOADER DOES NOT COMPUTE MISSING NORMALS -- those meshes render black')
       + (missing ? `; ${missing} primitives still ship none: ${bare.join(', ')}`
+                   + ' -- repair with: python3 tools/glbnormals.py <file>'
                  : `; all ${glbs.length} GLBs ship their own`));
 }
 
