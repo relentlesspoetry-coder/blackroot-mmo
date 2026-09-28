@@ -336,3 +336,33 @@ export function resetTerrain(zone) {
   zone._fields = null; zone._pads = null; zone._lattice = null;
   for (const r of riversOf(zone)) r._prof = null;
 }
+
+// ---------------------------------------------------------------------------
+// The boardwalk's footprint: where the planks are, and where you can stand.
+// ---------------------------------------------------------------------------
+// One rectangle, both sides. It was two, and they disagreed: the client's
+// standable patch was len + 0.3 by w - 0.3 while the server's "dry feet" test
+// was len by w. So a 15 cm strip inside each railing was deck to the server
+// and open water to the client, and 15 cm at each end was the reverse -- you
+// could only walk the intersection, and the railings read as fencing you in.
+//
+// DECK_TOP matches DECK_Y in tools/build_wetland.py: the top of the planks
+// above the piece's own origin, which for this kit is the water line.
+export const DECK_TOP = 0.55;
+// The rail posts stand at w/2 - 0.1 and are 0.14 thick, so their inner face is
+// 0.17 in from the plank edge. That, not the plank edge, is how wide the walk
+// actually is -- which is the difference between a rail you walk beside and a
+// rail you walk into.
+export const DECK_POST_INSET = 0.17;
+// Spans are laid 3.9 m apart and are 4 m long, so they already overlap; the
+// seam allowance closes the joint for a body crossing it rather than a point.
+export const DECK_SEAM = 0.15;
+// Is (x, z) on this span's planks? `grow` widens it for the callers that ask a
+// softer question (the swim test allows a little footing past the boards).
+export function onDeckSpan(d, x, z, grow = 0) {
+  const dx = x - d.x, dz = z - d.z;
+  const sn = Math.sin(d.yaw || 0), cs = Math.cos(d.yaw || 0);
+  const along = dx * cs + dz * sn, across = -dx * sn + dz * cs;
+  return Math.abs(along) <= (d.len || 4) / 2 + DECK_SEAM + grow
+      && Math.abs(across) <= (d.w || 2.4) / 2 - DECK_POST_INSET + grow;
+}

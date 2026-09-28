@@ -28,6 +28,7 @@ import {
   riversOf, bridgesOf, pathsOf, pathSpecsOf, closestOnPaths, terrainAt, terrainFieldAt, isSolid, isWater, terrainClearance, T_OFF, T_ROCK, T_DEEP, T_MARSH,
   caveOutline, prepareZone,
 } from './worldgen.js';
+import { onDeckSpan } from '../shared/terrain.js';
 import {
   RIVER_BANK, floorHeightAt, standableAt, resolveCollision, navBlocked, lineClear,
 } from './collision.js';
@@ -1850,12 +1851,8 @@ function onDeck(zone, x, z, grow = 0) {
       if (dist2(x, z, b.x, b.z) < (span * span) / 4) return true;
     }
   }
-  for (const d of (zone.decks || [])) {
-    const dx = x - d.x, dz = z - d.z;
-    const sn = Math.sin(d.yaw || 0), cs = Math.cos(d.yaw || 0);
-    const along = dx * cs + dz * sn, across = -dx * sn + dz * cs;
-    if (Math.abs(along) <= (d.len || 4) / 2 + grow && Math.abs(across) <= (d.w || 2.4) / 2 + grow) return true;
-  }
+  // One rectangle for both sides -- see onDeckSpan in shared/terrain.js.
+  for (const d of (zone.decks || [])) if (onDeckSpan(d, x, z, grow)) return true;
   return false;
 }
 // How far past the deep contour the bed has to shelve before you are out of

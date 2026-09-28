@@ -1526,7 +1526,7 @@ let bridgeInfos = []; // arched bridges: {x,z,phi,L,archH,deckW} for walking up 
 // Plank walks over the fen. A bridge arches and a boardwalk does not, so they
 // share the lift but not the profile: a deck is flat, and standing on one puts
 // you DECK_TOP above the ground it was laid on rather than on an arc.
-const DECK_TOP = 0.55;              // matches tools/build_wetland.py
+const DECK_TOP = TERRAIN.DECK_TOP;  // shared, and matches tools/build_wetland.py
 let deckInfos = [];
 // These return null for "there is nothing over the water here", NOT 0. They
 // used to return 0, and every caller tested `> 0` -- which quietly means "the
@@ -1534,10 +1534,14 @@ let deckInfos = [];
 // the ones over the fen, where the ground is metres BELOW zero, so 48 of the 71
 // spans reported no deck at all and you waded under your own boardwalk.
 function deckLift(x, z) {
+  // The footprint is shared with the server's dry-feet test -- see onDeckSpan
+  // in shared/terrain.js. They used to be two rectangles that disagreed by
+  // 15 cm at every edge, so a strip inside each railing was deck to one and
+  // open water to the other, and the walk you could actually use was the
+  // intersection. That is what made the railings feel like they were fencing
+  // you in: you were not being blocked, you were being un-decked.
   for (const d of deckInfos) {
-    const dx = x - d.x, dz = z - d.z, s = Math.sin(d.yaw), c = Math.cos(d.yaw);
-    const along = dx * c + dz * s, across = -dx * s + dz * c;
-    if (Math.abs(along) > d.len / 2 || Math.abs(across) > d.w / 2) continue;
+    if (!TERRAIN.onDeckSpan(d, x, z)) continue;
     return d.y + DECK_TOP;
   }
   return null;
@@ -4147,7 +4151,7 @@ function buildDecks() {
     // the ones over the fen two metres under the waterline -- a submerged
     // boardwalk you had to swim down to.
     const y = Math.max(terrainHeight(d.x, d.z), waterLevelAt(d.x, d.z));
-    deckInfos.push({ x: d.x, z: d.z, yaw: d.yaw || 0, len: (d.len || 4) + 0.3, w: (d.w || 2.4) - 0.3, y });
+    deckInfos.push({ x: d.x, z: d.z, yaw: d.yaw || 0, len: d.len || 4, w: d.w || 2.4, y });
     // ...and it is drawn about its AUTHORED origin, which for this kit is the
     // water line: planks at +0.55, pilings hanging to -1.35. bakeModel re-seats
     // every model with its base at y = 0, which is right for a boulder and
