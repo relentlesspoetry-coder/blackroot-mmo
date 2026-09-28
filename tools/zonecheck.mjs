@@ -5,7 +5,7 @@
 //
 // Exits non-zero if any invariant fails, so it can gate a build.
 import { readFileSync, readdirSync } from 'fs';
-import { join } from 'path';
+import { join, relative } from 'path';
 import { fileURLToPath } from 'url';
 import { darkwoods as z } from '../server/zones/darkwoods.js';
 import { spiderden } from '../server/zones/spiderden.js';
@@ -130,6 +130,7 @@ console.log('\nThe Dark Woods — zone invariants\n');
   const modelDir = fileURLToPath(new URL('../client/models', import.meta.url));
   walk(modelDir);
   let missing = 0, files = 0;
+  const bare = [];
   for (const f of glbs) {
     const d = readFileSync(f);
     if (d.length < 12 || d.toString('utf8', 0, 4) !== 'glTF') continue;
@@ -142,14 +143,43 @@ console.log('\nThe Dark Woods — zone invariants\n');
     if (!js) continue;
     let n = 0;
     for (const m of (js.meshes || [])) for (const pr of (m.primitives || [])) if (!('NORMAL' in (pr.attributes || {}))) n++;
-    if (n) { missing += n; files++; }
+    if (n) { missing += n; files++; bare.push(`${relative(modelDir, f)} (${n})`); }
   }
   const cli = readFileSync(new URL('../client/index.html', import.meta.url), 'utf8');
   const fixes = /ensureNormals\(g\.scene\)/.test(cli)
     && /function ensureNormals[\s\S]{0,400}?computeVertexNormals\(\)/.test(cli);
+  // The generators emit them now (tools/glbkit.py), so this should be empty or
+  // close to it. The loader assertion stays whatever the count says: it is the
+  // net under the models NOTHING generates, which is where the next one will
+  // come from -- and it is named here rather than summed, because one bare
+  // file hidden inside a total is how 63 of them went unnoticed.
   ok('nothing reaches the renderer without normals', fixes,
-    fixes ? `${missing} primitives in ${files} of ${glbs.length} GLBs ship none; the loader computes them`
-          : `${missing} primitives in ${files} GLBs ship no NORMAL and the loader does not compute them -- they render black`);
+    (fixes ? 'the loader computes any that are missing' : 'THE LOADER DOES NOT COMPUTE MISSING NORMALS -- those meshes render black')
+      + (missing ? `; ${missing} primitives still ship none: ${bare.join(', ')}`
+                 : `; all ${glbs.length} GLBs ship their own`));
+}
+
+// ...and the generators emit them, rather than relying on that net.
+//
+// Six build_*.py scripts each had their own copy of the same export function
+// and every copy dropped the normals, which is how one mistake became 62
+// files. They go through tools/glbkit.py now. This is what stops a seventh
+// copy: a generator that builds a scene and exports it itself is a generator
+// that will ship bare meshes again, and the loader would quietly cover for it.
+{
+  const toolDir = fileURLToPath(new URL('.', import.meta.url));
+  const kit = readFileSync(join(toolDir, 'glbkit.py'), 'utf8');
+  const asks = /include_normals=True/.test(kit) && /def flat_normals/.test(kit);
+  const rogue = [];
+  for (const f of readdirSync(toolDir).filter(n => /^build_.*\.py$/.test(n))) {
+    const src = readFileSync(join(toolDir, f), 'utf8');
+    if (!/trimesh\.Scene\(\)/.test(src)) continue;          // not a kit exporter
+    if (!/import glbkit/.test(src) || /scene\.export\(/.test(src)) rogue.push(f);
+  }
+  ok('every generated kit exports through glbkit', asks && rogue.length === 0,
+    !asks ? 'glbkit.py does not ask trimesh for normals'
+          : rogue.length ? `${rogue.join(', ')} build a scene and export it themselves`
+                         : 'one exporter, flat normals, for every kit');
 }
   // The real test has to reproduce the CLIENT's shoreline, which is the ground
   // crossing the waterline -- not just restate the server's rule, which would

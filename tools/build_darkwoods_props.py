@@ -34,6 +34,8 @@ from pathlib import Path
 import numpy as np
 import trimesh
 
+import glbkit
+
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / 'client' / 'models' / 'darkwoods'
 
@@ -101,25 +103,9 @@ def rock(rx, ry, rz, at=(0, 0, 0), colour=STONE, seed=0, rough=0.22, yaw=0.0):
 
 
 def save(name, parts):
-    """One mesh per colour, each with its own PBR material."""
-    groups = {}
-    for part in parts:
-        groups.setdefault(tuple(part.metadata['colour']), []).append(part)
-    scene = trimesh.Scene()
-    faces = 0
-    for i, (colour, members) in enumerate(groups.items()):
-        m = trimesh.util.concatenate(members) if len(members) > 1 else members[0].copy()
-        m.merge_vertices()
-        m.visual = trimesh.visual.TextureVisuals(material=trimesh.visual.material.PBRMaterial(
-            name=f'{name}_{i}',
-            baseColorFactor=[int(round(c * 255)) for c in colour] + [255],
-            metallicFactor=0.0, roughnessFactor=0.93))
-        scene.add_geometry(m, node_name=f'{name}_{i}')
-        faces += len(m.faces)
-    OUT.mkdir(parents=True, exist_ok=True)
-    p = OUT / f'{name}.glb'
-    scene.export(p)
-    return p, faces
+    """One mesh per colour, each with its own PBR material -- and FLAT normals.
+    See tools/glbkit.py for why both of those matter."""
+    return glbkit.save(OUT, name, parts, roughness=0.93)
 
 
 # ----------------------------------------------------------- the graveyard
