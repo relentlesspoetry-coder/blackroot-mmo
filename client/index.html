@@ -2264,7 +2264,15 @@ function buildTerrainWater() {
   // lid. At 0.86 the shapes below show through as shapes without the bed
   // coming back as a window -- which is the failure at the other end, and what
   // made the water look black when the floor was tuned too low.
-  const DEPTH_OPAQUE = 0.75, ALPHA_FLOOR = 0.50, ALPHA_CEIL = 0.86, RIM_FEATHER = 0.55;
+  // The FLOOR was 0.50, and it was doing the opposite of its job at the
+  // shallow end. It exists so a carved pool does not go clear and become a
+  // window onto the dark bottom of a bowl -- but it is applied where `f` is
+  // small, which is shallow water and the rim, and twenty centimetres over a
+  // flat mud shelf is the clearest water in the zone, not the murkiest. At
+  // Murkfen, where the shelf runs 20-70 cm deep for tens of metres, 57%
+  // opacity over dark mud read as a flat grey PLATE laid on the bank, with a
+  // hard edge where the shelf ended. Real shallow water shows its bed.
+  const DEPTH_OPAQUE = 0.75, ALPHA_FLOOR = 0.22, ALPHA_CEIL = 0.86, RIM_FEATHER = 0.55;
   // Cold BLUE. These are sRGB and three linearises them, so a hex that looks
   // like a mid tone lands near black in the working space -- both of these
   // were picked from the LINEAR values they need to end up at (deep
@@ -5238,7 +5246,21 @@ function shoalSpec(tier) {
 // fish that exists is one you could actually see. Each keeps the species it
 // was built with and is only ever put somewhere deep enough to hold it, which
 // is what makes the shallows shrimp and the middle of Ravenwater pike.
-const AMBIENT_FISH = 72, AMBIENT_NEAR = 46, AMBIENT_FAR = 62;
+const AMBIENT_FISH = 28, AMBIENT_NEAR = 46, AMBIENT_FAR = 62;
+// How far apart they have to be, in metres.
+//
+// A fixed COUNT was the mistake. Measured on the Crowwater, 3,435 m2 of water
+// lies within the recycling radius; 72 fish there is 48 m2 each, a fish every
+// 6.9 m, and since placement is uniform-random plenty of pairs land far closer
+// than the average. On a lake that reads as a scattering. On a river -- which
+// is a strip, not a disc -- the same number is a shoal from bank to bank, and
+// that is what you see standing on the Crowwater bank.
+//
+// A minimum SPACING is self-regulating instead: the narrow reach simply cannot
+// hold many, the open water can, and neither needs a number of its own. The
+// fishing spots get a berth too, so THEY stay the place fish gather, which is
+// the whole point of a fishing spot.
+const FISH_SPACING = 13;
 const FISH_MIN_DEPTH = { Shrimp: 0.12, Trout: 0.35, Salmon: 0.60, Pike: 0.85 };
 const ambientFish = [];
 function litFish(o, spotId) {
@@ -5292,13 +5314,31 @@ function buildAmbientFish() {
       turn: 0, next: 0, ph: Math.random() * 6.283 });
   }
 }
-// Put one somewhere in the water near the camera that is deep enough for it.
+// Is (x, z) crowding another ambient fish, or a fishing spot?
+function fishCrowded(self, x, z) {
+  const S2 = FISH_SPACING * FISH_SPACING;
+  for (const g of ambientFish) {
+    if (g === self || !g.o.visible) continue;
+    const dx = g.x - x, dz = g.z - z;
+    if (dx * dx + dz * dz < S2) return true;
+  }
+  for (const sp of (zone.fishingSpots || [])) {
+    const dx = sp.x - x, dz = sp.z - z;
+    if (dx * dx + dz * dz < S2) return true;
+  }
+  return false;
+}
+// Put one somewhere in the water near the camera that is deep enough for it
+// and far enough from everything else. A fish that finds nowhere stays hidden
+// and tries again next frame -- which is how the river ends up holding fewer
+// than the lake without either being told a number.
 function placeAmbientFish(f, cam) {
-  for (let i = 0; i < 14; i++) {
+  for (let i = 0; i < 24; i++) {
     const a = Math.random() * 6.283, r = 10 + Math.sqrt(Math.random()) * (AMBIENT_NEAR - 10);
     const x = cam.x + Math.cos(a) * r, z = cam.z + Math.sin(a) * r;
     const surf = waterLevelAt(x, z), d = surf - terrainHeight(x, z);
     if (d < f.need) continue;
+    if (fishCrowded(f, x, z)) continue;
     f.x = x; f.z = z; f.surf = surf; f.depth = d;
     f.h = Math.random() * 6.283; f.next = 0;
     f.o.visible = true;
