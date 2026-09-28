@@ -2225,11 +2225,9 @@ function buildTerrainWater() {
   // pale grey-blue lifted almost to white at the edges. Tannin-stained water is
   // near-black where it is deep, goes warm olive-brown as the bed comes up, and
   // breaks cream rather than white.
-  // The shallows must not land on the same colour as the BANK. A warm tan over
-  // a warm brown bed is indistinguishable from wet earth, which is what the
-  // first peat pass came out as at Ravenwater's margins -- the pool read as a
-  // mud flat. Stained water is olive: greener than the ground it sits on.
-  const SHORE_TINT = { r: 1.10, g: 1.22, b: 0.90 };
+  // The shallows lift toward pale grey-green rather than toward white, so the
+  // margin stays cold instead of blanching.
+  const SHORE_TINT = { r: 1.05, g: 1.16, b: 1.12 };
   // (The foam line used to be painted here, as a flat brightness lift in the
   // last third of a metre of depth. It is in the shader now, where it can be
   // textured and can MOVE -- see the shoreline block in waveify.)
@@ -2238,11 +2236,17 @@ function buildTerrainWater() {
   // that goes fully clear over a carved pool is a window onto the dark bottom
   // of a bowl, which is what made the water look black.
   const DEPTH_OPAQUE = 0.75, ALPHA_FLOOR = 0.50, RIM_FEATHER = 0.55;
-  // These are sRGB and three linearises them, so a hex that looks like a mid
-  // olive lands near black in the working space: 0x6a6135 came out at 0.15 of
-  // full, darker than the grey the Fresnel was adding on top of it, and the
-  // whole river read as flat grey. Picked in the space they end up in.
-  const DEEP_C = new THREE.Color(0x2b3320), SHALLOW_C = new THREE.Color(0x76854a);
+  // Cold slate green. These are sRGB and three linearises them, so a hex that
+  // looks like a mid tone lands near black in the working space -- both of
+  // these were picked from the LINEAR values they need to end up at (deep
+  // 0.020/0.040/0.034, shallow 0.200/0.260/0.230) and converted back.
+  //
+  // The peat palette that came before this failed for a reason worth keeping:
+  // stained water over a brown bed shares its hue with the bank, and at
+  // Ravenwater, where 42% of the pool is under a metre deep, the whole thing
+  // read as a mud flat. A cold hue cannot make that mistake -- whatever the
+  // depth, the water is never the colour of the ground it sits in.
+  const DEEP_C = new THREE.Color(0x273834), SHALLOW_C = new THREE.Color(0x7c8b84);
   // The base map used to be a canvas fill of #296a94 with 10% stripes on it,
   // and since diffuse = map * vertexColour, that flat fill was doing nothing
   // but tinting. The map is gone -- the only texture on the water is the real
@@ -2407,7 +2411,7 @@ function buildTerrainWater() {
   const mat = waveify(detailize(new THREE.MeshStandardMaterial({ color: 0xffffff,
     roughness: 0.42, metalness: 0.05, transparent: true, opacity: 1, side: THREE.DoubleSide,
     vertexColors: true,            // the whole colour: depth tint, foam, and the rim alpha
-    emissive: 0x111709, emissiveIntensity: 0.7 }), 'water', { scale: 4, strength: 0.5 }), 1);
+    emissive: 0x0c1614, emissiveIntensity: 0.7 }), 'water', { scale: 4, strength: 0.5 }), 1);
   const m = new THREE.Mesh(g, mat);
   m.receiveShadow = true; m.userData.isWater = true; scene.add(m);
   waterSurfaces.push({ mesh: m, tex, amp: 1 });
@@ -2612,7 +2616,7 @@ vec2 rippleUV2() { return (vWaterXZ + (waterDrift() * 0.62 + vec2(-0.05, 0.03)) 
   // Dark water is mostly what it reflects, so this is the main thing you see
   // on it -- which is exactly why it must not be a flat grey wash. It is warm,
   // it is weaker than it was, and the broken normal above breaks it up.
-  totalEmissiveRadiance += vec3(0.17, 0.16, 0.12) * f * uFresnel;
+  totalEmissiveRadiance += vec3(0.15, 0.19, 0.21) * f * uFresnel;
   diffuseColor.a = clamp(diffuseColor.a + f * uFresnel * 0.25, 0.0, 1.0);
 }
 // --- where it meets the land -------------------------------------------
@@ -2639,7 +2643,7 @@ vec2 rippleUV2() { return (vWaterXZ + (waterDrift() * 0.62 + vec2(-0.05, 0.03)) 
     float lace = texture2D(uRipple, fu).r * 0.6 + texture2D(uRipple, fv).r * 0.4;
     lace = smoothstep(0.34, 0.78, lace);
     float s2 = shore * shore;
-    diffuseColor.rgb += vec3(0.50, 0.46, 0.34) * s2 * (0.35 + 0.85 * lace);
+    diffuseColor.rgb += vec3(0.52, 0.56, 0.56) * s2 * (0.35 + 0.85 * lace);
     // and let it go, over the last of the band, so there is no cut edge
     diffuseColor.a *= smoothstep(0.0, uShore * 0.55, d);
   }
