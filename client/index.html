@@ -1943,24 +1943,22 @@ function ribbon(points, width, y, color, opacity, texName) {
 }
 
 // A flowing-water texture: rippled bands + sparkle streaks, scrolled each frame.
-function makeWaterTexture() {
-  const s = 128, cv = document.createElement('canvas'); cv.width = cv.height = s;
-  const ctx = cv.getContext('2d');
-  ctx.fillStyle = '#296a94'; ctx.fillRect(0, 0, s, s);
-  for (let y = 0; y < s; y++) {
-    const w = Math.sin(y * 0.16) * 0.5 + 0.5, l = 30 + w * 45 + Math.sin(y * 0.7) * 12;
-    ctx.fillStyle = `rgba(${140 + l * 0.4 | 0},${185 + l * 0.3 | 0},${215 + l * 0.2 | 0},0.10)`;
-    ctx.fillRect(0, y, s, 1);
+// The ripple map is a real asset -- client/textures/water.png, a greyscale
+// cell pattern -- rather than something drawn in a canvas. It is sampled twice
+// at different scales and drifts, in the shader, which is what stops a scrolled
+// texture reading as one sheet of wallpaper sliding sideways.
+let _waterCells = null;
+function waterCellTexture() {
+  if (!_waterCells) {
+    _waterCells = new THREE.TextureLoader().load('textures/water.png');
+    _waterCells.wrapS = _waterCells.wrapT = THREE.RepeatWrapping;
+    _waterCells.colorSpace = THREE.LinearSRGBColorSpace;   // data, not colour
+    _waterCells.anisotropy = 4;
   }
-  for (let i = 0; i < 70; i++) {
-    const x = Math.random() * s, y = Math.random() * s, len = 6 + Math.random() * 22;
-    ctx.strokeStyle = `rgba(220,240,255,${0.04 + Math.random() * 0.12})`;
-    ctx.lineWidth = 1 + Math.random() * 1.5;
-    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + len, y + (Math.random() - 0.5) * 3); ctx.stroke();
-  }
-  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace;
-  t.wrapS = t.wrapT = THREE.RepeatWrapping; return t;
+  return _waterCells;
 }
+// (makeWaterTexture lived here: a canvas of one blue with 10% stripes drawn
+// on it. The water uses the real textures/water.png now.)
 
 // Catmull-Rom smoothing of a polyline into a dense, gently curving one.
 function smoothPoly(points, seg) {
@@ -2227,6 +2225,12 @@ function buildTerrainWater() {
   // of a bowl, which is what made the water look black.
   const DEPTH_OPAQUE = 0.75, ALPHA_FLOOR = 0.50, RIM_FEATHER = 0.55;
   const DEEP_C = new THREE.Color(0x2f7fb0), SHALLOW_C = new THREE.Color(0x599ec2);
+  // The base map used to be a canvas fill of #296a94 with 10% stripes on it,
+  // and since diffuse = map * vertexColour, that flat fill was doing nothing
+  // but tinting. It is folded in here and the map is gone: the only texture on
+  // the water is now the real one, client/textures/water.png, sampled in the
+  // shader where it can be scrolled as two layers instead of slid as one.
+  const BASE_TINT = new THREE.Color(0x296a94);
   const _wc = new THREE.Color();
 
   // How far inside the water's edge (x, z) is, in the same units the old gates
@@ -2274,9 +2278,9 @@ function buildTerrainWater() {
     _wc.copy(SHALLOW_C).lerp(DEEP_C, shallow);
     const k2 = Math.pow(1 - shallow, SHALLOW_POW);
     const foam = Math.max(0, 1 - depth / FOAM_DEPTH) * FOAM_LIFT;
-    col.push(_wc.r * (1 + k2 * (SHORE_TINT.r - 1)) + foam,
-             _wc.g * (1 + k2 * (SHORE_TINT.g - 1)) + foam,
-             _wc.b * (1 + k2 * (SHORE_TINT.b - 1)) + foam, a);
+    col.push((_wc.r * (1 + k2 * (SHORE_TINT.r - 1)) + foam) * BASE_TINT.r,
+             (_wc.g * (1 + k2 * (SHORE_TINT.g - 1)) + foam) * BASE_TINT.g,
+             (_wc.b * (1 + k2 * (SHORE_TINT.b - 1)) + foam) * BASE_TINT.b, a);
     // Swell where there is water to swell, stillness in the shallows: the two
     // sheets did this with two amplitudes and a seam between them.
     amp.push(0.35 + 0.65 * shallow);
@@ -2335,9 +2339,8 @@ function buildTerrainWater() {
   g.setAttribute('waveAmp', new THREE.Float32BufferAttribute(amp, 1)); // swell out deep, still at the edge
   g.setAttribute('normal', new THREE.Float32BufferAttribute(new Float32Array(pos.length), 3));
   g.setIndex(idx);
-  const tex = makeWaterTexture();
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  const mat = waveify(detailize(new THREE.MeshStandardMaterial({ map: tex, color: 0xffffff,
+  const tex = waterCellTexture();
+  const mat = waveify(detailize(new THREE.MeshStandardMaterial({ color: 0xffffff,
     roughness: 0.22, metalness: 0.35, transparent: true, opacity: 1, side: THREE.DoubleSide,
     vertexColors: true,            // the whole colour: depth tint, foam, and the rim alpha
     emissive: 0x0d3550, emissiveIntensity: 0.8 }), 'water', { scale: 4, strength: 0.5 }), 1);
@@ -2373,6 +2376,16 @@ function buildTerrainWater() {
 // one 2.5 m quad per cell, and a wave needs three or four samples across it or
 // it aliases into a twitching lattice. Fine chop comes from the scrolling
 // surface texture and its normal map instead, which are per-pixel and free.
+// How hard the surface treatment is laid on. `?w=caustic,bump,fresnel` sweeps
+// them without a rebuild -- the first pass at 0.46 / 34 / 1.35 turned Ravenwater
+// into a sheet of white, which is what happens when you tune a grazing-angle
+// term from an overhead screenshot.
+const _wq = (new URLSearchParams(location.search).get('w') || '').split(',').map(Number);
+const WATER_LOOK = {
+  caustic: _wq[0] > 0 ? _wq[0] : 0.45,   // how much the cells lift and drop the colour
+  bump:    _wq[1] > 0 ? _wq[1] : 18.0,   // how broken the normal is (the specular catches this)
+  fresnel: _wq[2] > 0 ? _wq[2] : 0.35,   // how mirror-like it goes as it runs away from you
+};
 const WATER_WAVES = [
   //  kx,      kz,     speed,  amp
   [ 0.420,  0.230,    1.35,  0.085],   // ~13 m, the main swell
@@ -2430,7 +2443,73 @@ uniform float uWaterTime; uniform float uWaterAmp;
   objectNormal = normalize(vec3(-dhx, 1.0, -dhz));
 }`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
-transformed.y += (${sum('sin')}) * WAVE_A;`);
+transformed.y += (${sum('sin')}) * WAVE_A;
+vWaterXZ = position.xz;`)
+      .replace('#include <common>', `#include <common>
+varying vec2 vWaterXZ;`);
+
+    // --- the surface itself ------------------------------------------------
+    // The swell above is metres of travel over ten-metre wavelengths: it moves
+    // the sheet, and on a lake seen from the bank that is a sheet tilting. What
+    // makes water read as water is the small stuff -- cells of light crawling
+    // across it, a broken specular, and the way it goes bright and mirror-like
+    // as it runs away from you. None of that was there: the map was a canvas
+    // fill of one blue with 10% stripes on it, multiplied by a vertex colour,
+    // which is a flat plane however fast you scroll it.
+    //
+    // So the ripple map is sampled TWICE, at different scales and drifting in
+    // different directions. Two layers is the whole trick: one layer scrolling
+    // is wallpaper sliding past, two beating against each other is a surface.
+    sh.uniforms.uRipple = { value: waterCellTexture() };
+    // kept on the material so they can be turned live: __bk.water().caustic.value = 0.4
+    const look = mat.userData.waterLook = {
+      caustic: { value: WATER_LOOK.caustic },
+      bump: { value: WATER_LOOK.bump },
+      fresnel: { value: WATER_LOOK.fresnel },
+    };
+    sh.uniforms.uCaustic = look.caustic;
+    sh.uniforms.uBump = look.bump;
+    sh.uniforms.uFresnel = look.fresnel;
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>
+uniform sampler2D uRipple; uniform float uWaterTime;
+uniform float uCaustic; uniform float uBump; uniform float uFresnel;
+varying vec2 vWaterXZ;
+vec2 rippleUV1() { return vWaterXZ * 0.070 + vec2( 0.016, 0.011) * uWaterTime; }
+vec2 rippleUV2() { return vWaterXZ * 0.031 + vec2(-0.009, 0.019) * uWaterTime; }`)
+      // Caustics: the cells brighten the water where they cross. Multiplied
+      // into the diffuse so the depth tint underneath still shows through.
+      .replace('#include <map_fragment>', `#include <map_fragment>
+{
+  float c1 = texture2D(uRipple, rippleUV1()).r;
+  float c2 = texture2D(uRipple, rippleUV2()).r;
+  float caustic = c1 * 0.62 + c2 * 0.38 - 0.5;      // centred, so it darkens as well as lifts
+  diffuseColor.rgb *= 1.0 + uCaustic * caustic;
+}`)
+      // A broken normal off the gradient of the same two layers. This is what
+      // the specular catches, and it is the difference between a lake and a
+      // sheet of blue plastic.
+      .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
+{
+  const float E = 0.006;
+  vec2 u1 = rippleUV1(), u2 = rippleUV2();
+  float dx = (texture2D(uRipple, u1 + vec2(E, 0.0)).r - texture2D(uRipple, u1 - vec2(E, 0.0)).r) * 0.070
+           + (texture2D(uRipple, u2 + vec2(E, 0.0)).r - texture2D(uRipple, u2 - vec2(E, 0.0)).r) * 0.031;
+  float dz = (texture2D(uRipple, u1 + vec2(0.0, E)).r - texture2D(uRipple, u1 - vec2(0.0, E)).r) * 0.070
+           + (texture2D(uRipple, u2 + vec2(0.0, E)).r - texture2D(uRipple, u2 - vec2(0.0, E)).r) * 0.031;
+  vec3 bump = vec3(-dx, 0.0, -dz) * uBump;
+  normal = normalize(normal + (viewMatrix * vec4(bump, 0.0)).xyz);
+}`)
+      // Fresnel. Water is nearly a mirror at a grazing angle and nearly clear
+      // straight down, and getting that one relationship right does more than
+      // any amount of colour tuning -- standing on the bank, the far side of
+      // the pool should be bright sky and the water at your feet should not.
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+{
+  float f = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), 4.0);
+  totalEmissiveRadiance += vec3(0.16, 0.26, 0.34) * f * uFresnel;
+  diffuseColor.a = clamp(diffuseColor.a + f * uFresnel * 0.25, 0.0, 1.0);
+}`);
   };
   mat.needsUpdate = true;
   return mat;
@@ -2439,11 +2518,9 @@ function updateWaterSurface(tSec) {
   for (const w of waterSurfaces) {
     const u = w.mesh.material.userData.waterTime;
     if (u) u.value = tSec;
-    // 0.012 tiles a second over a 9 m tile is 0.108 m/s -- eighty-three seconds
-    // for one tile to pass. The surface texture was scrolling at the speed of a
-    // minute hand. This is a visible drift without becoming a conveyor belt.
-    w.tex.offset.x = (tSec * 0.055) % 1;
-    w.tex.offset.y = (tSec * 0.082) % 1;
+    // The surface no longer scrolls a texture's UV offset: one sheet sliding
+    // is wallpaper going past. The shader drifts two samples of the cell map
+    // against each other instead, off this same clock.
   }
 }
 
@@ -10866,6 +10943,8 @@ if (location.search.includes('debug')) {
     THREE,
     terrainHeight, landHeight, landBaseY, groundY, groundMeshY, terrainAt, terrainField,   // terrain probes
     waterLevelAt, riverProfile,                                    // water probes
+    // The surface treatment, live: __bk.water().caustic.value = 0.4 and look.
+    water() { for (const w of waterSurfaces) if (w.mesh.material.userData.waterLook) return w.mesh.material.userData.waterLook; return null; },
     // Is the water one coherent surface, and does each river run downhill?
     // Both were wrong: two translucent sheets stacked into a third colour where
     // they overlapped, and a level pinned to -0.5 whatever the land did.
