@@ -3577,7 +3577,12 @@ function makeSoftDot() {
 // one draw call whatever the number; the per-frame cost is measured below the
 // build, and at this count it is a fraction of a millisecond.
 const FIREFLY_N = 14000;
-const FIREFLY_GREEN = new THREE.Color(0.38, 1.0, 0.26);   // yellow-green, as they are
+// A firefly is not a green lamp. It is dark, then an orange ember comes up in
+// it, then it flashes yellow-green for about a second, then it fades back
+// through orange to nothing. Holding it green the whole time is the one thing
+// that reads as a fairy light rather than an insect.
+const FIREFLY_GREEN = new THREE.Color(0.38, 1.0, 0.26);   // the flash
+const FIREFLY_EMBER = new THREE.Color(1.0, 0.40, 0.05);   // the glow either side of it
 // Real light, from a FEW of them.
 //
 // You cannot ask a renderer for fourteen thousand point lights, and adding or
@@ -3588,8 +3593,12 @@ const FIREFLY_GREEN = new THREE.Color(0.38, 1.0, 0.26);   // yellow-green, as th
 // 22 m, and a firefly that reads anywhere near that is a lantern, not an
 // insect. This is a pool of light about a pace across.
 const FIREFLY_LIGHTS = 8;
-const FIREFLY_LIGHT_RANGE = 4.0;
-const FIREFLY_LIGHT_MAX = 0.20;
+// Tightened when the sprite came down to 0.13: a 4 m pool under a speck that
+// small reads as a lamp buried in the grass rather than as the insect itself
+// lighting what it passes. The pool should look like it belongs to the thing
+// making it.
+const FIREFLY_LIGHT_RANGE = 2.2;
+const FIREFLY_LIGHT_MAX = 0.13;
 const fireflyLights = [];
 function buildFireflies() {
   const b = zone.bounds, n = FIREFLY_N;
@@ -3611,8 +3620,10 @@ function buildFireflies() {
     let x, z, tries = 0;
     do { x = b.minX + Math.random() * (b.maxX - b.minX); z = b.minZ + Math.random() * (b.maxZ - b.minZ); }
     while (!onLand(x, z) && ++tries < 24);
-    // Low, where the grass is, rather than scattered up into the canopy.
-    const y = (groundY ? groundY(x, z) : 0) + 0.35 + Math.random() * 1.9;
+    // Low, where the grass is, rather than scattered up into the canopy -- but
+    // never so low that the drift can take one under the turf. The bob below is
+    // +-0.55, so the floor here has to clear it.
+    const y = (groundY ? groundY(x, z) : 0) + 0.7 + Math.random() * 1.7;
     pos[i * 3] = base[i * 3] = x; pos[i * 3 + 1] = base[i * 3 + 1] = y; pos[i * 3 + 2] = base[i * 3 + 2] = z;
     phase[i] = Math.random() * 6.3;
     // Each on its own clock, or they pulse in unison and read as one throbbing
@@ -3621,7 +3632,7 @@ function buildFireflies() {
   }
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-  const mat = new THREE.PointsMaterial({ size: 0.45, map: makeSoftDot(), transparent: true, opacity: 1,
+  const mat = new THREE.PointsMaterial({ size: 0.13, map: makeSoftDot(), transparent: true, opacity: 1,
     vertexColors: true, blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true });
   fireflies = new THREE.Points(geo, mat);
   fireflies.userData = { base, phase, rate, n };
@@ -12119,28 +12130,41 @@ function animate() {
       const cx = camera.position.x, cy = camera.position.y, cz = camera.position.z;
       const top = [];
       for (let i = 0; i < ud.n; i++) {
-        arr[i * 3] = ud.base[i * 3] + Math.sin(t * 0.5 + ud.phase[i]) * 1.4;
-        arr[i * 3 + 1] = ud.base[i * 3 + 1] + Math.sin(t * 0.9 + ud.phase[i] * 2) * 0.6;
-        arr[i * 3 + 2] = ud.base[i * 3 + 2] + Math.cos(t * 0.4 + ud.phase[i]) * 1.4;
+        const fx = ud.base[i * 3] + Math.sin(t * 0.5 + ud.phase[i]) * 1.4;
+        let fy = ud.base[i * 3 + 1] + Math.sin(t * 0.9 + ud.phase[i] * 2) * 0.55;
+        const fz = ud.base[i * 3 + 2] + Math.cos(t * 0.4 + ud.phase[i]) * 1.4;
+        const dx = fx - cx, dy = fy - cy, dz = fz - cz;
+        const d2 = dx * dx + dy * dy + dz * dz;
+        // The drift wanders 1.4 m sideways, and on a slope that is enough to
+        // put one inside the hill it set out from -- its height was fixed once,
+        // at build, against the ground it was born on. Re-checked here for the
+        // ones near enough to see: 14,000 terrain lookups a frame would not be
+        // free, and nobody can tell that a firefly forty metres off is a
+        // hand's breadth into a bank.
+        if (d2 < 2500) fy = Math.max(fy, groundY(fx, fz) + 0.15);
+        arr[i * 3] = fx; arr[i * 3 + 1] = fy; arr[i * 3 + 2] = fz;
         // A short flash, not a sine: sin^8 of its own clock sits near zero for
         // most of the cycle and spikes briefly, which is what a firefly does.
         // The 0.12 floor is the ember between flashes -- take it to zero and
         // the field reads as empty dark with the occasional spark appearing
         // from nowhere.
+        // One clock, two lights on it. sin^8 is the green flash: near zero for
+        // most of the cycle and up for about a second. sin^2 minus that is the
+        // shoulder either side of it, which is the orange ember coming up and
+        // dying away. Away from both the insect is simply dark.
         const sN = Math.max(0, Math.sin(t * ud.rate[i] + ud.phase[i]));
         const s2 = sN * sN, s4 = s2 * s2;
-        const glow = (0.12 + 0.88 * s4 * s4) * night;
-        cArr[i * 3] = FIREFLY_GREEN.r * glow;
-        cArr[i * 3 + 1] = FIREFLY_GREEN.g * glow;
-        cArr[i * 3 + 2] = FIREFLY_GREEN.b * glow;
-        if (glow > 0.25) {
-          const dx = arr[i * 3] - cx, dy = arr[i * 3 + 1] - cy, dz = arr[i * 3 + 2] - cz;
-          const d2 = dx * dx + dy * dy + dz * dz;
-          if (d2 < 900) {                                   // 30 m: past that it lights nothing you can see
-            const score = glow / (1 + d2);
-            if (top.length < FIREFLY_LIGHTS) { top.push({ i, glow, score }); top.sort((a, b) => a.score - b.score); }
-            else if (score > top[0].score) { top[0] = { i, glow, score }; top.sort((a, b) => a.score - b.score); }
-          }
+        const flash = s4 * s4;
+        const ember = Math.max(0, s2 - flash) * 0.30;
+        cArr[i * 3] = (FIREFLY_GREEN.r * flash + FIREFLY_EMBER.r * ember) * night;
+        cArr[i * 3 + 1] = (FIREFLY_GREEN.g * flash + FIREFLY_EMBER.g * ember) * night;
+        cArr[i * 3 + 2] = (FIREFLY_GREEN.b * flash + FIREFLY_EMBER.b * ember) * night;
+        // The light pool follows the FLASH, not the ember: an ember that lit
+        // the grass would be a coal lying in it.
+        if (flash > 0.25 && d2 < 900) {
+          const score = flash / (1 + d2);
+          if (top.length < FIREFLY_LIGHTS) { top.push({ i, glow: flash, score }); top.sort((a, b) => a.score - b.score); }
+          else if (score > top[0].score) { top[0] = { i, glow: flash, score }; top.sort((a, b) => a.score - b.score); }
         }
       }
       for (let k = 0; k < FIREFLY_LIGHTS; k++) {
