@@ -483,6 +483,66 @@ def _ring(model, n, r, y0=0.0, yaw_out=True, scale=1.0, coll=0.0, width=None):
     return out
 
 
+# --- the farmyards ----------------------------------------------------------
+# A yard is a SQUARE. It was a ring, because _ring was to hand, and a circular
+# chicken run is not a thing anyone has ever built.
+#
+# And a fence is a WALL, not a row of bollards. Every panel carried its own
+# collision circle, and circles in a row do not stop you: standing between two
+# of them the two pushes point along the row in opposite directions, cancel,
+# and you walk straight through the fence. That is why it could be crossed at
+# any point. The panels you see and the wall you bump into now come out of one
+# description, below, and the wall is a real segment.
+# Which way a piece of the farm kit FACES. Measured in the game, not assumed:
+# the raised coop's ramp and the walk-in house's door both come out on the
+# model's local +Z, where every CHARACTER model in the library faces -Z. Taking
+# the character convention put every coop's door against the fence, which is
+# what "the houses are facing the wrong way" meant. three.js rotation.y by t
+# sends local +Z to (sin t, cos t), so yaw pi faces world -Z.
+FACE_N, FACE_E, FACE_S, FACE_W = math.pi, math.pi / 2, 0.0, -math.pi / 2
+YARD_FENCE = {
+    'henyard':  {'hw': 13.0, 'hd': 11.5, 'gate': 'north', 'gatew': 3.8},
+    'cowfield': {'hw': 17.5, 'hd': 14.0, 'gate': 'north', 'gatew': 3.8},
+}
+# The four sides, anticlockwise from the north-west corner, as (x0, z0, x1, z1).
+def _fence_sides(spec):
+    hw, hd = spec['hw'], spec['hd']
+    return {'north': (-hw, -hd,  hw, -hd),
+            'east':  ( hw, -hd,  hw,  hd),
+            'south': ( hw,  hd, -hw,  hd),
+            'west':  (-hw,  hd, -hw, -hd)}
+
+def _rect_fence(spec, model='Farm_Fence', gate='Farm_Gate', width=2.0, scale=1.0):
+    """Panels abutting along the four sides, and the gate standing in the hole.
+
+    A panel's length runs along its own local +X, and three.js rotation.y by t
+    sends local +X to (cos t, -sin t) -- so a run along world +X is yaw 0 and a
+    run along world +Z is yaw -pi/2. Getting that sign wrong is what turns a
+    fence into a starburst.
+    """
+    out = []
+    step = width * 0.98
+    gx, gz = _gate_point(spec)
+    for name, (x0, z0, x1, z1) in _fence_sides(spec).items():
+        L = math.hypot(x1 - x0, z1 - z0)
+        yaw = 0.0 if abs(z1 - z0) < 1e-6 else -math.pi / 2
+        n = max(1, int(round(L / step)))
+        for i in range(n):
+            t = (i + 0.5) / n
+            px, pz = x0 + (x1 - x0) * t, z0 + (z1 - z0) * t
+            # the gate is a HOLE: nothing else stands in it
+            if math.hypot(px - gx, pz - gz) < spec['gatew'] / 2:
+                continue
+            out.append((model, round(px, 2), round(pz, 2), yaw, scale, 0.0))
+    gyaw = 0.0 if spec['gate'] in ('north', 'south') else -math.pi / 2
+    out.append((gate, round(gx, 2), round(gz, 2), gyaw, scale, 0.0))
+    return out
+
+def _gate_point(spec):
+    x0, z0, x1, z1 = _fence_sides(spec)[spec['gate']]
+    return ((x0 + x1) / 2, (z0 + z1) / 2)
+
+
 def camp_layout():
     """Witchlight Camp. Its plan puts the fire in the middle with seating round
     it, the big trader's tent behind it, market stalls down the west side where
@@ -553,15 +613,17 @@ def henyard_layout():
     wide, which is what closes the ring.
     """
     p = []
-    # the ring fence, panels abutting, with a gate where the camp road comes in
-    p += _ring('Farm_Fence', 0, 13.0, yaw_out=False, coll=0.5, width=2.0)
-    p += [('Farm_Gate', 0.0, -13.0, 0.0, 1.0, 0.0)]          # north side, toward camp
-    # the housing, along the back fence out of the wind
-    p += [('Walk_In_Chicken_House', -5.0, 8.4, 0.35, 1.0, 1.3),
-          ('Raised_Chicken_Coop', 2.2, 9.2, 0.0, 1.0, 0.9),
-          ('Covered_Chicken_Run', 7.0, 6.4, -0.5, 1.0, 1.0),
-          ('Nesting_Boxes', -9.2, 5.0, 1.57, 1.0, 0.8),
-          ('Chicken_Cage', -1.4, 10.4, 0.2, 1.0, 0.0)]
+    # A square yard with a gate in the north side, where the camp road comes in.
+    p += _rect_fence(YARD_FENCE['henyard'])
+    # The housing stands along the BACK (south) fence out of the wind, squared
+    # up to it and facing in across the yard. They used to be set at loose
+    # angles along the same wall with their doors to the fence, which is what
+    # "the houses are facing the wrong way" means: a coop opens onto its run.
+    p += [('Walk_In_Chicken_House', -6.4, 8.6, FACE_N, 1.0, 1.3),
+          ('Raised_Chicken_Coop', 1.6, 9.2, FACE_N, 1.0, 0.9),
+          ('Covered_Chicken_Run', 8.2, 8.4, FACE_N, 1.0, 1.0),
+          ('Nesting_Boxes', -11.0, 3.0, FACE_E, 1.0, 0.8),
+          ('Chicken_Cage', -2.6, 10.6, FACE_N, 1.0, 0.0)]
     # feed and water where the birds actually stand
     p += [('Chicken_Feeder', -2.6, 1.2, 0.0, 1.0, 0.0),
           ('Chicken_Feeder', 4.4, -1.8, 0.7, 1.0, 0.0),
@@ -591,9 +653,7 @@ def cowfield_layout():
     fences. A byre needs troughs, hay and a way in; the cows had none of it.
     """
     p = []
-    p += _ring('Farm_Fence', 0, 17.0, yaw_out=False, coll=0.5, width=2.0)
-    p += [('Farm_Gate', 0.0, -17.0, 0.0, 1.0, 0.0),
-          ('Farm_Gate', 17.0, 0.0, 1.5708, 1.0, 0.0)]
+    p += _rect_fence(YARD_FENCE['cowfield'])
     p += [('Water_Trough', -6.0, 4.0, 0.0, 1.0, 0.6),
           ('Water_Trough', 7.4, -2.2, 1.57, 1.0, 0.6),
           ('Feeding_Trough', -2.0, -6.4, 0.0, 1.0, 0.6),
@@ -2312,6 +2372,90 @@ def main():
             laid += 1
     A('  ],')
     A('')
+    # --- the fences, as WALLS --------------------------------------------
+    # A row of collision circles is not a fence: standing between two of them
+    # the two pushes point along the row, cancel, and you walk through. These
+    # are the same four sides the panels were laid on, as segments, with a hole
+    # wherever the gate is or a road crosses -- the gateway is where the road
+    # actually is, not where anyone guessed it would be.
+    A('  // The farmyard fences as solid runs. The panels above are what you')
+    A('  // SEE; these are what you bump into. One description makes both.')
+    A('  fences: [')
+    fence_runs = 0
+    for key, spec in YARD_FENCE.items():
+        ax, az = world(*SPAWN_ANCHORS[key]) if key in SPAWN_ANCHORS else (0.0, 0.0)
+        if key in YARDS:
+            ax, az, spin = YARDS[key]
+        else:
+            spin = 0.0
+        cs, sn = math.cos(spin), math.sin(spin)
+        gx, gz = _gate_point(spec)
+        def to_world(lx, lz):
+            return (ax + lx * cs + lz * sn, az - lx * sn + lz * cs)
+        for side, (x0, z0, x1, z1) in _fence_sides(spec).items():
+            run_len = math.hypot(x1 - x0, z1 - z0)   # not `L`: that is the output
+            n = max(2, int(run_len / 0.5))
+            open_at = []
+            for i in range(n + 1):
+                tt = i / n
+                lx, lz = x0 + (x1 - x0) * tt, z0 + (z1 - z0) * tt
+                wx, wz = to_world(lx, lz)
+                open_at.append(math.hypot(lx - gx, lz - gz) < spec['gatew'] / 2
+                               or not path_clear(wx, wz, 3.2))
+            i = 0
+            while i <= n:
+                if open_at[i]:
+                    i += 1
+                    continue
+                j = i
+                while j + 1 <= n and not open_at[j + 1]:
+                    j += 1
+                if (j - i) / n * run_len >= 1.0:          # a stub shorter than a stride is not a wall
+                    ax0, az0 = to_world(x0 + (x1 - x0) * (i / n), z0 + (z1 - z0) * (i / n))
+                    ax1, az1 = to_world(x0 + (x1 - x0) * (j / n), z0 + (z1 - z0) * (j / n))
+                    A(f'    {{ x1: {round(ax0, 1)}, z1: {round(az0, 1)}, '
+                      f'x2: {round(ax1, 1)}, z2: {round(az1, 1)}, r: 0.35 }},')
+                    fence_runs += 1
+                i = j + 1
+    A('  ],')
+    A('')
+    # --- the worn ground inside them ------------------------------------
+    # Anywhere animals are kept and fed, the grass goes. The dirt field the
+    # roads are drawn with takes discs as well as lines, and it was only ever
+    # given lines -- so the pens were lawns with hens standing on them.
+    A('  // Ground the stock has worn bare: the same dirt field the roads use,')
+    A('  // so a patch that meets the gateway is one piece with the road.')
+    A('  dirt: [')
+    patches = 0
+    for key, spec in YARD_FENCE.items():
+        if key in YARDS:
+            ax, az, spin = YARDS[key]
+        elif key in SPAWN_ANCHORS:
+            ax, az = world(*SPAWN_ANCHORS[key]); spin = 0.0
+        else:
+            continue
+        cs, sn = math.cos(spin), math.sin(spin)
+        gx, gz = _gate_point(spec)
+        hw, hd = spec['hw'], spec['hd']
+        # Where the birds actually stand: the gateway, the middle of the yard,
+        # and a scuff under each side of the housing. Radii are a fraction of
+        # the pen so a bigger yard wears a bigger patch.
+        # PATCHES, not a blanket: the first pass gave the middle a radius of a
+        # third of the pen and fed it a three-metre feather, and six of those
+        # overlapped into one bare lot with a fence round it.
+        spots = [(gx * 0.80, gz * 0.80, hw * 0.17), (0.0, 0.0, hw * 0.19),
+                 (-hw * 0.46, hd * 0.55, hw * 0.13), (hw * 0.44, hd * 0.52, hw * 0.12),
+                 (hw * 0.50, -hd * 0.44, hw * 0.11), (-hw * 0.52, -hd * 0.40, hw * 0.10),
+                 (hw * 0.10, hd * 0.24, hw * 0.09), (-hw * 0.22, -hd * 0.18, hw * 0.08)]
+        for lx, lz, r in spots:
+            wx = round(ax + lx * cs + lz * sn, 1)
+            wz = round(az - lx * sn + lz * cs, 1)
+            A(f'    {{ x: {wx}, z: {wz}, r: {round(r, 1)}, fr: {round(r * 0.55, 1)} }},')
+            patches += 1
+    A('  ],')
+    A('')
+    print(f'  farmyard fences: {fence_runs} solid runs with their gateways cut, '
+          f'{patches} patches of worn ground inside them')
     A('  // Assembled from the modular ruin kit on its 4 m grid. Collision comes')
     A('  // from the pieces themselves -- see _walls in server.js.')
     A('  structures: [')

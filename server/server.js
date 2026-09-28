@@ -3142,6 +3142,7 @@ function zoneForClient(zone) {
     decks: zone.decks || [],
     seats: zoneSeats(zone),
     dirt: zone.dirt || [],
+    fences: zone.fences || [],
     editObjects: zone._editObjects || [],
     editSpawns: zone._editSpawns || [],
   };

@@ -569,6 +569,45 @@ for (const zone of [z, spiderden]) {
 // runs here on request.
 if (process.argv.includes('--walk')) {
   const { ready, report } = await import('./walkcheck.mjs');
+  // A fence is a WALL, not a row of bollards, and the test has to be a WALKING
+  // body rather than a probe dropped on a spot. Those are different questions
+  // and the difference is the whole bug: a static probe says the old ring was
+  // solid everywhere but its gate, while a body walking into it got out on
+  // 359 of 360 bearings. A circle only pushes you radially, so once you are
+  // level with two posts the correction has almost no component across the
+  // fence and you keep going. Measured, old zone against new:
+  //
+  //   hen yard   359/360 bearings escape  ->  18/360 (the gate)
+  //   cow field  360/360                  ->  19/360
+  {
+    const { resolveCollision } = await import('../server/collision.js');
+    const { prepareZone } = await import('../server/worldgen.js');
+    prepareZone(z);
+    const DT = 1 / 20, SPEED = 5.5, R = 6 / 10;
+    const escapes = (cx, cz, deg) => {
+      const a = deg * Math.PI / 180, ent = { x: cx, z: cz, y: 0, canSwim: true };
+      for (let t = 0; t < 400; t++) {
+        ent.x += Math.cos(a) * SPEED * DT; ent.z += Math.sin(a) * SPEED * DT;
+        resolveCollision(z, ent, R);
+        if (Math.hypot(ent.x - cx, ent.z - cz) > 30) return true;
+      }
+      return false;
+    };
+    const seen = [], bad = [];
+    for (const d of (z.dirt || []).slice().sort((a, b) => b.r - a.r)) {
+      if (!(z.fences || []).some(f => Math.hypot((f.x1 + f.x2) / 2 - d.x, (f.z1 + f.z2) / 2 - d.z) < 30)) continue;
+      if (seen.some(s => Math.hypot(s.x - d.x, s.z - d.z) < 40)) continue;
+      seen.push(d);
+      let out = 0;
+      for (let deg = 0; deg < 360; deg++) if (escapes(d.x, d.z, deg)) out++;
+      // one gate is a few tens of degrees; a fence you can cross anywhere is
+      // most of the circle.
+      if (out > 60) bad.push(`the yard at (${d.x.toFixed(0)}, ${d.z.toFixed(0)}) can be left on ${out} of 360 bearings`);
+    }
+    ok('a farmyard fence cannot be walked through', bad.length === 0,
+      bad.length ? bad.join('; ') : `${seen.length} yards, each shut but for its gate`);
+  }
+
   for (const zone of [z, spiderden]) {
     const bad = report(ready(zone), 6);
     ok(`${zone.name}: everything can be walked to with a body`, bad.length === 0,

@@ -637,7 +637,15 @@ export function prepareZone(z) {
     if (b.padW) z.pads.push({ minX: b.x - b.padW, maxX: b.x + b.padW,
       minZ: b.z - b.padD, maxZ: b.z + b.padD, fr: 16 });
   }
-  if (z._walls.length) console.log(`[worldgen] ${z._walls.length} wall segments and ${z.pads.length} pads from ${(z.structures || []).length} structures`);
+  // A farmyard fence is a WALL, not a row of bollards. Every panel used to
+  // carry its own collision circle, and circles in a row do not stop anyone:
+  // between two of them the two pushes point along the row, cancel, and you
+  // walk through. The zone now ships the runs themselves, with the gateways
+  // already cut out of them.
+  const fences = (z.fences || []).length;
+  for (const f of (z.fences || [])) z._walls.push({ x1: f.x1, z1: f.z1, x2: f.x2, z2: f.z2, r: f.r || 0.35, gap: 0 });
+  if (z._walls.length) console.log(`[worldgen] ${z._walls.length} wall segments and ${z.pads.length} pads `
+    + `from ${(z.structures || []).length} structures and ${fences} fence runs`);
 
   // Reeds and sedge grow with their feet in the water. A fern, a stump or a
   // berry bush does not, and each of those models is built on its own pad of
