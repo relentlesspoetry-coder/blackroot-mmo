@@ -2216,9 +2216,9 @@ function buildTerrainWater() {
   // OUTER edge, and colour, opacity and wave height all come off depth.
   const SHALLOW_AT = 2.5, SHALLOW_POW = 1.15;
   const SHORE_TINT = { r: 1.58, g: 1.82, b: 1.66 };
-  // A foam line right at the contour: the thing that makes water MEET land
-  // rather than stop on it.
-  const FOAM_DEPTH = 0.34, FOAM_LIFT = 0.85;
+  // (The foam line used to be painted here, as a flat brightness lift in the
+  // last third of a metre of depth. It is in the shader now, where it can be
+  // textured and can MOVE -- see the shoreline block in waveify.)
   // Opacity: see-through at the very edge so it melts into the wet bank, solid
   // once there is real water over the bed. The FLOOR is not cosmetic -- a sheet
   // that goes fully clear over a carved pool is a window onto the dark bottom
@@ -2245,7 +2245,7 @@ function buildTerrainWater() {
     }
     return g;
   };
-  const index = new Map(), pos = [], uv = [], idx = [], col = [], amp = [];
+  const index = new Map(), pos = [], uv = [], idx = [], col = [], amp = [], dep = [];
   const phiCache = new Map();
   const phiAt = (fj, fi) => {
     const k = fi * (FW + 1) + fj;
@@ -2270,20 +2270,24 @@ function buildTerrainWater() {
     const margin = Math.min(depth, gateAt(x, z));
     const shallow = Math.min(1, depth / SHALLOW_AT);          // 0 at the edge, 1 out deep
     // Opacity off DEPTH, which is in metres and means something, with a floor
-    // so the sheet never becomes a window.
+    // so the sheet never becomes a window. The last metre is the SHADER's --
+    // see the shoreline block in waveify -- because a waterline painted into
+    // the vertices is a waterline that cannot move, and a shore that does not
+    // move is the one thing a shore never is.
     const f = Math.min(1, Math.max(0, Math.min(depth / DEPTH_OPAQUE, margin / RIM_FEATHER)));
     const a = ALPHA_FLOOR + (1 - ALPHA_FLOOR) * (f * f * (3 - 2 * f));
     // The colour the two sheets used to be, now a ramp across the one: the
     // marsh end pale, the middle of Ravenwater its full blue.
     _wc.copy(SHALLOW_C).lerp(DEEP_C, shallow);
     const k2 = Math.pow(1 - shallow, SHALLOW_POW);
-    const foam = Math.max(0, 1 - depth / FOAM_DEPTH) * FOAM_LIFT;
-    col.push((_wc.r * (1 + k2 * (SHORE_TINT.r - 1)) + foam) * BASE_TINT.r,
-             (_wc.g * (1 + k2 * (SHORE_TINT.g - 1)) + foam) * BASE_TINT.g,
-             (_wc.b * (1 + k2 * (SHORE_TINT.b - 1)) + foam) * BASE_TINT.b, a);
+    col.push(_wc.r * (1 + k2 * (SHORE_TINT.r - 1)) * BASE_TINT.r,
+             _wc.g * (1 + k2 * (SHORE_TINT.g - 1)) * BASE_TINT.g,
+             _wc.b * (1 + k2 * (SHORE_TINT.b - 1)) * BASE_TINT.b, a);
     // Swell where there is water to swell, stillness in the shallows: the two
     // sheets did this with two amplitudes and a seam between them.
     amp.push(0.35 + 0.65 * shallow);
+    // How much water is over the bed here, for the shoreline in the shader.
+    dep.push(Math.min(depth, 4));
     return v;
   };
   // Only the cells water could possibly reach.
@@ -2337,6 +2341,7 @@ function buildTerrainWater() {
   g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));   // depth tint + rim alpha
   g.setAttribute('waveAmp', new THREE.Float32BufferAttribute(amp, 1)); // swell out deep, still at the edge
+  g.setAttribute('waterDepth', new THREE.Float32BufferAttribute(dep, 1)); // metres over the bed, for the shore
   g.setAttribute('normal', new THREE.Float32BufferAttribute(new Float32Array(pos.length), 3));
   g.setIndex(idx);
   const tex = waterCellTexture();
@@ -2385,6 +2390,12 @@ const WATER_LOOK = {
   caustic: _wq[0] > 0 ? _wq[0] : 0.45,   // how much the cells lift and drop the colour
   bump:    _wq[1] > 0 ? _wq[1] : 18.0,   // how broken the normal is (the specular catches this)
   fresnel: _wq[2] > 0 ? _wq[2] : 0.35,   // how mirror-like it goes as it runs away from you
+  // Metres of DEPTH the shoreline band covers. Swept against both a lake bank
+  // and the fen: 0.55 still ends the sheet on a line, 1.8 dissolves it so far
+  // out that a marsh stops reading as water. At 1.3 the dirt bank shows
+  // through the shallows and the two melt into each other.
+  shore:   _wq[3] > 0 ? _wq[3] : 1.3,
+  swash:   _wq[4] > 0 ? _wq[4] : 9.0,    // how far up the beach the swell carries the waterline
 };
 const WATER_WAVES = [
   //  kx,      kz,     speed,  amp
@@ -2427,8 +2438,9 @@ function waveify(mat, amp) {
       // fall back to 1.
       .replace('#include <common>', `#include <common>
 uniform float uWaterTime; uniform float uWaterAmp;
+varying float vDepth; varying float vSwell;
 #ifdef USE_WAVEAMP
-  attribute float waveAmp;
+  attribute float waveAmp; attribute float waterDepth;
   #define WAVE_A (uWaterAmp * waveAmp)
 #else
   #define WAVE_A uWaterAmp
@@ -2443,8 +2455,14 @@ uniform float uWaterTime; uniform float uWaterAmp;
   objectNormal = normalize(vec3(-dhx, 1.0, -dhz));
 }`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
-transformed.y += (${sum('sin')}) * WAVE_A;
-vWaterXZ = position.xz;`)
+float swell = (${sum('sin')}) * WAVE_A;
+transformed.y += swell;
+vWaterXZ = position.xz;
+#ifdef USE_WAVEAMP
+  vDepth = waterDepth; vSwell = swell;
+#else
+  vDepth = 4.0; vSwell = 0.0;
+#endif`)
       .replace('#include <common>', `#include <common>
 varying vec2 vWaterXZ;`);
 
@@ -2466,15 +2484,20 @@ varying vec2 vWaterXZ;`);
       caustic: { value: WATER_LOOK.caustic },
       bump: { value: WATER_LOOK.bump },
       fresnel: { value: WATER_LOOK.fresnel },
+      shore: { value: WATER_LOOK.shore },
+      swash: { value: WATER_LOOK.swash },
     };
     sh.uniforms.uCaustic = look.caustic;
     sh.uniforms.uBump = look.bump;
     sh.uniforms.uFresnel = look.fresnel;
+    sh.uniforms.uShore = look.shore;
+    sh.uniforms.uSwash = look.swash;
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
 uniform sampler2D uRipple; uniform float uWaterTime;
 uniform float uCaustic; uniform float uBump; uniform float uFresnel;
-varying vec2 vWaterXZ;
+uniform float uShore; uniform float uSwash;
+varying vec2 vWaterXZ; varying float vDepth; varying float vSwell;
 vec2 rippleUV1() { return vWaterXZ * 0.070 + vec2( 0.016, 0.011) * uWaterTime; }
 vec2 rippleUV2() { return vWaterXZ * 0.031 + vec2(-0.009, 0.019) * uWaterTime; }`)
       // Caustics: the cells brighten the water where they cross. Multiplied
@@ -2509,6 +2532,32 @@ vec2 rippleUV2() { return vWaterXZ * 0.031 + vec2(-0.009, 0.019) * uWaterTime; }
   float f = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), 4.0);
   totalEmissiveRadiance += vec3(0.16, 0.26, 0.34) * f * uFresnel;
   diffuseColor.a = clamp(diffuseColor.a + f * uFresnel * 0.25, 0.0, 1.0);
+}
+// --- where it meets the land -------------------------------------------
+// A shore is not a contour, it is a thing that moves: the same swell that
+// lifts the sheet pushes the waterline up the beach and drags it back. The
+// edge used to be painted into the vertices -- a fixed band of extra white in
+// the last third of a metre of depth -- so it could not move and had no
+// texture, and the water ended on the sand like a laid carpet.
+//
+// Here the depth is carried per vertex and the swell is added to it, so the
+// waterline advances and retreats with the wave. The foam is the same cell map
+// as the surface, at a finer scale and drifting, thresholded so it comes out
+// lacy rather than as a painted stripe. And the sheet fades to nothing across
+// the last of it, which is what makes the water MELT into the wet bank.
+{
+  float d = max(0.0, vDepth + vSwell * uSwash);
+  float shore = 1.0 - smoothstep(0.0, uShore, d);
+  if (shore > 0.001) {
+    vec2 fu = vWaterXZ * 0.26 + vec2(0.05, -0.037) * uWaterTime;
+    vec2 fv = vWaterXZ * 0.145 + vec2(-0.031, 0.044) * uWaterTime;
+    float lace = texture2D(uRipple, fu).r * 0.6 + texture2D(uRipple, fv).r * 0.4;
+    lace = smoothstep(0.34, 0.78, lace);
+    float s2 = shore * shore;
+    diffuseColor.rgb += vec3(0.62, 0.70, 0.74) * s2 * (0.35 + 0.85 * lace);
+    // and let it go, over the last of the band, so there is no cut edge
+    diffuseColor.a *= smoothstep(0.0, uShore * 0.55, d);
+  }
 }`);
   };
   mat.needsUpdate = true;
