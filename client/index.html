@@ -3794,35 +3794,59 @@ function makeCritter(name, size, flapRate) {
   }
   return { wrap, root, mixer };
 }
-// A handful of butterflies (day) and moths (night) drifting on lazy looping
-// paths around the woods, fading in/out with the day-night cycle.
+// Butterflies (day) and moths (night) drifting around the woods, fading in and
+// out with the day-night cycle.
+//
+// One per anchor in the zone's own scatter -- the same 70 butterflies and 55
+// moths the zone always asked for, only now each one is a real clone with its
+// wing nodes and its flap clip instead of a copy of one shared geometry. This
+// used to spawn fourteen of its own at random on top of those, which is how
+// the zone came to hold two populations of the same insect obeying different
+// rules. See FLYERS.
+//
+// `faces` is which way the model's HEAD points along its own Z once it is
+// pitched flat, and it is here as a per-model fact because the two models do
+// not agree. There was one hard-coded half-turn serving both, which is to say
+// one of them always flew backwards: measured with the wrap pinned at yaw 0
+// and the camera due south, the butterfly's antennae point at -Z and the
+// moth's at +Z. No rule reads this off the geometry, and I am not going to
+// pretend one does on a sample of two -- the abdomen-overhang rule that looks
+// obvious gets the moth wrong, because its wings sweep back past its tail
+// (body -0.224..+0.218 against wings -0.277..+0.018). So it is written down,
+// and zonecheck fails the build if a flyer ever arrives without it rather than
+// letting it default to one of the two and be wrong half the time.
+const CRITTER_KIND = {
+  Butterfly: { kind: 'butterfly', size: 0.45, flap: 1.7, yLo: 0.7, yHi: 2.2, faces: -1 },
+  Moth:      { kind: 'moth',      size: 0.50, flap: 2.2, yLo: 0.9, yHi: 2.6, faces: +1 },
+};
 function buildCritters() {
   critters = [];
-  const b = zone.bounds;
-  const spawn = (name, kind, cnt, yLo, yHi, flap) => {
-    if (!LOADED[name]) return;
-    for (let i = 0; i < cnt; i++) {
-      const c = makeCritter(name, kind === 'moth' ? 0.5 : 0.45, flap * (0.85 + Math.random() * 0.3)); if (!c) break;
-      let x, z, tries = 0;
-      do { x = b.minX + 6 + Math.random() * (b.maxX - b.minX - 12); z = b.minZ + 6 + Math.random() * (b.maxZ - b.minZ - 12); }
-      while (zone.boundary && !inBoundary(x, z) && ++tries < 12);
-      c.kind = kind; c.hx = x; c.hz = z; c.x = x; c.z = z;
-      // Wander state. A butterfly does not fly a circle, and the old path was
-      // a fixed Lissajous around the spawn point: the same loop for ever, at
-      // one speed, always upright -- a model carried round on a wire.
-      c.dir = Math.random() * 6.28; c.turn = 0;
-      c.range = 6 + Math.random() * 10;            // how far it strays from home
-      c.cruise = (kind === 'moth' ? 0.9 : 0.7) * (0.75 + Math.random() * 0.6);
-      c.speed = c.cruise; c.ph = Math.random() * 6.28;
-      c.yb = yLo + Math.random() * (yHi - yLo);
-      c.wrap.rotation.order = 'YXZ';               // yaw, then bank about its own axis
-      c.wrap.visible = false;
-      scene.add(c.wrap); critters.push(c);
-    }
-  };
-  spawn('Butterfly', 'butterfly', 8, 0.7, 2.2, 1.7);
-  spawn('Moth', 'moth', 6, 0.9, 2.6, 2.2);
+  for (const a of (zone.scatter || [])) {
+    const k = CRITTER_KIND[a.m]; if (!k || !LOADED[a.m]) continue;
+    const c = makeCritter(a.m, k.size, k.flap * (0.85 + Math.random() * 0.3)); if (!c) break;
+    c.kind = k.kind; c.hx = a.x; c.hz = a.z; c.x = a.x; c.z = a.z;
+    c.face = k.faces > 0 ? 0 : Math.PI;          // head-first, whichever way this model is built
+    c.wrap.position.set(a.x, (groundY ? groundY(a.x, a.z) : 0) + 1.5, a.z);
+    // Wander state. A butterfly does not fly a circle, and both paths this
+    // replaces did exactly that: a fixed Lissajous in one and a one-metre ring
+    // in the other. Same loop for ever, one speed, always upright -- a model
+    // carried round on a wire.
+    c.dir = Math.random() * 6.28; c.turn = 0;
+    c.range = 6 + Math.random() * 10;            // how far it strays from home
+    c.cruise = (k.kind === 'moth' ? 0.9 : 0.7) * (0.75 + Math.random() * 0.6);
+    c.speed = c.cruise; c.ph = Math.random() * 6.28;
+    c.yb = k.yLo + Math.random() * (k.yHi - k.yLo);
+    c.wrap.rotation.order = 'YXZ';               // yaw, then bank about its own axis
+    c.wrap.visible = false;
+    scene.add(c.wrap); critters.push(c);
+  }
+  console.log(`[world] ${critters.length} critters, each with its own wingbeat`);
 }
+// A moth is half a metre across. Past this it is a handful of pixels deep in
+// the fog, and it costs a mixer update, a walk of its materials and a draw call
+// to be them. 125 of them over 605,000 m2 puts about five inside the radius at
+// once, which is what makes one clone per anchor affordable at all.
+const CRITTER_FAR = 90, CRITTER_FADE = 15;
 function updateCritters(dt) {
   if (!critters.length) return;
   const t = performance.now() / 1000;
@@ -3841,7 +3865,13 @@ function updateCritters(dt) {
     // first of it.
     const half = c.kind === 'butterfly' ? dayness : 1 - dayness;
     const ft = Math.max(0, Math.min(1, (half - 0.38) / 0.22));
-    const op = ft * ft * (3 - 2 * ft);
+    // ...and out again with distance, faded over the last 15 m rather than
+    // switched off, so nothing pops into being in front of you. Everything
+    // below is skipped for the ones this puts at zero, which is nearly all of
+    // them nearly all the time.
+    const d = Math.hypot(c.x - camera.position.x, c.z - camera.position.z);
+    const near = Math.max(0, Math.min(1, (CRITTER_FAR - d) / CRITTER_FADE));
+    const op = ft * ft * (3 - 2 * ft) * near;
     const vis = op > 0.06;
     c.wrap.visible = vis;
     if (!vis) continue;
@@ -3865,9 +3895,9 @@ function updateCritters(dt) {
     const y = (groundY ? groundY(x, z) : 0) + c.yb + Math.sin(t * 1.9 + c.ph) * 0.28;
     c.x = x; c.z = z;
     c.wrap.position.set(x, y, z);
-    // Head-first, and banked. The model's head is +Y (-> world -Z after the
-    // flat pitch), hence the +PI against a +Z-forward model.
-    c.wrap.rotation.y = c.dir + Math.PI;
+    // Head-first, and banked. Which way round that is depends on the model --
+    // see `faces` in CRITTER_KIND.
+    c.wrap.rotation.y = c.dir + c.face;
     c.wrap.rotation.z = Math.max(-0.6, Math.min(0.6, -c.turn * 0.5));
     c.root.traverse(o => { if (o.isMesh && o.material) o.material.opacity = op; });
   }
@@ -4356,13 +4386,17 @@ const oreMeshes = [];   // { mesh, veins: [placement,...] } for instance picking
 // ore veins register into oreMeshes for mining picks.
 const ORE_SINK = 0.38;   // veins sit well into the ground rather than perched on it
 const _tintC = new THREE.Color();
-// Butterfly and Moth were in the library and nothing placed either of them.
-// They are the only assets here that would look WRONG standing still, so they
-// are not quite scatter: the placement records them, and updateFlyers drifts
-// each one round its own anchor every frame. The cost is one matrix rebuild
-// per butterfly, which is a few hundred, not a few thousand.
-const FLYERS = /Butterfly|Moth/;
-let flyerMeshes = [];
+// Butterflies and moths are NOT scatter, and this is where that was decided
+// wrongly. They were placed as INSTANCES and nudged round a one-metre circle
+// by a second update function -- and an InstancedMesh shares ONE geometry
+// across every copy, so there is nowhere for a wingbeat to live. All 125 of
+// them hung in the air with their wings shut in a vertical plane (the pose the
+// model is authored in, never pitched flat) tracing the same little ring for
+// ever. Meanwhile fourteen hand-spawned ones a few hundred metres away flapped
+// and wandered perfectly, which is exactly why "the moth" could be fixed twice
+// and still be broken: there were two of them. buildCritters takes these
+// anchors now and the instancing path is gone.
+const FLYERS = new RegExp('(^|/)(' + Object.keys(CRITTER_KIND).join('|') + ')$');
 function placeInstances(list, yOf) {
   const mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
   const byModel = {};
@@ -4426,19 +4460,6 @@ function placeInstances(list, yOf) {
                   + `${v.x},${v.z} — clicking it would mine the wrong vein`);
             }
           }
-        }
-      }
-      if (FLYERS.test(model)) {
-        for (const c of chunks) {
-          const base = c.items.map(o => ({
-            x: o.x, z: o.z, y: (o.y != null ? o.y : yOf(o)) + 0.9 + (o.s || 1) * 0.5,
-            // every one gets its own circle, speed and phase off its position,
-            // so a meadow reads as many insects rather than one shoal
-            rad: 0.7 + ((Math.abs(Math.floor(o.x * 7919) ^ Math.floor(o.z * 104729)) % 90) / 100),
-            spd: 0.35 + ((Math.abs(Math.floor(o.x * 15485863)) % 70) / 100),
-            ph: (Math.abs(Math.floor(o.x * 92837111) ^ Math.floor(o.z * 689287499)) % 628) / 100,
-          }));
-          flyerMeshes.push({ im: c.im, base });
         }
       }
     }
@@ -4521,35 +4542,16 @@ function buildScatter() {
   // for those the ground is the LAKE BED -- put a lily pad there and it sits
   // three metres under, the same way the boardwalks did before they were fixed.
   const FLOATERS = /Lily_Pads/;
-  placeInstances(zone.scatter || [],
+  // ...and the butterflies and moths come OUT here, before anything is
+  // instanced. They are living things with wing nodes and a flap clip;
+  // buildCritters clones one per anchor further down. See FLYERS above.
+  placeInstances((zone.scatter || []).filter(o => !FLYERS.test(o.m)),
     o => (FLOATERS.test(o.m) ? Math.max(groundY(o.x, o.z), waterLevelAt(o.x, o.z) + 0.04)
                              : groundY(o.x, o.z)));   // stand it on the terrain, not on Y=0
   // Hanging pieces are modelled downward from their origin, so they mount at
   // the ceiling rather than the floor.
   const ceil = (zone.ceilingY || 13) - 0.1;
   placeInstances(zone.hanging || [], () => ceil);
-}
-
-// A butterfly does not hold still. Each one orbits its own anchor at its own
-// rate and bobs on a second, slower beat, so the meadow moves without any of
-// them leaving the flowers they were placed on.
-const _fm = new THREE.Matrix4(), _fq = new THREE.Quaternion(), _fs = new THREE.Vector3(1, 1, 1);
-const _fv = new THREE.Vector3();
-let _flyT = 0;
-function updateFlyers(dt) {
-  if (!flyerMeshes.length) return;
-  _flyT += dt;
-  for (const g of flyerMeshes) {
-    for (let i = 0; i < g.base.length; i++) {
-      const b = g.base[i], a = b.ph + _flyT * b.spd;
-      _fq.setFromAxisAngle(UP, a + Math.PI / 2);       // face the way it is going
-      _fm.compose(_fv.set(b.x + Math.cos(a) * b.rad,
-                          b.y + Math.sin(a * 2.3 + b.ph) * 0.18,
-                          b.z + Math.sin(a) * b.rad), _fq, _fs);
-      g.im.setMatrixAt(i, _fm);
-    }
-    g.im.instanceMatrix.needsUpdate = true;
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -11833,7 +11835,7 @@ if (location.search.includes('debug')) {
     get quests() { return questData; },
     get entities() { return entityMeshes; },
     get objects() { return worldObjects; },   // quest objects, for checking they arrived
-    get flyers() { return flyerMeshes; },     // butterflies/moths, for checking they drift
+    get flyers() { return critters; },        // butterflies/moths, for checking they flap and drift
     get ores() { return oreMeshes; },         // instanceId -> vein mapping, for checking picks resolve
     get fishRigs() { return fishRigs; },      // line / float / hooked fish, for checking the reel-in
     // The wandering pool: how many are in the water near you, and where.
@@ -12161,7 +12163,6 @@ function animate() {
   _pf('controls', () => updateControls(dt));
   _pf('markers', () => updateMarkers(dt));
   _pf('lights', () => updateLightGroups());
-  _pf('flyers', () => updateFlyers(dt));
   _pf('fishline', () => { updateFishingLines(dt); updateSplashes(dt); });
   _pf('poi', () => updatePoiLabels());
   _pf('plates', () => { updateNameplates(); updateGravePlates(); updatePendingGrave(); });

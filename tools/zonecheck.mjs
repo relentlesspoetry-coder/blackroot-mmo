@@ -360,6 +360,36 @@ const PARSED = [];
   ok('no swimming without water drawn', swimDry === 0, `${swimDry} cells`);
 }
 
+// --- things that are alive, and things that are not --------------------------
+// Butterflies and moths were placed as scatter INSTANCES and nudged round a
+// one-metre circle, which cannot work: an InstancedMesh shares one geometry
+// across every copy, so there is nowhere for a wingbeat to live. All 125 of
+// them hung with their wings shut in the plane they are authored in. Fourteen
+// hand-spawned ones elsewhere in the same zone flapped and wandered correctly,
+// so "the moth is broken" could be fixed, verified, and still be true.
+//
+// They are clones now, one per anchor, off ONE table -- and this is what keeps
+// it one table. The facing is in it because the two models do not agree about
+// which way their heads point, and a single hard-coded half-turn served both,
+// so whichever way it was written one of them flew backwards.
+{
+  const cli = readFileSync(new URL('../client/index.html', import.meta.url), 'utf8');
+  const blk = /const CRITTER_KIND = \{([\s\S]*?)\n\};/.exec(cli);
+  const entries = blk ? [...blk[1].matchAll(/^\s*(\w+):\s*\{([^}]*)\}/gm)].map(m => ({ name: m[1], body: m[2] })) : [];
+  const noFace = entries.filter(e => !/\bfaces:\s*[-+]?\s*1\b/.test(e.body)).map(e => e.name);
+  ok('every flyer says which way its head points', entries.length > 0 && noFace.length === 0,
+    !entries.length ? 'CRITTER_KIND not found'
+    : noFace.length ? `${noFace.join(', ')} declare no facing -- one of them will fly backwards`
+    : `${entries.map(e => e.name).join(', ')}, each measured`);
+  // ...and the list that keeps them OUT of the instancing is built from that
+  // same table rather than written out again beside it. Two lists is how the
+  // zone came to hold two populations of the same insect obeying different
+  // rules in the first place.
+  ok('one list of flyers, not two',
+    /const FLYERS = new RegExp\(\s*'\(\^\|\/\)\('\s*\+\s*Object\.keys\(CRITTER_KIND\)/.test(cli),
+    'FLYERS is derived from CRITTER_KIND');
+}
+
 // --- the sky ----------------------------------------------------------------
 // The sky has to reach everywhere you can stand.
 //
