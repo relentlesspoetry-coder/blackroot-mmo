@@ -3096,6 +3096,14 @@ const httpServer = http.createServer((req, res) => {
 // that spawns in it (and the boss set, which can turn up anywhere).
 function mobModelsFor(zone) {
   const out = new Set(zone.models || []);
+  // The fish a spot holds are visible swimming in it, so the zone has to ship
+  // their models. Derived from the spots' own tiers rather than listed, the
+  // same way the monsters' art is -- add a fishing spot and its fish comes
+  // with it.
+  for (const sp of (zone.fishingSpots || [])) {
+    const fish = fishForTier(sp.tier);
+    if (fish) out.add('items/Raw_' + fish.replace(/\s+/g, '_'));
+  }
   const types = new Set(ALWAYS_ART);
   for (const s of (zone.spawns || [])) types.add(s.type);
   for (const e of (zone.elites || [])) types.add(e.type);
