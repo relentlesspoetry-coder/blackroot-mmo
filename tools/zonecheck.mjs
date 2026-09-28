@@ -4,7 +4,9 @@
 //   node tools/zonecheck.mjs
 //
 // Exits non-zero if any invariant fails, so it can gate a build.
-import { readFileSync } from 'fs';
+import { readFileSync, readdirSync } from 'fs';
+import { join } from 'path';
+import { fileURLToPath } from 'url';
 import { darkwoods as z } from '../server/zones/darkwoods.js';
 import { spiderden } from '../server/zones/spiderden.js';
 import { terrainAt, terrainFieldAt, isSolid, rockSolidAt, rockRiseAt, rockEdgeOf, groundSlopeAt } from '../server/worldgen.js';
@@ -104,6 +106,51 @@ console.log('\nThe Dark Woods — zone invariants\n');
       imports && ownMaths.length === 0,
       !imports ? 'no import of /shared/terrain.js' : ownMaths.length ? `own copy of: ${ownMaths.join(', ')}` : 'one implementation');
   }
+
+// Every mesh the renderer lights has to HAVE a normal.
+//
+// A glTF may leave the NORMAL accessor off a primitive, and 230 of ours do --
+// the whole ruin kit, most of the darkwoods props, the blockouts, the moth,
+// every fish. three then lights the mesh off vec3(0.0), normalize() of which
+// is NaN, and it renders BLACK: not dim, not mistinted, black, and immune to
+// colour, to emissive, to light. The fish were that for as long as they
+// existed, and the failure reads as "too faint", which is why it survived
+// three rounds of making them brighter.
+//
+// The generators could emit normals, but the loader is the one place every
+// model in the game passes through, so that is where it is fixed -- and this
+// check is what says the fix is still there. It counts the assets that depend
+// on it so the number is visible rather than assumed.
+{
+  const glbs = [];
+  const walk = (d) => { for (const e of readdirSync(d, { withFileTypes: true })) {
+    const f = join(d, e.name);
+    if (e.isDirectory()) walk(f); else if (e.name.endsWith('.glb')) glbs.push(f);
+  } };
+  const modelDir = fileURLToPath(new URL('../client/models', import.meta.url));
+  walk(modelDir);
+  let missing = 0, files = 0;
+  for (const f of glbs) {
+    const d = readFileSync(f);
+    if (d.length < 12 || d.toString('utf8', 0, 4) !== 'glTF') continue;
+    let off = 12, js = null;
+    while (off + 8 <= d.length) {
+      const len = d.readUInt32LE(off), ty = d.readUInt32LE(off + 4);
+      if (ty === 0x4E4F534A) { js = JSON.parse(d.toString('utf8', off + 8, off + 8 + len)); break; }
+      off += 8 + len;
+    }
+    if (!js) continue;
+    let n = 0;
+    for (const m of (js.meshes || [])) for (const pr of (m.primitives || [])) if (!('NORMAL' in (pr.attributes || {}))) n++;
+    if (n) { missing += n; files++; }
+  }
+  const cli = readFileSync(new URL('../client/index.html', import.meta.url), 'utf8');
+  const fixes = /ensureNormals\(g\.scene\)/.test(cli)
+    && /function ensureNormals[\s\S]{0,400}?computeVertexNormals\(\)/.test(cli);
+  ok('nothing reaches the renderer without normals', fixes,
+    fixes ? `${missing} primitives in ${files} of ${glbs.length} GLBs ship none; the loader computes them`
+          : `${missing} primitives in ${files} GLBs ship no NORMAL and the loader does not compute them -- they render black`);
+}
   // The real test has to reproduce the CLIENT's shoreline, which is the ground
   // crossing the waterline -- not just restate the server's rule, which would
   // be comparing a number with itself and could never fail.

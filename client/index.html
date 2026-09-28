@@ -917,13 +917,36 @@ const MODEL_YAW = Math.PI; // GLB characters face -Z; flip to match our +Z "forw
 // always the bare model name.
 function modelKey(path) { const i = path.lastIndexOf('/'); return i < 0 ? path : path.slice(i + 1); }
 
+// A glTF may ship a primitive with no NORMAL accessor, and 230 of ours do --
+// the whole ruin kit, most of the darkwoods props, the blockouts, the moth,
+// and every fish. three then feeds vec3(0.0) into the lighting; normalize() of
+// that is NaN, and the mesh comes out BLACK under any lit material whatever
+// its colour, and whatever emissive you put on it.
+//
+// That is what the "faint" fish were. Not unlit, not hidden under the water,
+// not too dark a colour: black, and immune to every knob, because the knobs
+// were all downstream of a normal that did not exist. Worth remembering as a
+// shape -- a value that is not merely wrong but NaN swallows everything you
+// try to fix it with, so a setting that provably does nothing is evidence
+// about the input, not an argument for a bigger setting.
+//
+// Computed once per model here, where every model in the game is loaded, and
+// not per clone: the clones share the geometry.
+function ensureNormals(root) {
+  let n = 0;
+  root.traverse(o => {
+    if (!o.isMesh || !o.geometry || o.geometry.attributes.normal) return;
+    o.geometry.computeVertexNormals(); n++;
+  });
+  return n;
+}
 async function loadModels(list, onProgress) {
   const wanted = list.filter(p => LOADED[modelKey(p)] === undefined);
   if (!wanted.length) { if (onProgress) onProgress(1, 1); return; }
   let done = 0;
   await Promise.all(wanted.map(async (path) => {
     const key = modelKey(path);
-    try { const g = await gltfLoader.loadAsync('models/' + path + '.glb'); LOADED[key] = g.scene; if (g.animations && g.animations.length) LOADED_ANIM[key] = g.animations; }
+    try { const g = await gltfLoader.loadAsync('models/' + path + '.glb'); ensureNormals(g.scene); LOADED[key] = g.scene; if (g.animations && g.animations.length) LOADED_ANIM[key] = g.animations; }
     catch (e) { console.warn('Model failed to load:', path, e); LOADED[key] = null; }
     done++; if (onProgress) onProgress(done, wanted.length);
   }));
@@ -2226,9 +2249,9 @@ function buildTerrainWater() {
   // pale grey-blue lifted almost to white at the edges. Tannin-stained water is
   // near-black where it is deep, goes warm olive-brown as the bed comes up, and
   // breaks cream rather than white.
-  // The shallows lift toward pale grey-green rather than toward white, so the
+  // The shallows lift toward a pale cold blue rather than toward white, so the
   // margin stays cold instead of blanching.
-  const SHORE_TINT = { r: 1.05, g: 1.16, b: 1.12 };
+  const SHORE_TINT = { r: 0.98, g: 1.12, b: 1.22 };
   // (The foam line used to be painted here, as a flat brightness lift in the
   // last third of a metre of depth. It is in the shader now, where it can be
   // textured and can MOVE -- see the shoreline block in waveify.)
@@ -2242,17 +2265,20 @@ function buildTerrainWater() {
   // coming back as a window -- which is the failure at the other end, and what
   // made the water look black when the floor was tuned too low.
   const DEPTH_OPAQUE = 0.75, ALPHA_FLOOR = 0.50, ALPHA_CEIL = 0.86, RIM_FEATHER = 0.55;
-  // Cold slate green. These are sRGB and three linearises them, so a hex that
-  // looks like a mid tone lands near black in the working space -- both of
-  // these were picked from the LINEAR values they need to end up at (deep
-  // 0.020/0.040/0.034, shallow 0.200/0.260/0.230) and converted back.
+  // Cold BLUE. These are sRGB and three linearises them, so a hex that looks
+  // like a mid tone lands near black in the working space -- both of these
+  // were picked from the LINEAR values they need to end up at (deep
+  // 0.010/0.026/0.060, shallow 0.115/0.205/0.300) and converted back. Blue
+  // above green above red in both, and by a wide enough margin to survive the
+  // grey the Fresnel lays over it: the slate that came before this was only
+  // 1.7x as blue as it was red, which at a grazing angle is no blue at all.
   //
   // The peat palette that came before this failed for a reason worth keeping:
   // stained water over a brown bed shares its hue with the bank, and at
   // Ravenwater, where 42% of the pool is under a metre deep, the whole thing
   // read as a mud flat. A cold hue cannot make that mistake -- whatever the
   // depth, the water is never the colour of the ground it sits in.
-  const DEEP_C = new THREE.Color(0x273834), SHALLOW_C = new THREE.Color(0x7c8b84);
+  const DEEP_C = new THREE.Color(0x192d45), SHALLOW_C = new THREE.Color(0x5f7d95);
   // The base map used to be a canvas fill of #296a94 with 10% stripes on it,
   // and since diffuse = map * vertexColour, that flat fill was doing nothing
   // but tinting. The map is gone -- the only texture on the water is the real
@@ -2417,7 +2443,7 @@ function buildTerrainWater() {
   const mat = waveify(detailize(new THREE.MeshStandardMaterial({ color: 0xffffff,
     roughness: 0.42, metalness: 0.05, transparent: true, opacity: 1, side: THREE.DoubleSide,
     vertexColors: true,            // the whole colour: depth tint, foam, and the rim alpha
-    emissive: 0x0c1614, emissiveIntensity: 0.7 }), 'water', { scale: 4, strength: 0.5 }), 1);
+    emissive: 0x0a1526, emissiveIntensity: 0.7 }), 'water', { scale: 4, strength: 0.35 }), 1);
   const m = new THREE.Mesh(g, mat);
   m.receiveShadow = true; m.userData.isWater = true; scene.add(m);
   waterSurfaces.push({ mesh: m, tex, amp: 1 });
@@ -2456,8 +2482,15 @@ function buildTerrainWater() {
 // term from an overhead screenshot.
 const _wq = (new URLSearchParams(location.search).get('w') || '').split(',').map(Number);
 const WATER_LOOK = {
-  caustic: _wq[0] > 0 ? _wq[0] : 0.34,   // how much the cells lift and drop the colour
-  bump:    _wq[1] > 0 ? _wq[1] : 9.0,   // how broken the normal is (the specular catches this)
+  caustic: _wq[0] > 0 ? _wq[0] : 0.40,   // how much the cells lift and drop the colour
+  // How broken the normal is -- the specular catches this, and it was the
+  // texture you actually saw. At 9 the gradient of a four-metre cell throws
+  // the normal far enough that the highlight breaks into short hard strokes,
+  // and the whole pool came out covered in dark DASHES. Swept against a fixed
+  // camera at 0/3/4.5/5/9: the dashes are gone by 5 and the surface still
+  // moves. The cells carry the texture now (caustic, above); the normal only
+  // has to keep the sheen from being a mirror.
+  bump:    _wq[1] > 0 ? _wq[1] : 4.5,
   fresnel: _wq[2] > 0 ? _wq[2] : 0.26,   // how mirror-like it goes as it runs away from you
   // How wide the shoreline band is, in METRES ACROSS THE GROUND.
   shore:   _wq[3] > 0 ? _wq[3] : 3.2,
@@ -2585,7 +2618,19 @@ vec2 rippleUV2() { return (vWaterXZ + (waterDrift() * 0.62 + vec2(-0.05, 0.03)) 
   float c1 = texture2D(uRipple, rippleUV1()).r;
   float c2 = texture2D(uRipple, rippleUV2()).r;
   float caustic = c1 * 0.62 + c2 * 0.38 - 0.5;      // centred, so it darkens as well as lifts
-  diffuseColor.rgb *= 1.0 + uCaustic * caustic;
+  // ...but not evenly. Centred on zero the cells cut as hard as they lift, and
+  // the dark half of a four-metre cell at this scale is a DASH -- the whole
+  // pool came out covered in short dark scratches, which is the one thing the
+  // texture was there to avoid. The troughs are worth less than the crests
+  // because light in water is scattered up, not down.
+  float lift = caustic > 0.0 ? caustic : caustic * 0.40;
+  diffuseColor.rgb *= 1.0 + uCaustic * lift;
+  // And the cells have a COLOUR, not just a brightness. Light coming up
+  // through moving water is bluer than the water around it, and a texture that
+  // only multiplies the base is a texture you read as shading rather than as
+  // anything in the water. Weighted hard to blue -- the near-neutral tint this
+  // replaces was doing the same job as the multiply above it.
+  diffuseColor.rgb += vec3(0.028, 0.098, 0.170) * max(0.0, caustic) * uCaustic * 3.0;
 }`)
       // A broken normal off the gradient of the same two layers. This is what
       // the specular catches, and it is the difference between a lake and a
@@ -2622,7 +2667,7 @@ vec2 rippleUV2() { return (vWaterXZ + (waterDrift() * 0.62 + vec2(-0.05, 0.03)) 
   // Dark water is mostly what it reflects, so this is the main thing you see
   // on it -- which is exactly why it must not be a flat grey wash. It is warm,
   // it is weaker than it was, and the broken normal above breaks it up.
-  totalEmissiveRadiance += vec3(0.15, 0.19, 0.21) * f * uFresnel;
+  totalEmissiveRadiance += vec3(0.09, 0.16, 0.26) * f * uFresnel;
   diffuseColor.a = clamp(diffuseColor.a + f * uFresnel * 0.25, 0.0, 1.0);
 }
 // --- where it meets the land -------------------------------------------
@@ -2649,7 +2694,7 @@ vec2 rippleUV2() { return (vWaterXZ + (waterDrift() * 0.62 + vec2(-0.05, 0.03)) 
     float lace = texture2D(uRipple, fu).r * 0.6 + texture2D(uRipple, fv).r * 0.4;
     lace = smoothstep(0.34, 0.78, lace);
     float s2 = shore * shore;
-    diffuseColor.rgb += vec3(0.52, 0.56, 0.56) * s2 * (0.35 + 0.85 * lace);
+    diffuseColor.rgb += vec3(0.50, 0.57, 0.62) * s2 * (0.35 + 0.85 * lace);
     // and let it go, over the last of the band, so there is no cut edge
     diffuseColor.a *= smoothstep(0.0, uShore * 0.55, d);
   }
@@ -5201,11 +5246,33 @@ function litFish(o, spotId) {
     if (!m.isMesh) return;
     if (spotId != null) { m.userData.pickKind = 'fishspot'; m.userData.pickId = spotId; }
     m.castShadow = false;
-    for (const mat of (Array.isArray(m.material) ? m.material : [m.material])) {
-      if (!mat || !mat.color) continue;
-      mat.emissive = mat.color.clone().multiplyScalar(0.85);
-      mat.emissiveIntensity = 0.75;
-    }
+    // Why the fish were black is up at ensureNormals: the fish GLBs carry no
+    // normals, so the lighting came out NaN. This is the rest of it.
+    //
+    // A fish gets a plain material of its own rather than the detailize()'d
+    // one every model material gets. The grain tile is right on a boulder and
+    // wrong on a 40 cm trout, whose whole flank is a texel or two of it -- and
+    // detailize bakes its uniforms BY VALUE at compile time onto materials the
+    // clones share, so there is no turning it down later either.
+    //
+    // And it is LIT rather than shaded, because a fish under stained water at
+    // the play camera's angle is invisible otherwise: the emissive is its own
+    // colour pulled toward white, which keeps the hue and loses the darkness.
+    // Not fogged -- a fish a few metres down is not far enough away to be
+    // dimmed by distance.
+    const src = Array.isArray(m.material) ? m.material : [m.material];
+    const made = src.map(mat => {
+      if (!mat || !mat.color) return mat;
+      const c = mat.color.clone();
+      const f = new THREE.MeshStandardMaterial({
+        color: c, map: mat.map || null, roughness: 0.5, metalness: 0.0,
+        emissive: c.clone().lerp(new THREE.Color(0xffffff), 0.40),
+        emissiveIntensity: 0.85,
+      });
+      f.fog = false;
+      return f;
+    });
+    m.material = made.length === 1 ? made[0] : made;
   });
   return o;
 }
