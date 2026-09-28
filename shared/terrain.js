@@ -86,6 +86,12 @@ export function terrainFieldAt(zone, x, z, name) {
 const WATER_EDGE_FALLBACK = { deep: 0.41, marsh: 0.44, fade: 0.41, blur: 3 };
 const ROCK_EDGE_FALLBACK = { rise: 17, walkSlope: 0.84 };
 export function waterEdgeOf(zone) { return (zone && zone.waterEdge) || WATER_EDGE_FALLBACK; }
+// How far either side of the marsh contour a river's surface takes to rise to
+// the body it runs into, in units of the wet field. The field moves about 0.028
+// per metre at Murkfen, so this is a ramp four or five metres long rather than
+// a step -- see waterLevelAt.
+const MARSH_BLEND = 0.06;
+const clamp01 = (v) => v < 0 ? 0 : v > 1 ? 1 : v;
 export function rockEdgeOf(zone) { return (zone && zone.rockEdge) || ROCK_EDGE_FALLBACK; }
 // Rock stands above the land it sits on; water cuts down through it.
 export const WATER_CUT = 4.6, MARSH_CUT = 2.0;
@@ -186,8 +192,21 @@ export function waterLevelAt(zone, x, z) {
   // Inside a lake or the fen you are standing in the BODY, whatever a stream
   // running past is doing: a river may raise the surface locally, never lower
   // it below the water the drawing already puts there.
-  if (terrainFieldAt(zone, x, z, 'wet') >= waterEdgeOf(zone).marsh) return Math.max(lvl, LAKE_Y);
-  return lvl;
+  //
+  // But that cannot be a SWITCH. `wet` is a smooth blurred field and `>= marsh`
+  // is a hard line drawn across it, so the surface jumped the whole difference
+  // the instant you crossed the contour. Measured on the spit at Murkfen, where
+  // a river runs 1.2 m below the fen: the water level went from -1.77 to -0.50
+  // in half a metre, over ground that moved 2 cm. That step is a vertical wall
+  // of water standing on the bank -- the sheet hanging in the air with a face
+  // on it, which no amount of work on the mesh could fix, because the mesh was
+  // drawing exactly what it was told.
+  //
+  // Blended over a band of the same field instead, so the river's surface rises
+  // to meet the body it runs into.
+  const t = clamp01((terrainFieldAt(zone, x, z, 'wet') - (waterEdgeOf(zone).marsh - MARSH_BLEND))
+                    / (2 * MARSH_BLEND));
+  return lvl + Math.max(0, LAKE_Y - lvl) * (t * t * (3 - 2 * t));
 }
 
 // --- relief -----------------------------------------------------------------
