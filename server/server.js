@@ -1094,6 +1094,12 @@ function sendBag(p) {
   // A 'collect' objective reads straight off the inventory, so any bag change
   // can complete (or un-complete) a quest.
   sendQuests(p);
+  // ...and so does which ROD and which PICK they hold, both of which live in
+  // the bag and are sent with the skills. Without this the client's copy went
+  // stale the moment one was dropped or picked up: it still offered "Fish" to
+  // someone who had just thrown their rod away, because the last skills packet
+  // said they had one.
+  sendSkills(p);
 }
 
 // ---------------------------------------------------------------------------
@@ -1306,12 +1312,23 @@ function stepFishing(p) {
   if (Math.hypot(spot.x - p.x, spot.z - p.z) > FISHING.reach) { p.fishing = null; return; }
   p.yaw = Math.atan2(spot.x - p.x, spot.z - p.z);
   const st = fisherStats(p);
+  // No rod, no fishing STATE -- not a state with a borrowed rod in it.
+  //
+  // The line below used to read `rod: st.rod || 'Fishing Rod'`, so a player
+  // with an empty bag got a fishing rod in the snapshot, and every client in
+  // the zone drew one in their hand. A tick later fishCast refused them and it
+  // vanished. The refusal has to happen before the state exists: a snapshot
+  // that says someone is holding a rod is the game asserting they have one.
+  if (!st.rod) {
+    send(p.ws, { t: 'event', kind: 'notice', text: 'You need a fishing rod.' });
+    p.pendingFish = null; p.fishing = null; return;
+  }
   const dur = castTime(st.power || 1);
   // What everyone in the zone needs to draw it: which rod, where the line goes,
   // and how far through the cast they are. Without this in the snapshot only
   // the fisher's own client knew anything was happening, so to every other
   // player they stood at the water doing nothing at all.
-  p.fishing = { spot: spot.id, x: spot.x, z: spot.z, rod: st.rod || 'Fishing Rod', dur };
+  p.fishing = { spot: spot.id, x: spot.x, z: spot.z, rod: st.rod, dur };
   // Nothing new happens while a fish is already on the line or coming in.
   if (p.fishBite > 0 || p.fishReel > 0) return;
   p.fishTimer -= DT;
@@ -3371,6 +3388,13 @@ wss.on('connection', (ws) => {
         if (!player || !player.alive) break;
         const spot = (zoneOf(player).fishingSpots || []).find(s => s.id === String(msg.id || ''));
         if (!spot) break;
+        // Told now rather than after the walk. The tick guard below is the
+        // authority; this is so a player without a rod does not cross the zone
+        // to be refused at the water.
+        if (!fisherStats(player).rod) {
+          send(player.ws, { t: 'event', kind: 'notice', text: 'You need a fishing rod.' });
+          break;
+        }
         player.pendingFish = spot.id; player.pendingCook = null;
         player.combatId = null; player.moveTo = null; player.pendingChest = null; player.pendingPickup = null; player.pendingMine = null; player.resting = false;
         break;

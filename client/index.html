@@ -7913,10 +7913,19 @@ function optionsFor(pk) {
   if (pk.kind === 'fishspot') {
     const fish = fishForTier(pk.tier);
     const req = FISH_LEVEL[fish] || 1;
-    const can = (skills.fishing?.level || 1) >= req;
+    const lvl = (skills.fishing?.level || 1) >= req;
+    // Whether they hold a rod is the SERVER's answer, sent with the skills --
+    // the same fisherStats() that decides whether the cast is allowed. The
+    // menu offered it regardless and the refusal arrived at the water, after
+    // the walk and after a rod had appeared in their hand.
+    const rod = !!(skills.fishing && skills.fishing.rod);
+    const why = !rod ? ' <span class="lvl">(needs a fishing rod)</span>'
+              : !lvl ? ` <span class="lvl">(needs Fishing ${req})</span>` : '';
     return [
-      { label: `Fish <b>${escapeHtml(fish)}</b>`
-        + (can ? '' : ` <span class="lvl">(needs Fishing ${req})</span>`), act: () => fishSpot(pk.id) },
+      // The click still goes to the server even without a rod, and the server
+      // refuses it there and then -- no walk, no state, no rod in the hand.
+      // Saying it here too would be a second copy of the same sentence.
+      { label: `Fish <b>${escapeHtml(fish)}</b>` + why, act: () => fishSpot(pk.id) },
       { label: 'Examine fishing spot', act: () => examineText(`A shoal of ${fish.toLowerCase()} stirs the water. Fishing ${req}.`) },
     ];
   }
