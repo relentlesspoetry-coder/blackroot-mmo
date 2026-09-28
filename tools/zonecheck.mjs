@@ -403,11 +403,17 @@ const PARSED = [];
   const cli = readFileSync(new URL('../client/index.html', import.meta.url), 'utf8');
   const bad = [];
   let seen = 0;
+  // Markers whose material is not a literal nearby -- it was passed in as an
+  // argument, say. Those are NAMED rather than skipped in silence: a check that
+  // quietly looks at 2 of the 3 things it claims to cover is how the shore sat
+  // there for months, and "4 ground materials" reads exactly as reassuring
+  // whether or not 4 is all of them.
+  const unattributed = [];
   const re = /userData\.(?:groundDecal|isGround)\s*=/g;
   for (let m; (m = re.exec(cli));) {
     const back = cli.slice(Math.max(0, m.index - 1600), m.index);
     const at = back.lastIndexOf('new THREE.MeshStandardMaterial(');
-    if (at < 0) continue;
+    if (at < 0) { unattributed.push('client/index.html:' + cli.slice(0, m.index).split('\n').length); continue; }
     seen++;
     const lit = back.slice(at);
     // `0\b` would have matched the 0 in `0.35` -- which is how the first
@@ -418,9 +424,10 @@ const PARSED = [];
     }
   }
   ok('no part of the ground glows in the dark', seen > 0 && bad.length === 0,
-    !seen ? 'found no ground materials to check -- the check has come unstuck from the code'
-    : bad.length ? bad.join('; ')
-    : `${seen} ground materials, every one of them lit rather than lighting`);
+    (!seen ? 'found no ground materials to check -- the check has come unstuck from the code'
+     : bad.length ? bad.join('; ')
+     : `${seen} ground materials, every one of them lit rather than lighting`)
+    + (unattributed.length ? `; ${unattributed.length} NOT COVERED (material passed in, not built on the spot): ${unattributed.join(', ')}` : ''));
 }
 
 // The shore is PAINTED on the ground, never laid over it.
