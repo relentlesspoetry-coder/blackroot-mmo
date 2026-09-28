@@ -1767,6 +1767,7 @@ function loadZone(zdata) {
   entityMeshes.clear();
   poiWorld.length = 0; poiLayer.innerHTML = ''; poiEls.length = 0;
   chestMeshes.clear(); npcMeshes.clear(); worldObjects.clear(); camBlockers.length = 0;
+  ambientFish.length = 0;
   fishSpots.length = 0; cookFires.length = 0; campfireFx.length = 0;
   npcMarkLayer.innerHTML = ''; npcMarkEls.clear();
   closeDialogue();
@@ -2913,6 +2914,7 @@ function buildZone() {
 
   // Fishing spots + cooking campfires (clickable)
   buildFishingSpots();
+  buildAmbientFish();
   for (const cf of (zone.campfires || [])) buildCampfire(cf);
 
   // Underground cave chamber(s) + the tunnel(s) that descend into them.
@@ -5180,6 +5182,93 @@ function shoalSpec(tier) {
   const k = Math.max(0, Math.min(3, (tier | 0) - 1));
   return { n: [6, 4, 3, 2][k], fish: FISH_TIERS[k] };
 }
+// --- fish everywhere ------------------------------------------------------
+// The zone holds 86,725 m2 of open water. At a natural density that is nearly
+// three hundred fish, and each one is a GLB clone of eight-odd meshes, so
+// scattering them over the map would cost two thousand meshes to draw a fish
+// nobody is within three hundred metres of.
+//
+// So the pool FOLLOWS the camera: a fixed number of fish, recycled into the
+// water near whoever is looking. Cost is flat whatever the map does, and every
+// fish that exists is one you could actually see. Each keeps the species it
+// was built with and is only ever put somewhere deep enough to hold it, which
+// is what makes the shallows shrimp and the middle of Ravenwater pike.
+const AMBIENT_FISH = 72, AMBIENT_NEAR = 46, AMBIENT_FAR = 62;
+const FISH_MIN_DEPTH = { Shrimp: 0.12, Trout: 0.35, Salmon: 0.60, Pike: 0.85 };
+const ambientFish = [];
+function litFish(o, spotId) {
+  o.traverse(m => {
+    if (!m.isMesh) return;
+    if (spotId != null) { m.userData.pickKind = 'fishspot'; m.userData.pickId = spotId; }
+    m.castShadow = false;
+    for (const mat of (Array.isArray(m.material) ? m.material : [m.material])) {
+      if (!mat || !mat.color) continue;
+      mat.emissive = mat.color.clone().multiplyScalar(0.85);
+      mat.emissiveIntensity = 0.75;
+    }
+  });
+  return o;
+}
+function buildAmbientFish() {
+  ambientFish.length = 0;
+  for (let i = 0; i < AMBIENT_FISH; i++) {
+    const sp = FISH_TIERS[i % FISH_TIERS.length];
+    // a spread of sizes within the species as well, so a shoal is not a rack
+    const scale = 0.7 + Math.random() * 0.65;
+    const o = cloneModel(modelKey('items/Raw_' + sp), (FISH_LENGTH[sp] || 0.4) * scale, true);
+    if (!o) continue;
+    litFish(o, null);
+    o.visible = false;
+    scene.add(o);
+    ambientFish.push({ o, need: FISH_MIN_DEPTH[sp] || 0.3, x: 0, z: 0,
+      h: Math.random() * 6.283, v: (0.30 + Math.random() * 0.45) * (0.6 + scale * 0.5),
+      turn: 0, next: 0, ph: Math.random() * 6.283 });
+  }
+}
+// Put one somewhere in the water near the camera that is deep enough for it.
+function placeAmbientFish(f, cam) {
+  for (let i = 0; i < 14; i++) {
+    const a = Math.random() * 6.283, r = 10 + Math.sqrt(Math.random()) * (AMBIENT_NEAR - 10);
+    const x = cam.x + Math.cos(a) * r, z = cam.z + Math.sin(a) * r;
+    const surf = waterLevelAt(x, z), d = surf - terrainHeight(x, z);
+    if (d < f.need) continue;
+    f.x = x; f.z = z; f.surf = surf; f.depth = d;
+    f.h = Math.random() * 6.283; f.next = 0;
+    f.o.visible = true;
+    return true;
+  }
+  f.o.visible = false;
+  return false;
+}
+function updateAmbientFish(dt, tf) {
+  if (!ambientFish.length) return;
+  const cam = camera.position;
+  for (const f of ambientFish) {
+    const dx = f.x - cam.x, dz = f.z - cam.z;
+    if (!f.o.visible || dx * dx + dz * dz > AMBIENT_FAR * AMBIENT_FAR) { placeAmbientFish(f, cam); continue; }
+    // A slow random walk on the heading, so a fish wanders rather than
+    // patrolling a line.
+    f.turn += (Math.random() - 0.5) * dt * 1.6;
+    f.turn *= 0.94;
+    f.h += f.turn * dt * 2.0;
+    const nx = f.x + Math.sin(f.h) * f.v * dt, nz = f.z + Math.cos(f.h) * f.v * dt;
+    // Checking the water under every fish every frame is the expensive part,
+    // so each one looks ahead a few times a second on its own schedule.
+    f.next -= dt;
+    if (f.next <= 0) {
+      f.next = 0.2 + Math.random() * 0.2;
+      const ax = f.x + Math.sin(f.h) * 2.2, az = f.z + Math.cos(f.h) * 2.2;
+      const surf = waterLevelAt(ax, az), d = surf - terrainHeight(ax, az);
+      if (d < f.need * 0.8) { f.h += 2.2 + Math.random(); }   // shallowing: turn away
+      else { f.surf = surf; f.depth = d; }
+    }
+    f.x = nx; f.z = nz;
+    const sink = Math.min(f.depth * 0.55, f.need * 0.9 + 0.15);
+    f.o.position.set(f.x, f.surf - sink + Math.sin(tf * 0.8 + f.ph) * 0.05, f.z);
+    f.o.rotation.y = Math.atan2(Math.sin(f.h), Math.cos(f.h)) + Math.sin(tf * 2.2 + f.ph) * 0.12;
+    f.o.rotation.z = -f.turn * 0.9 + Math.sin(tf * 1.5 + f.ph) * 0.06;
+  }
+}
 function buildFishingSpots() {
   for (const sp of (zone.fishingSpots || [])) {
     const g = new THREE.Group(); g.position.set(sp.x, waterLevelAt(sp.x, sp.z) + SPOT_LIFT, sp.z);
@@ -5230,6 +5319,19 @@ function buildFishingSpots() {
     // 7 cm at the Ravenwater margin to 2.5 m off the jetty, and a fixed depth
     // put most of every shoal under the bed -- the fish were there and buried.
     const wd = Math.max(0.10, waterLevelAt(sp.x, sp.z) - terrainHeight(sp.x, sp.z));
+    // A shoal under a plank walk is a shoal nobody can see. Where a spot sits
+    // beside decking -- the jetty, the fen crossings -- the circuit is pushed
+    // out from under it, so the fish turn in open water and the bubbles still
+    // come up where the spot is.
+    let ox = 0, oz = 0;
+    for (const d of (zone.decks || [])) {
+      const ddx = sp.x - d.x, ddz = sp.z - d.z, dd = Math.hypot(ddx, ddz);
+      if (dd > 7 || dd < 0.01) continue;
+      const push = Math.max(0, 4.0 - dd) / Math.max(1, dd);
+      ox += ddx * push; oz += ddz * push;
+    }
+    const oL = Math.hypot(ox, oz);
+    if (oL > 0.01) { const k = Math.min(2.2, oL) / oL; ox *= k; oz *= k; } else { ox = oz = 0; }
     const addShoal = () => {
       for (let i = 0; i < ss.n; i++) {
         // ...and a fish in a puddle is a smaller fish. Nothing bigger than the
@@ -5246,18 +5348,9 @@ function buildFishingSpots() {
         // truthfully so, and useless. Each clone carries its own materials
         // (cloneModel sees to that), so lifting them here glows the shoal and
         // nothing else in the world.
-        f.traverse(o => {
-          if (!o.isMesh) return;
-          o.userData.pickKind = 'fishspot'; o.userData.pickId = sp.id;
-          o.castShadow = false;
-          for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
-            if (!m || !m.color) continue;
-            m.emissive = m.color.clone().multiplyScalar(0.85);
-            m.emissiveIntensity = 0.75;
-          }
-        });
+        litFish(f, sp.id);
         g.add(f);
-        shoal.push({ o: f, r: 0.45 + Math.random() * 1.15,
+        shoal.push({ o: f, cx: ox, cz: oz, r: 0.45 + Math.random() * 1.15,
           a: Math.random() * 6.283, w: (0.22 + Math.random() * 0.34) * (Math.random() < 0.5 ? -1 : 1),
           // in the upper part of the column. Deeper is where a fish would be,
           // but there is a metre of stained water over it and nobody would
@@ -11274,6 +11367,14 @@ if (location.search.includes('debug')) {
     get flyers() { return flyerMeshes; },     // butterflies/moths, for checking they drift
     get ores() { return oreMeshes; },         // instanceId -> vein mapping, for checking picks resolve
     get fishRigs() { return fishRigs; },      // line / float / hooked fish, for checking the reel-in
+    // The wandering pool: how many are in the water near you, and where.
+    fishAround() {
+      const cam = camera.position, live = ambientFish.filter(f => f.o.visible);
+      return { pool: ambientFish.length, visible: live.length,
+        nearest: live.length ? +Math.min(...live.map(f => Math.hypot(f.x - cam.x, f.z - cam.z))).toFixed(1) : null,
+        furthest: live.length ? +Math.max(...live.map(f => Math.hypot(f.x - cam.x, f.z - cam.z))).toFixed(1) : null,
+        inWater: live.filter(f => waterLevelAt(f.x, f.z) - terrainHeight(f.x, f.z) > 0.05).length };
+    },
     get npcs() { return npcMeshes; },
     get wardrobe() { return wardrobe; }, wardrobePieces: (look) => lookPieces(look),
     get self() { return entityMeshes.get(myId); },
@@ -11611,6 +11712,7 @@ function animate() {
   if (riverTex && !waterSurfaces.length) riverTex.offset.y = (riverTex.offset.y - dt * 0.12 + 1) % 1;
   _pf('fires', () => updateCampfires(dt));
   // expanding ripple rings on fishing spots -- and the fish making them
+  updateAmbientFish(dt, performance.now() / 1000);
   if (fishSpots.length) {
     const tf = performance.now() / 1000;
     const _bm = _bubMtx;
@@ -11618,7 +11720,7 @@ function animate() {
       // the shoal, turning under the surface
       if (sp.shoal) for (const f of sp.shoal) {
         const a = f.a + tf * f.w;
-        const x = Math.cos(a) * f.r, z = Math.sin(a) * f.r;
+        const x = f.cx + Math.cos(a) * f.r, z = f.cz + Math.sin(a) * f.r;
         // Nothing here is rigged, so the life has to come from the path: a
         // fish leans into its turn, rises and settles as it goes, and swings
         // its nose a little off the tangent instead of tracking it exactly.

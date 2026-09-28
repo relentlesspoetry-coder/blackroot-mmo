@@ -3100,10 +3100,13 @@ function mobModelsFor(zone) {
   // their models. Derived from the spots' own tiers rather than listed, the
   // same way the monsters' art is -- add a fishing spot and its fish comes
   // with it.
-  for (const sp of (zone.fishingSpots || [])) {
-    const fish = fishForTier(sp.tier);
-    if (fish) out.add('items/Raw_' + fish.replace(/\s+/g, '_'));
-  }
+  // Every species, not just the ones the spots hold: fish swim in ALL of a
+  // zone's water, and which one turns up where depends on how deep it is.
+  if ((zone.fishingSpots || []).length || (zone.terrain && !zone.enclosed))
+    for (let tier = 1; tier <= 4; tier++) {
+      const fish = fishForTier(tier);
+      if (fish) out.add('items/Raw_' + fish.replace(/\s+/g, '_'));
+    }
   const types = new Set(ALWAYS_ART);
   for (const s of (zone.spawns || [])) types.add(s.type);
   for (const e of (zone.elites || [])) types.add(e.type);
