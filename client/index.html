@@ -2243,7 +2243,13 @@ function bankMud(x, z) {
   for (const r of worldRivers()) {
     const d = distToPolyline(x, z, r.points) - riverWaterHalf(r.width);
     if (d < 0.5) return 1;
-    bed = Math.max(bed, 1 - Math.min(1, d / RIVER_BANK));   // the river's own margin
+    // The river's own margin, and this is EXACTLY the footprint the separate
+    // dirt ribbon used to draw: full earth for RIVER_LIP past the waterline,
+    // then out to RIVER_BANK. The ribbon is gone (see buildZone) and this is
+    // where its shape went, so removing it moved no dirt -- it only changed
+    // what draws it, from a sheet lying on the ground to the ground itself.
+    const t = (d - RIVER_LIP) / (RIVER_BANK - RIVER_LIP);
+    bed = Math.max(bed, 1 - Math.min(1, Math.max(0, t)));
   }
   // Full mud from the waterline in, fading out across BANK_BAND of the field.
   // A MONOTONIC ramp, and deliberately not a noisy one: breaking the fringe up
@@ -2816,58 +2822,28 @@ function updateWaterSurface(tSec) {
   }
 }
 
-function buildRiverShore(points, half) {
-  const pts = smoothPoly(points, 8);
-  const H = half + RIVER_LIP, FR = 2.0;
-  // The ribbon sits on the ground mesh. It used to carry its own copy of the
-  // channel profile and assume the land either side was at y = 0 -- true of a
-  // flat map, and a floating shelf anywhere the terrain has a hill under it.
-  // terrainHeight already cuts the channel (the river valley), so following the
-  // mesh gives the same bed for free and the banks come out where the land is.
-  // Offsets across the ribbon and their alpha (1 = opaque dirt, 0 = faded into
-  // grass). Only the outer rim (H -> H+FR) fades.
-  const cols = [
-    { o: -(H + FR), a: 0 }, { o: -H, a: 1 }, { o: -half, a: 1 }, { o: -half * 0.5, a: 1 },
-    { o: 0, a: 1 }, { o: half * 0.5, a: 1 }, { o: half, a: 1 }, { o: H, a: 1 }, { o: H + FR, a: 0 },
-  ];
-  const N = cols.length, T = 4, pos = [], uv = [], col = [], idx = [];
-  let dist = 0;
-  for (let i = 0; i < pts.length; i++) {
-    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
-    let dx = b.x - a.x, dz = b.z - a.z; const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
-    const nx = -dz, nz = dx;
-    if (i > 0) dist += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z);
-    for (const c of cols) {
-      const vx = pts[i].x + nx * c.o, vz = pts[i].z + nz * c.o;
-      pos.push(vx, groundMeshY(vx, vz) + 0.03, vz); uv.push((c.o + H) / T, dist / T); col.push(1, 1, 1, c.a);
-    }
-  }
-  for (let i = 0; i < pts.length - 1; i++) for (let j = 0; j < N - 1; j++) {
-    const p = i * N + j; idx.push(p, p + 1, p + N, p + 1, p + N + 1, p + N);
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
-  g.setIndex(idx); g.computeVertexNormals();
-  // No emissive. It carried emissive 0x241a10 at 0.35, put there to make the
-  // shore visible at night, and at night it was more than half of everything
-  // the shore was: emissive is not scaled by light, so as the sun went down the
-  // bank kept its glow while the land around it went out. Measured on the
-  // Crowwater at midnight it sat at 15.2 of 255 against grass at 10.3 -- the
-  // bank brighter than the ground it is cut into, which never happens at noon
-  // (73.5 against 82.1). Every root, bush and blade standing on a lit strip in
-  // a dark wood then reads as a HOLE PUNCHED IN THE BANK, which is exactly what
-  // it was reported as. Unlit it sits at 6.2 against grass at 8.0, the same
-  // slightly-darker-than-the-land it has in daylight, at every hour.
-  const mat = detailize(new THREE.MeshStandardMaterial({ color: 0x9c7a52, roughness: 1,
-    vertexColors: true, transparent: true, depthWrite: false, // rim alpha melts the dirt into grass
-    polygonOffset: true, polygonOffsetFactor: -2 }), 'dirt', { scale: 2 });
-  const m = new THREE.Mesh(g, mat); m.receiveShadow = true; m.userData.isGround = true;
-  m.userData.groundDecal = { name: 'river shore', lift: 0.03 };
-  scene.add(m); return m;
-}
-
+// The river shore is NOT built here any more, and there is no buildRiverShore.
+//
+// It was a dirt ribbon laid along each river on its own geometry, three
+// centimetres above the ground -- and the ground came up THROUGH it. Its
+// vertices sat on the terrain by construction, but they were about 3 m apart
+// and the land rises as much as 0.37 m between them, so on 24% of its
+// triangles the terrain broke the surface and the grass underneath showed
+// through in blotches. That is what "weird shapes of grass" on the dirt bank
+// was. Subdividing is not the answer: to hold a 3 cm lift against a faceted
+// ground you need vertices finer than the ground's own creases, which is about
+// 140x the triangles for one river.
+//
+// And it was never needed. The ground paints its own shore -- bankMud(), the
+// same gradient that gives every lake and fen in the zone its beach -- and has
+// since long after the ribbon was written. The ribbon was a second shore laid
+// on top of the first. Nothing lies on the ground now, so nothing can poke
+// through it, and the dirt is in the one place a thing can be drawn without a
+// gap: on the ground's own vertices.
+//
+// What was lost: the ribbon carried the 'dirt' detail grain and the bank now
+// takes the ground's 'grass' grain, which is what the lake and fen shores have
+// always done.
 function buildZone() {
   bridgeInfos = []; riverMesh = null; riverTex = null; // rebuilt below per river
   const b = zone.bounds;
@@ -2977,9 +2953,6 @@ function buildZone() {
   buildTerrainWater();
 
   for (const river of worldRivers()) {
-    // The dirt bank: flush with the carved terrain, follows the river, feathers
-    // into grass. The water itself is part of the single surface above.
-    buildRiverShore(river.points, riverWaterHalf(river.width));
     // A body of water can carry several crossings (`bridges`); `bridge` is the
     // single-crossing shorthand.
     for (const br of (river.bridges || (river.bridge ? [river.bridge] : []))) {
@@ -11818,22 +11791,45 @@ if (location.search.includes('debug')) {
     // every ground decal against the ground mesh's own triangle under it. A
     // flat sheet over a hilly map shows up here as metres of gap; the answer
     // should be the decal's own lift, to within rounding.
+    //
+    // ...and `pokes`, which is the number that matters and the one this did not
+    // have. A decal's vertices sit on the ground BY CONSTRUCTION -- that is how
+    // they are placed -- so asking about vertices asks a question that cannot
+    // come back wrong. The river shore passed this check at a flat 0.030 on
+    // every one of its 11,000 vertices while the terrain broke through a
+    // QUARTER of its triangles by up to 0.33 m, because the land rises between
+    // vertices and the check never looked between them. So it samples each
+    // triangle's centre too, where the decal is at the mean of its corners and
+    // the ground is wherever the ground is.
     groundFit() {
       const out = [];
       scene.traverse((o) => {
         const d = o.userData && o.userData.groundDecal;
         if (!d || !o.geometry) return;
-        const pos = o.geometry.attributes.position;
+        const pos = o.geometry.attributes.position, idx = o.geometry.index;
+        const ox = o.position.x, oy = o.position.y, oz = o.position.z;
         let lo = Infinity, hi = -Infinity, sum = 0, worst = null;
         for (let i = 0; i < pos.count; i++) {
-          const x = pos.getX(i) + o.position.x, y = pos.getY(i) + o.position.y, z = pos.getZ(i) + o.position.z;
+          const x = pos.getX(i) + ox, y = pos.getY(i) + oy, z = pos.getZ(i) + oz;
           const gap = y - groundMeshY(x, z);
           if (gap < lo) lo = gap;
           if (gap > hi) { hi = gap; worst = [Math.round(x), Math.round(z)]; }
           sum += gap;
         }
+        let tris = 0, pokes = 0, deepest = 0, pokeAt = null;
+        const at = (k) => [pos.getX(k) + ox, pos.getY(k) + oy, pos.getZ(k) + oz];
+        const n = idx ? idx.count : pos.count;
+        for (let i = 0; i + 2 < n; i += 3) {
+          const a = at(idx ? idx.getX(i) : i), b = at(idx ? idx.getX(i + 1) : i + 1), c = at(idx ? idx.getX(i + 2) : i + 2);
+          const cx = (a[0] + b[0] + c[0]) / 3, cy = (a[1] + b[1] + c[1]) / 3, cz = (a[2] + b[2] + c[2]) / 3;
+          const gap = cy - groundMeshY(cx, cz);
+          tris++;
+          if (gap < 0) { pokes++; if (gap < deepest) { deepest = gap; pokeAt = [Math.round(cx), Math.round(cz)]; } }
+        }
         out.push({ mesh: d.name, lift: d.lift, verts: pos.count,
-          min: +lo.toFixed(3), max: +hi.toFixed(3), mean: +(sum / pos.count).toFixed(3), worstAt: worst });
+          min: +lo.toFixed(3), max: +hi.toFixed(3), mean: +(sum / pos.count).toFixed(3), worstAt: worst,
+          tris, pokes, pokesPct: +(100 * pokes / (tris || 1)).toFixed(1),
+          deepestPoke: +deepest.toFixed(3), pokeAt });
       });
       return out;
     },

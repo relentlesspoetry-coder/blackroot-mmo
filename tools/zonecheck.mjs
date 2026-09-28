@@ -423,6 +423,48 @@ const PARSED = [];
     : `${seen} ground materials, every one of them lit rather than lighting`);
 }
 
+// The shore is PAINTED on the ground, never laid over it.
+//
+// Rivers had a dirt ribbon on its own geometry, three centimetres above the
+// terrain. Its vertices sat on the ground by construction but they were ~3 m
+// apart, and the land rises up to 0.37 m between them, so the terrain broke
+// through a QUARTER of its triangles and the grass underneath showed in
+// blotches. It could not be subdivided out of existence either: holding a 3 cm
+// lift against a faceted ground needs vertices finer than the ground's own
+// creases, about 140x the triangles for one river.
+//
+// And it was a SECOND shore. bankMud() already paints every lake, fen and river
+// margin into the ground's own vertex colours, and has for far longer than
+// anyone noticed the ribbon was still there. Two implementations of one thing,
+// the way the terrain, the deck spans and the fish spots each were.
+{
+  const cli = readFileSync(new URL('../client/index.html', import.meta.url), 'utf8');
+  ok('nothing lays a second shore over the ground',
+    !/function buildRiverShore\s*\(/.test(cli),
+    'the ground paints its own, in bankMud()');
+  // ...and bankMud has to actually cover rivers, or removing the ribbon left
+  // the river banks green.
+  const mud = /function bankMud\([\s\S]*?\n\}/.exec(cli);
+  ok('the ground\'s shore covers rivers as well as still water',
+    !!mud && /worldRivers\(\)/.test(mud[0]) && /RIVER_LIP/.test(mud[0]) && /RIVER_BANK/.test(mud[0]),
+    'full earth to RIVER_LIP past the waterline, out to RIVER_BANK -- the footprint the ribbon had');
+}
+
+// ...and the probe that should have caught it has to ask the right question.
+//
+// __bk.groundFit() compared every decal VERTEX against the ground and reported
+// a flat 0.030 across all 11,000 of the river shore's, while a quarter of its
+// triangles had terrain sticking through them. A decal's vertices are placed on
+// the ground, so asking about vertices asks something that cannot come back
+// wrong. The gap lives BETWEEN them.
+{
+  const cli = readFileSync(new URL('../client/index.html', import.meta.url), 'utf8');
+  const fn = /groundFit\(\)\s*\{[\s\S]*?\n    \},/.exec(cli);
+  ok('groundFit looks between the vertices, not only at them',
+    !!fn && /deepestPoke/.test(fn[0]) && /\/ 3\b/.test(fn[0]),
+    'it samples each triangle centre and counts what pokes through');
+}
+
 // --- the sky ----------------------------------------------------------------
 // The sky has to reach everywhere you can stand.
 //
