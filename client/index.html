@@ -3620,10 +3620,16 @@ function buildCritters() {
       let x, z, tries = 0;
       do { x = b.minX + 6 + Math.random() * (b.maxX - b.minX - 12); z = b.minZ + 6 + Math.random() * (b.maxZ - b.minZ - 12); }
       while (zone.boundary && !inBoundary(x, z) && ++tries < 12);
-      c.kind = kind; c.hx = x; c.hz = z;
-      c.r = 2.5 + Math.random() * 5; c.r2 = 1 + Math.random() * 2.5;
-      c.sp = 0.12 + Math.random() * 0.22; c.ph = Math.random() * 6.28;
-      c.yb = yLo + Math.random() * (yHi - yLo); c.px = x; c.pz = z;
+      c.kind = kind; c.hx = x; c.hz = z; c.x = x; c.z = z;
+      // Wander state. A butterfly does not fly a circle, and the old path was
+      // a fixed Lissajous around the spawn point: the same loop for ever, at
+      // one speed, always upright -- a model carried round on a wire.
+      c.dir = Math.random() * 6.28; c.turn = 0;
+      c.range = 6 + Math.random() * 10;            // how far it strays from home
+      c.cruise = (kind === 'moth' ? 0.9 : 0.7) * (0.75 + Math.random() * 0.6);
+      c.speed = c.cruise; c.ph = Math.random() * 6.28;
+      c.yb = yLo + Math.random() * (yHi - yLo);
+      c.wrap.rotation.order = 'YXZ';               // yaw, then bank about its own axis
       c.wrap.visible = false;
       scene.add(c.wrap); critters.push(c);
     }
@@ -3638,22 +3644,45 @@ function updateCritters(dt) {
   // day, moths come out at night.
   const dayness = Math.max(0, Math.sin((typeof worldTime === 'number' ? worldTime : 0.5) * Math.PI * 2 - Math.PI / 2) * 0.5 + 0.5);
   for (const c of critters) {
-    const op = c.kind === 'butterfly' ? dayness : 1 - dayness;
+    // Opaque across most of their half of the day, not just the middle of it.
+    //
+    // This was the raw dayness, so a moth was fully solid for 24% of the cycle
+    // -- centred on MIDNIGHT, when there is no light to see it by -- and spent
+    // 35% of the cycle between 6% and 60% opacity, which is a pale smudge that
+    // reads as a static decal however hard its wings are beating. You could
+    // never actually watch one. A quick crossfade at dusk and dawn instead
+    // puts a solid moth in the last of the light and a solid butterfly in the
+    // first of it.
+    const half = c.kind === 'butterfly' ? dayness : 1 - dayness;
+    const ft = Math.max(0, Math.min(1, (half - 0.38) / 0.22));
+    const op = ft * ft * (3 - 2 * ft);
     const vis = op > 0.06;
     c.wrap.visible = vis;
     if (!vis) continue;
     if (c.mixer) c.mixer.update(dt);
-    // Gentle looping drift; face the direction of travel (yaw only, so it always
-    // stays upright), with a soft vertical bob.
-    const a = t * c.sp + c.ph;
-    const x = c.hx + Math.cos(a) * c.r + Math.sin(a * 1.7) * c.r2;
-    const z = c.hz + Math.sin(a * 0.9) * c.r + Math.cos(a * 1.3) * c.r2;
-    const y = (groundY ? groundY(x, z) : 0) + c.yb + Math.sin(a * 3.1) * 0.35;
-    const dx = x - c.px, dz = z - c.pz;
-    // Head-first: the model's head is +Y (-> world -Z after the flat pitch), so
-    // aim that at the travel direction (hence the +PI vs a +Z-forward model).
-    if (dx * dx + dz * dz > 1e-5) c.wrap.rotation.y = Math.atan2(dx, dz) + Math.PI;
-    c.wrap.position.set(x, y, z); c.px = x; c.pz = z;
+    // Wander: the heading drifts, the speed varies, and it leans into its own
+    // turns. Home is a pull that grows with distance rather than a leash that
+    // switches on, so it strays and comes back instead of orbiting.
+    c.turn += (Math.random() - 0.5) * dt * 7;
+    const dxh = c.hx - c.x, dzh = c.hz - c.z, far = Math.hypot(dxh, dzh);
+    if (far > 0.01) {
+      const want = Math.atan2(dxh, dzh);
+      const off = ((want - c.dir + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+      c.turn += off * Math.min(1, far / c.range) * dt * 3.0;
+    }
+    c.turn *= 0.90;                                  // damped, so it curves rather than jitters
+    c.dir += c.turn * dt;
+    c.speed += ((c.cruise - c.speed) * 0.9 + (Math.random() - 0.5) * 1.2) * dt;
+    c.speed = Math.max(0.12, Math.min(c.cruise * 1.9, c.speed));
+    const x = c.x + Math.sin(c.dir) * c.speed * dt;
+    const z = c.z + Math.cos(c.dir) * c.speed * dt;
+    const y = (groundY ? groundY(x, z) : 0) + c.yb + Math.sin(t * 1.9 + c.ph) * 0.28;
+    c.x = x; c.z = z;
+    c.wrap.position.set(x, y, z);
+    // Head-first, and banked. The model's head is +Y (-> world -Z after the
+    // flat pitch), hence the +PI against a +Z-forward model.
+    c.wrap.rotation.y = c.dir + Math.PI;
+    c.wrap.rotation.z = Math.max(-0.6, Math.min(0.6, -c.turn * 0.5));
     c.root.traverse(o => { if (o.isMesh && o.material) o.material.opacity = op; });
   }
 }
