@@ -180,6 +180,34 @@ const PARSED = [];
     if (!/trimesh\.Scene\(\)/.test(src)) continue;          // not a kit exporter
     if (!/import glbkit/.test(src) || /scene\.export\(/.test(src)) rogue.push(f);
   }
+// No plant stands on a modelled mound of dirt.
+//
+// Six of the bushes shipped sitting on a flattened brown disc 1.37 m across,
+// named "Base soil | <the bush>" in the file. That is how you present a plant
+// on a white background; in a world that already has ground it is a crater,
+// and there are now hundreds of each of them scattered through the meadows.
+//
+// Keyed on the material NAME, which is what the asset calls it, rather than on
+// colour or size -- the same brown is on spider legs and an oak trunk, and a
+// wide flat thing at the base of a model is sometimes a model. Repair with:
+//   python3 tools/glbrepair.py --drop-material "Base soil" <file>
+{
+  const bad = [];
+  for (const [name, js] of PARSED) {
+    const soil = new Set((js.materials || [])
+      .map((m, i) => [i, (m.name || '').toLowerCase()])
+      .filter(([, n]) => n.includes('base soil'))
+      .map(([i]) => i));
+    if (!soil.size) continue;
+    const n = (js.meshes || []).reduce((a, m) =>
+      a + (m.primitives || []).filter(p => soil.has(p.material)).length, 0);
+    if (n) bad.push(`${name} (${n})`);
+  }
+  ok('no plant stands on a mound of dirt', bad.length === 0,
+    bad.length ? `${bad.join(', ')} -- strip with: python3 tools/glbrepair.py --drop-material "Base soil" <file>`
+               : `${PARSED.length} GLBs, none carrying a soil disc`);
+}
+
 // Nothing is wound inside out.
 //
 // Mirroring half a model without reversing its triangles leaves that half

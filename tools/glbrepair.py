@@ -382,6 +382,40 @@ def repair(js, bin_, reshade=False):
     return wound, normals, detail, declined
 
 
+def drop_material(js, needle):
+    """Stop every primitive whose MATERIAL name contains `needle` being drawn.
+
+    Used for the dirt mounds. Six of the bushes are modelled sitting on a
+    flattened brown disc 1.37 m across -- a fine way to present a plant on a
+    white background, and wrong in a world that already has ground. Scattered
+    through a meadow they read as craters.
+
+    By material, not by mesh: each of those bushes is ONE glTF mesh of seven
+    primitives, so dropping the mesh drops the whole plant. I did that first
+    and it would have made every bush in the zone invisible. The mound is a
+    primitive inside the mesh, and it names itself -- "Base soil | Normal Bush"
+    -- which is a better key than any guess from colour or size, since the
+    colour is shared with spider legs and an oak trunk.
+
+    The primitive is removed from the mesh; the node, the other primitives and
+    the buffer are untouched.
+    """
+    want = {i for i, m in enumerate(js.get('materials', []))
+            if needle.lower() in (m.get('name') or '').lower()}
+    if not want:
+        return []
+    gone = []
+    for mesh in js.get('meshes', []):
+        keep = [pr for pr in mesh.get('primitives', []) if pr.get('material') not in want]
+        if len(keep) != len(mesh.get('primitives', [])):
+            if not keep:
+                raise SystemExit(f"{mesh.get('name')}: that would leave the mesh with no primitives")
+            gone += [js['materials'][pr['material']]['name']
+                     for pr in mesh['primitives'] if pr.get('material') in want]
+            mesh['primitives'] = keep
+    return gone
+
+
 def survey(js, bin_):
     """What is wrong with this file, as numbers. Used to report before the
     repair and to prove it after."""
@@ -457,6 +491,8 @@ def main():
     ap.add_argument('files', nargs='+', type=Path)
     ap.add_argument('--check', action='store_true',
                     help='report what is wrong and change nothing')
+    ap.add_argument('--drop-material', metavar='TEXT',
+                    help='remove every primitive whose material name contains TEXT')
     ap.add_argument('--reshade', action='store_true',
                     help='also recompute normals where re-winding a seam makes '
                          'the stored ones meaningless (discards authored shading)')
@@ -464,6 +500,16 @@ def main():
     touched = 0
     for f in args.files:
         js, bin_ = read_glb(f)
+        if args.drop_material:
+            gone = drop_material(js, args.drop_material)
+            if gone:
+                size = f.stat().st_size
+                after = write_glb(f, js, bin_)
+                print(f'  {f}: dropped {", ".join(sorted(set(gone)))}   '
+                      f'{size / 1024:.0f} -> {after / 1024:.0f} KiB')
+            else:
+                print(f'  {f}: none of those meshes are here')
+            continue
         found = survey(js, bin_)
         if not any(found.values()):
             print(f'  {f}: nothing to repair')
