@@ -1798,7 +1798,7 @@ function loadZone(zdata) {
   fishSpots.length = 0; cookFires.length = 0; campfireFx.length = 0;
   npcMarkLayer.innerHTML = ''; npcMarkEls.clear();
   closeDialogue();
-  fireflies = null; critters = []; targetId = null;
+  fireflies = null; critters = []; targetId = null; cullChunks.length = 0;
   for (const [, gr] of graveMeshes) if (gr.plate) gr.plate.remove(); graveMeshes.clear();   // rebuilt from the next snapshot in the new scene
 
   const e = zone.env || {};
@@ -3301,6 +3301,19 @@ function chunkSize() {
 // CPU-bound so it would not notice; a weaker GPU would. `?ct=` overrides it,
 // which is how the sweep was done.
 const CHUNK_TARGET = +(new URLSearchParams(location.search).get('ct')) || 32;
+// Instanced chunks that are hidden once they are too far to be worth drawing.
+// Frustum culling already drops what is behind you; this drops what is in
+// front of you and too far away to see, which the fog has been hiding for
+// free and the GPU has been paying for.
+const cullChunks = [];
+const FOG_FAR = 320;
+function cullFarChunks(cam) {
+  for (const im of cullChunks) {
+    const bs = im.boundingSphere;
+    if (!bs) continue;
+    im.visible = cam.position.distanceTo(bs.center) - bs.radius < im.userData.cullAt;
+  }
+}
 // `?chunk=old` forces the previous fixed-grid behaviour so the two can be
 // measured back to back on the same machine, which matters because a machine
 // under other GPU load pins BOTH at the same frame rate and the comparison
@@ -3338,6 +3351,18 @@ function chunkedInstances(geo, mat, items, fill, opts = {}) {
     if (im.instanceColor) im.instanceColor.needsUpdate = true;
     im.computeBoundingSphere();
     if (opts.tag) Object.assign(im.userData, opts.tag);
+    // How far away this chunk stops being worth drawing.
+    //
+    // Everything was drawn at full detail to the camera's 440 m, and the fog
+    // is SOLID at 320: past that we were rendering plants into a wall of grey.
+    // Nearer than that, the distance a thing stops being worth its triangles
+    // scales with how big it is -- a 40 cm blade of grass has nothing left to
+    // show at 150 m, an oak still reads at 300 -- so the cull comes off the
+    // model's own height rather than one number for everything.
+    if (!geo.boundingBox) geo.computeBoundingBox();
+    const bb = geo.boundingBox, h = Math.max(0.2, bb.max.y - bb.min.y);
+    im.userData.cullAt = Math.max(150, Math.min(FOG_FAR, h * 120));
+    cullChunks.push(im);
     scene.add(im); out.push({ im, items: list });
   }
   return out;
@@ -3492,7 +3517,7 @@ function buildGrass() {
   // Density scales with the zone's area so a larger zone stays as lush.
   const areaK = Math.min(3.2, ((b.maxX - b.minX) * (b.maxZ - b.minZ)) / 37800);
   // Little groups (clumps of a few tufts).
-  let clumps = Math.round(13200 * areaK), guard = 0;
+  let clumps = Math.round(21000 * areaK), guard = 0;
   while (clumps > 0 && guard++ < clumps * 6) {
     const ccx = b.minX + 2 + rng() * (b.maxX - b.minX - 4), ccz = b.minZ + 2 + rng() * (b.maxZ - b.minZ - 4);
     if (!ok(ccx, ccz) || onPathSkip(ccx, ccz)) continue;
@@ -3501,7 +3526,7 @@ function buildGrass() {
     clumps--;
   }
   // Scattered singles.
-  let singles = Math.round(36000 * areaK); guard = 0;
+  let singles = Math.round(62000 * areaK); guard = 0;
   while (singles > 0 && guard++ < singles * 6) {
     const x = b.minX + 2 + rng() * (b.maxX - b.minX - 4), z = b.minZ + 2 + rng() * (b.maxZ - b.minZ - 4);
     if (!ok(x, z) || onPathSkip(x, z)) continue;
@@ -11986,6 +12011,7 @@ function animate() {
     fireflies.geometry.attributes.position.needsUpdate = true;
   }
   _pf('critters', () => updateCritters(dt));
+  _pf('cull', () => cullFarChunks(camera));
   _pf('render', () => renderer.render(scene, camera));
   if (window.__bkProf) window.__bkProf.frames = (window.__bkProf.frames || 0) + 1;
 }

@@ -303,29 +303,49 @@ SPAWNS = [
 # whole zone and rejection-sampled against everything already down.
 SCATTER = [
     # zone-wide woodland floor
-    ('Normal_Bush', 150, None, 0), ('Berry_Bush', 70, None, 0),
-    ('Dark_Fern', 130, None, 0), ('Green_Fern', 130, None, 0),
-    ('Hollow_Stump', 55, None, 0), ('Exposed_Roots', 60, None, 0),
-    ('Dead_Bush', 60, None, 0), ('Poison_Mushrooms', 45, None, 0),
-    ('Wildflower_Patch', 90, None, 0), ('Meadow_Grass', 120, None, 0),
-    ('Thorn_Bush', 70, None, 0), ('Darkroot_Bush', 55, None, 0),
-    ('Hosta_Plant', 50, None, 0), ('Foxglove_Clump', 40, None, 0),
-    ('Blackberry_Bramble', 45, None, 0), ('Twisted_Dead_Tree', 35, None, 0),
+    #
+    # These counts were about a third of what they are. The zone is 605,000 m2
+    # and the whole scatter came to 3,080 pieces -- one plant every fourteen
+    # metres, which is not a woodland floor, it is a lawn with occasional
+    # shrubbery. generateScatter's own note says the zone has room for some
+    # thirty thousand at the 3 m spacing it enforces, so the budget was never
+    # the constraint; the numbers were just low.
+    ('Normal_Bush', 430, None, 0), ('Berry_Bush', 210, None, 0),
+    ('Dark_Fern', 460, None, 0), ('Green_Fern', 460, None, 0),
+    ('Hollow_Stump', 130, None, 0), ('Exposed_Roots', 160, None, 0),
+    ('Dead_Bush', 170, None, 0), ('Poison_Mushrooms', 140, None, 0),
+    ('Wildflower_Patch', 300, None, 0), ('Meadow_Grass', 390, None, 0),
+    ('Thorn_Bush', 210, None, 0), ('Darkroot_Bush', 160, None, 0),
+    ('Hosta_Plant', 160, None, 0), ('Foxglove_Clump', 130, None, 0),
+    ('Blackberry_Bramble', 140, None, 0), ('Twisted_Dead_Tree', 60, None, 0),
+    # Red_Berry_Bush was in the library and placed NOWHERE -- not in a scatter
+    # spec, not in a camp layout, not once in the whole world.
+    ('Red_Berry_Bush', 180, None, 0),
     # --- the shaded understorey -----------------------------------------
     # Twenty plant models were in the library and not one placement used them,
     # so the Dark Woods was dressed out of the same eight species everywhere.
     # These are sorted by the light they want rather than sprinkled: what grows
     # under a closed canopy is not what grows in a clearing, and the blueprint
     # already traced which is which.
-    ('Broadleaf_Plant', 85, None, 0),          # big soft leaves, deep shade
-    ('Creeping_Bellflowers', 60, None, 0),     # shaded banks
-    ('Blue_Hydrangea', 34, None, 0),           # damp shade
+    ('Broadleaf_Plant', 260, None, 0),         # big soft leaves, deep shade
+    ('Creeping_Bellflowers', 190, None, 0),    # shaded banks
+    ('Blue_Hydrangea', 110, None, 0),          # damp shade
     # --- the clearings, which want light --------------------------------
-    ('Poppy_Patch', 60, None, 0, 'open'),
-    ('Goldenrod_Patch', 50, None, 0, 'open'),
-    ('Meadow_Shrub', 48, None, 0, 'open'),
-    ('Strawberry_Patch', 38, None, 0, 'open'),  # woodland edge, in the light
-    ('Flowering_Bush', 44, None, 0, 'open'),
+    ('Poppy_Patch', 180, None, 0, 'open'),
+    ('Goldenrod_Patch', 150, None, 0, 'open'),
+    ('Meadow_Shrub', 150, None, 0, 'open'),
+    ('Strawberry_Patch', 120, None, 0, 'open'),  # woodland edge, in the light
+    ('Flowering_Bush', 140, None, 0, 'open'),
+    # And five more that existed only as a handful of pieces of camp gardening
+    # -- eight Sage_Bush, nine Lavender_Clump, twelve Rose_Bush in a zone of
+    # sixty hectares, which is the same as not having them. They want light, so
+    # they go to the clearings and the woodland edge rather than under the
+    # canopy.
+    ('Heather_Clump', 220, None, 0, 'open'),
+    ('Lavender_Clump', 110, None, 0, 'open'),
+    ('Sage_Bush', 110, None, 0, 'open'),
+    ('Rose_Bush', 90, None, 0, 'open'),
+    ('Round_Box_Bush', 70, None, 0, 'open'),
     # The only two assets in the library that would look wrong standing still,
     # so the client drifts them (see FLYERS / updateFlyers). Butterflies belong
     # over the flowers in the light; moths belong under the canopy, which is
