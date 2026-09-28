@@ -4126,6 +4126,17 @@ function placeInstances(list, yOf) {
 // registers the rectangle you can stand on. Placement reads terrainHeight and
 // NOT groundY: groundY consults the deck lift, so a span placed with it would
 // stand on top of itself and climb away every rebuild.
+// What bakeModel shifted a model by: its authored base, below its own origin.
+// Adding it back at placement time puts the model where it was MODELLED, for
+// the few things authored about something other than their feet.
+const _baseY = {};
+function modelBaseY(name) {
+  if (_baseY[name] === undefined) {
+    const src = LOADED[name];
+    _baseY[name] = src ? new THREE.Box3().setFromObject(src).min.y : 0;
+  }
+  return _baseY[name];
+}
 function buildDecks() {
   deckInfos = [];
   const list = zone.decks || [];
@@ -4137,7 +4148,15 @@ function buildDecks() {
     // boardwalk you had to swim down to.
     const y = Math.max(terrainHeight(d.x, d.z), waterLevelAt(d.x, d.z));
     deckInfos.push({ x: d.x, z: d.z, yaw: d.yaw || 0, len: (d.len || 4) + 0.3, w: (d.w || 2.4) - 0.3, y });
-    return { m: d.m, x: d.x, z: d.z, y, r: d.yaw || 0, s: 1 };
+    // ...and it is drawn about its AUTHORED origin, which for this kit is the
+    // water line: planks at +0.55, pilings hanging to -1.35. bakeModel re-seats
+    // every model with its base at y = 0, which is right for a boulder and
+    // wrong for a boardwalk -- it stood the pilings' feet on the surface and
+    // put the whole walk 1.35 m into the air. The planks came out at +1.45
+    // while deckLift() walks you at +0.05, so you crossed Murkfen underneath
+    // its own boardwalk. Undoing the re-seat puts the plank top exactly where
+    // the walkable height already said it was: y + DECK_TOP, one number.
+    return { m: d.m, x: d.x, z: d.z, y: y + modelBaseY(d.m), r: d.yaw || 0, s: 1 };
   });
   placeInstances(placements, o => o.y);
   console.log(`[world] ${placements.length} boardwalk spans over the fen`);
