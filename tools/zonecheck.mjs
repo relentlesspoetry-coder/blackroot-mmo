@@ -360,6 +360,64 @@ const PARSED = [];
   ok('no swimming without water drawn', swimDry === 0, `${swimDry} cells`);
 }
 
+// --- the sky ----------------------------------------------------------------
+// The sky has to reach everywhere you can stand.
+//
+// The dome is a BackSide sphere of radius 420 and it stood at the WORLD ORIGIN
+// while the Dark Woods reaches 527 m out to the far side of its own boundary.
+// So on 15% of the map you were standing OUTSIDE the sky, and the shell came
+// down through the ground as a curved blue wall across the middle of the world.
+// You walked straight through it -- it has no collision, it is the sky -- but
+// it is opaque and it is nearer than everything behind it, so it won the depth
+// test and painted over the entire mountain range. It read as the edge of the
+// map, 130 m in from the real edge.
+//
+// There are two ways to be right and the client may pick either. Ride the
+// camera, and the shell is always exactly its own radius away, so the only
+// question is whether that fits inside the far plane. Or stand still, and it
+// has to be bigger than the world. This checks whichever one is being done --
+// and the trap is that each rule alone looks satisfied by the broken code:
+// 420 is comfortably inside the 440 m far plane, and it is only NOT riding the
+// camera that makes 420 the wrong number.
+{
+  const cli = readFileSync(new URL('../client/index.html', import.meta.url), 'utf8');
+  const sky = cli.slice(cli.indexOf('function buildSky()'));
+  const num = (re, hay) => { const m = re.exec(hay); return m ? +m[1] : NaN; };
+  const domeR = num(/new THREE\.SphereGeometry\(\s*([\d.]+)/, sky);
+  const starR = num(/\bph\s*=[^;]*?,\s*r\s*=\s*([\d.]+)\s*;/, sky);
+  const camArgs = (/new THREE\.PerspectiveCamera\(([^)]*)\)/.exec(cli) || [, ''])[1].split(',');
+  const far = +camArgs[camArgs.length - 1];
+  const rides = (o) => new RegExp(`sky\\.${o}\\.position\\.copy\\(camP\\)`).test(cli);
+
+  // How far from the origin an open-air zone can put you. The boundary polygon
+  // is the real answer: the server stops you at it and the camera is clamped
+  // inside it.
+  const openAir = [z, spiderden].filter(zn => !zn.enclosed);
+  let worldR = 0, worstZone = '';
+  for (const zn of openAir) {
+    const pts = (zn.boundary && zn.boundary.length) ? zn.boundary
+      : [[zn.bounds.minX, zn.bounds.minZ], [zn.bounds.minX, zn.bounds.maxZ],
+         [zn.bounds.maxX, zn.bounds.minZ], [zn.bounds.maxX, zn.bounds.maxZ]].map(([x, zz]) => ({ x, z: zz }));
+    for (const q of pts) { const d = Math.hypot(q.x, q.z); if (d > worldR) { worldR = d; worstZone = zn.name; } }
+  }
+
+  for (const [part, R] of [['dome', domeR], ['stars', starR]]) {
+    const onCam = rides(part);
+    const pass = Number.isFinite(R) && Number.isFinite(far)
+      && (onCam ? R < far : R >= worldR);
+    ok(`the sky ${part === 'dome' ? 'dome' : 'field'} reaches everywhere you can stand`, pass,
+      !Number.isFinite(R) ? `could not read the ${part} radius out of buildSky()`
+      : onCam ? `rides the camera at ${R} m, inside the ${far} m far plane`
+                + (pass ? '' : ` -- EVERY frame clips it, the sky has a hole in it`)
+              : `fixed at the origin at ${R} m, but ${worstZone} reaches ${worldR.toFixed(1)} m`
+                + (pass ? '' : ` -- ${(worldR - R).toFixed(0)} m of the map stands outside the sky`));
+  }
+  // Stars painted on the inside of the dome: outside it they are the one thing
+  // that still draws (depthWrite is off on both), so they would hang in front
+  // of the sky instead of on it.
+  ok('the stars sit inside the dome', starR < domeR, `${starR} m inside ${domeR} m`);
+}
+
 // --- crossings -------------------------------------------------------------
 // A bridge belongs where a road meets a river and nowhere else.
 {

@@ -1752,6 +1752,19 @@ function updateSky(dt) {
   const ang = (worldTime - 0.25) * Math.PI * 2;
   _sunDir.set(Math.cos(ang) * 0.55, Math.sin(ang), 0.35).normalize();
   const camP = camera.position;
+  // The sky rides the camera, and that has to include the dome and the stars.
+  // They stood at the world origin at radius 420 while the Dark Woods runs to
+  // 554 m into its corners, so on 15.5% of the map you were standing OUTSIDE
+  // the sky: the shell cut down through the ground as a curved blue wall you
+  // walked straight through, with the whole mountain range hidden behind it.
+  // It read as the edge of the world because that is exactly what a sky meeting
+  // the ground looks like -- only it was 130 m in from the real edge.
+  // Centred on the camera itself, not on (camP.x, 0, camP.z) the way the sun
+  // and moon are: they are small and can hang off a y=0 sphere, but EVERY point
+  // of the dome has to stay inside camera.far (440), and a camera 46 m up a
+  // hill would swing the dome's underside out to 466 and clip a hole in it.
+  sky.dome.position.copy(camP);
+  sky.stars.position.copy(camP);
   // The shadow box rides with the camera (snapped to whole units so shadow
   // edges don't shimmer as it moves): a fixed box around the origin lit only
   // spawn and still shadow-rendered every caster inside it each frame.
