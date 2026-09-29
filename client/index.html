@@ -1812,7 +1812,6 @@ function loadZone(zdata) {
   npcMarkLayer.innerHTML = ''; npcMarkEls.clear();
   closeDialogue();
   fireflies = null; fireflyLights.length = 0; critters = []; targetId = null; cullChunks.length = 0;
-  dirtDecal = null; sfx.stopBeds(); amb.next = {}; amb.water = amb.fire = amb.folk = 99;
   for (const [, gr] of graveMeshes) if (gr.plate) gr.plate.remove(); graveMeshes.clear();   // rebuilt from the next snapshot in the new scene
 
   const e = zone.env || {};
@@ -2947,8 +2946,7 @@ function buildZone() {
   // Ground a camp has worn bare. Same field as the roads, so where a path runs
   // into a camp the two are one piece of dirt rather than two overlapping ones.
   for (const d of (zone.dirt || [])) discs.push({ x: d.x, z: d.z, r: d.r, fr: d.fr != null ? d.fr : 3 });
-  dirtDecal = buildDirtField(shapes, discs, dirtMat, 0.05, 3, []);   // kept: footSurface asks it what is path
-  buildDirtStones(dirtDecal, shapes, discs, []);
+  buildDirtStones(buildDirtField(shapes, discs, dirtMat, 0.05, 3, []), shapes, discs, []);
 
 
 // Rivers — deep flowing water sitting in the carved channel, one per river.
@@ -7611,7 +7609,6 @@ function renderWorld(dt) {
       // sticking out sideways across the surface.
       { const rigW = rec.mesh.userData.rig; if (rigW && rigW.weapon) rigW.weapon.visible = !e.swim; }
       if (e.swim && rec.mesh.visible) swimWake(rec, x, z, !!e.moving, dt);
-      stepTick(rec, e, kind, x, z);
       if (kind === 'player') updateInstrument(rec, e);
       if (rec.mesh.visible) animateEntity(rec, e, kind, dt);
     }
@@ -9228,21 +9225,8 @@ function startAbilityAnim(rec, id, windup) {
 // ---------------------------------------------------------------------------
 const sfx = (() => {
   let ctx = null, master = null, buffers = {}, volume = 0.8, unlocked = false;
-  // EVERY wav in client/sfx. This was a hand-kept subset of the folder and the
-  // two drifted, which does not fail loudly: play() finds no buffer and returns,
-  // so the sound is simply silence. The Devil Chicken's cluck and the meditation
-  // cue were both being "played" into nothing. A zonecheck invariant now holds
-  // this list against the directory in both directions.
-  const FILES = ['attack_claw', 'attack_slash', 'bag_open', 'bird_chirp', 'campfire_crackle', 'cave_drip', 'cave_rock',
-    'chest_open', 'coin_pickup', 'enemy_die', 'footstep_dirt', 'footstep_grass', 'footstep_leaves', 'footstep_stone',
-    'footstep_water', 'forest_wind', 'heal_chime', 'hit_thud', 'insect_trill', 'item_equip', 'level_up', 'loot_item',
-    'magic_cast', 'meditation_start', 'meditation_stop', 'merc_command', 'merc_hire', 'owl_hoot', 'pet_summon',
-    'quest_accept', 'quest_complete', 'target_select', 'thunder_roll', 'town_murmur', 'ui_close', 'ui_error',
-    'ui_open', 'ui_select', 'water_lap'];
-  // Continuous layers -- wind, fire, water, the murmur of a camp. A one-shot
-  // cannot do these: a bed has to be there before you notice it and go when you
-  // walk away, so each is one looping source whose gain is eased every frame.
-  const beds = new Map();
+  const FILES = ['attack_slash', 'attack_claw', 'hit_thud', 'magic_cast', 'heal_chime', 'cave_rock', 'thunder_roll', 'enemy_die',
+    'level_up', 'item_equip', 'ui_select', 'ui_open', 'ui_close', 'ui_error', 'footstep_dirt', 'footstep_stone', 'merc_command', 'coin_pickup', 'quest_complete', 'loot_item', 'target_select', 'forest_wind'];
   function init() {
     if (ctx) return;
     try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; }
@@ -9263,190 +9247,11 @@ const sfx = (() => {
     src.playbackRate.value = (o.rate || 1) * (1 + (Math.random() - 0.5) * (o.vary != null ? o.vary : 0.08));
     const g = ctx.createGain(); g.gain.value = vol;
     if (o.lowpass) { const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = o.lowpass; src.connect(f); f.connect(g); } else src.connect(g);
-    // Placed left or right of where you are looking. Distance alone tells you
-    // how far a bird is and nothing about where, and a wood in which every
-    // sound arrives from dead centre is a wood you are listening to on
-    // headphones rather than standing in.
-    if (o.pan != null && ctx.createStereoPanner) {
-      const pn = ctx.createStereoPanner(); pn.pan.value = Math.max(-1, Math.min(1, o.pan));
-      g.connect(pn); pn.connect(master);
-    } else g.connect(master);
-    src.start(ctx.currentTime + (o.delay || 0));
+    g.connect(master); src.start(ctx.currentTime + (o.delay || 0));
   }
-  // Ask for a bed at a volume; it starts itself once the buffer has arrived and
-  // eases rather than steps, so nothing clicks in or out.
-  function setBed(name, want, rate) {
-    let b = beds.get(name);
-    if (!b) { b = { want: 0, rate: 1, gain: null, src: null }; beds.set(name, b); }
-    b.want = want; if (rate) b.rate = rate;
-  }
-  function pumpBeds() {
-    if (!ctx) return;
-    for (const [name, b] of beds) {
-      if (!b.src && buffers[name] && b.want > 0.002) {
-        const s = ctx.createBufferSource(); s.buffer = buffers[name]; s.loop = true;
-        s.playbackRate.value = b.rate;
-        const g = ctx.createGain(); g.gain.value = 0;
-        s.connect(g); g.connect(master); s.start();
-        b.src = s; b.gain = g;
-      }
-      if (b.gain) {
-        b.gain.gain.setTargetAtTime(b.want, ctx.currentTime, 0.45);
-        if (b.src) b.src.playbackRate.value = b.rate;
-      }
-    }
-  }
-  function stopBeds() { for (const [, b] of beds) { if (b.src) { try { b.src.stop(); } catch (e) {} } } beds.clear(); }
-  function bedReport() { const o = {}; for (const [n, b] of beds) o[n] = { want: +b.want.toFixed(3), playing: !!b.src }; return o; }
-  function loadReport() { return { wanted: FILES.length, loaded: FILES.filter(n => buffers[n]).length,
-    missing: FILES.filter(n => !buffers[n]) }; }
   function setVolume(v) { volume = Math.max(0, Math.min(1, v)); if (master) master.gain.value = volume; try { localStorage.setItem('bk.sfx', String(volume)); } catch (e) {} }
-  return { play, setVolume, init, setBed, pumpBeds, stopBeds, bedReport, loadReport, get ready() { return !!ctx; } };
+  return { play, setVolume, init, get ready() { return !!ctx; } };
 })();
-
-// ---------------------------------------------------------------------------
-// The soundscape: what the wood sounds like when nothing in particular is
-// happening. Birds by day, an owl and the insects at night, wind in the
-// canopy, a fire you can hear before you see it, water at the shore, and a
-// footfall that matches what is actually under your feet.
-//
-// Every one of these recordings was already in client/sfx. Fifteen of the
-// thirty-nine had never been played by anything, including the whole ambient
-// set and three of the five footstep surfaces -- and nothing at all played
-// when you walked. The assets were there; the wiring was not.
-// ---------------------------------------------------------------------------
-
-// What you are standing on. It asks the ground the SAME questions the ground's
-// own colouring asks -- the rock field, the dirt decal's alpha, bankMud, the
-// canopy, the waterline -- because a second opinion about the surface is a
-// second implementation of the ground, and this codebase has paid for enough of
-// those. If it sounds like grass, that is because it is drawn as grass.
-let dirtDecal = null;                    // the path/road sheet, for its alphaAt
-function footSurface(x, z) {
-  if (waterLevelAt(x, z) - groundY(x, z) > 0.06) return 'water';
-  if (terrainField(x, z, 'rock') > 0.35) return 'stone';
-  const a = dirtDecal && dirtDecal.userData.alphaAt ? dirtDecal.userData.alphaAt(x, z) : 0;
-  if (a > 0.35 || bankMud(x, z) > 0.35) return 'dirt';
-  if (terrainField(x, z, 'dense') > 0.45) return 'leaves';
-  return 'grass';
-}
-
-// Left or right of where you are looking, so a sound has somewhere to be.
-const _panR = new THREE.Vector3();
-function panFor(x, z) {
-  _panR.setFromMatrixColumn(camera.matrixWorld, 0);
-  const rl = Math.hypot(_panR.x, _panR.z) || 1;
-  let dx = x - camera.position.x, dz = z - camera.position.z;
-  const dl = Math.hypot(dx, dz) || 1;
-  return Math.max(-1, Math.min(1, ((_panR.x / rl) * (dx / dl) + (_panR.z / rl) * (dz / dl)) * 0.85));
-}
-
-// Footfalls, paced off DISTANCE TRAVELLED rather than a timer, so they stay
-// with the feet whatever the speed and cannot drift out of step with the walk.
-const STRIDE = 1.15;                     // metres between one footfall and the next
-const FOOT_VOL = { player: 0.30, monster: 0.16 };
-function stepTick(rec, e, kind, x, z) {
-  const px = rec.stepX, pz = rec.stepZ;
-  rec.stepX = x; rec.stepZ = z;
-  if (px === undefined || !rec.mesh.visible) return;
-  const moved = Math.hypot(x - px, z - pz);
-  // A teleport is a big jump in a short time, so it is judged in metres per
-  // second -- off the REAL clock, not off dt. Two versions of this fired no
-  // footsteps at all. The first capped the jump at a flat 4 m, but a frame can
-  // be arbitrarily long (a stall, a slow load, a background tab) and the player
-  // walks on through it: measured at 3 fps the interpolated position alternated
-  // 0.07 m frames with 8.02 m ones, and every long one looked like a teleport
-  // and cleared the tally. The second used `dt`, which is worse in a way that
-  // is easy to miss -- dt is CLAMPED to 0.05 s in the frame loop so that a
-  // stall cannot fling the physics, so during exactly the stall you are trying
-  // to measure, dt is a lie. performance.now() is not.
-  const now = performance.now(), et = (now - (rec.stepT || now)) / 1000;
-  rec.stepT = now;
-  if (moved < 1e-4 || (et > 1e-4 && moved / et > 30)) { rec.stepD = 0; return; }
-  // ...and one footfall per frame at most, so a stall does not discharge a
-  // burst of them at once.
-  const me = entityMeshes.get(myId);
-  const mine = rec === me;
-  if (!mine) {
-    if (!me) return;
-    if (Math.hypot(me.mesh.position.x - x, me.mesh.position.z - z) > 20) return;
-  }
-  rec.stepD = Math.min((rec.stepD || 0) + moved, STRIDE * 2);
-  if (rec.stepD < STRIDE) return;
-  rec.stepD -= STRIDE;
-  const surf = e.swim ? 'water' : footSurface(x, z);
-  const vol = (mine ? 0.42 : FOOT_VOL[kind] || 0.16) * (surf === 'grass' ? 0.85 : 1);
-  sfx.play('footstep_' + surf, { vol, vary: 0.16, rate: 0.92 + Math.random() * 0.2,
-    pan: mine ? 0 : panFor(x, z), x: mine ? undefined : x, z: mine ? undefined : z });
-}
-
-// The ambient layer. The beds are eased every frame; the surveys behind them
-// (where the water is, where the nearest fire is) run on a slow clock, because
-// none of it changes at frame rate and waterLevelAt is not free.
-const amb = { t: 0, survey: 0, water: 99, fire: 99, folk: 99, next: {} };
-function updateSoundscape(dt) {
-  if (!sfx.ready || !zone || !camera) return;
-  // Real seconds, not accumulated dt. dt is clamped to 0.05 s in the frame loop
-  // so a stall cannot fling the physics, which means on a struggling client it
-  // runs slow -- and an owl that hoots on game time would go quiet exactly when
-  // the frame rate drops. Nothing here is physics.
-  amb.t = performance.now() / 1000;
-  const cam = camera.position;
-  const enclosed = !!zone.enclosed;
-  const day = Math.max(0, Math.min(1, Math.sin((typeof worldTime === 'number' ? worldTime : 0.5) * Math.PI * 2 - Math.PI / 2) * 0.5 + 0.5));
-  const rain = worldWeather === 'rain', mist = worldWeather === 'mist';
-  const canopy = enclosed ? 0 : terrainField(cam.x, cam.z, 'dense');
-
-  if (amb.t - amb.survey > 0.4) {
-    amb.survey = amb.t;
-    // Nearest water, by sampling rings outward and stopping at the first hit.
-    amb.water = 99;
-    outer: for (const r of [0, 5, 10, 16, 24]) {
-      const n = r === 0 ? 1 : 8;
-      for (let i = 0; i < n; i++) {
-        const a = (i / n) * 6.2832, sx = cam.x + Math.cos(a) * r, sz = cam.z + Math.sin(a) * r;
-        if (waterLevelAt(sx, sz) - groundY(sx, sz) > 0.05) { amb.water = r; break outer; }
-      }
-    }
-    amb.fire = 99;
-    for (const f of cookFires) amb.fire = Math.min(amb.fire, Math.hypot(f.x - cam.x, f.z - cam.z));
-    amb.folk = 99;
-    for (const [, n] of npcMeshes) if (n.mesh) amb.folk = Math.min(amb.folk, Math.hypot(n.mesh.position.x - cam.x, n.mesh.position.z - cam.z));
-  }
-
-  // --- the continuous layers
-  // Wind: always there outdoors, thicker under a canopy and louder in rain.
-  sfx.setBed('forest_wind', enclosed ? 0 : 0.05 + canopy * 0.07 + (rain ? 0.17 : 0) + (mist ? 0.04 : 0),
-    0.8 + canopy * 0.3);
-  sfx.setBed('campfire_crackle', amb.fire < 13 ? 0.55 * (1 - amb.fire / 13) : 0);
-  sfx.setBed('water_lap', amb.water < 24 ? 0.30 * (1 - amb.water / 24) : 0);
-  sfx.setBed('town_murmur', (!enclosed && amb.folk < 16) ? 0.20 * (1 - amb.folk / 16) : 0);
-  sfx.pumpBeds();
-
-  // --- the calls, each on its own clock, from somewhere around you
-  const fire = (name, key, lo, hi, vol, opt) => {
-    const due = amb.next[key];
-    if (due === undefined) { amb.next[key] = amb.t + Math.random() * (hi - lo); return; }  // stagger the first
-    if (amb.t < due) return;
-    amb.next[key] = amb.t + lo + Math.random() * (hi - lo);
-    const a = Math.random() * 6.2832, r = 9 + Math.random() * 20;
-    sfx.play(name, Object.assign({ vol, vary: 0.2, pan: panFor(cam.x + Math.cos(a) * r, cam.z + Math.sin(a) * r) }, opt || {}));
-  };
-  const quiet = (key) => { amb.next[key] = amb.t + 4 + Math.random() * 6; };
-
-  if (enclosed) { fire('cave_drip', 'drip', 2.5, 8, 0.34); quiet('bird'); quiet('owl'); quiet('trill'); return; }
-  // Birds are a daytime sound and they go quiet in weather.
-  if (day > 0.45 && !rain && canopy > 0.12) fire('bird_chirp', 'bird', 3.5, 10, 0.26, { rate: 0.95 + Math.random() * 0.35 });
-  else quiet('bird');
-  // The owl is rare on purpose: heard twice an hour it is atmosphere, heard
-  // every ten seconds it is a car alarm.
-  if (day < 0.25 && canopy > 0.25) fire('owl_hoot', 'owl', 26, 75, 0.30);
-  else quiet('owl');
-  // Insects come up at dusk and hold through the night, over open ground
-  // rather than deep wood.
-  if (day < 0.5 && canopy < 0.62 && !rain) fire('insect_trill', 'trill', 5, 13, 0.20);
-  else quiet('trill');
-}
 
 // ---------------------------------------------------------------------------
 // Music director: one track at a time with crossfades, chosen from where you
@@ -12100,11 +11905,6 @@ if (location.search.includes('debug')) {
     get quests() { return questData; },
     get entities() { return entityMeshes; },
     get objects() { return worldObjects; },   // quest objects, for checking they arrived
-    sfx, footSurface,
-    // What the ambient layer is doing: which beds are up and how loud, and how
-    // far off the things driving them are.
-    soundReport() { return { water: +amb.water.toFixed(1), fire: +amb.fire.toFixed(1), folk: +amb.folk.toFixed(1),
-      beds: sfx.bedReport(), buffers: sfx.loadReport() }; },
     get flyers() { return critters; },        // butterflies/moths, for checking they flap and drift
     // How many bodies the pool ever had to build, against how many insects
     // want one. The whole point of the pool is that the first number stays
@@ -12607,7 +12407,6 @@ function animate() {
     }
   }
   _pf('critters', () => updateCritters(dt));
-  _pf('amb', () => updateSoundscape(dt));
   _pf('cull', () => cullFarChunks(camera));
   _pf('render', () => renderer.render(scene, camera));
   if (window.__bkProf) window.__bkProf.frames = (window.__bkProf.frames || 0) + 1;

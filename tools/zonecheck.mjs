@@ -472,45 +472,6 @@ const PARSED = [];
     'it samples each triangle centre and counts what pokes through');
 }
 
-// --- sound -------------------------------------------------------------------
-// The wav a sound plays has to be one the client actually loaded.
-//
-// sfx preloads a hand-written list of names, and the list drifted from the
-// folder. Nothing fails when it does: play() looks up the buffer, does not find
-// it, and returns -- so the sound is simply silence, indistinguishable from a
-// sound that is playing quietly somewhere off screen. The Devil Chicken's cluck
-// and the meditation cue were both being played into nothing, and fifteen of
-// the thirty-nine recordings had never been loaded at all, among them every
-// ambient one and three of the five footstep surfaces.
-{
-  const cli = readFileSync(new URL('../client/index.html', import.meta.url), 'utf8');
-  const dir = fileURLToPath(new URL('../client/sfx', import.meta.url));
-  const onDisk = readdirSync(dir).filter(f => f.endsWith('.wav')).map(f => f.replace('.wav', ''));
-  const m = /const FILES = \[([\s\S]*?)\];/.exec(cli);
-  const loaded = m ? [...m[1].matchAll(/'([^']+)'/g)].map(x => x[1]) : [];
-  const notLoaded = onDisk.filter(n => !loaded.includes(n));
-  const notOnDisk = loaded.filter(n => !onDisk.includes(n));
-  ok('every sound in client/sfx is loaded', loaded.length > 0 && notLoaded.length === 0 && notOnDisk.length === 0,
-    !loaded.length ? 'could not read the FILES list'
-    : notLoaded.length ? `${notLoaded.join(', ')} on disk but never loaded -- anything that plays them is silent`
-    : notOnDisk.length ? `${notOnDisk.join(', ')} loaded but not on disk`
-    : `all ${onDisk.length}`);
-  // ...and the other direction: a name played that no file answers to. A typo
-  // here is silence too, and silence is not a symptom anyone reports.
-  const played = new Set();
-  for (const re of [/\bS\(\s*'([a-z_]+)'/g, /sfx\.play\(\s*'([a-z_]+)'/g, /sfx\.setBed\(\s*'([a-z_]+)'/g, /\[\s*'([a-z_]+)'\s*,\s*\{/g])
-    for (const x of cli.matchAll(re)) played.add(x[1]);
-  // the ability-cue table and the footstep names built from a surface
-  for (const x of cli.matchAll(/'footstep_' \+ (\w+)/g)) for (const sfc of ['grass', 'dirt', 'stone', 'leaves', 'water']) played.add('footstep_' + sfc);
-  // A name built by concatenation ('footstep_' + surface) is caught as the bare
-  // prefix; the five real surfaces were added above, so drop the stub.
-  const ghosts = [...played].filter(n => !n.endsWith('_')
-    && /^(footstep_|attack_|ui_|cave_|owl_|bird_|insect_|water_|forest_|town_|campfire_|meditation_|merc_|quest_|magic_|heal_|hit_|item_|level_|loot_|coin_|target_|thunder_|enemy_|chest_|bag_|pet_)/.test(n)
-    && !onDisk.includes(n));
-  ok('nothing plays a sound that does not exist', ghosts.length === 0,
-    ghosts.length ? `${ghosts.join(', ')} is played but there is no such wav` : `${played.size} names, every one of them a file`);
-}
-
 // --- the sky ----------------------------------------------------------------
 // The sky has to reach everywhere you can stand.
 //
