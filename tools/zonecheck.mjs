@@ -472,6 +472,71 @@ const PARSED = [];
     'it samples each triangle centre and counts what pokes through');
 }
 
+// --- baked textures ----------------------------------------------------------
+// Every model carries its own texture now, and this is what says it still does.
+//
+// All 339 GLBs shipped untextured -- 1,233 materials, every one a flat
+// baseColorFactor -- and what you saw was detailize() projecting a grain in the
+// fragment shader. tools/bake_textures.py put it in the files. A model added to
+// the library without being run through it would not fail, or look broken; it
+// would just be the one flat object in a textured wood, which is the sort of
+// thing nobody reports and everybody half-notices.
+{
+  const cli = readFileSync(new URL('../client/index.html', import.meta.url), 'utf8');
+  const body = /const DETAIL_RULES = \[([\s\S]*?)\n\];/.exec(cli);
+  const rules = body ? [...body[1].matchAll(/\[\/(.+?)\/i,\s*(?:'([a-z]+)'|(null))\]/g)]
+    .map(m => [new RegExp(m[1], 'i'), m[3] ? null : m[2]]) : [];
+  const tileFor = (n) => { for (const [re, t] of rules) if (re.test(n || '')) return t; return 'stone'; };
+  const modelDir = fileURLToPath(new URL('../client/models', import.meta.url));
+  // Parsed here rather than borrowed from the normals check: that one keeps its
+  // list inside its own block, and reaching into another check's scope is how a
+  // check quietly stops running when the other one is edited.
+  const glbs = [];
+  (function walk(d) { for (const e of readdirSync(d, { withFileTypes: true })) {
+    const f = join(d, e.name);
+    if (e.isDirectory()) walk(f); else if (e.name.endsWith('.glb')) glbs.push(f);
+  } })(modelDir);
+  const models = [];
+  for (const f of glbs) {
+    const dat = readFileSync(f);
+    if (dat.length < 12 || dat.toString('utf8', 0, 4) !== 'glTF') continue;
+    let off = 12, js = null;
+    while (off + 8 <= dat.length) {
+      const len = dat.readUInt32LE(off), ty = dat.readUInt32LE(off + 4);
+      if (ty === 0x4E4F534A) js = JSON.parse(dat.toString('utf8', off + 8, off + 8 + len));
+      off += 8 + len;
+    }
+    if (js) models.push([relative(modelDir, f), js]);
+  }
+  const bare = [], broken = [];
+  let textured = 0, exempt = 0;
+  for (const [rel, js] of models) {
+    for (const mat of (js.materials || [])) {
+      const tile = tileFor(mat.name || '');
+      if (tile === null) { exempt++; continue; }        // hair, eyes, teeth: flat on purpose
+      if (!(mat.pbrMetallicRoughness || {}).baseColorTexture) bare.push(`${rel}: ${mat.name || '(unnamed)'}`);
+      else textured++;
+    }
+    // ...and the texture it points at has to be on disk. The uri is relative to
+    // the model, and the models are nested up to three deep, so a single '../'
+    // is right for exactly one of those depths.
+    for (const img of (js.images || [])) {
+      const from = join(modelDir, rel, '..');
+      if (!existsSync(join(from, img.uri))) broken.push(`${rel} -> ${img.uri}`);
+    }
+  }
+  ok('every model carries its own texture', bare.length === 0,
+    bare.length ? `${bare.length} materials still flat, e.g. ${bare.slice(0, 3).join('; ')}`
+                  + ' -- run: python3 tools/bake_textures.py'
+                : `${textured} materials textured, ${exempt} flat by rule (hair, eyes, teeth)`);
+  ok('every baked texture resolves on disk', broken.length === 0,
+    broken.length ? broken.slice(0, 3).join('; ') : 'all image uris found');
+  // The shader must not run over a material that already has the grain in its
+  // map, or the grain is multiplied by itself.
+  ok('nothing is grained twice', /function detailize[\s\S]{0,700}?if \(mat\.map\) return mat;/.test(cli),
+    'detailize returns early for anything with a map');
+}
+
 // --- the sky ----------------------------------------------------------------
 // The sky has to reach everywhere you can stand.
 //

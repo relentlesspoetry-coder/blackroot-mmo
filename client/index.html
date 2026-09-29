@@ -818,6 +818,13 @@ function getDetailAtlas() {
 // per tile repeat. strength: how hard the grain modulates the colour.
 function detailize(mat, tile, opts = {}) {
   if (!mat || !mat.isMeshStandardMaterial) return mat;
+  // A material that already carries a map has its grain BAKED IN -- every GLB
+  // in client/models does now (tools/bake_textures.py). Running the shader over
+  // it as well would multiply the grain by itself. The procedural surfaces --
+  // ground, water, the dirt decals, the mountains -- have no map and still get
+  // it at runtime, which is right: they are world-sized and have no asset to
+  // bake into.
+  if (mat.map) return mat;
   const idx = tile == null ? -1 : (typeof tile === 'string' ? DETAIL_INDEX[tile] : tile);
   if ((idx == null || idx < 0) && !opts.attr) return mat;
   const D = mat.userData.detail = { tile: idx == null ? -1 : idx, scale: opts.scale || 2.2, strength: opts.strength != null ? opts.strength : 1.0, attr: !!opts.attr };
@@ -932,6 +939,25 @@ function modelKey(path) { const i = path.lastIndexOf('/'); return i < 0 ? path :
 //
 // Computed once per model here, where every model in the game is loaded, and
 // not per clone: the clones share the geometry.
+// Every model now carries a baseColorTexture pointing at one of sixteen tiles
+// in client/textures/baked (tools/bake_textures.py), and each GLB brings its
+// own decoded copy: 354 texture objects for what are really sixteen images,
+// because GLTFLoader hands back an ImageBitmap with no URL to match them on.
+// The glTF names each image after its tile, so they can be pooled here -- before
+// anything is rendered, so the duplicates never reach the GPU at all.
+const _tileTex = new Map();
+function shareTiles(root) {
+  root.traverse(o => {
+    if (!o.isMesh || !o.material) return;
+    for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
+      const t = m.map; if (!t || !t.name) continue;
+      const have = _tileTex.get(t.name);
+      if (have) { m.map = have; continue; }
+      t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      _tileTex.set(t.name, t);
+    }
+  });
+}
 function ensureNormals(root) {
   let n = 0;
   root.traverse(o => {
@@ -946,7 +972,7 @@ async function loadModels(list, onProgress) {
   let done = 0;
   await Promise.all(wanted.map(async (path) => {
     const key = modelKey(path);
-    try { const g = await gltfLoader.loadAsync('models/' + path + '.glb'); ensureNormals(g.scene); LOADED[key] = g.scene; if (g.animations && g.animations.length) LOADED_ANIM[key] = g.animations; }
+    try { const g = await gltfLoader.loadAsync('models/' + path + '.glb'); ensureNormals(g.scene); shareTiles(g.scene); LOADED[key] = g.scene; if (g.animations && g.animations.length) LOADED_ANIM[key] = g.animations; }
     catch (e) { console.warn('Model failed to load:', path, e); LOADED[key] = null; }
     done++; if (onProgress) onProgress(done, wanted.length);
   }));
