@@ -3081,7 +3081,7 @@ setInterval(() => {
 // ---------------------------------------------------------------------------
 // HTTP static host + WebSocket
 // ---------------------------------------------------------------------------
-const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.glb': 'model/gltf-binary', '.png': 'image/png', '.jpg': 'image/jpeg' };
+const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.glb': 'model/gltf-binary', '.png': 'image/png', '.jpg': 'image/jpeg', '.mp3': 'audio/mpeg', '.wav': 'audio/wav' };
 const httpServer = http.createServer((req, res) => {
   // decodeURIComponent throws on a malformed escape (GET /%zz). That throw used
   // to come straight out of the request listener and take the whole world down,

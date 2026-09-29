@@ -1812,6 +1812,7 @@ function loadZone(zdata) {
   npcMarkLayer.innerHTML = ''; npcMarkEls.clear();
   closeDialogue();
   fireflies = null; fireflyLights.length = 0; critters = []; targetId = null; cullChunks.length = 0;
+  ambience.stop();
   for (const [, gr] of graveMeshes) if (gr.plate) gr.plate.remove(); graveMeshes.clear();   // rebuilt from the next snapshot in the new scene
 
   const e = zone.env || {};
@@ -9250,8 +9251,108 @@ const sfx = (() => {
     g.connect(master); src.start(ctx.currentTime + (o.delay || 0));
   }
   function setVolume(v) { volume = Math.max(0, Math.min(1, v)); if (master) master.gain.value = volume; try { localStorage.setItem('bk.sfx', String(volume)); } catch (e) {} }
-  return { play, setVolume, init, get ready() { return !!ctx; } };
+  return { play, setVolume, init, get ready() { return !!ctx; },
+    // The ambience rides the same context and the same master gain, so there is
+    // one clock, one device and one volume setting rather than two.
+    get ctx() { return ctx; }, get bus() { return master; } };
 })();
+
+// ---------------------------------------------------------------------------
+// Ambience: two long field recordings under everything — the wood itself, and
+// running water when you are near a river.
+//
+// They are LOOPED BY CROSSFADE, not by `loop = true`. These are 22 and 24
+// second recordings, and a hard wrap lands a seam on you every twenty seconds,
+// which is precisely the interval at which a bed stops being a place and starts
+// being a tape. Each pass is scheduled to start XFADE seconds before the last
+// one ends, ramped up as the other ramps down, so the two overlap and the joint
+// has nothing to hear. mp3 decoding adds a little silence at each end as well,
+// and the overlap swallows that too.
+// ---------------------------------------------------------------------------
+const AMBIENCE = {
+  woods:      { url: 'ambience/woods.mp3' },
+  river_flow: { url: 'ambience/river_flow.mp3' },
+};
+const ambience = (() => {
+  const XFADE = 1.6;
+  let started = false;
+  function prime() {
+    const ctx = sfx.ctx; if (!ctx || started) return;
+    started = true;
+    for (const [name, a] of Object.entries(AMBIENCE)) {
+      a.want = 0; a.out = ctx.createGain(); a.out.gain.value = 0; a.out.connect(sfx.bus);
+      fetch(a.url).then(r => r.arrayBuffer()).then(b => ctx.decodeAudioData(b))
+        .then(buf => { a.buf = buf; a.nextAt = ctx.currentTime + 0.1; }).catch(() => {});
+    }
+  }
+  // Keep a couple of passes queued ahead. The loop body almost never runs; it
+  // fires once every twenty seconds per bed.
+  function pump() {
+    const ctx = sfx.ctx; if (!ctx) return;
+    for (const a of Object.values(AMBIENCE)) {
+      if (!a.out) continue;
+      a.out.gain.setTargetAtTime(a.want, ctx.currentTime, 0.8);
+      if (!a.buf || a.want < 0.002) continue;
+      const dur = a.buf.duration;
+      while (a.nextAt < ctx.currentTime + 4) {
+        const t0 = Math.max(a.nextAt, ctx.currentTime + 0.05);
+        const src = ctx.createBufferSource(); src.buffer = a.buf;
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.linearRampToValueAtTime(1, t0 + XFADE);
+        g.gain.setValueAtTime(1, t0 + dur - XFADE);
+        g.gain.linearRampToValueAtTime(0.0001, t0 + dur);
+        src.connect(g); g.connect(a.out);
+        src.start(t0); src.stop(t0 + dur + 0.05);
+        a.nextAt = t0 + dur - XFADE; a.passes = (a.passes || 0) + 1;
+      }
+    }
+  }
+  return {
+    set(name, v) { const a = AMBIENCE[name]; if (a) a.want = Math.max(0, Math.min(1, v)); },
+    update() { prime(); pump(); },
+    stop() { for (const a of Object.values(AMBIENCE)) { a.want = 0; if (a.out) a.out.gain.value = 0; a.nextAt = sfx.ctx ? sfx.ctx.currentTime + 0.1 : 0; } },
+    report() { const o = {}; const now = sfx.ctx ? sfx.ctx.currentTime : 0;
+      for (const [n, a] of Object.entries(AMBIENCE))
+        o[n] = { want: +(a.want || 0).toFixed(3), loaded: !!a.buf, dur: a.buf ? +a.buf.duration.toFixed(1) : 0,
+                 passes: a.passes || 0, nextIn: a.nextAt ? +(a.nextAt - now).toFixed(1) : null,
+                 gain: a.out ? +a.out.gain.value.toFixed(3) : 0 };
+      return o; },
+  };
+})();
+
+// How far the camera is from running water: the distance to the nearest river's
+// EDGE, not its centreline, so a wide river is heard from its bank rather than
+// from the middle. Still water is not this sound and does not get it.
+function riverEdgeDist(x, z) {
+  let best = 1e9;
+  for (const r of worldRivers()) {
+    const d = distToPolyline(x, z, r.points) - riverWaterHalf(r.width);
+    if (d < best) best = d;
+  }
+  return best;
+}
+const RIVER_HEARD = 34;            // metres from the bank at which it fades out
+// These are deliberately LOW. A bed is something you notice when it stops, not
+// something you listen to: the recordings are normalised near full scale, the
+// music sits at 0.18, and anything in this range over about a fifth stops being
+// the wood and starts being a recording of the wood played at you. They feed
+// the same master gain as the effects, so the sound slider scales them too.
+const AMB_WOODS = 0.085, AMB_WOODS_CANOPY = 0.055, AMB_RIVER = 0.15;
+function updateAmbience() {
+  if (!sfx.ready || !zone || !camera) return;
+  const cam = camera.position;
+  // The wood, everywhere outdoors, a touch thicker where the canopy closes in.
+  const canopy = zone.enclosed ? 0 : terrainField(cam.x, cam.z, 'dense');
+  ambience.set('woods', zone.enclosed ? 0 : AMB_WOODS + canopy * AMB_WOODS_CANOPY);
+  // The river, from its bank outward. Clamped at the bank: riverEdgeDist goes
+  // NEGATIVE once you are over the water, and without the clamp standing in the
+  // middle of the Crowwater pushed it to 0.185 -- past the ceiling this constant
+  // is supposed to be.
+  const d = zone.enclosed ? 1e9 : Math.max(0, riverEdgeDist(cam.x, cam.z));
+  ambience.set('river_flow', d > RIVER_HEARD ? 0 : AMB_RIVER * (1 - d / RIVER_HEARD));
+  ambience.update();
+}
 
 // ---------------------------------------------------------------------------
 // Music director: one track at a time with crossfades, chosen from where you
@@ -11905,6 +12006,7 @@ if (location.search.includes('debug')) {
     get quests() { return questData; },
     get entities() { return entityMeshes; },
     get objects() { return worldObjects; },   // quest objects, for checking they arrived
+    ambience, get ambienceReport() { return ambience.report(); },
     get flyers() { return critters; },        // butterflies/moths, for checking they flap and drift
     // How many bodies the pool ever had to build, against how many insects
     // want one. The whole point of the pool is that the first number stays
@@ -12407,6 +12509,7 @@ function animate() {
     }
   }
   _pf('critters', () => updateCritters(dt));
+  _pf('amb', () => updateAmbience());
   _pf('cull', () => cullFarChunks(camera));
   _pf('render', () => renderer.render(scene, camera));
   if (window.__bkProf) window.__bkProf.frames = (window.__bkProf.frames || 0) + 1;
