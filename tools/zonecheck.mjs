@@ -535,6 +535,14 @@ const PARSED = [];
   // map, or the grain is multiplied by itself.
   ok('nothing is grained twice', /function detailize[\s\S]{0,700}?if \(mat\.map\) return mat;/.test(cli),
     'detailize returns early for anything with a map');
+  // The ambience beds swallow nothing now, but a missing file is still worth
+  // catching before it reaches a player as a wood with no sound in it.
+  const amb = [...cli.matchAll(/url: '(ambience\/[^']+)'/g)].map(m => m[1]);
+  const gone = amb.filter(u => !existsSync(fileURLToPath(new URL('../client/' + u, import.meta.url))));
+  ok('every ambient bed has its recording', amb.length > 0 && gone.length === 0,
+    !amb.length ? 'no ambience urls found -- the check has come unstuck from the code'
+    : gone.length ? `${gone.join(', ')} is asked for but not on disk`
+    : `${amb.length} beds, both files present`);
 }
 
 // --- the sky ----------------------------------------------------------------

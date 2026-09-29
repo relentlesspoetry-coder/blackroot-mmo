@@ -1399,6 +1399,19 @@ function bakeModel(name, targetH) {
       }
       geo.applyMatrix4(m.matrixWorld);
       geo.scale(s, s, s); geo.translate(-cx * s, -minY * s, -cz * s);
+      // ...and the UVs with it. They are baked in the model's own space
+      // (tools/bake_textures.py) at 2.2 m per repeat, so scaling the geometry
+      // without scaling them stretches the grain by exactly the factor the
+      // model was resized by. The trees are authored at 2.7 to 6.7 m and stood
+      // up at 13, so their bark was coming out between 1.9 and 4.8 times too
+      // coarse while the scatter, which is placed at its native size, was
+      // right. The shader this replaced projected from WORLD position and so
+      // had one repeat everywhere by construction; this is what buys that back.
+      if (s !== 1 && geo.attributes.uv) {
+        const uv = geo.attributes.uv.array;
+        for (let k = 0; k < uv.length; k++) uv[k] *= s;
+        geo.attributes.uv.needsUpdate = true;
+      }
       // drop attributes the others may lack so merge succeeds
       for (const attr of Object.keys(geo.attributes)) if (!['position', 'normal', 'uv'].includes(attr)) geo.deleteAttribute(attr);
       if (!geo.attributes.normal) geo.computeVertexNormals();
@@ -9308,7 +9321,10 @@ const ambience = (() => {
     for (const [name, a] of Object.entries(AMBIENCE)) {
       a.want = 0; a.out = ctx.createGain(); a.out.gain.value = 0; a.out.connect(sfx.bus);
       fetch(a.url).then(r => r.arrayBuffer()).then(b => ctx.decodeAudioData(b))
-        .then(buf => { a.buf = buf; a.nextAt = ctx.currentTime + 0.1; }).catch(() => {});
+        .then(buf => { a.buf = buf; a.nextAt = ctx.currentTime + 0.1; })
+        // Not swallowed: a bed that fails to load is silence, and silence is
+        // indistinguishable from a bed that is simply quiet here.
+        .catch(e => console.error(`[amb] ${a.url} did not load:`, e && e.message));
     }
   }
   // Keep a couple of passes queued ahead. The loop body almost never runs; it
@@ -9317,7 +9333,12 @@ const ambience = (() => {
     const ctx = sfx.ctx; if (!ctx) return;
     for (const a of Object.values(AMBIENCE)) {
       if (!a.out) continue;
-      a.out.gain.setTargetAtTime(a.want, ctx.currentTime, 0.8);
+      // Only when it has actually moved. setTargetAtTime appends an event to
+      // the param's timeline, and at frame rate that is a hundred a second for
+      // a bed that has been sitting at the same level since you arrived.
+      if (Math.abs(a.want - (a.set == null ? -1 : a.set)) > 0.002) {
+        a.out.gain.setTargetAtTime(a.want, ctx.currentTime, 0.8); a.set = a.want;
+      }
       if (!a.buf || a.want < 0.002) continue;
       const dur = a.buf.duration;
       while (a.nextAt < ctx.currentTime + 4) {

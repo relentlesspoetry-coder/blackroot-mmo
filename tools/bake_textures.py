@@ -182,6 +182,78 @@ def append_accessor(js, bin_, values, gltype='VEC2'):
     return len(js['accessors']) - 1, bin_
 
 
+def mat_mul(a, b):
+    return [sum(a[r * 4 + k] * b[k * 4 + c] for k in range(4)) for r in range(4) for c in range(4)]
+
+
+def node_matrix(nd):
+    if 'matrix' in nd:                       # glTF stores column-major
+        m = nd['matrix']
+        return [m[0], m[4], m[8], m[12], m[1], m[5], m[9], m[13],
+                m[2], m[6], m[10], m[14], m[3], m[7], m[11], m[15]]
+    t = nd.get('translation', [0, 0, 0])
+    r = nd.get('rotation', [0, 0, 0, 1])
+    sc = nd.get('scale', [1, 1, 1])
+    x, y, z, w = r
+    rot = [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w), 0,
+           2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w), 0,
+           2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y), 0,
+           0, 0, 0, 1]
+    out = list(rot)
+    for c in range(3):                        # columns scaled
+        for r_ in range(3):
+            out[r_ * 4 + c] *= sc[c]
+    out[3], out[7], out[11] = t[0], t[1], t[2]
+    return out
+
+
+def mesh_world_matrices(js):
+    """Where each mesh ends up inside its own model.
+
+    The grain used to be projected from WORLD position and world normal, so a
+    part that its node rotates was projected on the plane it actually faces.
+    Baking from the raw accessors instead chooses the plane in the mesh's own
+    frame, and on a rotated part that is the wrong plane -- the texture comes
+    out smeared along the surface rather than laid on it. 7,212 of the 8,886
+    mesh nodes carry a transform, and 164 of 1,570 measured surfaces were off by
+    more than 2x because of it. No mesh here is referenced by two nodes, so each
+    has exactly one answer.
+    """
+    out = {}
+    ident = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+
+    def walk(i, parent):
+        nd = js['nodes'][i]
+        m = mat_mul(parent, node_matrix(nd))
+        if 'mesh' in nd:
+            out[nd['mesh']] = m
+        for c in nd.get('children', []):
+            walk(c, m)
+
+    roots = []
+    for sc in js.get('scenes', []):
+        roots += sc.get('nodes', [])
+    if not roots:
+        roots = list(range(len(js.get('nodes', []))))
+    for r in roots:
+        walk(r, ident)
+    return out
+
+
+def xform_point(m, p):
+    x, y, z = p[0], p[1], p[2]
+    return (m[0] * x + m[1] * y + m[2] * z + m[3],
+            m[4] * x + m[5] * y + m[6] * z + m[7],
+            m[8] * x + m[9] * y + m[10] * z + m[11])
+
+
+def xform_dir(m, v):
+    x, y, z = v[0], v[1], v[2]
+    return (m[0] * x + m[1] * y + m[2] * z,
+            m[4] * x + m[5] * y + m[6] * z,
+            m[8] * x + m[9] * y + m[10] * z)
+
+
 def box_uv(pos, nrm):
     """Project each vertex on the dominant axis of its own normal.
 
@@ -216,8 +288,13 @@ def bake_file(path, rules, means, check=False):
     # Nothing in this library ships an image of its own -- all 339 were checked
     # -- so the texture tables are ours alone and are rebuilt from empty. That
     # keeps a second run from stacking another set on top of the first.
-    assert all(str(i.get('uri', '')).find('textures/baked/') >= 0 for i in js.get('images', [])), \
-        f'{path.name} has an image this tool did not write'
+    # A model that brought its own texture is left entirely alone rather than
+    # having its tables rebuilt underneath it. None do today -- all 339 were
+    # checked -- but an assert here would abort a run part-written, and half a
+    # library baked is worse than none of it.
+    if any('textures/baked/' not in str(i.get('uri', '')) for i in js.get('images', [])):
+        return {'materials': 0, 'skipped': len(js.get('materials', [])), 'prims': 0,
+                'reuv': False, 'own': True, 'bytes': path.stat().st_size}
     js['images'] = []; js['textures'] = []; js['samplers'] = []
     # One image/sampler/texture per tile per file, reused by every material that
     # wants it. The image is an external URI: the tiles already exist on disk and
@@ -264,13 +341,18 @@ def bake_file(path, rules, means, check=False):
     # orphaned in the buffer, growing the file every time. One flag stops that.
     done_uv = js.setdefault('extras', {}).get('bakeUV')
     if not check and touched and not done_uv:
-        for mesh in js.get('meshes', []):
+        world = mesh_world_matrices(js)
+        for mi, mesh in enumerate(js.get('meshes', [])):
+            wm = world.get(mi)
             for pr in mesh.get('primitives', []):
                 a = pr.get('attributes', {})
                 if 'POSITION' not in a or 'NORMAL' not in a:
                     continue
                 pos = read_accessor(js, bin_, a['POSITION'])
                 nrm = read_accessor(js, bin_, a['NORMAL'])
+                if wm:
+                    pos = [xform_point(wm, p) for p in pos]
+                    nrm = [xform_dir(wm, n) for n in nrm]
                 idx, bin_ = append_accessor(js, bin_, box_uv(pos, nrm))
                 a['TEXCOORD_0'] = idx        # overwrite: nothing sampled the old one
                 prims += 1
@@ -279,8 +361,9 @@ def bake_file(path, rules, means, check=False):
         path.write_bytes(pack_glb(js, bin_))
     elif not check and touched:
         path.write_bytes(pack_glb(js, bin_))       # colours/texture refs only
+        skipped_uv = True
     return {'materials': touched, 'skipped': skipped, 'prims': prims,
-            'bytes': path.stat().st_size}
+            'reuv': bool(done_uv and touched), 'own': False, 'bytes': path.stat().st_size}
 
 
 def main():
@@ -294,15 +377,21 @@ def main():
               ', '.join(f'{t} {means[t]:.2f}' for t in sorted(means)))
     files = sorted(p for p in (CLIENT / 'models').rglob('*.glb'))
     before = sum(p.stat().st_size for p in files)
-    mats = prims = skipped = 0
+    mats = prims = skipped = reuv = 0
     for p in files:
         r = bake_file(p, rules, means, check)
         if not r:
             continue
-        mats += r['materials']; prims += r['prims']; skipped += r['skipped']
+        mats += r['materials']; prims += r['prims']; skipped += r['skipped']; reuv += 1 if r['reuv'] else 0
     after = sum(p.stat().st_size for p in files)
     print(f'{len(files)} models: {mats} materials textured, {skipped} left flat '
           f'(hair, eyes, teeth and the like), {prims} primitives given UVs')
+    if reuv and not prims:
+        print(f'  NOTE  {reuv} models already carried baked UVs, so only their colours and')
+        print('        texture references were rewritten. Appending a second UV set would')
+        print('        orphan the first inside the buffer and grow the file every run, so')
+        print('        to CHANGE the projection restore the assets first:')
+        print('          git checkout <commit-before-the-bake> -- client/models')
     print(f'models {before/1e6:.1f} MB -> {after/1e6:.1f} MB '
           f'(+{(after-before)/1e6:.1f} MB)')
 
