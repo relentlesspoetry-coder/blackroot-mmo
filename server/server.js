@@ -29,6 +29,7 @@ import {
   caveOutline, prepareZone,
 } from './worldgen.js';
 import { onDeckSpan, riverWaterHalf } from '../shared/terrain.js';
+import { fogDims, fogBytes, newFog, revealDisc, fogToB64, fogFromB64, sightOf, regionAt, fogCellOf } from '../shared/fog.js';
 import {
   RIVER_BANK, floorHeightAt, standableAt, resolveCollision, navBlocked, lineClear,
 } from './collision.js';
@@ -102,6 +103,72 @@ const PORT = process.env.PORT || 8080;
 const ZONES = { blackroot, spiderden };
 const START_ZONE = 'blackroot';
 function zoneOf(ent) { return ZONES[ent.zoneId]; }
+
+// --- fog of war -------------------------------------------------------------
+// A "place" is what the world map names and what counts as discovered: a region
+// of a zone that has them, and the zone itself when it has none. The Dark Woods
+// and the Killing Fields are two places you walk between; the Spider Den is a
+// place you go through a door to reach.
+function placesOf(zone) {
+  if (zone.regions && zone.regions.length) return zone.regions;
+  return [{ id: zone.id, name: zone.name, subtitle: zone.subtitle, bounds: zone.bounds, boundary: zone.boundary }];
+}
+function placeAt(zone, x, z, y) {
+  return regionAt(zone, x, z, y) || placesOf(zone)[0];
+}
+function fogOf(p, zone) {
+  const d = fogDims(zone);
+  let bits = p.fog[zone.id];
+  // A zone whose bounds changed gets a fresh grid rather than a misaligned one:
+  // the same reason applySave puts a player back on the road when the map moved
+  // under them. Better to re-walk it than to have the fog lifted off the wrong
+  // ground.
+  if (!bits || bits.length !== fogBytes(d)) { bits = newFog(d); p.fog[zone.id] = bits; }
+  return { d, bits };
+}
+// Called as the player moves. Collects the cells this uncovered so the snapshot
+// can send just those, and records the place for the world map.
+function revealFog(p, zone) {
+  const { d, bits } = fogOf(p, zone);
+  // Standing still uncovers nothing, so do not walk the disc for it: the cell
+  // under your feet is the whole of the state that matters here, and this runs
+  // for every player on every tick.
+  const cell = fogCellOf(d, p.x, p.z);
+  if (cell === p._fogCell && zone.id === p._fogZone) return;
+  p._fogCell = cell; p._fogZone = zone.id;
+
+  for (const i of revealDisc(d, bits, p.x, p.z, sightOf(zone))) {
+    if (p._fogNew.length >= 4000) break;      // a client that never drains cannot grow this forever
+    p._fogNew.push(i);
+  }
+  const place = placeAt(zone, p.x, p.z, p.y);
+  if (place && !p.visited.has(place.id)) {
+    p.visited.add(place.id);
+    p._visitedNew = true;
+  }
+}
+// Everything the world map needs, which is the shape of each place and the
+// doors between them -- never the contents, because that is what the region map
+// and its fog are for.
+function worldAtlas() {
+  const zones = [];
+  for (const [id, z] of Object.entries(ZONES)) {
+    zones.push({
+      id, name: z.name, bounds: z.bounds,
+      places: placesOf(z).map(r => ({
+        id: r.id, name: r.name, subtitle: r.subtitle || '',
+        bounds: r.bounds, boundary: r.boundary || null, underground: !!r.underground,
+      })),
+      portals: (z.portals || []).map(q => ({ x: q.x, z: q.z, to: q.to })),
+    });
+  }
+  return { start: START_ZONE, zones };
+}
+function fogPayload(p, zone) {
+  const { d, bits } = fogOf(p, zone);
+  p._fogNew.length = 0; p._visitedNew = false; // the full picture supersedes any pending delta
+  return { zoneId: zone.id, cell: d.cell, minX: d.minX, minZ: d.minZ, w: d.w, h: d.h, bits: fogToB64(bits) };
+}
 
 // Uniformly scale a zone's layout by k (linear). Everything the server and the
 // client read from the zone — bounds, boundary, POIs, paths, spawns, radii — is
@@ -558,6 +625,10 @@ function serialisePlayer(p) {
     questDone: [...p.questDone], questKills: p.questKills,
     questFlags: [...p.questFlags], questAnnounced: [...p.questAnnounced],
     openedChests: [...p.openedChests], usedObjects: [...p.usedObjects],
+    // The map you come back to is the map you left: the ground seen in each
+    // zone, and the places named on the world map.
+    fog: Object.fromEntries(Object.entries(p.fog || {}).map(([id, bits]) => [id, fogToB64(bits)])),
+    visited: [...(p.visited || [])],
     savedAt: Date.now(),
   };
 }
@@ -612,6 +683,15 @@ function applySave(p, d) {
   for (const id of (d.known || [])) if (classDef(p.cls).abilities.some(a => a.id === id)) p.known.add(id);
   p.miningXp = +d.miningXp || 0; p.fishingXp = +d.fishingXp || 0; p.cookingXp = +d.cookingXp || 0;
   if (d.meditation) p.meditation = { level: d.meditation.level | 0 || 1, xp: +d.meditation.xp || 0 };
+  // Fog is restored per zone and only where the grid still fits: a zone whose
+  // bounds moved gets a blank one rather than a picture lifted off the wrong
+  // ground (fogOf drops a mismatched grid the same way).
+  p.fog = {};
+  for (const [zid, b64] of Object.entries(d.fog || {})) {
+    if (!ZONES[zid]) continue;
+    p.fog[zid] = fogFromB64(b64, fogBytes(fogDims(ZONES[zid])));
+  }
+  p.visited = new Set((d.visited || []).filter(v => typeof v === 'string'));
   p.quests = new Map((d.quests || []).filter(([id]) => QUESTS[id]));
   p.questDone = new Set((d.questDone || []).filter(id => QUESTS[id]));
   p.questKills = d.questKills && typeof d.questKills === 'object' ? d.questKills : {};
@@ -2718,6 +2798,10 @@ function stepPlayer(p) {
   const floor = floorHeightAt(zone, p.x, p.z, p.y || 0);
   if (floor >= (p.y || 0) - 0.01) p.y = floor; else p.y = Math.max(floor, (p.y || 0) - 16 * DT);
 
+  // Ground seen. Before the portal check, so the step that carries you into a
+  // cave mouth still uncovers the mouth on the map you are leaving.
+  revealFog(p, zone);
+
   // Zone transitions (cave mouth / exit portal).
   if (p.portalCd <= 0 && zone.portals) {
     for (const portal of zone.portals) {
@@ -2793,7 +2877,8 @@ function transitionPlayer(p, toId, spawn) {
   p.input = { f: 0, r: 0, yaw: 0 }; p.moving = false; p.hazardAccum = 0;
   p.moveTo = null; p.combatId = null; p.pendingChest = null; p.pendingPickup = null; p.pendingMine = null;
   p.portalCd = 2; // don't immediately re-trigger the return portal
-  send(p.ws, { t: 'transition', zone: zoneForClient(to) });
+  revealFog(p, to);   // arriving is seeing: the cave mouth is on the map you land on
+  send(p.ws, { t: 'transition', zone: zoneForClient(to), fog: fogPayload(p, to), visited: [...p.visited] });
   sendObjects(p);
   sendQuests(p); // giver markers are per-zone
   systemChat(`${p.name} entered ${to.name}.`);
@@ -3036,7 +3121,18 @@ setInterval(() => {
         time: +dayTime.toFixed(4), weather }));
     };
     for (const p of players.values()) {
-      if (p.ws.readyState === p.ws.OPEN) p.ws.send(zoneSnap(p.zoneId));
+      if (p.ws.readyState !== p.ws.OPEN) continue;
+      p.ws.send(zoneSnap(p.zoneId));
+      // The snapshot is built once per zone and shared by everyone in it, so
+      // the fog -- which is one player's own -- rides separately. Only the cells
+      // uncovered since the last tick, which is a handful while walking and
+      // nothing at all while standing still.
+      if (p._fogNew.length || p._visitedNew) {
+        send(p.ws, { t: 'fog:add', zoneId: p.zoneId,
+                     cells: p._fogNew.length ? p._fogNew : undefined,
+                     visited: p._visitedNew ? [...p.visited] : undefined });
+        p._fogNew.length = 0; p._visitedNew = false;
+      }
     }
     // Party frames show health, so they ride along with the snapshot. One
     // payload per party, not per member.
@@ -3198,6 +3294,10 @@ wss.on('connection', (ws) => {
           x: start.spawn.x, z: start.spawn.z, y: 0, yaw: start.spawn.yaw || 0, moving: false,
           // One class, one class level: `level`/`xp` ARE the class (see CLASSES).
           cls, level: 1, xp: 0, gold: 0, openedChests: new Set(), usedObjects: new Set(),
+          // What this player has seen: a bitset of ground per zone (the fog on
+          // the region map) and the set of places entered at all (what the
+          // world map is allowed to name). Both are per player and both save.
+          fog: {}, visited: new Set(), _fogNew: [], _fogCell: -1, _fogZone: null,
           known: new Set(classDef(cls).abilities.filter(a => a.level <= 1).map(a => a.id)), // learned abilities
           cooldowns: {}, buffs: {}, gcd: 0, momentum: 0, momentumT: 0, rage: 0, rageMax: classStats(cls, 1).rage, rageIdle: 0,
           mana: classStats(cls, 1).mana, manaMax: classStats(cls, 1).mana, friendId: null,
@@ -3225,7 +3325,9 @@ wss.on('connection', (ws) => {
         if (saved) applySave(player, saved);
         players.set(id, player);
         const here = ZONES[player.zoneId] || start;
-        send(ws, { t: 'welcome', id, tickRate: SNAPSHOT_HZ, zone: zoneForClient(here), items: ITEM_CATALOG });
+        revealFog(player, here);   // you can see where you are standing before you move
+        send(ws, { t: 'welcome', id, tickRate: SNAPSHOT_HZ, zone: zoneForClient(here), items: ITEM_CATALOG,
+                   atlas: worldAtlas(), fog: fogPayload(player, here), visited: [...player.visited] });
         sendBag(player); // sends the quest payload too
         sendSkills(player);
         sendAbilities(player); sendStatus(player);

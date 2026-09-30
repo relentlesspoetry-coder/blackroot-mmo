@@ -733,11 +733,21 @@
     <div id="chatlog" data-tab="all"></div>
     <input id="chatinput" placeholder="Press Enter to chat…" maxlength="200" />
   </div>
-  <div id="mapwin" style="display:none; position:absolute; inset:0; z-index:40; align-items:center; justify-content:center; background:rgba(5,9,16,0.9); pointer-events:auto;">
+  <style>
+  .maptab { background:rgba(12,22,40,0.85); color:#8fa3bd; border:1px solid #3a5170; border-radius:6px;
+            font:12px system-ui; letter-spacing:2px; padding:4px 14px; cursor:pointer; }
+  .maptab:hover { color:#cdd8e6; border-color:#55708f; }
+  .maptab.on { background:#1b3153; color:#e7c67a; border-color:#d8bd76; }
+</style>
+<div id="mapwin" style="display:none; position:absolute; inset:0; z-index:40; align-items:center; justify-content:center; background:rgba(5,9,16,0.9); pointer-events:auto;">
     <div style="position:relative;">
       <canvas id="mapCanvas" width="820" height="820" style="display:block; background:#0b1730; border:2px solid #3a5170; border-radius:12px; box-shadow:0 12px 48px #000b; max-width:92vw; max-height:86vh;"></canvas>
       <div id="mapTitle" style="position:absolute; top:12px; left:0; right:0; text-align:center; color:#d8bd76; font-family:Georgia,'Times New Roman',serif; font-size:24px; letter-spacing:3px; text-shadow:0 2px 8px #000; pointer-events:none;">ZONE MAP</div>
-      <div style="position:absolute; bottom:10px; left:0; right:0; text-align:center; color:#7f93ad; font-size:12px; pointer-events:none;">Press M or Esc to close</div>
+      <div style="position:absolute; top:44px; left:0; right:0; display:flex; justify-content:center; gap:8px;">
+        <button id="mapTabRegion" class="maptab">REGION</button>
+        <button id="mapTabWorld" class="maptab">WORLD</button>
+      </div>
+      <div style="position:absolute; bottom:10px; left:0; right:0; text-align:center; color:#7f93ad; font-size:12px; pointer-events:none;">Tab switches maps &middot; M or Esc closes</div>
     </div>
   </div>
 </div>
@@ -769,6 +779,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 // The world's shape: the SAME module the server imports, served at /shared/.
 import * as TERRAIN from '/shared/terrain.js';
+import * as FOGLIB from '/shared/fog.js';
 
 // ---------------------------------------------------------------------------
 // 3D model assets (GLB). Loaded once up front.
@@ -1468,7 +1479,9 @@ function handle(m) {
   if (m.t === 'loginfail') { showLoginError(m.text); return; }
   switch (m.t) {
     case 'welcome':
-      myId = m.id; zone = m.zone; if (m.items) itemCatalog = m.items; startGame();
+      myId = m.id; zone = m.zone; if (m.items) itemCatalog = m.items;
+      ATLAS = m.atlas || null; applyFog(m.fog); applyVisited(m.visited);
+      startGame();
       if (EDIT.on) { editInit(); ws?.send(JSON.stringify({ t: 'edit:list', key: EDIT.key })); }
       break;
     case 'snapshot':
@@ -1506,7 +1519,12 @@ function handle(m) {
       renderTrade();
       break;
     case 'transition':
+      applyFog(m.fog); applyVisited(m.visited);
       enterZone(m.zone);
+      break;
+    case 'fog:add':
+      if (m.visited) applyVisited(m.visited);
+      if (m.cells && FOG.zoneId === m.zoneId) { for (const i of m.cells) FOG.bits[i >> 3] |= (1 << (i & 7)); FOG.dirty = true; }
       break;
     case 'models':
       EDIT.models = m.models || []; EDIT.mobs = m.mobs || []; EDIT.items = m.items || []; EDIT.loot = m.loot || {}; editBuildPalette();
@@ -8103,6 +8121,13 @@ function addEventListeners() {
     if (document.activeElement === chatInput) return;
     if (e.key === 'Enter') { chatInput.focus(); e.preventDefault(); return; }
     if (e.key === 'F3') { e.preventDefault(); toggleEditor(); return; }
+    // Tab switches between the region map and the world map -- but only while
+    // one is open, because Tab is target cycling and that is the binding
+    // everybody's hands already know. Cycling targets behind an open map is
+    // not something anybody is asking for, so the map gets the key for as long
+    // as it is up and hands it straight back. (Put BEFORE tabTarget: this sat
+    // after it and never ran once.)
+    if (e.key === 'Tab' && mapOpen) { e.preventDefault(); setMapMode(mapMode === 'world' ? 'region' : 'world'); return; }
     if (e.key === 'Tab') { e.preventDefault(); tabTarget(); return; }
     if (e.key.toLowerCase() === 'f') { targetNearestAlly(); return; }   // nearest ally as the friendly target
     if (e.key.toLowerCase() === 'i') { toggleBag(); return; }
@@ -12282,6 +12307,64 @@ const POI_STYLE = {
   safe: ['#6fe0a0', 'Rest'], boss: ['#e0524d', 'Elite'], gate: ['#d8bd76', 'Gate'],
   cave: ['#b79cff', 'Cave'], merchant: ['#e0c060', 'Trader'], landmark: ['#b9c6d6', ''], mine: ['#d2a86a', 'Mine'],
 };
+// --- fog of war -------------------------------------------------------------
+// What the server says this player has seen. The grid maths comes from
+// /shared/fog.js, the same module the server reveals with, so the fog lifts off
+// exactly the ground that was walked.
+let FOG = { zoneId: null, bits: null, w: 0, h: 0, cell: 8, minX: 0, minZ: 0, dirty: true, canvas: null };
+let VISITED = new Set();      // place ids the world map is allowed to name
+let ATLAS = null;             // every zone's shape and the doors between them
+let mapMode = 'region';       // 'region' | 'world'
+
+function applyFog(f) {
+  if (!f) return;
+  FOG = { zoneId: f.zoneId, w: f.w, h: f.h, cell: f.cell, minX: f.minX, minZ: f.minZ,
+          bits: FOGLIB.fogFromB64(f.bits, Math.ceil((f.w * f.h) / 8)),
+          dirty: true, canvas: null };
+}
+function applyVisited(list) { if (list) VISITED = new Set(list); }
+
+// The fog is painted from a canvas one pixel per CELL and then scaled up, so the
+// browser's own smoothing gives the revealed edge a soft front instead of a
+// staircase of 8 m blocks. Rebuilt only when a cell actually changes.
+function fogImage() {
+  if (!FOG.bits || !FOG.w) return null;
+  if (FOG.canvas && !FOG.dirty) return FOG.canvas;
+  const c = FOG.canvas || document.createElement('canvas');
+  c.width = FOG.w; c.height = FOG.h;
+  const g = c.getContext('2d');
+  const img = g.createImageData(FOG.w, FOG.h);
+  const px = img.data;
+  for (let i = 0, n = FOG.w * FOG.h; i < n; i++) {
+    const seen = (FOG.bits[i >> 3] & (1 << (i & 7))) !== 0;
+    const o = i * 4;
+    px[o] = 6; px[o + 1] = 10; px[o + 2] = 20;      // unsurveyed ground, near the map's own ink
+    px[o + 3] = seen ? 0 : 255;
+  }
+  g.putImageData(img, 0, 0);
+  FOG.canvas = c; FOG.dirty = false;
+  return c;
+}
+// Lay the fog over a region map already drawn. `px`/`pz` are that map's
+// projection, so the fog lands on the same ground as everything under it.
+function drawFog(ctx, px, pz, s) {
+  const img = fogImage();
+  if (!img || FOG.zoneId !== (zone && zone.id)) return;
+  const x0 = px(FOG.minX), y0 = pz(FOG.minZ);
+  ctx.save();
+  ctx.imageSmoothingEnabled = true;
+  if ('imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(img, x0, y0, FOG.w * FOG.cell * s, FOG.h * FOG.cell * s);
+  ctx.restore();
+}
+function fogSeen(x, z) {
+  if (!FOG.bits || FOG.zoneId !== (zone && zone.id)) return true;   // no fog known: hide nothing
+  const gx = Math.floor((x - FOG.minX) / FOG.cell), gz = Math.floor((z - FOG.minZ) / FOG.cell);
+  if (gx < 0 || gz < 0 || gx >= FOG.w || gz >= FOG.h) return false;
+  const i = gz * FOG.w + gx;
+  return (FOG.bits[i >> 3] & (1 << (i & 7))) !== 0;
+}
+
 function toggleMap() { if (mapOpen) closeMap(); else openMap(); }
 // The world is seamless, but the map is per zone: whichever region (Dark
 // Woods, Killing Fields, the cave underneath) the player is standing in.
@@ -12290,14 +12373,23 @@ function currentRegion() {
   if (!regs || !regs.length) return null;
   const me = entityMeshes.get(myId), mp = me ? me.mesh.position : null;
   if (!mp) return regs[0];
-  if (mp.y < -6) return regs.find(r => r.underground) || regs[0];
-  return regs.find(r => !r.underground && mp.x >= r.bounds.minX && mp.x <= r.bounds.maxX && mp.z >= r.bounds.minZ && mp.z <= r.bounds.maxZ) || regs[0];
+  // The containment rule itself lives in /shared/fog.js, because the server
+  // decides what you have discovered with the same question and two copies of
+  // it would let the map and the world disagree about where you are standing.
+  return FOGLIB.regionAt(zone, mp.x, mp.z, mp.y);
 }
 const inRegionXZ = (reg, x, z) => x >= reg.bounds.minX && x <= reg.bounds.maxX && z >= reg.bounds.minZ && z <= reg.bounds.maxZ;
-function openMap() { if (!zone) return; mapOpen = true; mapWin.style.display = 'flex'; const reg = currentRegion(); if (mapTitle) mapTitle.textContent = ((reg && reg.name) || zone.name || 'Zone').toUpperCase(); drawMap(); }
+function openMap() {
+  if (!zone) return;
+  mapOpen = true; mapWin.style.display = 'flex';
+  const reg = currentRegion();
+  if (mapTitle) mapTitle.textContent = ((reg && reg.name) || zone.name || 'Zone').toUpperCase();
+  setMapMode(mapMode);        // paints the tabs and draws whichever view is current
+}
 function closeMap() { mapOpen = false; mapWin.style.display = 'none'; }
 function drawMap() {
   if (!mapOpen || !zone || !zone.bounds) return;
+  if (mapMode === 'world') return drawWorldMap();
   const ctx = mapCanvas.getContext('2d');
   const W = mapCanvas.width, H = mapCanvas.height, pad = 56;
   const reg = currentRegion() || { bounds: zone.bounds, boundary: zone.boundary, name: zone.name };
@@ -12388,12 +12480,18 @@ function drawMap() {
     else if (rec.kind === 'player') { ctx.fillStyle = '#5aa0e0'; ctx.beginPath(); ctx.arc(px(mp.x), pz(mp.z), 3, 0, 7); ctx.fill(); }
   }
   if (poly) ctx.restore();
-  // NPCs
-  for (const def of (zone.npcs || [])) { if (!inReg(def.x, def.z)) continue; ctx.fillStyle = '#e0c060'; ctx.beginPath(); ctx.arc(px(def.x), pz(def.z), 3.5, 0, 7); ctx.fill(); }
+  // NPCs. These and the landmarks below are drawn OUTSIDE the boundary clip, so
+  // the fog laid down further on cannot cover the ones that sit on or past the
+  // coastline -- Bandit Road's label hung there in the dark, naming a road
+  // nobody had walked. Paint order is the wrong tool for them; ask the fog.
+  for (const def of (zone.npcs || [])) {
+    if (!inReg(def.x, def.z) || !fogSeen(def.x, def.z)) continue;
+    ctx.fillStyle = '#e0c060'; ctx.beginPath(); ctx.arc(px(def.x), pz(def.z), 3.5, 0, 7); ctx.fill();
+  }
   // POIs + labels
   ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
   for (const p of (under ? (reg.pois || []) : (zone.pois || []))) {
-    if (p.hidden || !inRegionXZ(reg, p.x, p.z)) continue;
+    if (p.hidden || !inRegionXZ(reg, p.x, p.z) || !fogSeen(p.x, p.z)) continue;
     const st = POI_STYLE[p.kind] || POI_STYLE.landmark;
     const X = px(p.x), Y = pz(p.z);
     ctx.fillStyle = st[0]; ctx.beginPath(); ctx.arc(X, Y, 4.5, 0, 7); ctx.fill();
@@ -12401,6 +12499,17 @@ function drawMap() {
     ctx.font = '11px system-ui'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.85)';
     ctx.strokeText(p.name, X, Y - 8); ctx.fillStyle = '#e7eef7'; ctx.fillText(p.name, X, Y - 8);
   }
+  // The fog, over everything drawn so far and under everything drawn after.
+  // Ground, roads, landmarks, chests and whatever is walking about all go under
+  // it together -- a map that hid the terrain but left the labels floating on
+  // the dark would be telling you what is there, which is the thing the fog is
+  // for. Clipped to the same boundary as the map, so it never spills past the
+  // coastline. The marker for where you are standing, the compass and the
+  // legend are drawn on top: you always know where you are.
+  if (poly) { ctx.save(); line(poly, true); ctx.clip(); }
+  drawFog(ctx, px, pz, s);
+  if (poly) ctx.restore();
+
   // player marker (facing arrow)
   const me = entityMeshes.get(myId);
   if (me && me.mesh) {
@@ -12413,7 +12522,7 @@ function drawMap() {
   }
   // compass
   ctx.fillStyle = '#8fa3bd'; ctx.font = '13px Georgia, serif'; ctx.textAlign = 'center';
-  ctx.fillText('N', W / 2, 46);
+  ctx.fillText('N', W / 2, 78);          // clear of the REGION/WORLD tabs
   // legend (bottom-left)
   const legend = [
     ['#e0c060', 'NPC'], ['#ffcf6a', 'Chest'], ['#7fc9dd', 'Fishing'],
@@ -12430,6 +12539,159 @@ function drawMap() {
   }
   ctx.textBaseline = 'alphabetic';
 }
+// ---------------------------------------------------------------------------
+// World map — every zone in one picture, with the doors between them.
+//
+// The regions of a zone are already in one coordinate space (you walk from the
+// Dark Woods into the Killing Fields), so they are drawn where they actually
+// are and come out touching. A zone behind a portal has a coordinate space of
+// its own, so it is laid out below the world and joined by the door: placed
+// under the portal that leads to it, and tied to it with a dashed line. That
+// keeps the one thing a world map is for -- how the places fit together --
+// true rather than decorative.
+//
+// Detail stays on the region map. This draws outlines, names and the roads
+// between places, which is why it can show a place you have not been to as a
+// blank shape without giving anything away. Somewhere you have never set foot
+// is not named at all.
+const WORLD_GAP = 200;   // metres of margin between a zone and one below it
+
+function worldLayout() {
+  if (!ATLAS || !ATLAS.zones || !ATLAS.zones.length) return null;
+  const byId = new Map(ATLAS.zones.map(z => [z.id, z]));
+  const root = byId.get(ATLAS.start) || ATLAS.zones[0];
+  const off = new Map([[root.id, { dx: 0, dz: 0 }]]);
+  // Breadth-first from the start zone through the portals, so a zone is placed
+  // relative to wherever the zone that reaches it ended up.
+  const queue = [root];
+  let baseZ = root.bounds.maxZ;
+  while (queue.length) {
+    const z = queue.shift(), zo = off.get(z.id);
+    for (const q of (z.portals || [])) {
+      const to = byId.get(q.to);
+      if (!to || off.has(to.id)) continue;
+      const w = to.bounds.maxX - to.bounds.minX;
+      off.set(to.id, {
+        dx: (q.x + zo.dx) - (to.bounds.minX + w / 2),          // centred under the door
+        dz: (baseZ + WORLD_GAP) - to.bounds.minZ,
+      });
+      baseZ += WORLD_GAP + (to.bounds.maxZ - to.bounds.minZ);
+      queue.push(to);
+    }
+  }
+  // Anything no portal reaches still belongs on the map; stack it below.
+  for (const z of ATLAS.zones) {
+    if (off.has(z.id)) continue;
+    off.set(z.id, { dx: -(z.bounds.minX + z.bounds.maxX) / 2, dz: (baseZ + WORLD_GAP) - z.bounds.minZ });
+    baseZ += WORLD_GAP + (z.bounds.maxZ - z.bounds.minZ);
+  }
+  return { byId, root, off };
+}
+
+function drawWorldMap() {
+  const ctx = mapCanvas.getContext('2d');
+  const W = mapCanvas.width, H = mapCanvas.height, pad = 78;
+  ctx.clearRect(0, 0, W, H);
+  const L = worldLayout();
+  if (mapTitle) mapTitle.textContent = 'THE KNOWN WORLD';
+  if (!L) {
+    ctx.fillStyle = '#7f93ad'; ctx.font = '15px system-ui'; ctx.textAlign = 'center';
+    ctx.fillText('No atlas from the server.', W / 2, H / 2);
+    return;
+  }
+  // Fit everything placed.
+  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  for (const z of ATLAS.zones) {
+    const o = L.off.get(z.id);
+    minX = Math.min(minX, z.bounds.minX + o.dx); maxX = Math.max(maxX, z.bounds.maxX + o.dx);
+    minZ = Math.min(minZ, z.bounds.minZ + o.dz); maxZ = Math.max(maxZ, z.bounds.maxZ + o.dz);
+  }
+  const s = Math.min((W - 2 * pad) / (maxX - minX), (H - 2 * pad) / (maxZ - minZ));
+  const offx = (W - (maxX - minX) * s) / 2, offz = (H - (maxZ - minZ) * s) / 2;
+  const px = (x, o) => offx + ((x + o.dx) - minX) * s;
+  const pz = (z, o) => offz + ((z + o.dz) - minZ) * s;
+
+  // The doors first, so they run under the land they join.
+  ctx.save();
+  ctx.setLineDash([7, 6]); ctx.lineWidth = 2; ctx.strokeStyle = '#6d8199'; ctx.lineCap = 'round';
+  for (const z of ATLAS.zones) {
+    const o = L.off.get(z.id);
+    for (const q of (z.portals || [])) {
+      const to = L.byId.get(q.to); if (!to) continue;
+      const to2 = L.off.get(to.id);
+      const back = (to.portals || []).find(r => r.to === z.id);
+      if (!back) continue;
+      if (z.id > to.id) continue;                     // one line per pair, not two
+      ctx.beginPath();
+      ctx.moveTo(px(q.x, o), pz(q.z, o));
+      ctx.lineTo(px(back.x, to2), pz(back.z, to2));
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+
+  // Every place, in the order the atlas lists them.
+  ctx.textAlign = 'center';
+  for (const z of ATLAS.zones) {
+    const o = L.off.get(z.id);
+    for (const place of z.places) {
+      const known = VISITED.has(place.id);
+      const poly = place.boundary && place.boundary.length > 2 ? place.boundary : null;
+      const b = place.bounds;
+      ctx.beginPath();
+      if (poly) poly.forEach((p, i) => { const X = px(p.x, o), Y = pz(p.z, o); i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); });
+      else ctx.rect(px(b.minX, o), pz(b.minZ, o), (b.maxX - b.minX) * s, (b.maxZ - b.minZ) * s);
+      ctx.closePath();
+      ctx.fillStyle = known ? (place.underground ? '#1b1b2e' : '#1b3a2a') : '#111a2b';
+      ctx.fill();
+      ctx.strokeStyle = known ? '#6d8f6f' : '#2f3f57';
+      ctx.lineWidth = known ? 2 : 1.5;
+      if (!known) ctx.setLineDash([5, 5]);
+      ctx.stroke(); ctx.setLineDash([]);
+
+      // Name it only if it has been walked. An unvisited place is a shape on
+      // the map and nothing more -- which is what makes finding it worth doing.
+      const cx = px((b.minX + b.maxX) / 2, o), cy = pz((b.minZ + b.maxZ) / 2, o);
+      if (known) {
+        ctx.font = "16px Georgia, 'Times New Roman', serif";
+        ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+        ctx.strokeText(place.name, cx, cy); ctx.fillStyle = '#e7c67a'; ctx.fillText(place.name, cx, cy);
+      } else {
+        ctx.font = '12px system-ui'; ctx.fillStyle = '#4c5d78';
+        ctx.fillText('unexplored', cx, cy);
+      }
+    }
+  }
+
+  // Where you are standing, in the zone you are standing in.
+  const me = entityMeshes.get(myId);
+  const o = L.off.get(zone && zone.id);
+  if (me && me.mesh && o) {
+    const mp = me.mesh.position;
+    const X = px(mp.x, o), Y = pz(mp.z, o);
+    ctx.beginPath(); ctx.arc(X, Y, 11, 0, 7);
+    ctx.strokeStyle = 'rgba(255,225,74,0.5)'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.beginPath(); ctx.arc(X, Y, 4.5, 0, 7);
+    ctx.fillStyle = '#ffe14a'; ctx.fill();
+    ctx.strokeStyle = '#000'; ctx.lineWidth = 1.5; ctx.stroke();
+  }
+
+  ctx.fillStyle = '#8fa3bd'; ctx.font = '13px Georgia, serif'; ctx.textAlign = 'center';
+  ctx.fillText('N', W / 2, 78);
+  ctx.textAlign = 'left'; ctx.font = '12px system-ui'; ctx.fillStyle = '#7f93ad';
+  ctx.fillText('dashed line: a way through', 20, H - 22);
+  ctx.fillText(`${VISITED.size} of ${ATLAS.zones.reduce((n, z) => n + z.places.length, 0)} places explored`, 20, H - 6);
+}
+
+function setMapMode(mode) {
+  mapMode = mode;
+  const rb = document.getElementById('mapTabRegion'), wb = document.getElementById('mapTabWorld');
+  if (rb) rb.classList.toggle('on', mode === 'region');
+  if (wb) wb.classList.toggle('on', mode === 'world');
+  drawMap();
+}
+document.getElementById('mapTabRegion').addEventListener('click', () => setMapMode('region'));
+document.getElementById('mapTabWorld').addEventListener('click', () => setMapMode('world'));
 document.getElementById('mapBtn').addEventListener('click', toggleMap);
 mapWin.addEventListener('click', (e) => { if (e.target === mapWin) closeMap(); });
 
