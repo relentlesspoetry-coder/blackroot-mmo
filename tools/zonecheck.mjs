@@ -7,14 +7,23 @@
 import { readFileSync, readdirSync } from 'fs';
 import { join, relative } from 'path';
 import { fileURLToPath } from 'url';
-import { darkwoods as z } from '../server/zones/darkwoods.js';
+import { darkwoods } from '../server/zones/darkwoods.js';
 import { spiderden } from '../server/zones/spiderden.js';
 // The surface is ONE zone now -- the Dark Woods and the Killing Fields are
 // regions of it, walked between rather than travelled to -- so a portal
 // leads to 'blackroot'. The Dark Woods invariants below still read the
 // region's own source file, which is what the composer is built from.
 import { blackroot } from '../server/zones/blackroot.js';
-import { terrainAt, terrainFieldAt, isSolid, rockSolidAt, rockRiseAt, rockEdgeOf, groundSlopeAt } from '../server/worldgen.js';
+// `z` IS THE LIVE WORLD. It used to be the Dark Woods' own source file, which
+// is how this tool spent a whole session checking an 850 x 712 map while the
+// server ran a 1690 x 962 one with a second region in it -- the Killing Fields
+// got none of these invariants at all. Same mistake questcheck and walkcheck
+// were making. The Dark Woods is still imported, for the handful of checks that
+// are about the BUILDER's output rather than about the world it composes into.
+const z = blackroot;
+import { terrainAt, terrainFieldAt, isSolid, rockSolidAt, rockRiseAt, rockEdgeOf, groundSlopeAt,
+         waterDepthAt, onDeck as onDeckFn } from '../server/worldgen.js';
+import { terrainHeight, waterLevelAt, riverWaterHalf } from '../shared/terrain.js';
 import { ITEMS } from '../server/items.js';
 import { FISH, TIERS } from '../server/fishing.js';
 import { QUESTS } from '../server/quests.js';
@@ -340,7 +349,7 @@ const PARSED = [];
     y -= WATER_CUT * Math.pow(deep, dFall)
        + MARSH_CUT * Math.max(0, Math.pow(wet, mFall) - Math.pow(deep, mFall));
     for (const r of (z.rivers || [])) {
-      const half = r.width / 2 + RIVER_BANK, H = half + RIVER_LIP;
+      const half = riverWaterHalf(r.width), H = half + RIVER_LIP;
       const d = polyDist(x, zz, r.points);
       if (d >= H) continue;
       const h = d >= half
@@ -661,11 +670,18 @@ const PARSED = [];
         const u = ((b1.x - a1.x) * (a2.z - a1.z) - (b1.z - a1.z) * (a2.x - a1.x)) / d;
         if (t < 0 || t > 1 || u < 0 || u > 1) continue;
         const hx = a1.x + (a2.x - a1.x) * t, hz = a1.z + (a2.z - a1.z) * t;
-        if (!(r.bridges || []).some(b => Math.hypot(b.x - hx, b.z - hz) < 12)) fords++;
+        // A FORD counts. The Killing Fields sheet draws Widow's Ford as a
+        // stone-bottomed shallow with roads running down to it, which is a
+        // crossing whether or not anyone built anything over it. What this is
+        // really for is a road that walks into a river at a place the map does
+        // not say you can cross.
+        const crossing = [...(r.bridges || []), ...(r.fords || [])];
+        if (!crossing.some(b => Math.hypot(b.x - hx, b.z - hz) < 12)) fords++;
       }
     }
   }
-  ok('every path/river crossing is bridged', fords === 0, `${fords} fords, ${bridges} bridges`);
+  ok('every path/river crossing is bridged or forded', fords === 0,
+    `${fords} unmarked, ${bridges} bridges`);
   ok('every bridge sits on its centreline', offLine === 0, `${offLine} adrift`);
 }
 
@@ -695,7 +711,19 @@ const PARSED = [];
     for (const pc of b.pieces) { mx = Math.max(mx, Math.abs(pc.dx)); mz = Math.max(mz, Math.abs(pc.dz)); }
     if (b.padW && (mx > b.padW || mz > b.padD)) overflow++;
     const walls = b.pieces.filter(pc => pc.wall && !(pc.dy > 0.01));
-    if (walls.length > 6 && !walls.some(pc => pc.gap)) sealed++;
+    if (walls.length <= 6 || walls.some(pc => pc.gap)) continue;
+    // No piece declares a doorway -- but a way in can also be the ABSENCE of a
+    // piece. Lastwatch Camp is a breastwork round three sides, open to the road
+    // on the fourth, and this counted it as a sealed box. So: take the bearing
+    // of every wall piece from the middle and find the widest gap between them.
+    // A ring with a hole in it has one; a box does not.
+    const bearing = walls.map(pc => Math.atan2(pc.dz, pc.dx)).sort((a, c) => a - c);
+    let widest = 0;
+    for (let i = 0; i < bearing.length; i++) {
+      const next = i + 1 < bearing.length ? bearing[i + 1] : bearing[0] + Math.PI * 2;
+      widest = Math.max(widest, next - bearing[i]);
+    }
+    if (widest < Math.PI / 3) sealed++;        // nothing wider than 60 degrees: no way in
   }
   ok('structure pads cover their pieces', overflow === 0, `${overflow} overflowing`);
   ok('enclosed structures have a doorway', sealed === 0, `${sealed} sealed`);
@@ -723,11 +751,17 @@ const PARSED = [];
   // question the game answers.
   const E = z.waterEdge;
   const spots = z.fishingSpots || [];
-  const inChannel = (x, zz) => (z.rivers || []).some(r => {
-    for (let i = 0; i < r.points.length - 1; i++)
-      if (segDist(x, zz, r.points[i], r.points[i + 1]) < r.width / 2) return true;
-    return false;
-  });
+  // This asked whether a point was within `r.width / 2` of a centreline -- 5 m
+  // on the Redwater. The world draws river water out to
+  // riverWaterHalf(width) + RIVER_LIP, which is 11 m, so a spot standing in
+  // 1 m of visible river 6.5 m out was reported as being on dry land. It is
+  // the same mistake as the router's crossing width: a second, narrower idea
+  // of how wide a river is, kept next to the one that draws it.
+  //
+  // There is no need for either here. The renderer's test for "is there water
+  // on this spot" is whether the water surface is above the ground, and both
+  // sides of that are importable, so ask it directly.
+  const inChannel = (x, zz) => terrainHeight(z, x, zz) < waterLevelAt(z, x, zz) - 0.05;
   const drawn = (x, zz) => terrainFieldAt(z, x, zz, 'wet') >= E.marsh
                         || terrainFieldAt(z, x, zz, 'deep') >= E.deep
                         || inChannel(x, zz);
@@ -735,45 +769,18 @@ const PARSED = [];
   ok('every fishing spot is in water the game draws', dry.length === 0,
       dry.length ? dry.map(f => `${f.id} (wet ${terrainFieldAt(z, f.x, f.z, 'wet').toFixed(2)} < ${E.marsh})`).join(', ')
                  : `${spots.length} spots, 0 on land`);
-  // ...and you have to be able to STAND somewhere to fish it. A spot in the
-  // middle of a lake is as unusable as one in a field.
-  // "A bank to stand on" was the wrong rule twice over. Asking for DRY land
-  // called the jetty unreachable -- it is a plank walk built out over the fen
-  // precisely so you can stand where there is water under you -- and asking
-  // the blurred field instead passed fs_creek on ground a metre and a half
-  // UNDER the waterline, because beside a carved channel the field says "not
-  // water" over a submerged bed.
+  // "...and you have to be able to stand somewhere to fish it" used to be a
+  // second check here. It searched the ring around each spot for a point that
+  // was not a swim -- which is exactly the reach test further down, only
+  // cruder: that one runs the real collision solver, so it also rejects a
+  // standing place inside a rock or off the map. Two checks asking one
+  // question, and the copy here had drifted a river's width out of step with
+  // the rule it was paraphrasing. Asserted once, below.
   //
-  // The rule that actually matters is the one the player feels: can you fish
-  // it without swimming? Wading is fine. That is waterDepthAt, which is purely
-  // field-based, so it can be reproduced here exactly rather than approximated.
-  const FISH_REACH = 4.5, DEEP_RAMP = 0.29, SWIM_IN = 0.82;
-  const wadeDepth = (x, zz) => {
-    let d = 0;
-    for (const r of (z.rivers || [])) {
-      let m = 1e9;
-      for (let i = 0; i < r.points.length - 1; i++) m = Math.min(m, segDist(x, zz, r.points[i], r.points[i + 1]));
-      if (m < r.width / 2) d = Math.max(d, Math.min(1, 0.45 + (1 - m / (r.width / 2)) * 0.8));
-    }
-    const dg = terrainFieldAt(z, x, zz, 'deep'), wg = terrainFieldAt(z, x, zz, 'wet');
-    if (dg >= E.deep) { const t = Math.min(1, (dg - E.deep) / DEEP_RAMP); d = Math.max(d, 0.30 + 0.70 * (t * t * (3 - 2 * t))); }
-    else if (wg >= E.marsh) d = Math.max(d, 0.35);
-    return d;
-  };
-  const unreachable = spots.filter(f => {
-    for (let a = 0; a < 24; a++) {
-      const ang = a / 24 * Math.PI * 2;
-      for (const rr of [1.6, 2.4, 3.2, 4.0, FISH_REACH - 0.1]) {
-        const x = f.x + Math.cos(ang) * rr, zz = f.z + Math.sin(ang) * rr;
-        if (onDeck(x, zz)) return false;                       // the planks
-        if (terrainAt(z, x, zz) === ' ' || rockSolidAt(z, x, zz)) continue;   // cliff or off-map
-        if (wadeDepth(x, zz) < SWIM_IN) return false;          // you can stand here
-      }
-    }
-    return true;
-  });
-  ok('every fishing spot can be fished without swimming', unreachable.length === 0,
-      unreachable.length ? unreachable.map(f => f.id).join(', ') : `${spots.length} spots wadeable`);
+  // Note what the rule is NOT: it is not that the spot itself is wadeable. You
+  // cast INTO the deep water from the bank, so a marker out of your depth is
+  // correct and normal -- eleven of the seventeen are. What has to be true is
+  // that there is somewhere to stand within a cast of it.
 
   // Every species the game can catch needs water to catch it in. Pike had a
   // level, an xp value, an item, a cooked form and a model, and no tier 4 spot
@@ -1026,29 +1033,10 @@ for (const zone of [z, spiderden]) {
 // which is where three of them had come to rest, ripples drawn on the decking.
 // The builder places them; this asks the runtime whether they landed.
 {
-  const REACH = 4.5, MIN_DEPTH = 0.30, SWIM_IN = 0.82, DEEP_RAMP = 0.29;
-  const E = z.waterEdge;
-  const onDeck = (x, zz) => {
-    for (const r of (z.rivers || [])) for (const b of (r.bridges || []))
-      if (Math.hypot(x - b.x, zz - b.z) < ((b.span || 12) / 2)) return true;
-    for (const d of (z.decks || [])) {
-      const dx = x - d.x, dz = zz - d.z, sn = Math.sin(d.yaw || 0), cs = Math.cos(d.yaw || 0);
-      if (Math.abs(dx * cs + dz * sn) <= (d.len || 4) / 2 && Math.abs(-dx * sn + dz * cs) <= (d.w || 2.4) / 2) return true;
-    }
-    return false;
-  };
-  const depthAt = (x, zz) => {
-    if (onDeck(x, zz)) return 0;
-    let d = 0;
-    const dg = terrainFieldAt(z, x, zz, 'deep'), wg = terrainFieldAt(z, x, zz, 'wet');
-    if (dg >= E.deep) { const q = Math.min(1, (dg - E.deep) / DEEP_RAMP); d = Math.max(d, 0.30 + 0.70 * (q * q * (3 - 2 * q))); }
-    else if (wg >= E.marsh) d = 0.35;
-    for (const r of (z.rivers || [])) {
-      const dd = segMin(x, zz, r.points);
-      if (dd < r.width / 2) d = Math.max(d, Math.min(1, 0.45 + (1 - dd / (r.width / 2)) * 0.8));
-    }
-    return d;
-  };
+  const REACH = 4.5, MIN_DEPTH = 0.30, SWIM_IN = 0.82;
+  // Second hand-copy of the same two functions, deleted for the same reason.
+  const onDeck = (x, zz) => onDeckFn(z, x, zz);
+  const depthAt = (x, zz) => waterDepthAt(z, x, zz);
   const bad = [];
   for (const sp of (z.fishingSpots || [])) {
     const d = depthAt(sp.x, sp.z);

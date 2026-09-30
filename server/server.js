@@ -25,10 +25,10 @@ import { isBardSpell, checkBardCast, castBard, spendSongCharges, songAmp, atkSpe
   bardMonsterDmgMult, bardMonsterDefMult, bardMonsterTakenMult, bardMonsterSpeedMult, bardMonsterAtkSpeedMult, stepSongs } from './bard.js';
 import {
   dist2, closestOnPolyline, mulberry32, pointInPoly, polyCentroid, generateTrees, generateScatter, generateHanging,
-  riversOf, bridgesOf, pathsOf, pathSpecsOf, closestOnPaths, terrainAt, terrainFieldAt, isSolid, isWater, terrainClearance, T_OFF, T_ROCK, T_DEEP, T_MARSH,
+  onDeck, waterDepthAt, riversOf, bridgesOf, pathsOf, pathSpecsOf, closestOnPaths, terrainAt, terrainFieldAt, isSolid, isWater, terrainClearance, T_OFF, T_ROCK, T_DEEP, T_MARSH,
   caveOutline, prepareZone,
 } from './worldgen.js';
-import { onDeckSpan } from '../shared/terrain.js';
+import { onDeckSpan, riverWaterHalf } from '../shared/terrain.js';
 import {
   RIVER_BANK, floorHeightAt, standableAt, resolveCollision, navBlocked, lineClear,
 } from './collision.js';
@@ -186,7 +186,7 @@ function spawnInRegion(zone, region, opts = {}) {
     if (!opts.passive && inSafeZone(zone, x, z)) continue;   // pens sit inside the safe village
     if (keepOut && dist2(x, z, zone.spawn.x, zone.spawn.z) < keepOut * keepOut) continue;
     if ((zone.rocks || []).some(o => dist2(x, z, o.x, o.z) < (o.r + 2) ** 2)) continue;
-    if (riversOf(zone).some(r => closestOnPolyline(x, z, r.points).dist < r.width / 2 + RIVER_BANK + 1)) continue;
+    if (riversOf(zone).some(r => closestOnPolyline(x, z, r.points).dist < riverWaterHalf(r.width) + 1)) continue;
     if (zone.terrain && terrainClearance(zone, x, z, c => !isSolid(c), 5) < 4) continue;
     return { x, z };
   }
@@ -1886,61 +1886,6 @@ const DROWN_DPS = 7;          // once the breath is gone
 // jitter. The depth hysteresis below cannot help with that: both of its
 // thresholds are crossed in the same tick. Someone already dry keeps their
 // footing a little past the planks, which closes it.
-function onDeck(zone, x, z, grow = 0) {
-  for (const r of riversOf(zone)) {
-    for (const b of bridgesOf(r)) {
-      const span = (b.span || 12) + 2 * grow;
-      if (dist2(x, z, b.x, b.z) < (span * span) / 4) return true;
-    }
-  }
-  // One rectangle for both sides -- see onDeckSpan in shared/terrain.js.
-  for (const d of (zone.decks || [])) if (onDeckSpan(d, x, z, grow)) return true;
-  return false;
-}
-// How far past the deep contour the bed has to shelve before you are out of
-// your depth. Tuned against the measured profile at Ravenwater, which drops
-// from nothing at the bank to 3.8 m twenty-five metres out.
-// At 0.34 the swim line measured 15 m out at Ravenwater in 1.93 m of water --
-// over a fighter's head. Shoulders on a 1.8 m man are about 1.5 m, so the ramp
-// is shortened to put the line there: you wade to your chest and swim past it.
-const DEEP_RAMP = 0.29;
-function waterDepthAt(zone, x, z, deckGrow = 0) {
-  if (onDeck(zone, x, z, deckGrow)) return 0;      // dry feet: you are on the planks
-  let d = 0;
-  if (zone.terrain) {
-    // The SAME contour the client draws its shoreline from -- not the raw cell.
-    // A cell is 2.5 m and the drawn shore is a smooth curve through it, so asking
-    // the grid "is this cell wet" put the waterline up to a couple of metres away
-    // from the water you can see. Both sides read zone.waterEdge.
-    const E = zone.waterEdge;
-    if (E) {
-      // GRADED, not a step. This returned 1 the instant you crossed the deep
-      // contour, so you started swimming at the water's edge where it is
-      // ankle deep -- a step off the bank and you were out of your depth. The
-      // bed shelves, and the field shelves with it: at the contour you are
-      // wading, and you only lose your feet once you are properly out. At
-      // Ravenwater that puts the swim line about thirteen metres out, where
-      // the pool is a metre and a half deep -- chest-to-shoulder on a man.
-      const dg = terrainFieldAt(zone, x, z, 'deep');
-      const wg = terrainFieldAt(zone, x, z, 'wet');
-      if (dg >= E.deep) {
-        const t = Math.min(1, (dg - E.deep) / DEEP_RAMP);
-        d = Math.max(d, 0.30 + 0.70 * (t * t * (3 - 2 * t)));
-      } else if (wg >= E.marsh) d = 0.35;                                // wadeable
-    } else {
-      const c = terrainAt(zone, x, z);
-      if (c === T_DEEP) d = 1;
-      else if (c === T_MARSH) d = 0.35;
-    }
-  }
-  for (const r of riversOf(zone)) {
-    const dist = closestOnPolyline(x, z, r.points).dist;
-    if (dist >= r.width / 2) continue;
-    // shelves off toward the middle of the channel rather than dropping at the bank
-    d = Math.max(d, Math.min(1, 0.45 + (1 - dist / (r.width / 2)) * 0.8));
-  }
-  return d;
-}
 // Swimming has hysteresis: you go out of your depth well inside the water and
 // find your feet again only once you are properly back on the shelf. Without
 // it a player stood on the line flickers in and out, which spammed the chat.

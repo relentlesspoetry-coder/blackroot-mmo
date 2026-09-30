@@ -10,6 +10,7 @@ import { PLAYER } from './balance.js';
 import {
   dist2, closestOnPolyline, pointInPoly, polyCentroid,
   riversOf, bridgesOf, pathsOf, terrainAt, rockSolidAt, T_OFF, T_DEEP,
+  riverWaterHalf, RIVER_BANK,
 } from './worldgen.js';
 
 const PLAYER_RADIUS = PLAYER.radius;
@@ -28,9 +29,12 @@ function segDirAt(pts, x, z) {
   return best;
 }
 
-// How far the flooded channel reaches beyond the river's nominal half-width
-// (must match RIVER_BANK on the client, which floods the whole carved channel).
-const RIVER_BANK = 4;
+// How far the flooded channel reaches beyond the river's nominal half-width.
+// This was `const RIVER_BANK = 4` with a comment saying it must match the
+// client -- a hand-kept copy of a constant shared/terrain.js already exports,
+// in the one file whose own header says a check that asks the question in its
+// own words passes while the world is wrong. Imported now, and the three
+// places that spelled out `width / 2 + RIVER_BANK` call riverWaterHalf.
 // Multi-storey walking: how tall a ledge you can step onto, and body height.
 const STEP_UP = 0.7, PLAYER_TALL = 2.2;
 // True if (x,z) is inside a placed primitive's rotated footprint; returns its
@@ -73,7 +77,7 @@ function standableAt(zone, x, z) {
     if (rockSolidAt(zone, x, z)) return false;
   }
   for (const r of riversOf(zone)) {
-    if (closestOnPolyline(x, z, r.points).dist < r.width / 2 + RIVER_BANK) {
+    if (closestOnPolyline(x, z, r.points).dist < riverWaterHalf(r.width)) {
       // standing on a bridge deck is fine
       if (!bridgesOf(r).some(br => dist2(x, z, br.x, br.z) < 12 * 12)) return false;
     }
@@ -157,7 +161,7 @@ function resolveCollision(zone, ent, radius) {
     if (!onDeck && swims) continue;   // a swimmer just gets in
     if (!onDeck) { // not on the deck — keep out of the water
       const c = closestOnPolyline(ent.x, ent.z, r.points);
-      const half = r.width / 2 + RIVER_BANK + radius;
+      const half = riverWaterHalf(r.width) + radius;
       if (c.dist < half) {
         let dx = ent.x - c.x, dz = ent.z - c.z, d = Math.hypot(dx, dz);
         if (d < 1e-4) { dx = 1; dz = 0; d = 1; }

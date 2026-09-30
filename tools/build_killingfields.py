@@ -59,6 +59,9 @@ EXITS = [
     ('barrow_track',  'Barrow Track',  'To Old Barrow',        1224, 898, 'south'),
 ]
 
+RIVER_BANK = 4.0        # shared/terrain.js: riverWaterHalf = width/2 + this
+
+
 # --- the water ---------------------------------------------------------------
 # Unlike the Dark Woods' creeks, this river IS in the trace -- it is drawn wide
 # enough to survive the blur -- so its centreline was read back out of the
@@ -138,6 +141,11 @@ SPAWNS = [
     ('goblin_archer',   20, 5,  'redoubt',  36, 16),
     # the farm gone feral -- the sheet draws Broken Harvest as farmland, and
     # something has to still be living in it
+    # The sheet calls Redwater Bridge a contested chokepoint and draws the ford
+    # with roads running down to it. Something has to be contesting them, or
+    # they are signposts rather than places.
+    ('bandit',          16, 5,  'bridge',   24, 14),
+    ('goblin_scavenger',15, 5,  'ford',     26, 16),
     ('cow',              3, 4,  'harvest',  38, 16),
     ('chicken',          2, 6,  'harvest',  30, 14),
 ]
@@ -410,6 +418,64 @@ def terrain_at(d, wx, wz):
     return d['rows'][gz][gx] or ' '
 
 
+def path_river_crossings(paths, river_pts):
+    """Where the ROUTED roads actually meet the river.
+
+    The drawing says roughly where a crossing is; the router decides exactly
+    where the road goes. Authoring the marker off the drawing alone put every
+    one of them 13 m from the road that uses it -- a ford beside the place
+    people ford. So the hint picks WHICH crossing, and this says where it is.
+    """
+    hits = []
+    for p in paths:
+        pts = p['points']
+        for i in range(len(pts) - 1):
+            a1, a2 = pts[i], pts[i + 1]
+            for j in range(len(river_pts) - 1):
+                b1, b2 = river_pts[j], river_pts[j + 1]
+                d = (a2['x'] - a1['x']) * (b2[1] - b1[1]) - (a2['z'] - a1['z']) * (b2[0] - b1[0])
+                if abs(d) < 1e-9:
+                    continue
+                t = ((b1[0] - a1['x']) * (b2[1] - b1[1]) - (b1[1] - a1['z']) * (b2[0] - b1[0])) / d
+                u = ((b1[0] - a1['x']) * (a2['z'] - a1['z']) - (b1[1] - a1['z']) * (a2['x'] - a1['x'])) / d
+                if not (0 <= t <= 1 and 0 <= u <= 1):
+                    continue
+                hits.append((a1['x'] + (a2['x'] - a1['x']) * t, a1['z'] + (a2['z'] - a1['z']) * t))
+    # cluster: several roads using one crossing is one crossing
+    groups = []
+    for h in hits:
+        for g in groups:
+            if math.dist(h, g[0]) < 25:
+                g.append(h)
+                break
+        else:
+            groups.append([h])
+    return [(round(sum(p[0] for p in g) / len(g), 1),
+             round(sum(p[1] for p in g) / len(g), 1)) for g in groups]
+
+
+def snap_to_line(pt, pts):
+    """Put a crossing ON the river.
+
+    A bridge or a ford is authored by eye off the drawing, and by eye is a few
+    metres out -- mine landed 9.2 m from the centreline, which is a bridge in a
+    field next to a river. The polyline is the truth, so the authored point is a
+    HINT and this is where it actually goes: the nearest point on the line, not
+    the nearest vertex of it.
+    """
+    best, bd = pt, 1e18
+    for i in range(len(pts) - 1):
+        (ax, az), (bx, bz) = pts[i], pts[i + 1]
+        dx, dz = bx - ax, bz - az
+        L2 = dx * dx + dz * dz or 1.0
+        t = max(0.0, min(1.0, ((pt[0] - ax) * dx + (pt[1] - az) * dz) / L2))
+        cx, cz = ax + dx * t, az + dz * t
+        d2 = (pt[0] - cx) ** 2 + (pt[1] - cz) ** 2
+        if d2 < bd:
+            best, bd = (round(cx, 1), round(cz, 1)), d2
+    return best
+
+
 def nearest_open(d, wx, wz, want='.fF'):
     """Nudge a point onto ground you can stand on. A landmark read off a drawing
     lands wherever the label was, which is sometimes in the river."""
@@ -474,7 +540,13 @@ def main():
     river_cells, bridge_cells = set(), set()
     for name, width, pts, bridges, fords in RIVERS:
         wp = [world(px, py) for px, py in pts]
-        half = width / 2 + 1.0
+        # The WHOLE channel, banks included -- riverWaterHalf is width/2 +
+        # RIVER_BANK, and that is the width everything else in the game means by
+        # "the river". At width/2 + 1 the router thought the Redwater was 6 m
+        # across when the world draws it 14, so it strolled over the banks
+        # without ever believing it had crossed: every road along that valley
+        # went over and back, five unbridged crossings between them.
+        half = width / 2 + RIVER_BANK + 1.0
         rc = max(1, int(half / cell))
         for i in range(len(wp) - 1):
             steps = max(1, int(math.dist(wp[i], wp[i + 1]) / (cell * 0.4)))
@@ -487,16 +559,22 @@ def main():
                         if dx * dx + dz * dz <= rc * rc:
                             river_cells.add((gx + dx, gz + dz))
         crossings = []
-        for px, py in bridges + fords:
-            cxw, czw = world(px, py)
+        snapped = {'bridges': [snap_to_line(world(px, py), wp) for px, py in bridges],
+                   'fords': [snap_to_line(world(px, py), wp) for px, py in fords]}
+        for cxw, czw in snapped['bridges'] + snapped['fords']:
             gx, gz = cell_of(d, cxw, czw)
-            for dz in range(-3, 4):
-                for dx in range(-3, 4):
+            # wide enough to be a gate through a 14 m channel, or the router
+            # cannot fit through the one cheap place and goes round -- or over
+            for dz in range(-5, 6):
+                for dx in range(-5, 6):
                     bridge_cells.add((gx + dx, gz + dz))
             crossings.append({'x': cxw, 'z': czw})
         rivers.append({'name': name, 'width': width,
-                       'bridges': [{'x': x, 'z': z} for x, z in
-                                   (world(px, py) for px, py in bridges)],
+                       'bridges': [{'x': x, 'z': z} for x, z in snapped['bridges']],
+                       # A ford is a crossing too. The sheet draws Widow's Ford
+                       # as a stone-bottomed shallow, not a bridge, and a world
+                       # that does not record it has a road walking into a river.
+                       'fords': [{'x': x, 'z': z} for x, z in snapped['fords']],
                        'points': [{'x': x, 'z': z} for x, z in wp]})
     print(f'  river covers {len(river_cells)} cells; {len(bridge_cells)} of them are crossings')
 
@@ -514,6 +592,35 @@ def main():
                           'points': [{'x': round(x, 1), 'z': round(z, 1)} for x, z in pts]})
     roads = sum(1 for p in paths if p['kind'] == 'road')
     print(f'  {roads} roads, {len(paths) - roads} trails')
+
+    # Move each crossing onto the crossing. The authored pixel chose WHICH place
+    # on the river this is; the router chose where the road actually meets it,
+    # and those were 13 m apart -- a ford next to the place people ford, which
+    # is the same as no ford. Anything the roads cross that the drawing does not
+    # mark is shouted about rather than quietly accepted.
+    for ri, (name, width, pts, bridges, fords) in enumerate(RIVERS):
+        rv = rivers[ri]
+        line = [(q['x'], q['z']) for q in rv['points']]
+        found = path_river_crossings(paths, line)
+        taken = set()
+        for key in ('bridges', 'fords'):
+            out = []
+            for mk in rv[key]:
+                near = sorted((math.dist((mk['x'], mk['z']), c), i)
+                              for i, c in enumerate(found) if i not in taken)
+                if near and near[0][0] < 70:
+                    taken.add(near[0][1])
+                    x, z = snap_to_line(found[near[0][1]], line)
+                    out.append({'x': x, 'z': z})
+                else:
+                    out.append(mk)
+            rv[key] = out
+        loose = [c for i, c in enumerate(found) if i not in taken]
+        if loose:
+            print(f'  !! {name}: {len(loose)} crossing(s) the drawing does not mark: '
+                  + ', '.join(f'({c[0]:.0f}, {c[1]:.0f})' for c in loose))
+        else:
+            print(f'  {name}: {len(found)} crossing(s), every one marked')
 
     # --- the shape of the ground
     hills = []
@@ -565,11 +672,49 @@ def main():
                  {'id': 'cf_trenches', 'x': round(at['trenches'][0] + 10, 1),
                   'z': round(at['trenches'][1] + 8, 1)}]
 
-    # fishing along the Redwater, snapped to cells the trace actually calls water
+    # Fishing along the Redwater, at the EDGE, and only where there IS an edge.
+    #
+    # You fish from the bank. A spot on the centreline of a 10 m river with 4 m
+    # banks is 9 m from anywhere to stand and the game will not let you cast
+    # that far -- it made you swim out to it. But offsetting geometrically is
+    # not enough either: the lower Redwater runs through traced marsh, where the
+    # blurred wet field keeps the ground under water far past the channel, and
+    # three of five spots still had no dry land within 14 m. So a candidate is
+    # only taken if the drawing puts solid ground within a cast of it.
     spots = []
-    for i, (px, py) in enumerate(RIVERS[0][2][3::4]):
-        wx, wz = world(px, py)
-        spots.append({'id': f'fs_redwater_{i}', 'x': wx, 'z': wz, 'tier': 2 if i % 2 else 1})
+    rpts = [world(px, py) for px, py in RIVERS[0][2]]
+    half = RIVERS[0][1] / 2 + RIVER_BANK
+    CAST = 4.0
+    def has_bank(x, z):
+        for r in (2.0, 3.0, 4.0):
+            for i in range(12):
+                a = 2 * math.pi * i / 12
+                if terrain_at(d, x + math.cos(a) * r, z + math.sin(a) * r) in '.fFR':
+                    return True
+        return False
+    side, n = 1, 0
+    for k in range(2, len(rpts) - 1):
+        if n >= 6:
+            break
+        (ax, az), (bx, bz) = rpts[k], rpts[k + 1]
+        dx, dz = bx - ax, bz - az
+        L = math.hypot(dx, dz) or 1.0
+        nx, nz = -dz / L, dx / L
+        placed = None
+        for sgn in (side, -side):
+            x = round(ax + nx * (half - 2.5) * sgn, 1)
+            z = round(az + nz * (half - 2.5) * sgn, 1)
+            if has_bank(x, z):
+                placed = (x, z)
+                break
+        if not placed:
+            continue
+        if spots and math.dist(placed, (spots[-1]['x'], spots[-1]['z'])) < 40:
+            continue
+        spots.append({'id': f'fs_redwater_{n}', 'x': placed[0], 'z': placed[1],
+                      'tier': 2 if n % 2 else 1})
+        n += 1
+        side = -side
 
     models = sorted({m for m, *_ in SCATTER} | {m for m, *_ in PROPS}
                     | {m for m, *_ in CAMP_PROPS}

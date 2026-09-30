@@ -136,7 +136,8 @@ const regions = [
 // --- everything else ---------------------------------------------------------
 const shiftPath = (p) => ({ ...p, points: p.points.map(shift) });
 const shiftRiver = (r) => ({ ...r, points: r.points.map(shift),
-                             bridges: (r.bridges || []).map(shift) });
+                             bridges: (r.bridges || []).map(shift),
+                             fords: (r.fords || []).map(shift) });
 const shiftFence = (f) => ({ ...f, x1: +(f.x1 + OFF.x).toFixed(1), z1: +(f.z1 + OFF.z).toFixed(1),
                              x2: +(f.x2 + OFF.x).toFixed(1), z2: +(f.z2 + OFF.z).toFixed(1) });
 

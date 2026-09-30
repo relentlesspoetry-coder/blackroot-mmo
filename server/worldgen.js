@@ -6,9 +6,6 @@
 
 function rand(min, max) { return min + Math.random() * (max - min); }
 function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
-// Extra flooded width beyond the river's nominal half-width (matches the client
-// and server collision, so nothing is placed in the widened water).
-const RIVER_BANK = 4;
 export function dist2(ax, az, bx, bz) { const dx = ax - bx, dz = az - bz; return dx * dx + dz * dz; }
 
 // A zone may hold several bodies of water, each with several crossings. `river`
@@ -42,12 +39,14 @@ import {
   terrainAt, isWater, terrainFieldAt, waterEdgeOf, rockEdgeOf, rockRiseAt,
   landHeight, landBaseY, terrainHeight, groundMeshY, groundSlopeAt, tooSteep,
   waterLevelAt, riverProfile, latticeOf, resetTerrain, MAX_WALK_SLOPE, walkSlopeOf,
+  onDeckSpan, riverWaterHalf, RIVER_BANK, RIVER_LIP,
 } from '../shared/terrain.js';
 export {
   T_OFF, T_DEEP, T_MARSH, T_ROCK, T_DENSE, T_WOOD, T_OPEN,
   terrainAt, isWater, terrainFieldAt, waterEdgeOf, rockEdgeOf, rockRiseAt,
   landHeight, landBaseY, terrainHeight, groundMeshY, groundSlopeAt, tooSteep,
   waterLevelAt, riverProfile, latticeOf, resetTerrain, MAX_WALK_SLOPE, walkSlopeOf,
+  riverWaterHalf, RIVER_BANK, RIVER_LIP,
 };
 
 export function terrainOf(zone) { return zone && zone.terrain; }
@@ -249,7 +248,7 @@ export function generateTrees(zone) {
     const z = b.minZ + 3 + rng() * (b.maxZ - b.minZ - 6);
     if (zone.boundary && !pointInPoly(x, z, zone.boundary)) continue;
     if (pathSpecsOf(zone).some(p => closestOnPolyline(x, z, p.points).dist < pathClearOf(p.kind))) continue;
-    if (riversOf(zone).some(r => closestOnPolyline(x, z, r.points).dist < r.width / 2 + RIVER_BANK + 3)) continue;
+    if (riversOf(zone).some(r => closestOnPolyline(x, z, r.points).dist < riverWaterHalf(r.width) + 3)) continue;
     if (riversOf(zone).some(r => bridgesOf(r).some(b => dist2(x, z, b.x, b.z) < 15 * 15))) continue;
     if (zone.pois.some(p => dist2(x, z, p.x, p.z) < clearRadiusS(p) ** 2)) continue;
     if (inStructure(zone, x, z, 4)) continue;          // no oaks through the tower
@@ -324,7 +323,7 @@ export function generateScatter(zone) {
       // Keep dressing out of the water. A solid piece in a river is worse than
       // useless: an ore vein there is unreachable, because the river is the one
       // thing the player cannot walk through.
-      if (riversOf(zone).some(r => closestOnPolyline(x, z, r.points).dist < r.width / 2 + RIVER_BANK + 2.5)) continue;
+      if (riversOf(zone).some(r => closestOnPolyline(x, z, r.points).dist < riverWaterHalf(r.width) + 2.5)) continue;
       // Deep water takes nothing. A fen takes reeds and sedge -- pure decor
       // wades out into it -- but keeps anything solid on the bank.
       // Undergrowth thickens and thins with the wood above it -- but a meadow
@@ -698,4 +697,81 @@ export function prepareZone(z) {
   z._cen = null;
   console.log(`[worldgen] ${z.name}: ${z.bounds.maxX - z.bounds.minX} x ${z.bounds.maxZ - z.bounds.minZ} units, ` +
     `${z._trees.length} trees, ${z._scatter.length} scatter, ${(z.pois || []).length} landmarks`);
+}
+
+// How deep the water is on a point, and whether you are standing on planks
+// over it. This lived in server.js and was re-derived by hand twice in
+// tools/zonecheck.mjs, so the checker's fishing invariants were measuring a
+// paraphrase of the swim rule rather than the swim rule. Three copies of one
+// number; one of them is now the number.
+export function onDeck(zone, x, z, grow = 0) {
+  for (const r of riversOf(zone)) {
+    for (const b of bridgesOf(r)) {
+      const span = (b.span || 12) + 2 * grow;
+      if (dist2(x, z, b.x, b.z) < (span * span) / 4) return true;
+    }
+  }
+  // One rectangle for both sides -- see onDeckSpan in shared/terrain.js.
+  for (const d of (zone.decks || [])) if (onDeckSpan(d, x, z, grow)) return true;
+  return false;
+}
+// How far past the deep contour the bed has to shelve before you are out of
+// your depth. Tuned against the measured profile at Ravenwater, which drops
+// from nothing at the bank to 3.8 m twenty-five metres out.
+// At 0.34 the swim line measured 15 m out at Ravenwater in 1.93 m of water --
+// over a fighter's head. Shoulders on a 1.8 m man are about 1.5 m, so the ramp
+// is shortened to put the line there: you wade to your chest and swim past it.
+const DEEP_RAMP = 0.29;
+export function waterDepthAt(zone, x, z, deckGrow = 0) {
+  if (onDeck(zone, x, z, deckGrow)) return 0;      // dry feet: you are on the planks
+  let d = 0;
+  if (zone.terrain) {
+    // The SAME contour the client draws its shoreline from -- not the raw cell.
+    // A cell is 2.5 m and the drawn shore is a smooth curve through it, so asking
+    // the grid "is this cell wet" put the waterline up to a couple of metres away
+    // from the water you can see. Both sides read zone.waterEdge.
+    const E = zone.waterEdge;
+    if (E) {
+      // GRADED, not a step. This returned 1 the instant you crossed the deep
+      // contour, so you started swimming at the water's edge where it is
+      // ankle deep -- a step off the bank and you were out of your depth. The
+      // bed shelves, and the field shelves with it: at the contour you are
+      // wading, and you only lose your feet once you are properly out. At
+      // Ravenwater that puts the swim line about thirteen metres out, where
+      // the pool is a metre and a half deep -- chest-to-shoulder on a man.
+      const dg = terrainFieldAt(zone, x, z, 'deep');
+      const wg = terrainFieldAt(zone, x, z, 'wet');
+      if (dg >= E.deep) {
+        const t = Math.min(1, (dg - E.deep) / DEEP_RAMP);
+        d = Math.max(d, 0.30 + 0.70 * (t * t * (3 - 2 * t)));
+      } else if (wg >= E.marsh) d = 0.35;                                // wadeable
+    } else {
+      const c = terrainAt(zone, x, z);
+      if (c === T_DEEP) d = 1;
+      else if (c === T_MARSH) d = 0.35;
+    }
+  }
+  for (const r of riversOf(zone)) {
+    const dist = closestOnPolyline(x, z, r.points).dist;
+    // A SECOND idea of how wide a river is. The terrain carves the channel and
+    // hangs the water out to riverWaterHalf(width) -- width/2 plus the bank --
+    // and this asked about width/2, so on the outer half of every river you
+    // walked along the bed with dry feet under water that was drawn over your
+    // head. Measured across all four rivers: 21% of the ring between the two
+    // widths had more than half a metre of visible water and depth 0 here,
+    // worst 1.53 m on the Sallows. One width, the one that draws the water.
+    //
+    // This also puts the swim line where the comment above says it was aimed.
+    // On width/2 it landed 2.42 m out on the Creek in 1.66 m of water and
+    // 2.69 m out on the Redwater in 2.72 m -- past a man's head, because the
+    // ramp was being run over half the real channel. On the drawn half-width
+    // it lands in 1.44 m on both the Creek and the Crowwater, which is the
+    // shoulder height this was tuned to. The middle of a river is still a
+    // swim, so bridges and fords still carry the roads.
+    const half = riverWaterHalf(r.width);
+    if (dist >= half) continue;
+    // shelves off toward the middle of the channel rather than dropping at the bank
+    d = Math.max(d, Math.min(1, 0.45 + (1 - dist / half) * 0.8));
+  }
+  return d;
 }
