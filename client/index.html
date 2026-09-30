@@ -788,12 +788,19 @@ const DETAIL_TILES = ['grass', 'dirt', 'rock', 'stone', 'wood', 'bark', 'leaf', 
 const DETAIL_INDEX = Object.fromEntries(DETAIL_TILES.map((n, i) => [n, i]));
 const DETAIL_RULES = [
   [/bark|trunk/i, 'bark'], [/leaf|leaves|canopy|foliage|needle|frond|petal|bush|fern|flower|vine|moss|grass/i, 'leaf'],
-  [/hay|straw|thatch/i, 'hay'], [/hair|beard|eye|iris|teeth|tongue|mouth/i, null],
-  [/skin|flesh|face|body|hand|nose|ear|scar/i, 'skin'], [/fur|pelt|feather|wool_coat|hide\b/i, 'fur'],
-  [/bone|tooth|tusk|horn|skull|fang|ivory|antler/i, 'bone'], [/water/i, 'water'],
+  [/hay|straw|thatch/i, 'hay'], [/hair|beard|eye|iris|teeth|tongue|mouth|flame|ember/i, null],
+  // WORD-BOUNDED, the short ones. These rules test substrings, so a material
+  // name is a sentence every rule is reading: `ear` found Sp-ear and Ear-th,
+  // `face` found Fa-cet, `scar` found scar-f and Scar-let, `coal` found
+  // char-coal, `tin` found Chi-tin and `horn` found T-horn. Seventeen surfaces
+  // were on the wrong texture because of it -- a scarf grained like skin, a
+  // spear shaft like skin, a thorn like bone, charcoal cloth like iron.
+  [/skin|flesh|\bfaces?\b|body|hand|nose|\bears?\b|\bscar\b/i, 'skin'],
+  [/fur|pelt|feather|wool_coat|hide\b/i, 'fur'],
+  [/bone|tooth|tusk|\bhorns?\b|skull|fang|ivory|antler|chitin|carapace/i, 'bone'], [/water/i, 'water'],
   [/leather|belt|boot|glove|strap|saddle|harness/i, 'leather'],
-  [/iron|steel|bronze|brass|copper|gold|silver|metal|mithril|adamant|runite|blade|chain|plate|helm|armou?r|mail|buckle|coin|nail|spike|tin\b|coal/i, 'metal'],
-  [/cloth|fabric|linen|wool|tunic|robe|shirt|trouser|pant|hood|cape|sash|tent|canvas|banner|flag|bedroll|blanket|sack|rope/i, 'cloth'],
+  [/iron|steel|bronze|brass|copper|gold|silver|metal|mithril|adamant|runite|blade|chain|plate|helm|armou?r|mail|buckle|coin|nail|spike|\btin\b|\bcoal\b/i, 'metal'],
+  [/cloth|fabric|linen|wool|tunic|robe|shirt|trouser|pant|hood|cape|sash|tent|canvas|banner|flag|bedroll|blanket|sack|rope|scarf/i, 'cloth'],
   [/wood|plank|log|timber|oak|pine|birch|handle|shaft|stool|crate|barrel|fence|post|beam|cart|wheel|bucket|table|chair|bed|shelf|door/i, 'wood'],
   [/dirt|soil|mud|earth/i, 'dirt'], [/sand/i, 'sand'],
   [/grey|gray|rock|stone|boulder|cave|crystal|ore|gem|slab|rubble|stalag|pebble|cobble|brick|granite/i, 'rock'],

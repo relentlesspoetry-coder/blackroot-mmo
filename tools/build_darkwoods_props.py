@@ -58,6 +58,35 @@ CLOTH_RED  = (0.55, 0.14, 0.13)
 CLOTH_BLUE = (0.17, 0.21, 0.42)
 CLOTH_GREY = (0.40, 0.40, 0.44)
 BONE       = (0.80, 0.78, 0.70)
+ASH        = (0.15, 0.10, 0.08)
+
+# What each colour IS -- see tools/glbkit.py. Without these the kit's materials
+# are named by index and every one of them, from the brazier's iron to the lily
+# pads, is grained like stone.
+MAT = {
+    STONE:      'Stone | grey granite',
+    STONE_DK:   'Stone shadow | granite',
+    STONE_LT:   'Stone highlight | pale granite',
+    STONE_MOSS: 'Moss on stone',
+    MOSS:       'Moss',
+    WOOD:       'Timber | weathered oak',
+    WOOD_DK:    'Timber | dark oak',
+    WOOD_PALE:  'Timber | pale oak',
+    CANVAS:     'Canvas awning',
+    LILY:       'Lily leaf',
+    LILY_LT:    'Lily leaf | pale',
+    BLOOM:      'Lily flower | petal',
+    IRON:       'Iron | dark',
+    FLAME:      'Flame',
+    CLOTH_RED:  'Banner cloth | red',
+    CLOTH_BLUE: 'Banner cloth | blue',
+    CLOTH_GREY: 'Banner cloth | grey',
+    BONE:       'Old bone',
+    # Not "charcoal" (the metal rule matches `coal` inside it) and not "ash
+    # bed" (the wood rule matches `bed`). The rules test substrings, so a
+    # material name is a sentence two other rules are also reading.
+    ASH:        'Cold ash',
+}
 
 
 def box(sx, sy, sz, at=(0, 0, 0), colour=STONE, yaw=0.0, tilt=0.0, roll=0.0):
@@ -70,6 +99,7 @@ def box(sx, sy, sz, at=(0, 0, 0), colour=STONE, yaw=0.0, tilt=0.0, roll=0.0):
         m.apply_transform(trimesh.transformations.rotation_matrix(yaw, (0, 1, 0)))
     m.apply_translation(at)
     m.metadata['colour'] = colour
+    m.metadata['mat'] = MAT.get(tuple(colour))
     return m
 
 
@@ -83,6 +113,7 @@ def cyl(r, h, at=(0, 0, 0), colour=STONE, sections=8, tilt=0.0, yaw=0.0):
         m.apply_transform(trimesh.transformations.rotation_matrix(yaw, (0, 1, 0)))
     m.apply_translation(at)
     m.metadata['colour'] = colour
+    m.metadata['mat'] = MAT.get(tuple(colour))
     return m
 
 
@@ -99,6 +130,7 @@ def rock(rx, ry, rz, at=(0, 0, 0), colour=STONE, seed=0, rough=0.22, yaw=0.0):
         m.apply_transform(trimesh.transformations.rotation_matrix(yaw, (0, 1, 0)))
     m.apply_translation(at)
     m.metadata['colour'] = colour
+    m.metadata['mat'] = MAT.get(tuple(colour))
     return m
 
 
@@ -370,7 +402,7 @@ def brazier(seed=15):
         p.append(box(0.16, 0.42, 0.14, (math.cos(th) * 0.50, 1.22, math.sin(th) * 0.50),
                      IRON, yaw=-th))
     p.append(cyl(0.52, 0.10, (0, 1.03, 0), IRON, sections=9))
-    p.append(cyl(0.42, 0.22, (0, 1.20, 0), (0.15, 0.10, 0.08), sections=9))   # ash bed
+    p.append(cyl(0.42, 0.22, (0, 1.20, 0), ASH, sections=9))   # ash bed
     for i, (r, h, y) in enumerate([(0.30, 0.44, 1.42), (0.20, 0.34, 1.68), (0.10, 0.24, 1.88)]):
         p.append(cyl(r, h, (0, y, 0), FLAME, sections=7))
     return p

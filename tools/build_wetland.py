@@ -44,6 +44,21 @@ WOOD_DARK = (0.27, 0.20, 0.13)
 MOSS = (0.28, 0.38, 0.20)
 ROPE = (0.46, 0.40, 0.26)
 
+# What each colour IS. The material name is the only thing the client has to go
+# on when it picks a surface's detail texture (DETAIL_RULES -> detailFor), and
+# glbkit used to name them `Boardwalk_A_0`, which says nothing and falls through
+# to a stone fallback -- so every plank in the Murkfen was grained like granite.
+MAT = {
+    WOOD:      'Planks | weathered oak',
+    WOOD_PALE: 'Planks | pale oak',
+    # NOT "silvered": DETAIL_RULES tests for metal (which matches `silver`)
+    # before it tests for wood, so a silvered plank came out grained like iron.
+    WOOD_GREY: 'Planks | grey timber',
+    WOOD_DARK: 'Pilings | dark timber',
+    MOSS:      'Moss on the planks',
+    ROPE:      'Rope lashing',
+}
+
 
 def box(sx, sy, sz, at=(0, 0, 0), colour=WOOD, yaw=0.0, tilt=0.0, roll=0.0):
     m = trimesh.creation.box(extents=(sx, sy, sz))
@@ -55,6 +70,7 @@ def box(sx, sy, sz, at=(0, 0, 0), colour=WOOD, yaw=0.0, tilt=0.0, roll=0.0):
         m.apply_transform(trimesh.transformations.rotation_matrix(yaw, (0, 1, 0)))
     m.apply_translation(at)
     m.metadata['colour'] = colour
+    m.metadata['mat'] = MAT.get(tuple(colour))
     return m
 
 
