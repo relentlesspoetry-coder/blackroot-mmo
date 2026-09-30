@@ -788,6 +788,185 @@ export const QUESTS = {
     ],
     reward: { xp: 3200, gold: 900, items: ['Bone Charm'] },
   },
+
+  // -------------------------------------------------------------------------
+  // The Killing Fields. Picks up where the Dark Woods ends -- Sela sends you
+  // east off the back of The Last Watch -- and runs 15 to 23. The zone names
+  // its own region, not the world zone it was composed into: a quest sends you
+  // to the Killing Fields, not to 'blackroot'.
+  // -------------------------------------------------------------------------
+  kf_road: {
+    id: 'kf_road', name: 'The War Road', giver: 'sela', minLevel: 15,
+    requires: ['dw_lastwatch'],
+    summary: 'Sela has held the passes. East of them the road runs out of the wood and into open country.',
+    intro: 'You have walked every pass in this wood with me and there is one I have never walked. East. The trees stop and the ground opens and there is a camp out there called Lastwatch that has been asking for hands for two years. I cannot leave the woods. You can. Find Sergeant Holt and tell him the Dark Woods still stands.',
+    active: 'East, out of the trees. Find Lastwatch Camp and Sergeant Holt.',
+    done: 'Then they know we are still here. Good. Stay out there a while -- they need you more than I do.',
+    objectives: [
+      { type: 'reach', zone: 'killingfields', poi: 'lastwatch', label: 'Reach Lastwatch Camp' },
+      { type: 'talk', npc: 'holt', label: 'Speak with Sergeant Holt' },
+    ],
+    reward: { xp: 3400, gold: 400 },
+  },
+
+  kf_harvest: {
+    id: 'kf_harvest', name: 'Broken Harvest', giver: 'serin', minLevel: 16,
+    requires: ['kf_road'],
+    summary: 'The farms west of the camp are being stripped by people, not by goblins.',
+    intro: 'Everything you can see was fields once. There is still grain in some of those barns and there are men out there taking it who did not plant it. I am not sentimental about farms. I am sentimental about eating. Clear them off and bring me back something I can put a name to -- they take trinkets off the dead and they wear them.',
+    active: 'Clear the scavengers out of Broken Harvest. Bring back what they stole.',
+    done: 'Stolen off our own, half of this. Well. It is ours again and the barns are quiet. Eat something.',
+    talk: [
+      ['n', "You came out of the wood, so you have seen trees. Take a look round. Everything flat you can see was somebody's field."],
+      ['y', "What happened to them?"],
+      ['n', "The war came through twice and the second time nobody came back to plant."],
+      ['n', "I feed forty people out of what is left. That is why I care who is in those barns."],
+    ],
+    objectives: [
+      { type: 'reach', zone: 'killingfields', poi: 'harvest', label: 'Reach Broken Harvest' },
+      { type: 'kill', target: 'bandit', count: 9, label: 'Scavengers driven off' },
+      { type: 'collect', item: 'Stolen Pendant', count: 3, label: 'Stolen pendants recovered' },
+    ],
+    reward: { xp: 3800, gold: 520 },
+  },
+
+  kf_orchard: {
+    id: 'kf_orchard', name: 'The Ashen Orchard', giver: 'cobb', minLevel: 17,
+    requires: ['kf_road'],
+    summary: 'The orchard burned years ago and something has been living in the rows ever since.',
+    intro: 'Nobody goes up the orchard. It burned in the first year and it is all black sticks in straight lines now, which is a fine thing to hide behind if you are small and green and patient. I had a cache up there. I would like it back and I would like to be able to walk up for it.',
+    active: 'Clear the Ashen Orchard and find the cache.',
+    done: 'Still there. Still mine. You can go up that hill now without counting the rows behind you.',
+    talk: [
+      ['n', "You will want to keep off the orchard rows."],
+      ['y', "Why the rows?"],
+      ['n', "Because they are straight, and anything crouched in one can see the whole length of it. Same as you can."],
+      ['n', "Difference being they have been up there longer and they know which row is which."],
+    ],
+    objectives: [
+      { type: 'reach', zone: 'killingfields', poi: 'orchard', label: 'Reach the Ashen Orchard' },
+      { type: 'kill', target: 'goblin_scavenger', count: 10, label: 'Scavengers cleared' },
+      { type: 'chest', zone: 'killingfields', chest: 'orchard_cache', label: "Open Cobb's cache" },
+    ],
+    reward: { xp: 4100, gold: 560 },
+  },
+
+  kf_trenches: {
+    id: 'kf_trenches', name: 'The Long Trenches', giver: 'holt', minLevel: 18,
+    requires: ['kf_harvest'],
+    summary: 'The earthworks in the middle of the basin are held, and Holt wants to know by whom.',
+    intro: 'Somebody dug those trenches and it was us, a long time ago. Somebody is in them now and it is not. They have a sergeant of their own down there giving orders, which is the part I mind. Go and take the works back, and put him down where his lot can see it.',
+    active: 'Take the Long Trenches. Kill the one giving the orders.',
+    done: 'Our ditches again. They will come back for them and we will be in them first. That is the whole war out here.',
+    talk: [
+      ['n', "You are the one Sela sent. She does not send people lightly."],
+      ['y', "She said you needed hands."],
+      ['n', "I need an army. I have you. It is a start and I am not being unkind."],
+      ['n', "Do what I ask in the order I ask it and you will still be standing at the end of the month."],
+    ],
+    objectives: [
+      { type: 'reach', zone: 'killingfields', poi: 'trenches', label: 'Reach the Long Trenches' },
+      { type: 'kill', target: 'goblin_warrior', count: 10, label: 'Trench-holders killed' },
+      { type: 'slay', name: 'Sergeant Kelm', label: 'Sergeant Kelm killed' },
+      { type: 'chest', zone: 'killingfields', chest: 'trench_cache', label: 'Open the trench cache' },
+    ],
+    reward: { xp: 4600, gold: 700 },
+  },
+
+  kf_quarry: {
+    id: 'kf_quarry', name: 'Ironroot', giver: 'dagan', minLevel: 18,
+    requires: ['kf_orchard'],
+    summary: 'The quarry still has good iron in it and a crew of goblins working the face.',
+    intro: 'That is the best iron face inside forty miles and there is a green crew on it swinging my picks. I am not asking you to be delicate. Clear the benches, bring me down a load of ore so I can show Serin the seam is worth reopening, and get my strongbox out of the shed while you are up there.',
+    active: 'Clear the Ironroot Quarry. Bring back ore, and the strongbox.',
+    done: 'That is good ore. That is a seam worth a road. Serin can argue with the rock if she likes.',
+    talk: [
+      ['n', "You have a pick on you. Good."],
+      ['y', "What is the seam like?"],
+      ['n', "Best inside forty miles and full of somebody else's crew."],
+      ['n', "I have been down there twice. The second time I came back at a run."],
+    ],
+    objectives: [
+      { type: 'reach', zone: 'killingfields', poi: 'quarry', label: 'Reach Ironroot Quarry' },
+      { type: 'kill', target: 'goblin_miner', count: 8, label: 'Mining crew cleared' },
+      { type: 'collect', item: 'Iron Ore', count: 6, label: 'Iron ore brought down' },
+      { type: 'chest', zone: 'killingfields', chest: 'quarry_strongbox', label: "Recover Dagan's strongbox" },
+    ],
+    reward: { xp: 4600, gold: 680 },
+  },
+
+  kf_crypt: {
+    id: 'kf_crypt', name: "Saint's Ruin", giver: 'vane', minLevel: 19,
+    requires: ['kf_trenches'],
+    summary: 'The chapel crypt has been shut for years. Something inside has stopped respecting that.',
+    intro: 'I told you to leave the crypt alone and I meant it, and now I am asking you to open it, so you may take that as a measure of how the week has gone. Something down there has been widening the gap. I can hear it from the nave. Go down, end it, and bring up the reliquary before anything else comes for it.',
+    active: 'Go down into the crypt under Saint\'s Ruin. End what is in it.',
+    done: 'Quiet. Properly quiet, for the first time since spring. I will shut it again and this time it will stay shut.',
+    talk: [
+      ['n', "I keep this chapel because somebody has to and everybody else stopped."],
+      ['y', "Does anyone still come?"],
+      ['n', "The wounded, sometimes. The dying, more often. They come to the nave."],
+      ['n', "Nobody goes down the stair. I would like that to stay true, which is why I am asking you to go down it."],
+    ],
+    objectives: [
+      { type: 'reach', zone: 'killingfields', poi: 'saints', label: "Reach Saint's Ruin" },
+      { type: 'kill', target: 'venom_spider', count: 6, label: 'Crypt spiders killed' },
+      { type: 'slay', name: 'The Crypt Widow', label: 'The Crypt Widow killed' },
+      { type: 'chest', zone: 'killingfields', chest: 'saints_crypt', label: 'Open the crypt reliquary' },
+    ],
+    reward: { xp: 5200, gold: 820, items: ['Bone Charm'] },
+  },
+
+  kf_barrows: {
+    id: 'kf_barrows', name: 'Mourning Barrows', giver: 'mared', minLevel: 20,
+    requires: ['kf_crypt'],
+    summary: 'The burial mounds south of the camp have been opened from the inside.',
+    intro: 'I have been putting men in the ground out here for four years and lately the ground has been giving them back. The barrows are older than any of us -- somebody was burying their own in them long before the war -- and one of them is open. Go down. Whatever is nesting in there, take it out, and bring up whatever it is sitting on.',
+    active: 'Clear the Mourning Barrows and empty the hoard.',
+    done: 'Then they can rest and so can I. Come back if anything bites you. Especially if anything bites you.',
+    talk: [
+      ['n', "Hold still. That is a bad cut and you are ignoring it."],
+      ['y', "It is fine."],
+      ['n', "It is not, and I have buried three people who said that. Sit."],
+      ['n', "While you are sitting: the barrows. Something is coming up out of them and I want it stopped."],
+    ],
+    objectives: [
+      { type: 'reach', zone: 'killingfields', poi: 'barrows', label: 'Reach the Mourning Barrows' },
+      { type: 'kill', target: 'spider', count: 10, label: 'Barrow spiders killed' },
+      { type: 'chest', zone: 'killingfields', chest: 'barrow_hoard', label: 'Empty the barrow hoard' },
+    ],
+    reward: { xp: 5600, gold: 900 },
+  },
+
+  kf_killing: {
+    id: 'kf_killing', name: 'The Killing Ground', giver: 'holt', minLevel: 21,
+    requires: ['kf_trenches', 'kf_quarry'],
+    summary: 'The open field east of the trenches is where the war actually happens.',
+    intro: 'Everything we have done so far is the edges. That field in the middle is the thing itself -- no cover worth the name, wrecks to hide behind if you are quick, and their best out there walking it like they own it. I cannot take it and hold it. I can take it. Go and make it cost them.',
+    active: 'Break what is holding the Killing Ground.',
+    done: 'It will be theirs again by the month\'s end. It was worth doing anyway. Ask anyone who was on it.',
+    objectives: [
+      { type: 'reach', zone: 'killingfields', poi: 'killing', label: 'Reach the Killing Ground' },
+      { type: 'kill', target: 'goblin_archer', count: 12, label: 'Archers cleared' },
+      { type: 'kill', target: 'guard', count: 5, label: 'Field brutes killed' },
+    ],
+    reward: { xp: 6200, gold: 1050 },
+  },
+
+  kf_warlord: {
+    id: 'kf_warlord', name: "The Warlord's Redoubt", giver: 'holt', minLevel: 23,
+    requires: ['kf_killing', 'kf_barrows'],
+    summary: 'Everything on this map takes its orders from the keep on the eastern plateau.',
+    intro: 'There is one of them up there who decides where the rest of them go, and while he is up there this never ends. The ramp is the only way in and they know it. I am not going to dress it up: people do not come back down that ramp. You might. Finish it.',
+    active: "Take the redoubt. Kill Warlord Harn.",
+    done: 'Then it is over, or it is over for a while, which out here is the same word. Lastwatch owes you the camp.',
+    objectives: [
+      { type: 'reach', zone: 'killingfields', poi: 'redoubt', label: "Reach the Warlord's Redoubt" },
+      { type: 'slay', name: 'Warlord Harn', label: 'Warlord Harn killed' },
+      { type: 'chest', zone: 'killingfields', chest: 'redoubt_hoard', label: "Empty the warlord's hoard" },
+    ],
+    reward: { xp: 8500, gold: 1800, items: ["Ancient Giant's Signet"] },
+  },
 };
 
 export const QUEST_IDS = Object.keys(QUESTS);

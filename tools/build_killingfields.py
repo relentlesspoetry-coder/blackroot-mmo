@@ -212,6 +212,10 @@ NPCS = [
      'The farms are picked clean. The battlefield is not. Think about that.'),
     ('vane',   'Brother Vane',        'Male',   'saints',     -5,  7,
      'The crypt is shut. It has been shut a long time. Leave it so.'),
+    ('dagan',  'Prospector Dagan',    'Male',   'quarry',      7, -6,
+     'Good iron in this face. Bad company in it too.'),
+    ('wick',   'Sentry Wick',         'Female', 'bridge',      6,  5,
+     'Nobody crosses without me seeing. That is the whole of the job and it is enough.'),
 ]
 
 CHESTS = [('lastwatch_store', 'lastwatch', 10, 6), ('orchard_cache', 'orchard', -12, 8),

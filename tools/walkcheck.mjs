@@ -10,7 +10,12 @@
 // spot, this tool calls that spot solid too.
 //
 // Exits non-zero if anything the player is meant to walk to cannot be walked to.
-import { darkwoods } from '../server/zones/darkwoods.js';
+// The LIVE world, not the region's own source file. This read darkwoods.js and
+// so kept checking the old 850 x 712 map while the server ran a 1690 x 962 one
+// with a second region in it -- it reported 50 things reachable and never saw
+// the Killing Fields' seven NPCs, seven chests or twelve landmarks at all.
+// The same mistake questcheck was making, for the same reason.
+import { blackroot } from '../server/zones/blackroot.js';
 import { spiderden } from '../server/zones/spiderden.js';
 import { prepareZone, caveOutline } from '../server/worldgen.js';
 import { navBlocked } from '../server/collision.js';
@@ -161,6 +166,6 @@ export function report(z, show = SHOW) {
 
 if (RUN_DIRECT) {
   let bad = 0;
-  for (const z of [darkwoods, spiderden]) bad += report(ready(z)).length;
+  for (const z of [blackroot, spiderden]) bad += report(ready(z)).length;
   process.exit(bad ? 1 : 0);
 }
