@@ -220,6 +220,137 @@ CHESTS = [('lastwatch_store', 'lastwatch', 10, 6), ('orchard_cache', 'orchard', 
           ('barrow_hoard', 'barrows', -9, -5)]
 
 
+# --- the three buildings -----------------------------------------------------
+# The ruin kit is built to a 4 m grid and every piece is 4 m wide, so a layout
+# is a list of (model, dx, dy, dz, yaw, wall, gap): `wall` is how long a
+# collision segment that piece contributes and `gap` is the doorway cut in it.
+U = 4.0
+
+
+def saints_ruin():
+    """A roofless chapel and the way down into its crypt.
+
+    Smaller than the Fallen Chapel in the Dark Woods on purpose -- that is a
+    three-bay nave and this is a country chapel, two bays, with its east window
+    still up and its west end in the grass. The sheet calls it "haunted chapel,
+    crypt access", so the stair down is the point of the building and everything
+    else exists to make it worth walking to.
+    """
+    p = []
+    hx, hz = 1.5 * U, 1.5 * U
+    zs = (-U, 0.0, U)
+    # the east end still stands, and the window in it
+    p.append(('Ruin_Lancet', -U, 0, -hz, 0, U, 0))
+    p.append(('Ruin_East_Window', 0.0, 0, -hz, 0, U, 0))
+    p.append(('Ruin_Lancet', U, 0, -hz, 0, U, 0))
+    # the south flank keeps its door; the north is down to its footings
+    for z, m in zip(zs, ('Ruin_Lancet', 'Ruin_Door_Arch', 'Ruin_Wall_Half')):
+        p.append((m, hx, 0, z, math.pi / 2, U, 1.9 if m == 'Ruin_Door_Arch' else 0))
+    for z, m in zip(zs, ('Ruin_Wall_Low', None, 'Ruin_Wall_Low')):
+        if m is None:
+            p.append(('Ruin_Arcade', -hx, 0, z, math.pi / 2, 0, 0))
+            p.append(('Ruin_Rubble', -hx + 1.4, 0, z + 1.2, 1.0, 0, 0))
+            continue
+        p.append((m, -hx, 0, z, math.pi / 2, U, 0))
+    # the west end is a breach you walk in through
+    p.append(('Ruin_Wall_Low', -U, 0, hz, 0, U, 0))
+    p.append(('Ruin_Rubble', 0.7, 0, hz - 0.8, 0.5, 0, 0))
+    p.append(('Ruin_Steps_Wide', 0.0, 0, hz + 2.2, 0, 0, 0))
+    # the altar, and behind it the stair down
+    p.append(('Ruin_Altar', 0.0, 0, -hz + 2.6, 0, 0, 0))
+    p.append(('Ruin_Stair', 2.2, 0, 1.6, math.pi, 0, 0))
+    for x in (-hx - 0.42, hx + 0.42):
+        p.append(('Ruin_Buttress', x, 0, -U / 2, math.pi / 2, 0, 0))
+    return p
+
+
+def warlord_redoubt():
+    """A breached keep with a courtyard you can actually fight in.
+
+    The sheet is explicit that this is a boss arena "reachable by a ramp, not an
+    isolated island", so the curtain is a real enclosure with ONE way in at the
+    south and one breach at the west, and the middle is left empty. Everything
+    that would clutter the floor -- braziers, the standard, the trebuchet that
+    threw at it -- is placed outside the walls or against them.
+    """
+    p = []
+    R = 3 * U                                     # 12 m from the middle to a wall
+    xs = (-2 * U, -U, 0.0, U, 2 * U)
+    # north curtain: tall and unbroken, the face you see coming up the ramp
+    for x in xs:
+        p.append(('Ruin_Wall_Tall', x, 0, -R, 0, U, 0))
+    # south curtain: the gate
+    for x in xs:
+        m = 'Ruin_Wall_Door' if x == 0.0 else 'Ruin_Wall'
+        p.append((m, x, 0, R, 0, U, 2.2 if x == 0.0 else 0))
+    # east curtain intact, west curtain breached in the middle two bays
+    for z in xs:
+        p.append(('Ruin_Wall', R, 0, z, math.pi / 2, U, 0))
+    for z, m in zip(xs, ('Ruin_Wall', 'Ruin_Wall_Half', None, None, 'Ruin_Wall')):
+        if m is None:
+            p.append(('Ruin_Rubble', -R + 1.2, 0, z, 0.9 + z * 0.1, 0, 0))
+            continue
+        p.append((m, -R, 0, z, math.pi / 2, U, 0))
+    # two corner towers still up, two down to their stumps
+    for (cx, cz) in ((-R, -R), (R, -R)):
+        p.append(('Tower_Slit', cx, 0, cz, 0, 0, 0))
+        p.append(('Tower_Slit', cx, 4.6, cz, 0, 0, 0))
+        p.append(('Tower_Gallery', cx, 9.2, cz, 0, 0, 0))
+        p.append(('Tower_Roof', cx, 12.0, cz, 0, 0, 0))
+    for (cx, cz) in ((-R, R), (R, R)):
+        p.append(('Tower_Slit', cx, 0, cz, 0, 0, 0))
+        p.append(('Ruin_Rubble', cx + 1.4, 0, cz - 1.2, 2.0, 0, 0))
+    # the ramp up to the gate, which is what makes it an arena and not an island
+    p.append(('Ruin_Steps_Wide', 0.0, 0, R + 2.4, math.pi, 0, 0))
+    p.append(('Ruin_Steps_Wide', 0.0, 0, R + 6.0, math.pi, 0, 0))
+    return p
+
+
+def lastwatch_camp():
+    """The safe camp: one watchtower and a low breastwork, open to the road.
+
+    A safe camp has to READ as safe from outside it, which means a silhouette
+    you can see over -- a tower and a waist-high wall, not a stockade. The gap
+    in the south is deliberate and the road routes through it.
+    """
+    p = []
+    p.append(('Tower_Door', -2 * U, 0, -U, 0, 0, 0))
+    p.append(('Tower_Slit', -2 * U, 4.6, -U, 0, 0, 0))
+    p.append(('Tower_Gallery', -2 * U, 9.2, -U, 0, 0, 0))
+    p.append(('Tower_Roof', -2 * U, 12.0, -U, 0, 0, 0))
+    # a breastwork round the north and east, open to the road in the south-west
+    for x in (-U, 0.0, U, 2 * U):
+        p.append(('Ruin_Wall_Low', x, 0, -2 * U, 0, U, 0))
+    for z in (-U, 0.0, U):
+        p.append(('Ruin_Wall_Low', 2.5 * U, 0, z, math.pi / 2, U, 0))
+    p.append(('Ruin_Wall_Low', 2 * U, 0, 2 * U, 0.8, U, 0))
+    return p
+
+
+# (key, px, py, yaw, padW, padD, layout)
+STRUCTURES = [
+    ('saints_ruin',     1300, 700, 0.35, 9.0, 11.0, saints_ruin),
+    ('warlord_redoubt', 1335, 392, 0.0, 30.0, 30.0, warlord_redoubt),
+    ('lastwatch_camp',   565, 645, 2.4, 22.0, 20.0, lastwatch_camp),
+]
+
+# The camp's tents and gear, which are props rather than architecture.
+CAMP_PROPS = [
+    ('props/Supply_Pavilion', 'lastwatch', -4, 6, 0.3, 1.0, 2.0),
+    ('props/Small_Canvas_Tent', 'lastwatch', 4, 7, 1.9, 1.0, 1.4),
+    ('props/Small_Canvas_Tent', 'lastwatch', 9, 3, 0.6, 1.0, 1.4),
+    ('props/Goblin_Hide_Tent', 'lastwatch', -9, 2, 2.2, 1.0, 1.5),
+    ('props/Supply_Crate', 'lastwatch', 2, -2, 0.4, 1.0, 0.7),
+    ('props/Water_Barrel', 'lastwatch', -2, -4, 0.0, 1.0, 0.6),
+    ('props/Camp_Stool', 'lastwatch', 1, 3, 1.1, 1.0, 0.4),
+    ('props/Rolled_Bedroll', 'lastwatch', -6, -1, 0.9, 1.0, 0.5),
+    ('darkwoods/Market_Stall', 'lastwatch', 7, -5, 2.9, 1.0, 1.6),
+    ('props/Camp_Lantern', 'lastwatch', 0, 8, 0.0, 1.0, 0.4),
+    ('props/Supply_Crate', 'redoubt', 12, -4, 1.2, 1.0, 0.7),
+    ('props/Unlit_Fire_Pit', 'redoubt', 0, 0, 0.0, 1.0, 0.9),
+    ('darkwoods/Brazier', 'saints', 4, 3, 0.0, 1.0, 0.8),
+]
+
 # --- the build ---------------------------------------------------------------
 def load_grid():
     return json.loads(GRID.read_text())
@@ -391,8 +522,17 @@ def main():
     # said so.
     base = lambda m: m.rsplit('/', 1)[-1]
     scatter = [{'model': base(m), 'count': c, 'near': p, 'nearR': r} for m, c, p, r in SCATTER]
+    structures = []
+    for key, px, py, yaw, padw, padd, layout in STRUCTURES:
+        wx, wz = nearest_open(d, *world(px, py))
+        structures.append({'key': key, 'x': wx, 'z': wz, 'yaw': yaw,
+                           'padW': padw, 'padD': padd,
+                           'pieces': [{'m': m, 'dx': round(dx, 2), 'dy': round(dy, 2),
+                                       'dz': round(dz, 2), 'yaw': round(pyaw, 4),
+                                       'wall': wall, 'gap': gap}
+                                      for m, dx, dy, dz, pyaw, wall, gap in layout()]})
     props = []
-    for m, poi, dx, dz, yaw, s, c in PROPS:
+    for m, poi, dx, dz, yaw, s, c in PROPS + CAMP_PROPS:
         x, z = at[poi]
         px, pz = nearest_open(d, round(x + dx, 1), round(z + dz, 1))
         props.append({'m': base(m), 'x': px, 'z': pz, 'yaw': yaw, 's': s, 'c': c})
@@ -411,7 +551,9 @@ def main():
         wx, wz = world(px, py)
         spots.append({'id': f'fs_redwater_{i}', 'x': wx, 'z': wz, 'tier': 2 if i % 2 else 1})
 
-    models = sorted({m for m, *_ in SCATTER} | {m for m, *_ in PROPS})
+    models = sorted({m for m, *_ in SCATTER} | {m for m, *_ in PROPS}
+                    | {m for m, *_ in CAMP_PROPS}
+                    | {pc['m'] for st in structures for pc in st['pieces']})
 
     zone = {
         'id': 'killingfields',
@@ -433,7 +575,7 @@ def main():
         'scatter': scatter,
         'decks': [],
         'props': props,
-        'fences': [], 'dirt': [], 'structures': [],
+        'fences': [], 'dirt': [], 'structures': structures,
         'fishingSpots': spots,
         'campfires': campfires,
         'npcs': npcs,
@@ -462,7 +604,8 @@ def main():
         '// run it again, or the next build will throw your changes away.\n'
         f'export const killingfields = {body};\n')
     print(f'  {len(pois)} landmarks, {len(spawns)} spawn groups, {len(scatter)} scatter rules, '
-          f'{len(props)} placed props, {len(models)} models')
+          f'{len(props)} placed props, {len(structures)} structures '
+          f'({sum(len(st["pieces"]) for st in structures)} pieces), {len(models)} models')
     print(f'wrote {OUT.relative_to(ROOT)}')
 
 
