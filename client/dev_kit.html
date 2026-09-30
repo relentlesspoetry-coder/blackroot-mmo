@@ -1,0 +1,37 @@
+<!doctype html>
+<!-- Throwaway contact sheet: every GLB in a folder, framed the same way.
+     ?d=models/siege  -->
+<html><head><meta charset="utf-8"><title>Kit sheet</title>
+<style>body{margin:0;background:#20242b;color:#cfd6df;font:11px system-ui;display:flex;flex-wrap:wrap}
+figure{margin:0;padding:4px} figcaption{text-align:center;padding-top:2px}</style>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+</head><body>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+const dir = new URLSearchParams(location.search).get('d') || 'models/siege';
+const names = (new URLSearchParams(location.search).get('n') || '').split(',').filter(Boolean);
+const W = 300, H = 260;
+const loader = new GLTFLoader();
+for (const n of names) {
+  const fig = document.createElement('figure');
+  const cap = document.createElement('figcaption'); cap.textContent = n;
+  const r = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+  r.setSize(W, H); r.setPixelRatio(1);
+  fig.appendChild(r.domElement); fig.appendChild(cap); document.body.appendChild(fig);
+  const sc = new THREE.Scene(); sc.background = new THREE.Color(0x2b3038);
+  sc.add(new THREE.HemisphereLight(0xffffff, 0x50525a, 2.0));
+  const dl = new THREE.DirectionalLight(0xfff2dd, 1.7); dl.position.set(4, 7, 5); sc.add(dl);
+  const cam = new THREE.PerspectiveCamera(38, W / H, 0.1, 200);
+  const g = await loader.loadAsync(`${dir}/${n}.glb`);
+  sc.add(g.scene);
+  const bb = new THREE.Box3().setFromObject(g.scene);
+  const size = bb.getSize(new THREE.Vector3()), mid = bb.getCenter(new THREE.Vector3());
+  const rad = Math.max(size.x, size.y, size.z) * 0.72;
+  cam.position.set(mid.x + rad * 1.5, mid.y + rad * 0.45, mid.z + rad * 1.9);  // near eye level, which is how these are seen
+  cam.lookAt(mid);
+  sc.add(new THREE.GridHelper(Math.ceil(rad * 3), Math.ceil(rad * 3), 0x556, 0x3a4048));
+  r.render(sc, cam);
+}
+document.title = 'ready';
+</script></body></html>

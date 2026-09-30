@@ -49,6 +49,14 @@ def save(out_dir, name, parts, roughness=0.95, pbr=None):
     per colour -- NOT vertex colours, which the client's bakeModel strips (the
     model would render black).
 
+    A part may also carry metadata['mat'], a NAME for what the surface is made
+    of, and it is worth carrying. The material name is the only thing the client
+    has to go on when it decides which detail texture a surface gets
+    (DETAIL_RULES -> detailFor), and a name like `Boardwalk_A_0` says nothing --
+    149 of the 214 materials this function had named fell through to the stone
+    fallback, the whole boardwalk kit among them, so every plank in the Murkfen
+    is grained like granite. Name it `Planks | weathered oak` and it gets wood.
+
     `pbr` may be a callable taking the colour tuple and returning
     (metallic, roughness), for kits with a metal in the palette; without one
     everything is non-metallic at `roughness`. Returns (path, triangles).
@@ -56,6 +64,12 @@ def save(out_dir, name, parts, roughness=0.95, pbr=None):
     groups = {}
     for part in parts:
         groups.setdefault(tuple(part.metadata['colour']), []).append(part)
+    # the first member of a colour group that says what it is names the material
+    named = {}
+    for part in parts:
+        k = tuple(part.metadata['colour'])
+        if k not in named and part.metadata.get('mat'):
+            named[k] = part.metadata['mat']
     scene = trimesh.Scene()
     faces = 0
     for i, (colour, members) in enumerate(groups.items()):
@@ -72,7 +86,7 @@ def save(out_dir, name, parts, roughness=0.95, pbr=None):
         flat_normals(m)             # ...then split the vertices, per face
         metallic, rough = pbr(colour) if pbr else (0.0, roughness)
         m.visual = trimesh.visual.TextureVisuals(material=trimesh.visual.material.PBRMaterial(
-            name=f'{name}_{i}',
+            name=named.get(colour, f'{name}_{i}'),
             baseColorFactor=[int(round(c * 255)) for c in colour] + [255],
             metallicFactor=metallic, roughnessFactor=rough))
         scene.add_geometry(m, node_name=f'{name}_{i}')
