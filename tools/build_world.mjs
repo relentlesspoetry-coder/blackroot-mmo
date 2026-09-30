@@ -143,8 +143,13 @@ const shiftFence = (f) => ({ ...f, x1: +(f.x1 + OFF.x).toFixed(1), z1: +(f.z1 + 
 
 const world = {
   id: 'blackroot',
-  name: darkwoods.name,
-  subtitle: darkwoods.subtitle,
+  // The world's own name, not one of its regions'. This took darkwoods.name
+  // verbatim, so once the Killing Fields were stamped into the same zone every
+  // player was told they had entered "The Dark Woods" and got the woodland's
+  // subtitle while standing in a battlefield. Each region still announces
+  // itself as you cross into it -- that is what regions[].name is for.
+  name: 'Blackroot',
+  subtitle: 'A shadowed woodland, and the ruined farmlands and battlefields that lie east of it.',
   spawn: darkwoods.spawn,
   bounds: { minX, maxX, minZ, maxZ },
   boundaryInset: 0,

@@ -459,12 +459,16 @@ export const MOB_ART = {
   ember_dragon:     { model: 'Ember_Dragon', h: 4.6 },
   frost_dragon:     { model: 'Frost_Dragon', h: 4.8 },
   venom_dragon:     { model: 'Venom_Dragon', h: 4.4 },
-  // Cluckifer and his brood; the eggs use the Egg item model.
+  // Cluckifer and his brood. The eggs borrow the Egg ITEM model, which lives in
+  // models/items/ -- and this said plain 'Egg', so the zone asked the server for
+  // models/Egg.glb and got a 404 on every login. Mob art is normally a bare name
+  // because mob models sit at the root of models/; anything borrowed from another
+  // folder carries its folder, the way CORE_MODELS names items/Coins.
   cluckifer:        { model: 'Chicken', h: 3.8 },
   hell_chick:       { model: 'Chicken', h: 0.75 },
   brood_chick:      { model: 'Chicken', h: 0.85 },
-  ruin_egg:         { model: 'Egg', h: 1.4 },
-  rotten_egg:       { model: 'Egg', h: 1.7 },
+  ruin_egg:         { model: 'items/Egg', h: 1.4 },
+  rotten_egg:       { model: 'items/Egg', h: 1.7 },
 };
 // The boss set can turn up in any zone, so its art always ships.
 export const ALWAYS_ART = ['cluckifer', 'hell_chick', 'brood_chick', 'ruin_egg', 'rotten_egg'];

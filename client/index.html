@@ -1041,7 +1041,11 @@ function mergeRigidParts(wrap) {
 }
 
 function cloneModel(name, targetH, byMax) {
-  const src = LOADED[name];
+  // LOADED is keyed by BASENAME (see loadModels), so a caller passing a path --
+  // 'items/Egg' for the egg mobs, which borrow an item model -- looked up a key
+  // that can never exist and silently got no mesh. loadModels already takes
+  // either form; so does this now.
+  const src = LOADED[modelKey(name)];
   if (!src) return null;
   const obj = src.clone(true);
   const box = new THREE.Box3().setFromObject(obj);
@@ -1894,7 +1898,13 @@ function loadZone(zdata) {
   friendRing.rotation.x = -Math.PI / 2; friendRing.visible = false; scene.add(friendRing);
 
   _lightGroupState._init = false; // scene rebuilt: re-apply light groups next frame
-  showZoneTitle();
+  // A zone with regions announces the REGION you are standing in, not the zone
+  // -- otherwise logging in anywhere in the seamless world named the world.
+  // updateRegionTitle does it on its first tick, once the player mesh exists
+  // and it can tell which region that is; a regionless zone (the den) still
+  // announces itself here.
+  lastRegionId = null;
+  if (!(zone && zone.regions && zone.regions.length)) showZoneTitle();
 }
 
 // ---------------------------------------------------------------------------
@@ -12623,8 +12633,15 @@ function startGame() {
 let lastRegionId = null;
 // Crossing into another region of the seamless world announces it like a zone.
 function updateRegionTitle() {
+  // Wait for the body: currentRegion falls back to the FIRST region when it has
+  // no position to test, so announcing before the mesh exists would greet a
+  // player logging in at Lastwatch with "The Dark Woods" and then correct
+  // itself a frame later.
+  if (!entityMeshes.get(myId)) return;
   const reg = currentRegion(); if (!reg) return;
-  if (lastRegionId === null) { lastRegionId = reg.id; return; }
+  // The first tick after entering is the arrival: announce it rather than
+  // swallow it. It used to record the region silently, because the zone banner
+  // had already fired -- and that banner named the whole world.
   if (reg.id !== lastRegionId) { lastRegionId = reg.id; showZoneTitle(reg); }
 }
 function showZoneTitle(reg) {
