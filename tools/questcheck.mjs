@@ -10,10 +10,25 @@ import { MONSTER_TEMPLATES, STARTING_INVENTORY, CLASSES, rollGear } from '../ser
 import { ORES, oreFromModel, PICKAXES } from '../server/mining.js';
 import { FISH, RODS } from '../server/fishing.js';
 import { COOKABLES } from '../server/cooking.js';
-import { darkwoods } from '../server/zones/darkwoods.js';
+// The LIVE world, not the builders' output. This read the two zone source
+// files and so happily resolved 'darkwoods:chapel' -- while the server, whose
+// surface zone is 'blackroot' with the Dark Woods as a region inside it, could
+// never match the same objective. Fourteen objectives across eight quests were
+// unreachable and this said ALL QUESTS PASS. A checker that reads different
+// data from the thing it is checking is not a checker.
+import { blackroot } from '../server/zones/blackroot.js';
 import { spiderden } from '../server/zones/spiderden.js';
 
-const ZONES = { darkwoods, spiderden };
+const ZONES = { blackroot, spiderden };
+// A quest names the REGION it is about, which is the right thing for a quest to
+// name; the server resolves that to the zone holding it at load. The same map,
+// so the same names resolve here.
+const zoneOfRegion = {};
+for (const [zid, zn] of Object.entries(ZONES)) {
+  zoneOfRegion[zid] = zid;
+  for (const r of (zn.regions || [])) zoneOfRegion[r.id] = zid;
+}
+const resolveZone = (name) => zoneOfRegion[name];
 
 // Lookups from the real world data.
 const npcs = new Set(), pois = new Set(), chests = new Set(), spawnTypes = new Set(), eliteNames = new Set(), dropItems = new Set();
@@ -167,8 +182,16 @@ for (const id of QUEST_IDS) {
           err(id, `slay '${o.name}' is level ${lvl} but the quest chain opens at ${open} — ${lvl - open} levels over your head`);
       }
     }
-    else if (o.type === 'reach') { if (!pois.has(`${o.zone}:${o.poi}`)) err(id, `reach POI '${o.zone}:${o.poi}' does not exist`); }
-    else if (o.type === 'chest') { if (!chests.has(`${o.zone}:${o.chest}`)) err(id, `chest '${o.zone}:${o.chest}' does not exist`); }
+    else if (o.type === 'reach') {
+      const zn = resolveZone(o.zone);
+      if (!zn) err(id, `reach names '${o.zone}', which is neither a zone nor a region of one`);
+      else if (!pois.has(`${zn}:${o.poi}`)) err(id, `reach POI '${o.zone}:${o.poi}' does not exist`);
+    }
+    else if (o.type === 'chest') {
+      const zn = resolveZone(o.zone);
+      if (!zn) err(id, `chest names '${o.zone}', which is neither a zone nor a region of one`);
+      else if (!chests.has(`${zn}:${o.chest}`)) err(id, `chest '${o.zone}:${o.chest}' does not exist`);
+    }
     // The checker only knew the first five types while quests.js grew five
     // more, so every quest using them reported as broken whether it was or not
     // -- which made the tool useless exactly when the map was rebuilt under it.

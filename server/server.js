@@ -118,6 +118,29 @@ function buildWorld() {
     }
   }
   prepareZone(blackroot);
+  // A quest objective names the place it means -- 'darkwoods', 'spiderden' --
+  // and those were zone ids until the surface became one world with regions in
+  // it. Fourteen objectives across eight quests then pointed at a zone that no
+  // longer exists, and nothing said so: recordReach compares the objective's
+  // zone against the player's, the two never matched, and the Shrine Grove
+  // simply could not be reached. So a region id is resolved to the zone that
+  // holds it, once, here -- the quests go on naming regions, which is what a
+  // quest is actually about.
+  const zoneOfRegion = {};
+  for (const [zid, zn] of Object.entries(ZONES)) {
+    zoneOfRegion[zid] = zid;
+    for (const r of (zn.regions || [])) zoneOfRegion[r.id] = zid;
+  }
+  let moved = 0;
+  for (const q of Object.values(QUESTS)) {
+    for (const o of (q.objectives || [])) {
+      if (!o.zone) continue;
+      const to = zoneOfRegion[o.zone];
+      if (!to) { console.error(`[quests] ${q.id}: objective names '${o.zone}', which is neither a zone nor a region`); continue; }
+      if (to !== o.zone) { o.zone = to; moved++; }
+    }
+  }
+  if (moved) console.log(`[quests] ${moved} objectives pointed at a region; resolved to its zone`);
 }
 buildWorld();
 
