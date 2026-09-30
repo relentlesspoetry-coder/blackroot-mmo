@@ -1,0 +1,32 @@
+Use case: infographic-diagram.
+Create a NEW, detailed high-resolution fantasy MMO zone layout blueprint titled exactly "KILLING FIELDS". Use the provided Dark Woods image ONLY as a reference for its cartographic illustration quality, parchment drafting-sheet presentation, typography, legend, contour lines, crisp readable labels and terrain vocabulary. Create an entirely new terrain layout. This is a concept zone blueprint for Blackroot. Render at the highest available resolution, targeting 3840 x 2560 landscape with very fine clear detail.
+
+Presentation: a polished game-world cartographic design sheet, cream ivory parchment, thin dark ink border, faint square survey grid, a large bold serif title upper left with "ZONE LAYOUT BLUEPRINT" beneath. A narrow left sidebar for symbol legend and terrain notes. Main illustrated map occupies roughly 80 percent of sheet, as a coherent continuous irregular landmass outlined by a dashed boundary. Mostly overhead cartography with tiny oblique illustrated trees and buildings like the reference, no scene perspective. Subtle restrained olive, ochre, ash brown, blue-grey water and red route annotations. Small compass rose lower right, scale bar along bottom, compact drafting title block reading "PROJECT: BLACKROOT", "TYPE: OVERWORLD ZONE", "REV: CONCEPT A". Subtitle: "Abandoned farmlands, broken fortifications, and a battlefield that never rests." No promotional slogans.
+
+Zone landscape: a broad open agricultural basin, visibly distinct from the forest-dense Dark Woods. Ruined rectangular crop fields divided by shattered dry-stone walls and hedgerows, cratered earth, abandoned wagons, rusted medieval siege machines, scattered swords and shields, long abandoned trenches with ramps, charred orchard, burial mounds, ruined farm buildings. Dense woodland limited mostly to the western margin and a few copses. Grey cliffs and elevated ridgelines define northern and eastern perimeter with generous usable grassy slopes inside. A meandering river enters northwest through a ravine, runs diagonally across the western half, curves toward the south-central boundary. All roads crossing the river must visibly use an intact bridge or a labeled shallow ford. Blue water banks, marsh reeds, contour lines following topography, elevation marks and cliff hachures. Avoid graphic gore, modern guns, modern vehicles.
+
+Exactly twelve numbered landmark labels, each readable with short subtitle, positioned beside their actual illustrated features:
+01 "Lastwatch Camp" / "Rest, traders, supplies" — southwest entry near the woodland, a modest fortified safe camp of tents and one watchtower.
+02 "Broken Harvest" / "Ruined farms, scavengers" — west-central fields, collapsed barn and windmill.
+03 "Ashen Orchard" / "Charred trees, ambushes" — northwest, blackened orchard in deliberate planting rows.
+04 "Widow's Ford" / "Shallow river crossing" — west-central river crossing, a visible stone-bottom ford with approach roads.
+05 "Redwater Bridge" / "Contested chokepoint" — south-central river, an intact stone bridge linking both banks.
+06 "The Long Trenches" / "Fortifications, patrols" — central-west, branching zigzag earthworks with accessible exits.
+07 "Gallows Rise" / "Lookout, exposed approach" — central elevated grassy hill, ruined scaffold and watchtower.
+08 "The Killing Ground" / "Open battlefield, roaming elites" — broad central-east field, scattered medieval siege wrecks, battle standards, craters and low cover.
+09 "Saint's Ruin" / "Haunted chapel, crypt access" — southeast, ruined roofless chapel and small graveyard.
+10 "Mourning Barrows" / "Burial mounds, hidden passage" — south, several stone-ringed grassy barrows, one tunnel entrance.
+11 "Ironroot Quarry" / "Ore deposits, cliff trails" — northeast, stepped quarry with walkable switchback track, abandoned winch and mine entrance.
+12 "Warlord's Redoubt" / "Boss arena, fortified ruins" — east on a raised plateau, breached medieval keep with a large open courtyard reachable by a ramp, not an isolated island.
+
+Navigation: draw one clear tan main road from southwest entry through Lastwatch Camp, Broken Harvest and Widow's Ford across the river, passing Gallows Rise and branching toward the Redoubt east. A second main branch connects Redwater Bridge, Saint's Ruin and the southeastern exit. Thin dashed terracotta trails connect orchard, trenches, barrows and quarry into several complete exploration loops. Roads integrate organically with slopes and cover, reach every landmark, do not end inexplicably in water or cliffs. Mark two chokepoints with small red crossed-circle symbols at the bridge and redoubt approach. Use only a few subtle translucent dashed red encounter-area outlines around the killing ground, trenches and redoubt, with no overlays obscuring terrain.
+
+Four distinct edge exit arrows and labels:
+West-southwest: "WOODLAND ROAD" / "TO THE DARK WOODS"
+North: "ASHEN PASS" / "TO NORTHERN MARCHES"
+East: "WAR ROAD" / "TO BLACKROOT HOLLOWS"
+Southeast: "BARROW TRACK" / "TO OLD BARROW"
+
+Sidebar heading "LEGEND" with matching visual samples and clear text for: Major road; Minor trail; Open ground; Woodland; River / marsh; Cliff / ridge; Bridge / ford; Ruin / structure; Cave / crypt; Safe camp; Encounter area; Chokepoint; Zone boundary.
+Below, a compact "TERRAIN GUIDE" showing tiny contour hill diagram, "High ground: ridges and redoubt", "Low ground: river and trenches", "Crossings: bridge and shallow ford". Bottom notes "DESIGN INTENT" with three lines "Open terrain with scattered cover", "Connected routes and optional loops", "Danger increases toward the redoubt".
+Require accurate spelling of title, all labels, no gibberish filler, clean typography, uncluttered label placement, richly detailed map terrain readable on zoom. No duplicated map panels. Entire sheet finished edge to edge, no mockup desk or hands.
