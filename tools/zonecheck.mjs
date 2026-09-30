@@ -9,6 +9,11 @@ import { join, relative } from 'path';
 import { fileURLToPath } from 'url';
 import { darkwoods as z } from '../server/zones/darkwoods.js';
 import { spiderden } from '../server/zones/spiderden.js';
+// The surface is ONE zone now -- the Dark Woods and the Killing Fields are
+// regions of it, walked between rather than travelled to -- so a portal
+// leads to 'blackroot'. The Dark Woods invariants below still read the
+// region's own source file, which is what the composer is built from.
+import { blackroot } from '../server/zones/blackroot.js';
 import { terrainAt, terrainFieldAt, isSolid, rockSolidAt, rockRiseAt, rockEdgeOf, groundSlopeAt } from '../server/worldgen.js';
 import { ITEMS } from '../server/items.js';
 import { FISH, TIERS } from '../server/fishing.js';
@@ -852,7 +857,7 @@ const PARSED = [];
   // Both zones. The Spider Den had NO objects at all while these ran only
   // against the Dark Woods, so a cave whose chambers are named after its
   // cocoons and its egg clusters passed a check that never looked at it.
-  const ZS = { darkwoods: z, spiderden };
+  const ZS = { darkwoods: z, blackroot, spiderden };
   const all = [], badGive = [], ghostQuest = [], badDead = [], sealed = [], dupes = [];
   let stacked = 0, emptyZones = [];
   for (const [zid, zone] of Object.entries(ZS)) {
@@ -919,7 +924,7 @@ const PARSED = [];
 // back toward the arch you came through, which sends you down again. The Spider
 // Den's exit did this once the chokepoint squeeze put rock around its mouth.
 {
-  const ZONES = { darkwoods: z, spiderden };
+  const ZONES = { blackroot, spiderden };
   const bad = [];
   for (const [zid, zone] of Object.entries(ZONES)) {
     for (const p of (zone.portals || [])) {

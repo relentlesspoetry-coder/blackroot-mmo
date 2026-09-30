@@ -66,7 +66,7 @@ export const spiderden = {
   // OUTSIDE the arch -- step back in front of it and you would bounce
   // straight back down, which is what portalCd exists to survive.
   portals: [
-    { x: 0, z: -143, r: 5.0, to: 'darkwoods', spawn: { x: -0.4, z: 266.0, yaw: 0 } },
+    { x: 0, z: -143, r: 5.0, to: 'blackroot', spawn: { x: -0.4, z: 266.0, yaw: 0 } },
   ],
 
   npcs: [

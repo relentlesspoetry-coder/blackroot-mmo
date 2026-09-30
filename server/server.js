@@ -9,7 +9,7 @@ import crypto from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { WebSocketServer } from 'ws';
-import { darkwoods } from './zones/darkwoods.js';
+import { blackroot } from './zones/blackroot.js';
 import { spiderden } from './zones/spiderden.js';
 import {
   PLAYER, ELITE, MONSTER_TEMPLATES,
@@ -96,8 +96,11 @@ const CLIENT_DIR = path.join(__dirname, '..', 'client');
 const SHARED_DIR = path.join(__dirname, '..', 'shared');
 const PORT = process.env.PORT || 8080;
 
-const ZONES = { darkwoods, spiderden };
-const START_ZONE = 'darkwoods';
+// One surface world -- the Dark Woods and the Killing Fields are REGIONS of
+// it, not zones, so you walk between them. The Spider Den stays a zone of
+// its own: a cave you descend into is a door, and the only one left.
+const ZONES = { blackroot, spiderden };
+const START_ZONE = 'blackroot';
 function zoneOf(ent) { return ZONES[ent.zoneId]; }
 
 // Uniformly scale a zone's layout by k (linear). Everything the server and the
@@ -114,8 +117,7 @@ function buildWorld() {
         + `a ${zone.boundary.length}-point outline`);
     }
   }
-  const z = darkwoods;
-  prepareZone(darkwoods);
+  prepareZone(blackroot);
 }
 buildWorld();
 

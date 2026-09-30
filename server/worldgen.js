@@ -76,11 +76,31 @@ export function terrainClearance(zone, x, z, ok, max = 12) {
   return max;
 }
 // How thick the wood is here, as a multiplier on the base tree density.
+// How thickly trees stand on ground the drawing calls OPEN. In a wood that is
+// clearings with a few trees left in them and 0.06 is right. In an open
+// agricultural basin it is not: the Killing Fields is 62,560 open cells and at
+// 0.06 it grew 964 trees across a battlefield that the sheet draws bare, with
+// woodland only on its western margin. So it is a property of the REGION, and
+// the region says what kind of country it is.
+const OPEN_TREES = 0.06;
+export function regionAt(zone, x, z) {
+  const regs = zone && zone.regions;
+  if (!regs || regs.length < 2) return null;
+  for (const r of regs) {
+    if (r.underground) continue;
+    const b = r.bounds;
+    if (x >= b.minX && x <= b.maxX && z >= b.minZ && z <= b.maxZ) return r;
+  }
+  return null;
+}
 export function forestAt(zone, x, z) {
   switch (terrainAt(zone, x, z)) {
     case T_DENSE: return 1.9;
     case T_WOOD:  return 1.0;
-    case T_OPEN:  return 0.06;
+    case T_OPEN: {
+      const r = regionAt(zone, x, z);
+      return (r && r.openTrees != null) ? r.openTrees : OPEN_TREES;
+    }
     default:      return 0;          // water, rock, off the map
   }
 }
@@ -665,9 +685,16 @@ export function prepareZone(z) {
   const drowned = beforeN - z._scatter.length;
   if (drowned) console.log(`[worldgen] pulled ${drowned} pieces of dressing out of the water`);
 
-  // The map pane shows the region you are standing in; there is only one.
-  z.regions = [{ id: z.id, name: z.name, subtitle: z.subtitle,
-    bounds: { ...z.bounds }, boundary: (z.boundary || []).map(p => ({ x: p.x, z: p.z })) }];
+  // The map pane shows the region you are standing in. A zone that names its
+  // own regions keeps them -- the surface world is the Dark Woods AND the
+  // Killing Fields, walked between rather than travelled to. This line used to
+  // overwrite whatever a zone declared with a single region covering the lot,
+  // which is why the region machinery the client has always carried had never
+  // had more than one thing in it.
+  if (!z.regions || !z.regions.length) {
+    z.regions = [{ id: z.id, name: z.name, subtitle: z.subtitle,
+      bounds: { ...z.bounds }, boundary: (z.boundary || []).map(p => ({ x: p.x, z: p.z })) }];
+  }
   z._cen = null;
   console.log(`[worldgen] ${z.name}: ${z.bounds.maxX - z.bounds.minX} x ${z.bounds.maxZ - z.bounds.minZ} units, ` +
     `${z._trees.length} trees, ${z._scatter.length} scatter, ${(z.pois || []).length} landmarks`);
