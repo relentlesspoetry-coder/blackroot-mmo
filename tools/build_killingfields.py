@@ -109,8 +109,12 @@ HILLS = [
 # Where the water line sits and where rock becomes a wall. One pair of numbers
 # each, carried into the zone so the client's shoreline and the server's
 # swimming and this builder's fishing spots all agree by construction.
+# These describe ONE zone, and the Killing Fields is composed into the same zone
+# as the Dark Woods -- so they have to match its numbers exactly, and
+# build_world.mjs refuses to compose them if they do not. A rise of 15 here
+# looked like a decision and was silently thrown away.
 WATER_EDGE = {'deep': 0.41, 'marsh': 0.44, 'fade': 0.41, 'blur': 3}
-ROCK_EDGE = {'rise': 15.0, 'walkSlope': 0.84}
+ROCK_EDGE = {'rise': 17.0, 'walkSlope': 0.84}
 
 
 # --- what lives there --------------------------------------------------------
@@ -244,27 +248,27 @@ def saints_ruin():
     hx, hz = 1.5 * U, 1.5 * U
     zs = (-U, 0.0, U)
     # the east end still stands, and the window in it
-    p.append(('Ruin_Lancet', -U, 0, -hz, 0, U, 0))
-    p.append(('Ruin_East_Window', 0.0, 0, -hz, 0, U, 0))
-    p.append(('Ruin_Lancet', U, 0, -hz, 0, U, 0))
+    p.append(('ruin/Ruin_Lancet', -U, 0, -hz, 0, U, 0))
+    p.append(('ruin/Ruin_East_Window', 0.0, 0, -hz, 0, U, 0))
+    p.append(('ruin/Ruin_Lancet', U, 0, -hz, 0, U, 0))
     # the south flank keeps its door; the north is down to its footings
-    for z, m in zip(zs, ('Ruin_Lancet', 'Ruin_Door_Arch', 'Ruin_Wall_Half')):
-        p.append((m, hx, 0, z, math.pi / 2, U, 1.9 if m == 'Ruin_Door_Arch' else 0))
-    for z, m in zip(zs, ('Ruin_Wall_Low', None, 'Ruin_Wall_Low')):
+    for z, m in zip(zs, ('ruin/Ruin_Lancet', 'ruin/Ruin_Door_Arch', 'ruin/Ruin_Wall_Half')):
+        p.append((m, hx, 0, z, math.pi / 2, U, 1.9 if m.endswith('Door_Arch') else 0))
+    for z, m in zip(zs, ('ruin/Ruin_Wall_Low', None, 'ruin/Ruin_Wall_Low')):
         if m is None:
-            p.append(('Ruin_Arcade', -hx, 0, z, math.pi / 2, 0, 0))
-            p.append(('Ruin_Rubble', -hx + 1.4, 0, z + 1.2, 1.0, 0, 0))
+            p.append(('ruin/Ruin_Arcade', -hx, 0, z, math.pi / 2, 0, 0))
+            p.append(('ruin/Ruin_Rubble', -hx + 1.4, 0, z + 1.2, 1.0, 0, 0))
             continue
         p.append((m, -hx, 0, z, math.pi / 2, U, 0))
     # the west end is a breach you walk in through
-    p.append(('Ruin_Wall_Low', -U, 0, hz, 0, U, 0))
-    p.append(('Ruin_Rubble', 0.7, 0, hz - 0.8, 0.5, 0, 0))
-    p.append(('Ruin_Steps_Wide', 0.0, 0, hz + 2.2, 0, 0, 0))
+    p.append(('ruin/Ruin_Wall_Low', -U, 0, hz, 0, U, 0))
+    p.append(('ruin/Ruin_Rubble', 0.7, 0, hz - 0.8, 0.5, 0, 0))
+    p.append(('ruin/Ruin_Steps_Wide', 0.0, 0, hz + 2.2, 0, 0, 0))
     # the altar, and behind it the stair down
-    p.append(('Ruin_Altar', 0.0, 0, -hz + 2.6, 0, 0, 0))
-    p.append(('Ruin_Stair', 2.2, 0, 1.6, math.pi, 0, 0))
+    p.append(('ruin/Ruin_Altar', 0.0, 0, -hz + 2.6, 0, 0, 0))
+    p.append(('ruin/Ruin_Stair', 2.2, 0, 1.6, math.pi, 0, 0))
     for x in (-hx - 0.42, hx + 0.42):
-        p.append(('Ruin_Buttress', x, 0, -U / 2, math.pi / 2, 0, 0))
+        p.append(('ruin/Ruin_Buttress', x, 0, -U / 2, math.pi / 2, 0, 0))
     return p
 
 
@@ -282,31 +286,31 @@ def warlord_redoubt():
     xs = (-2 * U, -U, 0.0, U, 2 * U)
     # north curtain: tall and unbroken, the face you see coming up the ramp
     for x in xs:
-        p.append(('Ruin_Wall_Tall', x, 0, -R, 0, U, 0))
+        p.append(('ruin/Ruin_Wall_Tall', x, 0, -R, 0, U, 0))
     # south curtain: the gate
     for x in xs:
-        m = 'Ruin_Wall_Door' if x == 0.0 else 'Ruin_Wall'
+        m = 'ruin/Ruin_Wall_Door' if x == 0.0 else 'ruin/Ruin_Wall'
         p.append((m, x, 0, R, 0, U, 2.2 if x == 0.0 else 0))
     # east curtain intact, west curtain breached in the middle two bays
     for z in xs:
-        p.append(('Ruin_Wall', R, 0, z, math.pi / 2, U, 0))
-    for z, m in zip(xs, ('Ruin_Wall', 'Ruin_Wall_Half', None, None, 'Ruin_Wall')):
+        p.append(('ruin/Ruin_Wall', R, 0, z, math.pi / 2, U, 0))
+    for z, m in zip(xs, ('ruin/Ruin_Wall', 'ruin/Ruin_Wall_Half', None, None, 'ruin/Ruin_Wall')):
         if m is None:
-            p.append(('Ruin_Rubble', -R + 1.2, 0, z, 0.9 + z * 0.1, 0, 0))
+            p.append(('ruin/Ruin_Rubble', -R + 1.2, 0, z, 0.9 + z * 0.1, 0, 0))
             continue
         p.append((m, -R, 0, z, math.pi / 2, U, 0))
     # two corner towers still up, two down to their stumps
     for (cx, cz) in ((-R, -R), (R, -R)):
-        p.append(('Tower_Slit', cx, 0, cz, 0, 0, 0))
-        p.append(('Tower_Slit', cx, 4.6, cz, 0, 0, 0))
-        p.append(('Tower_Gallery', cx, 9.2, cz, 0, 0, 0))
-        p.append(('Tower_Roof', cx, 12.0, cz, 0, 0, 0))
+        p.append(('ruin/Tower_Slit', cx, 0, cz, 0, 0, 0))
+        p.append(('ruin/Tower_Slit', cx, 4.6, cz, 0, 0, 0))
+        p.append(('ruin/Tower_Gallery', cx, 9.2, cz, 0, 0, 0))
+        p.append(('ruin/Tower_Roof', cx, 12.0, cz, 0, 0, 0))
     for (cx, cz) in ((-R, R), (R, R)):
-        p.append(('Tower_Slit', cx, 0, cz, 0, 0, 0))
-        p.append(('Ruin_Rubble', cx + 1.4, 0, cz - 1.2, 2.0, 0, 0))
+        p.append(('ruin/Tower_Slit', cx, 0, cz, 0, 0, 0))
+        p.append(('ruin/Ruin_Rubble', cx + 1.4, 0, cz - 1.2, 2.0, 0, 0))
     # the ramp up to the gate, which is what makes it an arena and not an island
-    p.append(('Ruin_Steps_Wide', 0.0, 0, R + 2.4, math.pi, 0, 0))
-    p.append(('Ruin_Steps_Wide', 0.0, 0, R + 6.0, math.pi, 0, 0))
+    p.append(('ruin/Ruin_Steps_Wide', 0.0, 0, R + 2.4, math.pi, 0, 0))
+    p.append(('ruin/Ruin_Steps_Wide', 0.0, 0, R + 6.0, math.pi, 0, 0))
     return p
 
 
@@ -318,16 +322,16 @@ def lastwatch_camp():
     in the south is deliberate and the road routes through it.
     """
     p = []
-    p.append(('Tower_Door', -2 * U, 0, -U, 0, 0, 0))
-    p.append(('Tower_Slit', -2 * U, 4.6, -U, 0, 0, 0))
-    p.append(('Tower_Gallery', -2 * U, 9.2, -U, 0, 0, 0))
-    p.append(('Tower_Roof', -2 * U, 12.0, -U, 0, 0, 0))
+    p.append(('ruin/Tower_Door', -2 * U, 0, -U, 0, 0, 0))
+    p.append(('ruin/Tower_Slit', -2 * U, 4.6, -U, 0, 0, 0))
+    p.append(('ruin/Tower_Gallery', -2 * U, 9.2, -U, 0, 0, 0))
+    p.append(('ruin/Tower_Roof', -2 * U, 12.0, -U, 0, 0, 0))
     # a breastwork round the north and east, open to the road in the south-west
     for x in (-U, 0.0, U, 2 * U):
-        p.append(('Ruin_Wall_Low', x, 0, -2 * U, 0, U, 0))
+        p.append(('ruin/Ruin_Wall_Low', x, 0, -2 * U, 0, U, 0))
     for z in (-U, 0.0, U):
-        p.append(('Ruin_Wall_Low', 2.5 * U, 0, z, math.pi / 2, U, 0))
-    p.append(('Ruin_Wall_Low', 2 * U, 0, 2 * U, 0.8, U, 0))
+        p.append(('ruin/Ruin_Wall_Low', 2.5 * U, 0, z, math.pi / 2, U, 0))
+    p.append(('ruin/Ruin_Wall_Low', 2 * U, 0, 2 * U, 0.8, U, 0))
     return p
 
 
@@ -437,6 +441,13 @@ def push_to_edge(d, wx, wz, side):
 def main():
     d = load_grid()
     world = make_xform(d)
+    # The models list carries the FOLDER, because that is the path the client
+    # fetches. Every reference to a model does not, because the client keys
+    # LOADED by basename (modelKey strips the folder). Getting that the wrong
+    # way round declared 18 paths that do not exist, and the three buildings
+    # drew anyway only because the Dark Woods happens to declare the same ruin
+    # kit with its folder on, so the basenames were already loaded.
+    base = lambda m: m.rsplit('/', 1)[-1]
     cell, minX, minZ = d['cell'], d['minX'], d['minZ']
     W, H = d['w'], d['h']
     bounds = {'minX': minX, 'maxX': round(minX + W * cell, 1),
@@ -524,14 +535,19 @@ def main():
     # silent: bakeModel finds no model, returns null, and placeInstances skips
     # the whole group, so 93 siege wrecks simply were not there and nothing
     # said so.
-    base = lambda m: m.rsplit('/', 1)[-1]
     scatter = [{'model': base(m), 'count': c, 'near': p, 'nearR': r} for m, c, p, r in SCATTER]
+    # Same split as the scatter: the models list carries the FOLDER because
+    # that is the path the client fetches, and every reference to a model does
+    # not, because LOADED is keyed by basename. Getting it the wrong way round
+    # here declared 18 paths that do not exist -- the three buildings only drew
+    # at all because the Dark Woods happens to declare the same ruin kit with
+    # its folder on, so the basenames were already loaded.
     structures = []
     for key, px, py, yaw, padw, padd, layout in STRUCTURES:
         wx, wz = nearest_open(d, *world(px, py))
         structures.append({'key': key, 'x': wx, 'z': wz, 'yaw': yaw,
                            'padW': padw, 'padD': padd,
-                           'pieces': [{'m': m, 'dx': round(dx, 2), 'dy': round(dy, 2),
+                           'pieces': [{'m': base(m), 'dx': round(dx, 2), 'dy': round(dy, 2),
                                        'dz': round(dz, 2), 'yaw': round(pyaw, 4),
                                        'wall': wall, 'gap': gap}
                                       for m, dx, dy, dz, pyaw, wall, gap in layout()]})
@@ -557,7 +573,7 @@ def main():
 
     models = sorted({m for m, *_ in SCATTER} | {m for m, *_ in PROPS}
                     | {m for m, *_ in CAMP_PROPS}
-                    | {pc['m'] for st in structures for pc in st['pieces']})
+                    | {m for _, _, _, _, _, _, layout in STRUCTURES for m, *_ in layout()})
 
     zone = {
         'id': 'killingfields',
@@ -587,9 +603,12 @@ def main():
         'elites': elites,
         'objects': [],
         'models': models,
-        'env': {'fogNear': 90, 'fogFar': 360, 'ambient': 0.5,
-                'bg': 0x2b3140, 'sun': 0xffeccf, 'sunInt': 1.45,
-                'hemiSky': 0xc4d2e4, 'hemiGround': 0x6a6040, 'hemiInt': 1.1},
+        # No env. Fog, sun and ambient are ONE SCENE's worth of settings and
+        # this map is a region of a zone, not a zone -- the composer takes the
+        # world's. What makes the Killing Fields look like the Killing Fields
+        # and not like a wood is the region's own sward and tree density, which
+        # ARE per-region. Authoring an env here produced eight numbers that
+        # looked like decisions and were thrown away.
         'waterEdge': WATER_EDGE,
         'rockEdge': ROCK_EDGE,
         'terrain': {'cell': cell, 'w': W, 'h': H, 'minX': minX, 'minZ': minZ,

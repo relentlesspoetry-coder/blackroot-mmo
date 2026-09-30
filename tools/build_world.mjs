@@ -181,6 +181,16 @@ const world = {
   terrain: { cell, w: W, h: H, minX, minZ, rows: grid.map(r => r.join('')) },
 };
 
+// These describe one zone and the regions are composed into one, so the two
+// halves have to agree. Taking one side's silently is how the Killing Fields
+// came to author a cliff height that never reached the world.
+for (const key of ['waterEdge', 'rockEdge']) {
+  const a = JSON.stringify(darkwoods[key] || null), b = JSON.stringify(killingfields[key] || null);
+  if (b !== 'null' && a !== b)
+    throw new Error(`${key} differs between the regions and describes the whole zone:\n` +
+                    `  darkwoods     ${a}\n  killingfields ${b}`);
+}
+
 // ids have to stay unique across the merged world or the server will hand two
 // different things the same name
 for (const key of ['npcs', 'chests', 'objects', 'fishingSpots', 'campfires']) {

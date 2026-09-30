@@ -550,6 +550,39 @@ const PARSED = [];
     : `${amb.length} beds, both files present`);
 }
 
+// --- models a zone asks for --------------------------------------------------
+// Two halves of one rule, and they pull in opposite directions.
+//
+// `models` is the PRELOAD LIST and carries the folder, because that is the path
+// the client fetches. Every REFERENCE to a model -- scatter, props, deck spans,
+// the pieces of a structure -- does NOT, because the client keys LOADED by
+// basename (modelKey strips the folder). Get it the wrong way round and nothing
+// says so: 18 of the Killing Fields' declared paths did not exist and its three
+// buildings drew anyway, because the Dark Woods happens to declare the same ruin
+// kit with its folder on, so the basenames were already in LOADED. Stop using
+// the ruin kit in the Dark Woods and three buildings quietly disappear.
+{
+  const modelDir = fileURLToPath(new URL('../client/models', import.meta.url));
+  for (const [zid, zn] of Object.entries({ blackroot, spiderden })) {
+    const declared = zn.models || [];
+    const gone = declared.filter(m => !existsSync(join(modelDir, m + '.glb')));
+    ok(`${zid}: every model it preloads is on disk`, gone.length === 0,
+      gone.length ? `${gone.length} missing: ${gone.slice(0, 6).join(', ')}` : `all ${declared.length}`);
+    const bases = new Set(declared.map(m => m.split('/').pop()));
+    const refs = new Set();
+    for (const o of (zn.scatter || [])) if (o.m || o.model) refs.add(o.m || o.model);
+    for (const o of (zn.props || [])) if (o.m) refs.add(o.m);
+    for (const o of (zn.decks || [])) if (o.m) refs.add(o.m);
+    for (const st of (zn.structures || [])) for (const pc of (st.pieces || [])) refs.add(pc.m);
+    const orphan = [...refs].filter(r => !bases.has(r));
+    const foldered = [...refs].filter(r => r.includes('/'));
+    ok(`${zid}: every model it places is one it preloads`, orphan.length === 0 && foldered.length === 0,
+      orphan.length ? `${orphan.slice(0, 6).join(', ')} placed but never loaded`
+      : foldered.length ? `${foldered.slice(0, 6).join(', ')} carry a folder -- LOADED is keyed by basename`
+      : `${refs.size} kinds placed, every one preloaded`);
+  }
+}
+
 // --- the sky ----------------------------------------------------------------
 // The sky has to reach everywhere you can stand.
 //
