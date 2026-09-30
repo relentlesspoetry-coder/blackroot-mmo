@@ -120,6 +120,12 @@ const regions = [
     // says the sheet. On open ground the default 0.06 put 964 trees across the
     // battlefield; a fifth of that leaves it the bare basin it is drawn as.
     openTrees: 0.012,
+    // Dry stubble and turned earth, not sward. Anchored on the sheet's own
+    // palette: its open battlefield sits at hue 30 of 360 and its crop fields
+    // at 37, against the Dark Woods' green. The hue spread comes in too --
+    // at the woodland's 0.16 the range ran from ochre all the way back to
+    // green and half the basin still looked like a lawn.
+    sward: { h: 0.115, s: 0.26, l: 0.19, hv: 0.065 },
     bounds: { minX: +(killingfields.bounds.minX + OFF.x).toFixed(1),
               maxX: +(killingfields.bounds.maxX + OFF.x).toFixed(1),
               minZ: +(killingfields.bounds.minZ + OFF.z).toFixed(1),

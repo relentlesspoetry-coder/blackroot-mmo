@@ -2278,6 +2278,38 @@ const BANK_BAND = 0.20;
 // middle of the mud -- grass growing on a beach, which is what you get when
 // the thing that PAINTS the shore and the thing that PLANTS on it are asking
 // different questions.
+// What colour the grass is, by region.
+//
+// The sward was one palette for the whole world, which was fine while the world
+// was one wood. It is not: the Killing Fields is an agricultural basin gone to
+// stubble and it was coming out the same green as the Dark Woods, so the two
+// regions read as the same place with different props on it.
+//
+// BLENDED, not switched. The regions are rectangles and a palette that changed
+// at their edge would draw a straight line across the ground that no feature on
+// the map accounts for. Each region's colours fade in over SWARD_FADE metres
+// either side of its bounds, so the woods turn to stubble the way they would on
+// the ground -- over a stride or fifty, not at a fence post.
+const SWARD = { h: 0.23, s: 0.30, l: 0.13, hv: 0.16 };   // the woodland default
+const SWARD_FADE = 55;
+const _sward = { h: 0, s: 0, l: 0, hv: 0 };
+function swardAt(x, z) {
+  const regs = (zone && zone.regions) || [];
+  let h = SWARD.h, sa = SWARD.s, l = SWARD.l, hv = SWARD.hv;
+  for (const r of regs) {
+    if (!r.sward || r.underground) continue;
+    const b = r.bounds;
+    // how far inside this region's box we are, in metres (negative = outside)
+    const d = Math.min(x - b.minX, b.maxX - x, z - b.minZ, b.maxZ - z);
+    let w = (d + SWARD_FADE) / (2 * SWARD_FADE);
+    if (w <= 0) continue;
+    w = w >= 1 ? 1 : w * w * (3 - 2 * w);              // smoothstep, no hard edge
+    h += (r.sward.h - h) * w; sa += (r.sward.s - sa) * w;
+    l += (r.sward.l - l) * w; hv += ((r.sward.hv != null ? r.sward.hv : SWARD.hv) - hv) * w;
+  }
+  _sward.h = h; _sward.s = sa; _sward.l = l; _sward.hv = hv;
+  return _sward;
+}
 function bankMud(x, z) {
   let bed = 0;
   for (const r of worldRivers()) {
@@ -3248,9 +3280,10 @@ function buildLowPolyGround(W, D, cx, cz) {
       // "traversable area", 1 where it shows dense forest.
       const open = terrainField(wx, wz, 'open');
       const deep = terrainField(wx, wz, 'dense');
-      const hue = 0.23 + hueN * 0.16 + deep * 0.05 - open * 0.03;
-      const sat = 0.30 + satN * 0.34 - deep * 0.05 + open * 0.06;
-      const lig = 0.13 + ligN * 0.2 + open * 0.07 - deep * 0.05;
+      const sw = swardAt(wx, wz);
+      const hue = sw.h + hueN * sw.hv + deep * 0.05 - open * 0.03;
+      const sat = sw.s + satN * 0.34 - deep * 0.05 + open * 0.06;
+      const lig = sw.l + ligN * 0.2 + open * 0.07 - deep * 0.05;
       c.setHSL(hue, sat, Math.max(0.05, lig));
       // ...and the bank: blend that grass toward wet earth as the water nears.
       // Two steps, because a shore is not one colour -- the soaked margin at
@@ -3663,9 +3696,13 @@ function buildGrass() {
     q.setFromAxisAngle(UP, rng() * 6.28);
     const s = 0.45 + rng() * 0.5; sc.set(s, 0.5 + rng() * 0.55, s);
     mtx.compose(new THREE.Vector3(p.x, groundY(p.x, p.z), p.z), q, sc); im.setMatrixAt(i, mtx);
-    // every blade a different gradient of green (yellow-green -> deep green);
-    // multiplied by the baked dark-base/bright-tip vertex gradient
-    col.setHSL(0.24 + rng() * 0.13, 0.5 + rng() * 0.35, 0.4 + rng() * 0.22); im.setColorAt(i, col);
+    // Every blade a different gradient, but of the sward it is STANDING IN --
+    // a blade picked its own green out of a fixed range before, so vivid green
+    // grass grew out of the Killing Fields' dry stubble. The spread is kept;
+    // only where it is centred moves.
+    const sw = swardAt(p.x, p.z);
+    col.setHSL(sw.h + 0.01 + rng() * (sw.hv * 0.8), 0.5 + rng() * 0.35,
+               0.4 + rng() * 0.22); im.setColorAt(i, col);
   }, { castShadow: false });
 }
 
