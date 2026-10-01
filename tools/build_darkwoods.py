@@ -1970,6 +1970,13 @@ def main():
       f'minZ: {minZ}, maxZ: {round(minZ + H * cell, 1)} }},')
     A('  boundaryInset: 0,')
     A('  safeSpawnRadius: 40,')
+    # Where the dead wake up. The Fallen Chapel already has a churchyard round
+    # it -- fifty-four stones and four tomb slabs, scattered by the sheet -- so
+    # the graveyard is not new ground, it is the ground that was always drawn
+    # for it. Offset south of the ruin so nobody comes back inside a wall.
+    chapel = [q for q in POIS if q[0] == 'chapel'][0]
+    gx, gz = world(chapel[3], chapel[4])
+    A(f'  graveyard: {{ x: {gx}, z: {round(gz + 26, 1)}, yaw: 3.14 }},')
     A('')
     A('  boundary: [')
     for i in range(0, len(boundary), 6):

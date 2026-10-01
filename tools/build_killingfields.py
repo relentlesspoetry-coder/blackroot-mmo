@@ -188,6 +188,15 @@ SCATTER = [
     ('darkwoods/Gravestone_Cross', 7, 'saints',   28),
     ('darkwoods/Gravestone_Broken',6, 'saints',   28),
     ('darkwoods/Tomb_Slab',        4, 'barrows',  30),
+    # The soldiers' ground at Lastwatch. Saint's Ruin has the old churchyard but
+    # it is in the far east corner, and a graveyard you respawn at is no use
+    # 700 m from where the fighting is. The camp is the fields' own safe ground
+    # and the sheet calls this "a battlefield that never rests" -- the people
+    # holding it would be burying their own behind the breastwork.
+    ('darkwoods/Gravestone_Slab',  11, 'lastwatch', 34),
+    ('darkwoods/Gravestone_Cross',  8, 'lastwatch', 32),
+    ('darkwoods/Gravestone_Broken', 5, 'lastwatch', 34),
+    ('darkwoods/Gravestone_Tall',   2, 'lastwatch', 26),
     # the quarry
     ('cave/Iron_Ore_Vein',         8, 'quarry',   46),
     ('cave/Coal_Ore_Vein',         6, 'quarry',   44),
@@ -725,6 +734,8 @@ def main():
         'name': 'The Killing Fields',
         'subtitle': 'Abandoned farmlands, broken fortifications, and a battlefield that never rests.',
         'spawn': {'x': at['lastwatch'][0], 'z': round(at['lastwatch'][1] + 6, 1), 'yaw': 0},
+        # Where the dead wake up, on the camp's own ground beside its graves.
+        'graveyard': {'x': round(at['lastwatch'][0] - 14, 1), 'z': round(at['lastwatch'][1] + 10, 1), 'yaw': 0},
         'bounds': bounds,
         'boundaryInset': 0,
         'safeSpawnRadius': 38,

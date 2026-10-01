@@ -25,7 +25,7 @@ import { isBardSpell, checkBardCast, castBard, spendSongCharges, songAmp, atkSpe
   bardMonsterDmgMult, bardMonsterDefMult, bardMonsterTakenMult, bardMonsterSpeedMult, bardMonsterAtkSpeedMult, stepSongs } from './bard.js';
 import {
   dist2, closestOnPolyline, mulberry32, pointInPoly, polyCentroid, generateTrees, generateScatter, generateHanging,
-  onDeck, waterDepthAt, riversOf, bridgesOf, pathsOf, pathSpecsOf, closestOnPaths, terrainAt, terrainFieldAt, isSolid, isWater, terrainClearance, T_OFF, T_ROCK, T_DEEP, T_MARSH,
+  onDeck, waterDepthAt, waterLevelAt, riversOf, bridgesOf, pathsOf, pathSpecsOf, closestOnPaths, terrainAt, terrainFieldAt, isSolid, isWater, terrainClearance, T_OFF, T_ROCK, T_DEEP, T_MARSH,
   caveOutline, prepareZone,
 } from './worldgen.js';
 import { onDeckSpan, riverWaterHalf } from '../shared/terrain.js';
@@ -663,7 +663,13 @@ function applySave(p, d) {
   const dead = !(d.hp > 0);
   p.hp = dead ? p.maxHp : Math.min(p.maxHp, d.hp);
   p.mana = Math.min(p.manaMax || 0, Math.max(0, d.mana | 0));
-  const sp = ZONES[zone].spawn;
+  // Somebody who logged out dead comes back at the graveyard of the place they
+  // went down in, the same as anyone who dies and waits it out -- not at the
+  // zone's arrival point, which in a two-region world is the wrong region half
+  // the time. Their saved position is where they fell, so it names the place.
+  const zrec = ZONES[zone];
+  const fellIn = dead ? placeAt(zrec, +d.x || zrec.spawn.x, +d.z || zrec.spawn.z, +d.y || 0) : null;
+  const sp = (dead && fellIn && fellIn.graveyard) || zrec.graveyard || zrec.spawn;
   p.x = dead ? sp.x : (+d.x || sp.x); p.z = dead ? sp.z : (+d.z || sp.z);
   p.y = dead ? 0 : (+d.y || 0); p.yaw = +d.yaw || sp.yaw;
   // A save holds where you stood on the map as it was. Redraw the map -- move a
@@ -1946,9 +1952,12 @@ const SWIM_SPEED = 0.55;
 // Breath. You have about a minute of easy swimming, less if you are working at
 // it, and then you start going under. Out of the water it comes back quickly.
 const BREATH_MAX = 100;
-const BREATH_TREAD = 1.15;    // per second, floating
-const BREATH_SWIM  = 2.4;     // per second, actually going somewhere
-const BREATH_REGAIN = 9;      // per second, back on dry land
+const BREATH_TREAD = 1.15;    // per second, held under and still
+const BREATH_SWIM  = 2.4;     // per second, held under and struggling
+const BREATH_REGAIN = 9;      // per second, once your head is up
+// How high off the ground a character's head is, so "under water" can be asked
+// of the water level rather than guessed at from the swim state.
+const HEAD_HEIGHT = 2.1;
 const DROWN_DPS = 7;          // once the breath is gone
 // How deep is it here, roughly: 0 dry, 1 out of your depth. Shallow water is
 // something you WADE -- the fen never makes you swim, and neither does the
@@ -2476,6 +2485,10 @@ const GRAVE_TTL = 120;
 const graves = new Map();
 function killPlayer(p, how) {
   p.hp = 0; p.alive = false; p.deathTimer = RESPAWN_TIME; p.engagedWith = null;
+  // Where you fell, so you can be put back on the ground that belongs to it.
+  // Taken here rather than at respawn because by then you have been lying in
+  // the dark for five seconds and nothing says your corpse is where it died.
+  p.diedAt = { zoneId: p.zoneId, x: p.x, z: p.z, y: p.y || 0 };
   // The fishing STATE, not just the intent to fish. `fishing` is what the
   // snapshot sends and stepFishing is the only thing that clears it -- and
   // stepFishing does not run for a corpse. A dead player lay on the bank
@@ -2660,8 +2673,23 @@ function stepPlayer(p) {
     send(p.ws, { t: 'event', kind: 'notice', text: p.swimming ? 'You wade in and start to swim.' : 'You climb out, dripping.' });
   }
   // --- breath -------------------------------------------------------------
+  // Breath is AIR, and it only goes when your head is under the water. This
+  // used to drain for the whole time you were swimming, which made it a swim
+  // endurance bar wearing the word "Breath": you floated on the surface with
+  // your head in plain sight, watching it empty, and then drowned standing in
+  // a pond you could see over. Reported exactly that way.
+  //
+  // A swimmer floats -- the client draws the head clear of the surface and the
+  // stroke to match -- so swimming costs nothing now. What still costs is being
+  // UNDER: on the bed, feet down, with the surface over your head. The server
+  // keeps p.y on the bed whether you are swimming or not, so that is the water
+  // column against your own height, and it is only reachable when something
+  // holds you down there -- you go out of your depth and start swimming well
+  // before a channel gets that deep.
   if (p.breath == null) p.breath = BREATH_MAX;
-  if (p.swimming) {
+  const head = (p.y || 0) + HEAD_HEIGHT;
+  const under = !p.swimming && waterLevelAt(zone, p.x, p.z) > head && !onDeck(zone, p.x, p.z, 0.4);
+  if (under) {
     const hard = !!(p.moving || (p.input && (p.input.f !== 0 || p.input.r !== 0)) || p.moveTo);
     p.breath = Math.max(0, p.breath - (hard ? BREATH_SWIM : BREATH_TREAD) * DT);
     if (p.breath <= 0) {
@@ -2675,12 +2703,12 @@ function stepPlayer(p) {
         if (p.hp <= 0) { killPlayer(p, 'drowned'); return; }
         if (!p.drownSaid || Date.now() - p.drownSaid > 3000) {
           p.drownSaid = Date.now();
-          send(p.ws, { t: 'event', kind: 'notice', text: 'You are going under!' });
+          send(p.ws, { t: 'event', kind: 'notice', text: 'You cannot get a breath!' });
         }
       }
     } else if (p.breath < BREATH_MAX * 0.28 && !p.breathWarned) {
       p.breathWarned = true;
-      send(p.ws, { t: 'event', kind: 'notice', text: 'Your chest is burning — make for a bank.' });
+      send(p.ws, { t: 'event', kind: 'notice', text: 'Your chest is burning — get your head up.' });
     }
   } else {
     p.drownAccum = 0;
@@ -2861,10 +2889,25 @@ function stepPlayer(p) {
   stepClass(p, (p.combatTimer || 0) > 0 || p.combatId != null || (p.engagedT || 0) > 0);
 }
 
+// Every place buries its own. A zone with regions has one spawn point for all
+// of them, so dying at Saint's Ruin woke you 1,100 m west in the Dark Woods and
+// the whole walk back was the punishment. The region you died in has a
+// graveyard; that is where you come to.
+function graveyardFor(p) {
+  const zone = ZONES[(p.diedAt && p.diedAt.zoneId) || p.zoneId] || zoneOf(p);
+  const where = p.diedAt && p.diedAt.zoneId === zone.id ? p.diedAt : p;
+  const place = placeAt(zone, where.x, where.z, where.y);
+  return { zone, at: (place && place.graveyard) || zone.graveyard || zone.spawn };
+}
 function respawnPlayer(p) {
-  const zone = zoneOf(p);
+  const { zone, at } = graveyardFor(p);
+  // Nothing moves a corpse, so the zone you died in is the one you are in --
+  // but a disconnect or an editor teleport could break that, and waking up
+  // inside another zone's coordinates would put you under the map.
+  if (zone.id !== p.zoneId) { transitionPlayer(p, zone.id, at); p.alive = true; p.hp = p.maxHp; p.diedAt = null; return; }
   p.swing = null; p.queued = null;
-  p.x = zone.spawn.x; p.z = zone.spawn.z; p.hp = p.maxHp; p.rage = 0; p.mana = Math.round((p.manaMax || 0) * 0.5); p.buffs = {}; p.dots = null; p.slow = null; p.channel = null; p.windup = null; p.alive = true; p.moving = false; p.resting = false;
+  p.diedAt = null;
+  p.x = at.x; p.z = at.z; p.yaw = at.yaw != null ? at.yaw : p.yaw; p.hp = p.maxHp; p.rage = 0; p.mana = Math.round((p.manaMax || 0) * 0.5); p.buffs = {}; p.dots = null; p.slow = null; p.channel = null; p.windup = null; p.alive = true; p.moving = false; p.resting = false;
   p.moveTo = null; p.combatId = null; p.pendingChest = null; p.pendingPickup = null;
   send(p.ws, { t: 'event', kind: 'respawned' });
 }

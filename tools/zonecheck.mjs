@@ -24,6 +24,7 @@ const z = blackroot;
 import { terrainAt, terrainFieldAt, isSolid, rockSolidAt, rockRiseAt, rockEdgeOf, groundSlopeAt,
          waterDepthAt, onDeck as onDeckFn } from '../server/worldgen.js';
 import { terrainHeight, waterLevelAt, riverWaterHalf } from '../shared/terrain.js';
+import { regionAt as regionAtFn } from '../shared/fog.js';
 import { ITEMS } from '../server/items.js';
 import { FISH, TIERS } from '../server/fishing.js';
 import { QUESTS } from '../server/quests.js';
@@ -1054,6 +1055,52 @@ for (const zone of [z, spiderden]) {
   }
   ok('every fishing spot is in water at the edge, off the planks, within a cast',
     bad.length === 0, bad.length ? bad.join('; ') : `${(z.fishingSpots || []).length} spots`);
+}
+
+// Every place buries its own, and you can stand where it buries you. A
+// graveyard in a river, inside a wall or off the map is a respawn that drowns
+// you, wedges you or drops you through the world -- and you meet it at the
+// worst moment there is, having just died.
+{
+  const places = (z.regions && z.regions.length) ? z.regions : [z];
+  const bad = [];
+  for (const r of places) {
+    const g = r.graveyard;
+    if (!g) { bad.push(`${r.id || z.id} has no graveyard`); continue; }
+    const probe = { x: g.x, z: g.z, y: 0, canSwim: true };
+    resolveCollisionFn(z, probe, 0.6);
+    const shoved = Math.hypot(probe.x - g.x, probe.z - g.z);
+    if (terrainAt(z, g.x, g.z) === ' ') bad.push(`${r.id}'s graveyard is off the map`);
+    else if (shoved > 0.05) bad.push(`${r.id}'s graveyard is inside something (shoved ${shoved.toFixed(2)} m)`);
+    else if (waterDepthAt(z, g.x, g.z) > 0.05) bad.push(`${r.id}'s graveyard is in the water`);
+  }
+  ok('every region has a graveyard you can stand in', bad.length === 0,
+     bad.length ? bad.join('; ') : `${places.length} graveyard(s)`);
+
+  // ...and dying in a region puts you in THAT region's graveyard, not another's.
+  // This is the whole point of having more than one: the respawn used to be a
+  // single zone.spawn, so going down at Saint's Ruin woke you 1,100 m west in
+  // the woods. Walked over every cell of open ground rather than spot-checked,
+  // because the regions' bounding boxes overlap and the answer in the overlap
+  // is decided by order.
+  if (places.length > 1) {
+    const T3 = z.terrain;
+    const wrong = new Map();
+    let worst = 0, worstAt = '';
+    for (let gz = 0; gz < T3.h; gz += 3) for (let gx = 0; gx < T3.w; gx += 3) {
+      if (T3.rows[gz][gx] === ' ') continue;
+      const x = T3.minX + (gx + 0.5) * T3.cell, zz = T3.minZ + (gz + 0.5) * T3.cell;
+      const died = regionAtFn(z, x, zz, 0);
+      if (!died || !died.graveyard) continue;
+      const woke = regionAtFn(z, died.graveyard.x, died.graveyard.z, 0);
+      if (!woke || woke.id !== died.id) wrong.set(died.id, (wrong.get(died.id) || 0) + 1);
+      const walk = Math.hypot(x - died.graveyard.x, zz - died.graveyard.z);
+      if (walk > worst) { worst = walk; worstAt = died.id; }
+    }
+    ok('a graveyard stands in the region it buries for', wrong.size === 0,
+       wrong.size ? [...wrong].map(([id, n]) => `${id}: ${n} cells wake elsewhere`).join(', ')
+                  : `the longest walk back is ${worst.toFixed(0)} m, in ${worstAt}`);
+  }
 }
 
 // A road through rock is not a road. Since rock blocks by the DRAWN field now,

@@ -15,6 +15,7 @@ export const darkwoods = {
   bounds: { minX: -425.0, maxX: 425.0, minZ: -356.2, maxZ: 356.3 },
   boundaryInset: 0,
   safeSpawnRadius: 40,
+  graveyard: { x: 31.0, z: -173.2, yaw: 3.14 },
 
   boundary: [
     { x: 427.2, z: 1.3 }, { x: 426.3, z: 29.2 }, { x: 428.6, z: 57.6 }, { x: 428.9, z: 86.4 }, { x: 420, z: 113.5 }, { x: 399.9, z: 136.6 },

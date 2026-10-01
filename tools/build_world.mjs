@@ -113,9 +113,14 @@ function outline() {
 // --- regions -----------------------------------------------------------------
 const regions = [
   { id: 'darkwoods', name: darkwoods.name, subtitle: darkwoods.subtitle,
+    // Where you wake up after dying in this region. One zone with two regions
+    // means one zone.spawn between them, and dying at Saint's Ruin put you back
+    // in the woods 1,100 m west; each region owns its own ground now.
+    graveyard: { ...darkwoods.graveyard },
     bounds: { ...darkwoods.bounds },
     boundary: (darkwoods.boundary || []).map(p => ({ x: p.x, z: p.z })) },
   { id: 'killingfields', name: killingfields.name, subtitle: killingfields.subtitle,
+    graveyard: { ...shift(killingfields.graveyard), yaw: killingfields.graveyard.yaw || 0 },
     // "Dense woodland limited mostly to the western margin and a few copses",
     // says the sheet. On open ground the default 0.06 put 964 trees across the
     // battlefield; a fifth of that leaves it the bare basin it is drawn as.

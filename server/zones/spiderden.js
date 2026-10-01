@@ -16,6 +16,7 @@ export const spiderden = {
   ceilingY: 9.0,
   bounds: { minX: -160, maxX: 156, minZ: -192, maxZ: 216 },
   spawn: { x: 0, z: -136, yaw: 3.14 },
+  graveyard: { x: 0, z: -136, yaw: 3.14 },
   safeSpawnRadius: 16,
   multiCombat: true,
 

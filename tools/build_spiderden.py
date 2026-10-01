@@ -214,9 +214,16 @@ for m, *_ in SCATTER + HANGING + ORE:
     if m not in _TOP:
         MODEL_DIR[m] = 'cave'
 
-# The Dark Woods end of the pair: the Rock_Arch standing in the den's hollow.
+# The surface end of the pair: the Rock_Arch standing in the den's hollow.
 # Coming out puts you a few metres in FRONT of it rather than inside it.
-RETURN_TO = 'darkwoods'
+#
+# The ZONE, not the region. The Dark Woods stopped being a zone when the Killing
+# Fields were stamped into the same map and the pair became regions of
+# `blackroot`; this still said 'darkwoods', so re-running the builder quietly
+# pointed the only way out of the den at a zone that does not exist. The live
+# file had been corrected by hand and the generator had not, which is the whole
+# reason the header says not to hand-edit it.
+RETURN_TO = 'blackroot'
 DARKWOODS_MOUTH = (-0.4, 266.0)   # measured: walkable, and 13.7 m clear of the arch
 
 
@@ -253,6 +260,10 @@ def main():
       f'minZ: {min(zs) - rs - 30}, maxZ: {max(zs) + rs + 30} }},')
     mx, mz, _mr = room('mouth')
     A(f'  spawn: {{ x: {mx}, z: {mz - 8}, yaw: 3.14 }},')
+    # Where the dead wake up. There is no churchyard underground, so the den's
+    # is the mouth chamber -- you come to at the way out, which is the only
+    # ground down here that is anybody's but the spiders'.
+    A(f'  graveyard: {{ x: {mx}, z: {mz - 8}, yaw: 3.14 }},')
     A('  safeSpawnRadius: 16,')
     A('  multiCombat: true,')
     A('')
