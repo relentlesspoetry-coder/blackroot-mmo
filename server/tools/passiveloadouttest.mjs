@@ -63,6 +63,7 @@ async function connect(name, pass, cls = 'fighter') {
   c.ws.on('message', raw => {
     try {
       const m = JSON.parse(raw);
+      if (m.t === 'welcome' || m.t === 'transition') c.ws.send(JSON.stringify({ t: 'scene:ready', ...m.scene }));
       if (m.t === 'loginfail') throw Error(`Login rejected: ${m.text}`);
       if (m.t === 'welcome') c.id = m.id;
       if (m.t === 'passives') c.passives = m;

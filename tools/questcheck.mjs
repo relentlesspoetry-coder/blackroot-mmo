@@ -5,7 +5,7 @@
 // error, so it doubles as a CI gate.
 
 import { QUESTS, QUEST_IDS, questProgress, canStart, recordUse } from '../server/quests.js';
-import { ITEMS } from '../server/items.js';
+import { ITEMS, starterEquipment } from '../server/items.js';
 import { MONSTER_TEMPLATES, STARTING_INVENTORY, CLASSES, rollGear } from '../server/balance.js';
 import { ORES, oreFromModel, PICKAXES } from '../server/mining.js';
 import { FISH, RODS } from '../server/fishing.js';
@@ -98,6 +98,8 @@ for (const [zid, z] of Object.entries(ZONES)) {
 // ONLY one. No mob drops a rod, no chest holds one and merchants only buy, so
 // every fish in the game hangs off one line of the character-creation code.
 for (const it of STARTING_INVENTORY) note(it, 'starting kit');
+for (const cls of Object.keys(CLASSES)) for (const it of Object.values(starterEquipment(cls)))
+  if (it) note(it, `${cls} creation equipment`);
 // Cooking turns a raw item into a cooked one, so the cooked side is obtainable
 // whenever the raw side is. (This read `cooked.item`. The field is `cooked`, so
 // `out` was an object, the typeof guard rejected it, and the whole branch had

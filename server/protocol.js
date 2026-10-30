@@ -7,6 +7,7 @@ const string = v => typeof v === 'string' && v.length <= 256 && !['__proto__', '
 const schemas = {
   join: { name: string, pass: v => typeof v === 'string' && v.length <= 128, cls: string,
     look: v => plain(v) && Object.entries(v).every(([k, x]) => k === 'wear' ? plain(x) && Object.values(x).every(y => y === null || y === 0 || string(y)) : k === 'outfit' ? number(x) : string(x)) },
+  'scene:ready': { zoneId: string, token: v => typeof v === 'string' && /^[a-f0-9]{32}$/.test(v), generation: v => Number.isSafeInteger(v) && v > 0 },
   input: { f: number, r: number, yaw: number }, move: { x: number, z: number }, attack: { target: number },
   target: { id: v => v === null || number(v) }, chat: { msg: string },
   'trade:gold': { gold: v => number(v) || (typeof v === 'string' && /^\d{1,12}$/.test(v)) }, 'trade:ok': { on: v => typeof v === 'boolean' },
@@ -28,7 +29,7 @@ export function validMessage(msg) {
   if (!plain(msg) || typeof msg.t !== 'string' || !Object.hasOwn(schemas, msg.t)) return false;
   const schema = schemas[msg.t];
   for (const [key, value] of Object.entries(msg)) if (key !== 't' && (!Object.hasOwn(schema, key) || !schema[key](value))) return false;
-  const required = { 'passives:set': ['ids'], 'edit:place': ['m', 'x', 'z'], 'edit:spawn:place': ['type', 'x', 'z'], 'edit:loot:set': ['type', 'table'] };
+  const required = { 'scene:ready': ['zoneId', 'token', 'generation'], 'passives:set': ['ids'], 'edit:place': ['m', 'x', 'z'], 'edit:spawn:place': ['type', 'x', 'z'], 'edit:loot:set': ['type', 'table'] };
   if (Object.hasOwn(required, msg.t) && required[msg.t].some(k => !Object.hasOwn(msg, k))) return false;
   if (msg.t === 'join' && (typeof msg.name !== 'string' || typeof msg.pass !== 'string')) return false;
   return true;

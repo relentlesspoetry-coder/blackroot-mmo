@@ -246,3 +246,23 @@ loadout. `PASSIVE_RESULTS` selects the report/log directory. It creates no real
 accounts and removes its server and temporary data in cleanup. Other-class
 modifiers, PvE/action locks and caster-effect ownership are covered separately
 by the pure tests; this protocol check is not rendered-browser validation.
+
+### Scene loading handshake
+
+The browser acknowledges a connection-specific token and increasing zone generation
+only after scene construction and a rendering opportunity. Until then the server
+sends the zone packet alone, omits transient output, and refuses gameplay commands.
+It rebuilds bag/quests, skills, abilities, status, passives, objects, fog and party
+state on readiness, followed by a current snapshot. No event history is queued.
+Combat, targeting, death and ordinary persistence continue during loading.
+
+The loading deadline is 120 seconds and cannot be extended by another pending
+transition; the ten-second heartbeat sweep closes expired loads within 130 seconds.
+Ordinary heartbeat rules resume when ready. The 1 MiB output-buffer protection is
+unchanged, including after readiness. This handshake does not optimize slow scene
+construction or prevent later rendering stalls from exceeding the output limit.
+
+From `server/`, `npm run test:scene` runs a disposable real-socket regression
+(about 132 seconds), including a 25-second load without pong, a welcome above
+1 MiB, input gating, fresh state, movement, duplicate/stale readiness, reconnect
+and a never-ready client that keeps answering heartbeats.

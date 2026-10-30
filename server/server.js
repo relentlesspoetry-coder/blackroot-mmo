@@ -7,6 +7,7 @@ import { PASSIVES, PASSIVE_LIMIT, PASSIVE_SLOT_LEVELS, passiveSlotLimit, passive
 import http from 'http';
 import { atomicWrite, readJson, WorldStore } from './persistence.js';
 import { validMessage } from './protocol.js';
+import { sceneLoading, beginSceneLoad, acceptSceneReady, heartbeatExpired } from './scene-loading.js';
 import fs from 'fs';
 import crypto from 'crypto';
 import { promisify } from 'node:util';
@@ -21,7 +22,7 @@ import {
   xpForLevel, xpTotalForLevel, levelForXp, xpForKill, MAX_CLASS_LEVEL, clampClassLevel, classLevelForXp, classXpForLevel, attackRoll, defenceRoll, hitChance, scaledMonster, rollLoot, REGEN,
   TICK, CLASSES, DEFAULT_CLASS, classDef, classStats, abilityCost,
   maxHit, MEDITATION, meditationHealPerTick, rollGear, STARTING_INVENTORY, MOB_ART, ALWAYS_ART } from './balance.js';
-import { ITEMS, SLOTS, SLOT_INFO, DOLL, itemDef, slotOf, valueOf, equipStats, slotsFor, emptySlots, stackable, bagStacks } from './items.js';
+import { ITEMS, SLOTS, SLOT_INFO, DOLL, itemDef, slotOf, valueOf, equipStats, slotsFor, emptySlots, starterEquipment, stackable, bagStacks } from './items.js';
 import { weaponProfile, swingSeconds, weaponRange, swingBand, resolveAttack, facing,
          MOB_ARCH, MOB_DEF, archOf, addThreat, threatOf, dropThreat, clearThreat, taunt, topThreat, decayThreat } from './combat.js';
 import { BOSS_TEMPLATES, BOSS_ITEMS, maybeSpawnCluckifer, stepCluckifer, stepMinion, stepHazards, hazardList, onMinionKilled, onBossKilled } from './cluckifer.js';
@@ -501,13 +502,40 @@ checkPortals();
 // ---------------------------------------------------------------------------
 // Networking helpers
 // ---------------------------------------------------------------------------
-function sendRaw(ws, data) {
-  if (outbound) { outbound.push([ws, data]); return; }
+function sendRaw(ws, data, sceneControl = false) {
+  // No backlog: transient events are omitted and durable/UI state is rebuilt
+  // on readiness. This also lets the >1 MiB welcome drain without a second send.
+  if (sceneLoading(ws) && !sceneControl) return;
+  if (outbound) { outbound.push([ws, data, sceneControl]); return; }
   if (ws.readyState !== ws.OPEN) return;
   if (ws.bufferedAmount > 1024 * 1024) { ws.terminate(); return; }
   ws.send(data, error => { if (error) ws.terminate(); });
 }
 function send(ws, obj) { sendRaw(ws, JSON.stringify(obj)); }
+function sendScene(p, message) {
+  p.ws.sceneToken ||= crypto.randomBytes(16).toString('hex');
+  message.scene = beginSceneLoad(p.ws, p.zoneId, p.ws.sceneToken);
+  sendRaw(p.ws, JSON.stringify(message), true);
+}
+function sendSceneState(p) {
+  sendBag(p); // includes current quests
+  sendSkills(p); sendAbilities(p); sendStatus(p); sendPassives(p); sendObjects(p);
+  send(p.ws, { t: 'fog:sync', fog: fogPayload(p, zoneOf(p)), visited: [...p.visited] });
+  p._fogNew.length = 0; p._visitedNew = false;
+  const party = partyOf(p);
+  if (party) sendParty(party);
+  else send(p.ws, { t: 'party', leader: null, members: [] });
+  const trade = tradeOf(p);
+  send(p.ws, trade ? tradePayload(trade, p.id) : { t: 'trade', closed: true });
+  for (const [key, type] of [['partyInvite', 'party:invite'], ['duelChallenge', 'duel:challenge'], ['tradeRequest', 'trade:request']]) {
+    const pending = p[key];
+    send(p.ws, pending && pending.t > 0
+      ? { t: type, from: pending.from, name: pending.name, seconds: pending.t }
+      : { t: type, expired: true });
+  }
+  if (p._loginNotice) { notice(p, p._loginNotice); delete p._loginNotice; }
+  notice(p, 'The world kept running while this scene loaded. Check your health and surroundings.');
+}
 function broadcast(obj) {
   const s = JSON.stringify(obj);
   for (const p of players.values()) if (p.ws.readyState === p.ws.OPEN) sendRaw(p.ws, s);
@@ -690,7 +718,7 @@ function transaction(fn) {
   try {
     const result = fn(); commitWorld();
     const messages = outbound; outbound = null;
-    for (const [ws, data] of messages) sendRaw(ws, data);
+    for (const [ws, data, sceneControl] of messages) sendRaw(ws, data, sceneControl);
     return result;
   } catch (error) {
     // Never checkpoint a partially executed operation or acknowledge it. A
@@ -1335,6 +1363,7 @@ function sellItem(p, name, all) {
   const merchant = (zoneOf(p).npcs || []).find(n => n.trade);
   if (!merchant) return;
   if (dist2(p.x, p.z, merchant.x, merchant.z) > NPC_TALK_RADIUS * NPC_TALK_RADIUS) return;
+  if (valueOf(name) === 0) return notice(p, 'That item has no resale value.');
   const each = Math.max(1, Math.round(valueOf(name) * 0.4));   // merchants buy low
   let n = 0;
   do {
@@ -3075,7 +3104,7 @@ function transitionPlayer(p, toId, spawn) {
   p.moveTo = null; p.combatId = null; p.pendingChest = null; p.pendingPickup = null; p.pendingMine = null;
   p.portalCd = 2; // don't immediately re-trigger the return portal
   revealFog(p, to);   // arriving is seeing: the cave mouth is on the map you land on
-  send(p.ws, { t: 'transition', zone: zoneForClient(to), fog: fogPayload(p, to), visited: [...p.visited] });
+  sendScene(p, { t: 'transition', zone: zoneForClient(to), fog: fogPayload(p, to), visited: [...p.visited] });
   sendObjects(p);
   sendQuests(p); // giver markers are per-zone
   systemChat(`${p.name} entered ${to.name}.`);
@@ -3246,7 +3275,7 @@ setInterval(() => transaction(() => {
   // when ownership/progression changes; per-character save slots are unsafe.
 
   const now = Date.now();
-  if (now - lastSnap >= 1000 / SNAPSHOT_HZ) {
+  if (now - lastSnap >= 1000 / SNAPSHOT_HZ || [...players.values()].some(p => p.ws.readyState === p.ws.OPEN && p.ws.sceneLoad?.needsSnapshot)) {
     lastSnap = now;
     // Build one snapshot per zone; each player only sees entities in their zone.
     const byZone = {};
@@ -3312,8 +3341,9 @@ setInterval(() => transaction(() => {
         time: +dayTime.toFixed(4), weather }));
     };
     for (const p of players.values()) {
-      if (p.ws.readyState !== p.ws.OPEN) continue;
+      if (p.ws.readyState !== p.ws.OPEN || sceneLoading(p.ws)) continue;
       sendRaw(p.ws, zoneSnap(p.zoneId));
+      if (p.ws.sceneLoad) p.ws.sceneLoad.needsSnapshot = false;
       // The snapshot is built once per zone and shared by everyone in it, so
       // the fog -- which is one player's own -- rides separately. Only the cells
       // uncovered since the last tick, which is a handful while walking and
@@ -3458,7 +3488,7 @@ function allowAuth(ip) {
 }
 const heartbeat = setInterval(() => {
   for (const ws of wss.clients) {
-    if (!ws.isAlive || (!ws.joined && Date.now() - ws.connectedAt > 15000)) { ws.terminate(); continue; }
+    if (heartbeatExpired(ws)) { ws.terminate(); continue; }
     ws.isAlive = false; ws.ping();
   }
 }, 10000);
@@ -3484,6 +3514,8 @@ wss.on('connection', (ws, request) => {
     }
     let msg; try { msg = JSON.parse(raw); } catch { return; }
     if (!validMessage(msg)) { send(ws, { t: 'error', text: 'Invalid message.' }); return; }
+    // Loading is an output/input gate, never a simulation or damage exemption.
+    if (player && sceneLoading(ws) && msg.t !== 'scene:ready' && msg.t !== 'logout') return;
     let auth;
     if (msg.t === 'join') {
       if (player || ws.authPending) return;
@@ -3532,7 +3564,7 @@ wss.on('connection', (ws, request) => {
           // pickaxe rides in the bag (it counts for mining from there); the
           // class's own weapon is what's in hand.
           inventory: [...STARTING_INVENTORY],
-          equipment: Object.assign(emptySlots(), { weapon: classDef(cls).startWeapon || 'Bronze Dagger' }), gear: {},
+          equipment: emptySlots(), gear: {},
           miningXp: 0, pendingMine: null, mineTimer: 0,
           fishingXp: 0, pendingFish: null, fishTimer: 0, fishing: null, fishReel: 0, fishCaught: null,
           fishBite: 0, fishOnLine: null,
@@ -3548,24 +3580,30 @@ wss.on('connection', (ws, request) => {
         // showing, because the character is the thing being resumed.
         const saved = loadSave(name);
         if (saved) applySave(player, saved);
+        // Creation-only: reconnects and existing saves never replenish a kit.
+        else { player.equipment = starterEquipment(player.cls); player.gear = gearOf(player.equipment); }
         players.set(id, player); ws.joined = true;
         for (const g of graves.values()) if (g.name === name) g.owner = id;
         const here = ZONES[player.zoneId] || start;
         revealFog(player, here);   // you can see where you are standing before you move
-        send(ws, { t: 'welcome', id, tickRate: SNAPSHOT_HZ, zone: zoneForClient(here), items: ITEM_CATALOG,
+        sendScene(player, { t: 'welcome', id, tickRate: SNAPSHOT_HZ, zone: zoneForClient(here), items: ITEM_CATALOG,
                    atlas: worldAtlas(), fog: fogPayload(player, here), visited: [...player.visited] });
         sendBag(player); // sends the quest payload too
         sendSkills(player);
         sendAbilities(player); sendStatus(player); sendPassives(player);
         sendObjects(player);
-        if (auth.created) send(ws, { t: 'event', kind: 'notice', text: `Account created for ${player.name}. Use the same password next time.` });
-        else if (saved) send(ws, { t: 'event', kind: 'notice', text: `Welcome back, ${player.name}.` });
+        player._loginNotice = auth.created ? `Account created for ${player.name}. Use the same password next time.`
+          : saved ? `Welcome back, ${player.name}.` : null;
         // Say so rather than let somebody wonder why they woke up somewhere else.
         if (player._movedByRevamp) {
           delete player._movedByRevamp;
-          send(ws, { t: 'event', kind: 'notice', text: 'The woods have changed since you were last here. You have been set back on the road.' });
+          player._loginNotice = `${player._loginNotice || ''} The woods have changed since you were last here. You have been set back on the road.`;
         }
         systemChat(`${name} has entered ${here.name}.`);
+        break;
+      }
+      case 'scene:ready': {
+        if (player && acceptSceneReady(ws, msg, player.zoneId)) sendSceneState(player);
         break;
       }
       case 'passives:set': { if (player) setPassives(player, msg.ids, msg.requestId); break; }
@@ -3859,7 +3897,7 @@ wss.on('connection', (ws, request) => {
         if (!player) return;
         const wait = player.lastCombat ? LOGOUT_COMBAT_WAIT - (Date.now() - player.lastCombat) / 1000 : 0;
         if (player.alive && wait > 0) { send(ws, { t: 'event', kind: 'notice', text: `You can't log out in combat. Wait ${Math.ceil(wait)}s.` }); break; }
-        send(ws, { t: 'logout' }); leaveWorld(player); player = null; ws.joined = false; ws.connectedAt = Date.now();
+        sendRaw(ws, JSON.stringify({ t: 'logout' }), true); leaveWorld(player); player = null; ws.joined = false; ws.sceneLoad = null; ws.connectedAt = Date.now();
         break;
       }
       case 'chat': {

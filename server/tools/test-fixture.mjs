@@ -60,6 +60,7 @@ export async function fixture({ prefix = 'Test', save, timeout = 420000 } = {}) 
     ws.on('error', e => { failure = e; });
     ws.on('message', raw => {
       const m = JSON.parse(raw);
+      if (m.t === 'welcome' || m.t === 'transition') ws.send(JSON.stringify({ t: 'scene:ready', ...m.scene }));
       if (m.t === 'loginfail') failure = new Error(`Login rejected: ${m.text}`);
       if (m.t === 'welcome') { state.id = m.id; state.zone = m.zone; }
       if (m.t === 'transition') state.zone = m.zone;

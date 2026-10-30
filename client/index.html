@@ -1546,8 +1546,8 @@ function handle(m) {
     case 'welcome':
       myId = m.id; zone = m.zone; if (m.items) itemCatalog = m.items;
       ATLAS = m.atlas || null; applyFog(m.fog); applyVisited(m.visited);
-      startGame();
-      if (EDIT.on) { editInit(); ws?.send(JSON.stringify({ t: 'edit:list', key: EDIT.key })); }
+      startGame(m.scene);
+      if (EDIT.on) editInit();
       break;
     case 'snapshot':
       if (zoneLoading) { pendingZoneSnapshot = m; break; }
@@ -1586,7 +1586,10 @@ function handle(m) {
       break;
     case 'transition':
       applyFog(m.fog); applyVisited(m.visited);
-      enterZone(m.zone);
+      enterZone(m.zone, m.scene);
+      break;
+    case 'fog:sync':
+      applyFog(m.fog); applyVisited(m.visited);
       break;
     case 'fog:add':
       if (m.visited) applyVisited(m.visited);
@@ -1777,7 +1780,7 @@ const keys = {};
 let targetId = null;
 let attackTimer = 0;
 
-function initThree() {
+function initThree(sceneReceipt = null) {
   renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.setSize(innerWidth, innerHeight);
@@ -1790,7 +1793,7 @@ function initThree() {
   clock = new THREE.Clock();
 
   addEventListeners();
-  enterZone(zone);
+  enterZone(zone, sceneReceipt);
   animate();          // render loop starts immediately; the zone fills in
 }
 
@@ -12084,7 +12087,7 @@ function renderBag() {
     const st = statText(m).replace(/^ \(|\)$/g, '');
     if (st) lines.push(st);
     if (info && info.heal) lines.push(`Heals ${info.heal}`);
-    if (info && info.value) lines.push(`<span class="dim">${info.value.toLocaleString()} gp</span>`);
+    if (info && Number.isFinite(info.value)) lines.push(`<span class="dim">${info.value === 0 ? 'No resale value' : info.value.toLocaleString() + ' gp'}</span>`);
     if (info && info.desc) lines.push(`<i>${escapeHtml(info.desc)}</i>`);
     lines.push(`<span class="dim">${isEdible(n) ? 'Click to eat' : (m ? 'Click to equip' : 'Right-click for options')}</span>`);
     html += `<div class="slot" data-item="${escapeHtml(n)}"><span class="ic">${iconFor(n)}</span>` +
@@ -12305,8 +12308,8 @@ function renderDialogueActions() {
     html += '<div class="d-quest"><div class="q-name">Sell</div>';
     html += stacks.length
       ? stacks.map(({ name: n, qty }) => `<div class="q-obj"><span>${iconFor(n)} ${escapeHtml(n)}${qty > 1 ? ' ×' + qty : ''}</span><span>` +
-          `<button data-sell="${escapeHtml(n)}" style="padding:1px 8px;font-size:11px">Sell</button>` +
-          (qty > 1 ? ` <button data-sell="${escapeHtml(n)}" data-all="1" style="padding:1px 8px;font-size:11px">All ×${qty}</button>` : '') +
+          `<button data-sell="${escapeHtml(n)}" ${itemInfo(n)?.value === 0 ? 'disabled title="No resale value"' : ''} style="padding:1px 8px;font-size:11px">${itemInfo(n)?.value === 0 ? 'No value' : 'Sell'}</button>` +
+          (qty > 1 ? ` <button data-sell="${escapeHtml(n)}" data-all="1" ${itemInfo(n)?.value === 0 ? 'disabled title="No resale value"' : ''} style="padding:1px 8px;font-size:11px">All ×${qty}</button>` : '') +
           `</span></div>`).join('')
       : '<div class="q-obj"><span>Nothing to sell.</span><span></span></div>';
     html += '</div>';
@@ -13303,7 +13306,7 @@ function animate() {
 // ---------------------------------------------------------------------------
 // Boot
 // ---------------------------------------------------------------------------
-function startGame() {
+function startGame(sceneReceipt = null) {
   document.getElementById('login').style.display = 'none';
   document.getElementById('hud').style.display = 'block';
   document.getElementById('bagBtn').onclick = () => toggleBag();
@@ -13311,7 +13314,7 @@ function startGame() {
   document.getElementById('equipBtn').onclick = () => toggleEquip();
   document.getElementById('skillsBtn').onclick = () => toggleSkills();
   document.getElementById('spellBtn').onclick = () => toggleSpellbook();
-  initThree();
+  initThree(sceneReceipt);
 }
 
 let lastRegionId = null;
@@ -13351,7 +13354,8 @@ const modelsReady = loadModels(CORE_MODELS, (d, t) => {
 // Zone assets arrive with the zone itself, so a zone can add content without
 // the client knowing anything about it.
 let zoneLoading = false, zoneLoadGeneration = 0, incomingZoneId = null, pendingZoneSnapshot = null;
-async function enterZone(zdata) {
+async function enterZone(zdata, sceneReceipt = null) {
+  const socket = sceneReceipt ? ws : null;
   const generation = ++zoneLoadGeneration;
   zoneLoading = true; incomingZoneId = zdata.id; pendingZoneSnapshot = null;
   snapPrev = snapCur = null; resetGameplayInput();
@@ -13363,8 +13367,16 @@ async function enterZone(zdata) {
         if (generation === zoneLoadGeneration && el && d < t) el.textContent = `Loading ${zdata.name}… ${d}/${t}`;
       });
     }
-    if (generation !== zoneLoadGeneration) return;
+    if (generation !== zoneLoadGeneration || (sceneReceipt && socket !== ws)) return;
     loadZone(zdata);
+    if (sceneReceipt) {
+      // Two animation callbacks give the constructed scene a rendering opportunity.
+      // Keep gameplay blocked until the matching connection and generation finish.
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      if (generation !== zoneLoadGeneration || socket !== ws || socket?.readyState !== WebSocket.OPEN) return;
+      socket.send(JSON.stringify({ t: 'scene:ready', zoneId: zdata.id, token: sceneReceipt.token, generation: sceneReceipt.generation }));
+      if (typeof EDIT !== 'undefined' && EDIT.on) socket.send(JSON.stringify({ t: 'edit:list', key: EDIT.key }));
+    }
     zoneLoading = false;
     const snapshot = pendingZoneSnapshot; pendingZoneSnapshot = null;
     if (snapshot) handle(snapshot);

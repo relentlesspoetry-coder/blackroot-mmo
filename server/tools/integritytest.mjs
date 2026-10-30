@@ -24,9 +24,11 @@ async function start() {
 async function stop(signal = 'SIGTERM') { if (server && server.exitCode === null && server.signalCode === null) { const ended = once(server, 'exit'); server.kill(signal); await ended; } }
 async function connect(name) {
   const ws = new WebSocket(`ws://127.0.0.1:${port}`), messages = [];
-  ws.on('message', b => messages.push(JSON.parse(b))); await once(ws, 'open');
+  ws.on('message', b => { const m = JSON.parse(b); messages.push(m); if (m.t === 'welcome' || m.t === 'transition') ws.send(JSON.stringify({ t: 'scene:ready', ...m.scene })); }); await once(ws, 'open');
   const send = m => ws.send(JSON.stringify(m));
-  if (name) { send({ t: 'join', name, pass: 'safe-test-password', cls: 'fighter' }); await until(() => messages.find(m => m.t === 'welcome'), 'join'); }
+  if (name) { send({ t: 'join', name, pass: 'safe-test-password', cls: 'fighter' }); await until(() => messages.find(m => m.t === 'snapshot'), 'scene ready');
+    // Initial state clears stale trade/invite UI; do not mistake it for this test's later trade completion.
+    for (let i = messages.length - 1; i >= 0; i--) if ((messages[i].t === 'trade' && messages[i].closed) || messages[i].expired) messages.splice(i, 1); }
   return { ws, messages, send, wait: async (t, condition = () => true) => until(() => messages.find(m => m.t === t && condition(m)), t + ' ' + JSON.stringify(messages.slice(-5))) };
 }
 const state = () => JSON.parse(fs.readFileSync(path.join(tmp, 'saves/world.checkpoint.json')));

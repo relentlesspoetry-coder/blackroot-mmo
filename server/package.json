@@ -7,6 +7,7 @@
   "scripts": {
     "start": "node server.js",
     "test": "node --test test/*.test.js && node tools/integritytest.mjs && node tools/gameplaytest.mjs && node ../tools/fogcheck.mjs && node ../tools/questcheck.mjs",
+    "test:scene": "node tools/sceneloadtest.mjs",
     "test:e2e": "node tools/questtest.mjs && node tools/equiptest.mjs && node tools/miningtest.mjs",
     "test:assets": "node tools/asset-preflight.mjs && node ../tools/assets.mjs && node ../tools/zonecheck.mjs && node tools/animtest.mjs",
     "test:world": "node ../tools/walkcheck.mjs",

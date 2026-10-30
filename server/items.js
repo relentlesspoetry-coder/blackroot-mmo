@@ -243,7 +243,37 @@ for (const [name, rarity, atk, level, value, model, len, desc] of RARITY_WEAPONS
 }
 for (const d of Object.values(WEAPON_ITEMS)) d.slot = 'weapon';
 
+// Creation-only starter kits. Worn tools, not saleable progression rewards.
+// Reuse existing models/wardrobe pieces; never change the original loot items.
+export const STARTER_ITEMS = {
+  'Worn Training Greatsword': { slot: 'weapon', atk: 1, model: '04_Greatsword', len: 1.3 },
+  'Worn Training Mace': { slot: 'weapon', atk: 1, model: '08_Mace', len: 0.75 },
+  'Worn Training Dagger': { slot: 'weapon', atk: 1, model: '05_Dagger', len: 0.45 },
+  "Recruit's Tunic": { slot: 'chest', wear: { slot: 'shirt', piece: 'Shirt_Tunic_Charcoal' } },
+  "Recruit's Trousers": { slot: 'legs', wear: { slot: 'pants', piece: 'Pants_Hose_Umber' } },
+  "Recruit's Boots": { slot: 'boots', wear: { slot: 'boots', piece: 'Boots_Shoes_Umber' } },
+  "Novice's Robe": { slot: 'chest', wear: { slot: 'shirt', piece: 'Shirt_Robe_Grey' } },
+  "Novice's Trousers": { slot: 'legs', wear: { slot: 'pants', piece: 'Pants_Trousers_Charcoal' } },
+  "Novice's Shoes": { slot: 'boots', wear: { slot: 'boots', piece: 'Boots_Moccasins_Umber' } },
+  "Busker's Shirt": { slot: 'chest', wear: { slot: 'shirt', piece: 'Shirt_Jerkin_Brown' } },
+  "Busker's Trousers": { slot: 'legs', wear: { slot: 'pants', piece: 'Pants_Trousers_Umber' } },
+  "Busker's Shoes": { slot: 'boots', wear: { slot: 'boots', piece: 'Boots_Shoes_Brown' } },
+};
+for (const d of Object.values(STARTER_ITEMS)) Object.assign(d, {
+  level: 1, value: 0, def: 0, starter: true,
+  desc: d.slot === 'weapon' ? 'Worn starter equipment. Barely better than bare hands; no resale value.' : 'Plain, worn starter clothing. No combat bonuses; no resale value.',
+});
+export const STARTER_KITS = {
+  fighter: { weapon: 'Worn Training Greatsword', chest: "Recruit's Tunic", legs: "Recruit's Trousers", boots: "Recruit's Boots" },
+  cleric: { weapon: 'Worn Training Mace', chest: "Novice's Robe", legs: "Novice's Trousers", boots: "Novice's Shoes" },
+  bard: { weapon: 'Worn Training Dagger', chest: "Busker's Shirt", legs: "Busker's Trousers", boots: "Busker's Shoes" },
+};
+export function starterEquipment(cls) {
+  return Object.assign(emptySlots(), Object.hasOwn(STARTER_KITS, cls) ? STARTER_KITS[cls] : {});
+}
+
 export const ITEMS = {
+  ...STARTER_ITEMS,
   ...ARMOR_ITEMS,
   ...WEAPON_ITEMS,
   // --- weapons ---
@@ -411,7 +441,7 @@ export function itemDef(name) { return ITEMS[name] || null; }
 export function slotOf(name) { const d = ITEMS[name]; return d && d.slot ? d.slot : null; }
 export function valueOf(name) {
   const d = ITEMS[name];
-  if (d && d.value) return d.value;
+  if (d && Number.isFinite(d.value) && d.value >= 0) return d.value;
   return /Trophy/.test(name) ? 250 : 5; // elite trophies are the fallback case
 }
 
