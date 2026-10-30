@@ -1,3 +1,4 @@
+import * as passiveHelpers from '../passives.js';
 // Deterministic contracts for the real class modules and server integration functions.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -15,12 +16,12 @@ function extract(name) {
   return src.slice(start, start + src.slice(start).indexOf('\n}') + 2);
 }
 function server(names, bindings = {}) {
-  const box = vm.createContext({ Math: Object.create(Math), Date, ...bindings });
+  const box = vm.createContext({...passiveHelpers, sendPassives(){}, Math: Object.create(Math), Date, ...bindings });
   vm.runInContext(names.map(extract).join('\n'), box); return box;
 }
 let passed = 0;
 function test(name, fn) { fn(); passed++; console.log(`ok ${passed} - ${name}`); }
-const player = (id = 1) => ({ id, cls: 'cleric', level: 20, x: 0, z: 0, zoneId: 'z', hp: 100, maxHp: 1000, alive: true, buffs: {}, cooldowns: {}, known: new Set(), mana: 1000, manaMax: 1000, rage: 200, rageMax: 200 });
+const player = (id = 1) => ({ id, cls: 'cleric', level: 20, x: 0, z: 0, zoneId: 'z', hp: 100, maxHp: 1000, alive: true, buffs: {}, cooldowns: {}, known: new Set(), mana: 1000, manaMax: 1000, rage: classDef('fighter').rage.max, rageMax: classDef('fighter').rage.max });
 function fixture() {
   const p = player(), m = { id: 10, alive: true, hp: 1000, maxHp: 1000, x: 0, z: 2, zoneId: 'z', evil: true }, zone = { id: 'z' }, events = [];
   const ctx = { players: new Map([[p.id, p]]), monsters: new Map([[m.id, m]]), zoneOf: () => zone, broadcast: e => events.push(e), send() {}, sendStatus() {}, systemChat() {}, critChance: () => 0, dmgBuff: () => 0, nextId: () => 100, addBuff(t,b) { t.buffs[b.id] = {...b,t:b.dur}; }, applyHit(p,m,dmg) { m.hp -= dmg; }, interruptMonster(m) { m.cast = null; }, dist2: (x,z,a,b) => (x-a)**2+(z-b)**2, incomingMult: () => 1, hurtPlayer(t,d) { t.hp -= d; }, resolveCollision() {}, navStep() {}, addDot() {}, addSlow() {} };
@@ -55,7 +56,7 @@ test('poison follows canonical DOT refresh/resistance/death contract alongside b
 });
 test('canonical poison actually ticks through stepClass and expires', () => {
   const {p,ctx}=fixture(); const hits=[];
-  const box=server(['addDot','stepClass'],{resistsDot,clericCtx:ctx,DT:0.05,classDef:()=>({}),classStats:()=>({rage:200,mana:1000}),stepHots(){},stepSongs(){},stepQueue(){},hurtPlayer(...args){hits.push(args)},sendStatus(){}});
+  const box=server(['addDot','stepClass'],{resistsDot,clericCtx:ctx,DT:0.05,classDef:()=>({}),classStats:()=>({rage:classDef('fighter').rage.max,mana:1000}),stepHots(){},stepSongs(){},stepQueue(){},hurtPlayer(...args){hits.push(args)},sendStatus(){}});
   box.addDot(p,'poison',12,2);for(let i=0;i<241;i++)box.stepClass(p,false);
   assert.equal(hits.length,8);assert.equal(hits.reduce((n,a)=>n+a[1],0),24);assert.ok(hits.every(a=>a[3]==='poison'&&a[5].isPeriodic));assert.equal(p.dots.poison,undefined);
   box.addDot(p,'poison',12,2);assert.equal(p.dots.poison.acc,0);
@@ -73,7 +74,7 @@ test('multi-target and missed fighter abilities spend own charge once, songs onl
   for(const landed of [true,false]) {
     const {p,m,ctx}=fixture();p.cls='fighter';const a=classDef('fighter').abilities.find(a=>a.id==='cleave');p.known.add(a.id);const hits=[m,{...m,id:11},{...m,id:12}];
     p.buffs.own={id:'own',t:30,charges:8,chargeTrigger:'ability'};p.buffs.guardian_prayer={id:'guardian_prayer',t:30,charges:8};p.buffs.song={id:'song',t:30,charges:8,offensive:true};
-    const box=server(['useAbility','gcdFor','spendCharges'],{classDef,notice(){},QUEUE_WINDOW:0.4,isSpell:()=>false,isBardSpell:()=>false,resOf:()=>200,combatTargetOf:()=>m,dist2:ctx.dist2,reachOf:()=>5,ATTACK_RANGE:3,aoeRadius:()=>5,monstersNear:()=>hits,abilityHit(){if(landed)spendSongCharges(ctx,p,'offensive');return landed?10:0;},addMomentum(){},spendRes(){},sendStatus(){},sendAbilities(){},broadcast(){},castTimeMult:()=>1});
+    const box=server(['useAbility','gcdFor','spendCharges','resOf','spendRes'],{classDef,notice(){},QUEUE_WINDOW:0.4,isSpell:()=>false,isBardSpell:()=>false,combatTargetOf:()=>m,dist2:ctx.dist2,reachOf:()=>5,ATTACK_RANGE:3,aoeRadius:()=>5,monstersNear:()=>hits,abilityHit(){if(landed)spendSongCharges(ctx,p,'offensive');return landed?10:0;},addMomentum(){},sendStatus(){},sendAbilities(){},broadcast(){},castTimeMult:()=>1});
     box.useAbility(p,a.id);assert.equal(p.buffs.own.charges,7);assert.equal(p.buffs.guardian_prayer.charges,8);assert.equal(p.buffs.song.charges,landed?5:8);
   }
 });
@@ -112,7 +113,7 @@ test('fire egg delayed step survives busy duration; target lifecycle cancels saf
 });
 test('every boss mechanic completes every scheduled step, including the ultimate', () => {
   const bossSource=fs.readFileSync(new URL('../cluckifer.js',import.meta.url),'utf8').replace(/export /g,'');
-  const box=vm.createContext({Math,Date,console:{error(...args){throw Error(args.join(' '))}}});
+  const box=vm.createContext({...passiveHelpers,Math,Date,console:{error(...args){throw Error(args.join(' '))}}});
   vm.runInContext(bossSource+'\nglobalThis.mechanics=M;',box);
   for(const [name,build] of Object.entries(box.mechanics)) {
     const {p,m,ctx}=fixture();Object.assign(m,{boss:'cluckifer',cds:{},phase:1,gcd:0,arena:{x:0,z:0,r:26},yaw:0,speed:6});
@@ -123,7 +124,7 @@ test('every boss mechanic completes every scheduled step, including the ultimate
   }
 });
 test('targeted boss lunge does not follow a departed player while another keeps encounter alive', () => {
-  const bossSource=fs.readFileSync(new URL('../cluckifer.js',import.meta.url),'utf8').replace(/export /g,'');const box=vm.createContext({Math,Date,console});vm.runInContext(bossSource+'\nglobalThis.mechanics=M;',box);
+  const bossSource=fs.readFileSync(new URL('../cluckifer.js',import.meta.url),'utf8').replace(/export /g,'');const box=vm.createContext({...passiveHelpers,Math,Date,console});vm.runInContext(bossSource+'\nglobalThis.mechanics=M;',box);
   const {p,m,ctx,events}=fixture();Object.assign(m,{cds:{},phase:1,arena:{x:0,z:0,r:26},yaw:0});const other=player(2);ctx.players.set(other.id,other);box.startScript(m,box.mechanics.peckening(ctx,m,p));p.zoneId='other';p.x=1000;
   for(let i=0;i<75&&m.script;i++)box.stepCluckifer(ctx,m,0.05);assert.equal(m.x,0);assert.ok(!events.some(e=>e.fx==='lunge'));
 });

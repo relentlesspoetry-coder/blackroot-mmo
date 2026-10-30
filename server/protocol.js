@@ -16,6 +16,8 @@ for (const t of ['ability','learn','sit','useobject','openchest','fish','cook','
 for (const t of ['inspect','trade:request','duel:challenge','party:invite','party:kick','lootgrave','pickup','mine']) schemas[t] = { id: number };
 for (const t of ['trade:add','trade:take','eat','drop']) schemas[t] = { item: string };
 schemas.talk = { npc: string };
+schemas['passives:set'] = { requestId: v => typeof v === 'string' && v.length <= 64, ids: v => Array.isArray(v) && v.length <= 3 && v.every(string) };
+
 for (const t of ['stand','trade:accept','trade:decline','trade:cancel','duel:accept','duel:decline','duel:yield','party:accept','party:decline','party:leave','rest','questsync','respawn','logout']) schemas[t] = {};
 const editor = { key: string, id: string, item: string, type: string, m: string, god: v => typeof v === 'boolean' };
 for (const key of ['hp','qty','x','z','y','yaw','s','c','w','h','d','cx','cz','r','count','level','respawn']) editor[key] = number;
@@ -26,7 +28,7 @@ export function validMessage(msg) {
   if (!plain(msg) || typeof msg.t !== 'string' || !Object.hasOwn(schemas, msg.t)) return false;
   const schema = schemas[msg.t];
   for (const [key, value] of Object.entries(msg)) if (key !== 't' && (!Object.hasOwn(schema, key) || !schema[key](value))) return false;
-  const required = { 'edit:place': ['m', 'x', 'z'], 'edit:spawn:place': ['type', 'x', 'z'], 'edit:loot:set': ['type', 'table'] };
+  const required = { 'passives:set': ['ids'], 'edit:place': ['m', 'x', 'z'], 'edit:spawn:place': ['type', 'x', 'z'], 'edit:loot:set': ['type', 'table'] };
   if (Object.hasOwn(required, msg.t) && required[msg.t].some(k => !Object.hasOwn(msg, k))) return false;
   if (msg.t === 'join' && (typeof msg.name !== 'string' || typeof msg.pass !== 'string')) return false;
   return true;

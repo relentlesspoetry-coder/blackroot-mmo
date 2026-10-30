@@ -1,3 +1,4 @@
+import { passiveValue } from './passives.js';
 // Blackroot — the Bard's songs.
 // Numbers live in balance.js CLASSES.bard; this is what the songs do. A song
 // is cast once and settles on every ally in range as a buff carrying the
@@ -70,7 +71,7 @@ function playSong(ctx, p, id, fx, o) {
 }
 // Sonic damage: no accuracy roll, level-scaled, crits; stronger under Dreamsong.
 function sonicHit(ctx, p, m, a, extra = {}) {
-  let mult = (1 + (extra.mult || 0)) * (1 + ctx.dmgBuff(p, false, true));
+  let mult = (1 + (extra.mult || 0)) * (1 + ctx.dmgBuff(p, false, true)) * (1 + passiveValue(p, 'sonicDamage'));
   const ds = buffOn(p, 'dreamsong'); if (ds && ds.sonic) mult *= 1 + ds.sonic;
   if (buffOn(p, 'revival_sickness')) mult *= 0.85;
   const crit = Math.random() < ctx.critChance(p);
@@ -192,10 +193,10 @@ export function spendSongCharges(ctx, p, kind) {
   if (dirty) ctx.sendStatus(p);
 }
 // Attack-speed multiplier (<1 = faster) from songs.
-export function atkSpeedMult(p) { let k = 1; for (const b of Object.values(p.buffs)) if (b.t > 0 && b.atkSpeed) k -= b.atkSpeed * songAmp(p, b); return Math.max(0.5, k); }
-export function castTimeMult(p) { let k = 1; for (const b of Object.values(p.buffs)) if (b.t > 0 && b.castK) k -= b.castK * songAmp(p, b); return Math.max(0.5, k); }
+export function atkSpeedMult(p) { let k = 1 - passiveValue(p, 'attackSpeed'); for (const b of Object.values(p.buffs)) if (b.t > 0 && b.atkSpeed) k -= b.atkSpeed * songAmp(p, b); return Math.max(0.5, k); }
+export function castTimeMult(p) { let k = 1 - passiveValue(p, 'castSpeed'); for (const b of Object.values(p.buffs)) if (b.t > 0 && b.castK) k -= b.castK * songAmp(p, b); return Math.max(0.5, k); }
 export function meditationMult(p) { let k = 1; for (const b of Object.values(p.buffs)) if (b.t > 0 && b.medK) k += b.medK * songAmp(p, b) * (buffOn(p, 'dreamsong') ? 2 : 1); return k; }
-export function manaRegenMult(p, inCombat) { let k = 1; for (const b of Object.values(p.buffs)) if (b.t > 0 && (b.manaIdle || b.manaCombat)) k += (inCombat ? b.manaCombat || 0 : b.manaIdle || 0) * songAmp(p, b); return k; }
+export function manaRegenMult(p, inCombat) { let k = 1 + passiveValue(p, 'manaRegen'); for (const b of Object.values(p.buffs)) if (b.t > 0 && (b.manaIdle || b.manaCombat)) k += (inCombat ? b.manaCombat || 0 : b.manaIdle || 0) * songAmp(p, b); return k; }
 export function controlMult(p) { const b = Object.values(p.buffs).find(b => b.t > 0 && b.controlK); return b ? 1 - b.controlK : 1; }
 // What a Bard's debuffs do to a monster.
 export function bardMonsterDmgMult(m) { let k = 1; const d = m.debuffs, v = m.dval || {}; if (!d) return k; if (d.dissonant > 0) k *= 1 - (v.dissonant || 0.08); if (d.dirge > 0) k *= 1 - (v.dirge || 0.08); return k; }

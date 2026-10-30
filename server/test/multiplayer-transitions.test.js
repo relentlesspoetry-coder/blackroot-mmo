@@ -1,3 +1,4 @@
+import * as passiveHelpers from '../passives.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -12,7 +13,7 @@ const section = (start, end) => source.slice(source.indexOf(start), source.index
 const fn = name => { const i = source.indexOf(`function ${name}(`); return source.slice(i, source.indexOf('\n}', i) + 2); };
 function setup() {
   const players = new Map(), graves = new Map();
-  const c = vm.createContext({ players, graves, monsters: new Map(), RESPAWN_TIME:5, GRAVE_TTL:120, nextId:100,
+  const c = vm.createContext({...passiveHelpers, players, graves, monsters: new Map(), RESPAWN_TIME:5, GRAVE_TTL:120, nextId:100,
     send(){}, sendRaw(){}, notice(){}, broadcast(){}, systemChat(){}, sendBag(){}, sendStatus(){},
     emptySlots:()=>({}), gearOf:()=>({}), bagStacks:x=>x, dist2:(x,z,a,b)=>(x-a)**2+(z-b)**2 });
   vm.runInContext([

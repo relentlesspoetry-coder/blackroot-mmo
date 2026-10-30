@@ -209,3 +209,40 @@ browser test, geographically dispersed workload, sustained soak, leak proof,
 stale-social-invite audit or capacity certification. After lower tiers have passed on identical production source, `--only-tier=16`
 can resume just the 16-client tier; the default still gates 2 → 8 → 16.
 No player-count/latency SLO is asserted; a passing run does not override other known regression failures.
+
+### Alpha passive loadouts
+
+Each class has seven passive choices and can equip up to three in the spellbook,
+separate from its twenty active abilities. New alpha characters start with empty
+passive slots. Choices unlock in catalogue order at levels 5, 10, 15, 20, 25, 30 and 35.
+The first slot unlocks at level 5, the second at 15, and the third at 30.
+Fighter Momentum retains its level-five trainer purchase. Existing characters who already
+learned Momentum keep it equipped on migration; saved loadouts are validated on
+login and persisted with the character.
+
+Only the server can accept a loadout change. Combat, active enemy threat, duels
+(including their countdown), death, lingering damage, and committed/queued actions
+block changes. Switching ends spells and songs placed by that character, including
+wards, and resets Momentum. Leaving the world also removes those outgoing effects
+so reconnecting cannot retain bonuses from a previous loadout. Negative effects,
+other casters' protection, cooldowns, health, and resources are not reset.
+
+New numerical bonuses are deliberately small (generally 2–6%); defensive bonuses
+exclude periodic damage and stack multiplicatively with existing protection.
+Momentum retains its established mechanics. Contract tests cover all 105 possible
+three-passive selections, but these bounds are not a substitute for encounter and
+multiplayer balance testing. The catalogue is defined in `server/passives.js`.
+
+### Live passive-loadout regression
+
+From `server/`, run `node tools/passiveloadouttest.mjs` for a bounded, disposable
+real-auth check with at most two simultaneous clients. It checks before/at every
+five-level passive unlock and slot thresholds 5/15/30, plus the fighter's
+seven-choice catalogue, legacy over-capacity sanitation, correlated request
+acknowledgements, authoritative state,
+invalid selections, actual duel-countdown locking, no healing of a seeded
+low-HP character, peer isolation, reconnect/restart persistence and clearing a
+loadout. `PASSIVE_RESULTS` selects the report/log directory. It creates no real
+accounts and removes its server and temporary data in cleanup. Other-class
+modifiers, PvE/action locks and caster-effect ownership are covered separately
+by the pure tests; this protocol check is not rendered-browser validation.

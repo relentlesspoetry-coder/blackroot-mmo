@@ -1,3 +1,4 @@
+import * as passiveHelpers from '../passives.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -75,13 +76,13 @@ try {
   for (const key of ['known','questDone','questFlags','questAnnounced','openedChests','usedObjects','visited']) p[key] = new Set(p[key] || []);
   p.quests = new Map(p.quests); p.inventory = [...p.inventory]; p.equipment = {...p.equipment};
   const unitStore = new WorldStore(path.join(tmp,'death-unit'));
-  const ctx = vm.createContext({ players: new Map([[p.id,p]]), monsters: new Map(), graves: new Map(), groundItems: new Map(),
-    worldStore: unitStore, tradeOf: () => null, fogToB64: () => '', emptySlots, gearOf: () => ({}),
+  const ctx = vm.createContext({...passiveHelpers, players: new Map([[p.id,p]]), monsters: new Map(), graves: new Map(), groundItems: new Map(),
+    ZONES: {}, sendStatus(){}, worldStore: unitStore, tradeOf: () => null, fogToB64: () => '', emptySlots, gearOf: () => ({}),
     send: () => {}, sendBag: () => {}, systemChat: () => {}, dropThreat: () => {}, retarget: () => {},
     tradeAbort: () => {}, duelForfeit: () => {}, partyRemove: () => {}, sendRaw: () => {}, console,
     process: {exit: code => {throw Error(`unexpected process exit ${code}`);}},
     GRAVE_TTL: 120, RESPAWN_TIME: 5, SAVE_EVERY: 45, nextId: 1000, lastOwnership: '', lastCheckpoint: 0, checkpointRequested: false, outbound: null });
-  vm.runInContext(['serialisePlayer','durablePlayer','ownershipOf','commitWorld','savePlayer','transaction','leaveWorld','killPlayer'].map(fn).join('\n'),ctx);
+  vm.runInContext(['serialisePlayer','durablePlayer','ownershipOf','commitWorld','savePlayer','transaction','clearPassiveOwnedEffects','leaveWorld','killPlayer'].map(fn).join('\n'),ctx);
   const escrowItem = p.inventory.pop(); p.gold = 60;
   ctx.tradeOf = () => ({ items: {7:[escrowItem]}, gold:{7:40} }); ctx.commitWorld();
   assert.equal(unitStore.state.characters.Alice.gold,100); assert.ok(unitStore.state.characters.Alice.inventory.includes(escrowItem));

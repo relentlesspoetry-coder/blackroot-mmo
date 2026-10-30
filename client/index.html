@@ -40,10 +40,11 @@
   #login select { background: #0c131d; border: 1px solid #2a3c54; color: #e7eef7; padding: 8px; border-radius: 8px; font-size: 13px; }
   #login input[type=color] { padding: 2px; height: 36px; width: 100%; }
   #login .classrow { display: flex; gap: 8px; }
-  #login .classopt { flex: 1; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4px; padding: 8px 4px 6px; border-radius: 8px; border: 1px solid #2a3c54; background: #0c131d; cursor: pointer; color: #8fa3bf; font-size: 11px; line-height: 1.25; }
+  #login .classopt { font-family: inherit; font-weight: 400; flex: 1; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4px; padding: 8px 4px 6px; border-radius: 8px; border: 1px solid #2a3c54; background: #0c131d; cursor: pointer; color: #8fa3bf; font-size: 11px; line-height: 1.25; }
   #login .classopt img { width: 44px; height: 44px; flex: none; }
   #login .classopt b { display: block; color: #e7eef7; font-size: 13px; }
   #login .classopt.sel { border-color: #ffd24a; background: #1a2230; box-shadow: 0 0 0 1px #ffd24a44 inset; }
+  #login .classopt:focus-visible { outline: 2px solid #ffd24a; outline-offset: 3px; }
   #login .classopt:hover { border-color: #4a6a94; }
   #login button { background: linear-gradient(90deg,#3b82f6,#8b5cf6); border: 0; color: #fff; padding: 12px; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; }
   #login button:hover { filter: brightness(1.1); }
@@ -224,6 +225,22 @@
   .sbab .nm { font-weight: 700; color: #ffe9b0; font-size: 12px; } .sbab .meta { font-size: 10px; color: #cbb7f0; } .sbab .ds { font-size: 10.5px; color: #d9cfec; line-height: 1.3; margin-top: 2px; }
   .sbab .slotno { margin-left: auto; font-size: 10px; color: #ffd27a; border: 1px solid #ffd27a; border-radius: 4px; padding: 0 4px; height: 14px; }
   #spellbook .sbhint { padding: 6px 12px 10px; font-size: 10.5px; color: #9f92bb; text-align: center; }
+  .sbguide { grid-column: 1 / -1; border: 1px solid #4a3a6a; border-radius: 8px; padding: 7px 10px; background: #16101fcc; font-size: 11px; line-height: 1.45; }
+  .sbguide summary { cursor: pointer; color: #ffd47a; font-weight: 700; }
+  .sbguide summary:focus-visible { outline: 2px solid #ffd47a; outline-offset: 3px; border-radius: 2px; }
+  .sbguide ul { margin: 7px 0 4px; padding-left: 17px; } .sbguide li + li { margin-top: 5px; }
+  .sbguide .training { color: #b3a6cc; margin: 7px 0 0; }
+  .sbpassives { grid-column: 1 / -1; border: 1px solid #4a3a6a; border-radius: 8px; padding: 10px; background: #16101fcc; }
+  .sbpassives h4 { margin: 0 0 6px; color: #ffd47a; font-size: 13px; }
+  .sbpassives p { margin: 5px 0; font-size: 10.5px; line-height: 1.4; color: #cbb7f0; }
+  .sbpassive-slots { display: flex; flex-wrap: wrap; gap: 5px; margin: 7px 0; }
+  .sbpassive-slot { border: 1px solid #6a4f9a; padding: 3px 6px; border-radius: 5px; font-size: 10.5px; }
+  .sbpassive-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+  .sbpassive { font: inherit; color: #efe6ff; text-align: left; background: #21182e; border: 1px solid #514064; border-radius: 6px; padding: 7px; cursor: pointer; }
+  .sbpassive[aria-pressed="true"] { border-color: #ffd47a; background: #33283b; }
+  .sbpassive:disabled { opacity: .65; cursor: default; }
+  .sbpassive:focus-visible { outline: 2px solid #ffd47a; outline-offset: 2px; }
+  .sbpassive b, .sbpassive span { display: block; } .sbpassive b { font-size: 11px; } .sbpassive span { font-size: 10px; line-height: 1.35; margin-top: 3px; }
   .sbnext { grid-column: 1 / -1; font-size: 11px; color: #b3a6cc; padding: 6px 4px; } .sbnext b { color: #ffd47a; }
   #spellbook { z-index: 12; }
   .d-learn { display: flex; gap: 8px; align-items: center; padding: 5px 0; border-top: 1px solid #3a3020; }
@@ -233,6 +250,20 @@
   .d-learn.far { opacity: .55; }
   .splat.crit { width: 32px; height: 32px; line-height: 32px; font-size: 14px; background: radial-gradient(circle at 40% 35%, #ffd27a, #d8781c); color: #2a1200; }
   #actionbar { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); width: 372px; pointer-events: none; }
+  #passivebar { position: relative; pointer-events: auto; margin: 0 auto 6px; width: min(100%, 300px); }
+  #passiveSlots { display: flex; gap: 5px; justify-content: center; }
+  .passive-hot-slot { min-width: 0; flex: 1; display: flex; align-items: center; gap: 4px; height: 32px; padding: 3px 5px; border: 1px solid #75608f; border-radius: 6px; background: #21182e; color: #eaddff; cursor: pointer; font: inherit; font-size: 10px; }
+  .passive-hot-slot img { width: 22px; height: 22px; border-radius: 4px; } .passive-hot-slot span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .passive-hot-slot.empty { border-style: dashed; } .passive-hot-slot[aria-expanded="true"] { border-color: #ffd47a; }
+  .passive-hot-slot:disabled { opacity: .6; cursor: default; }
+  .passive-hot-slot:focus-visible, #passivePicker button:focus-visible { outline: 2px solid #ffd47a; outline-offset: 2px; }
+  #passiveHotStatus { font-size: 9px; color: #cbb7f0; text-align: center; line-height: 1.3; margin-top: 3px; }
+  #passivePicker { position: absolute; bottom: calc(100% + 7px); left: 50%; transform: translateX(-50%); width: min(340px, calc(100vw - 24px)); max-height: min(420px, 60vh); overflow-y: auto; padding: 10px; box-sizing: border-box; background: #171020f5; border: 1px solid #8a69b1; border-radius: 8px; box-shadow: 0 5px 20px #000a; z-index: 20; }
+  #passivePicker[hidden] { display: none; } #passivePicker h4 { margin: 0 0 6px; font-size: 12px; color: #ffd47a; }
+  #passivePicker p { font-size: 10px; line-height: 1.35; color: #cbb7f0; margin: 6px 0; }
+  #passivePicker .sbpassive { width: 100%; margin-bottom: 4px; } #passivePicker .passive-picker-actions { display: flex; gap: 6px; justify-content: flex-end; }
+  #passivePicker .passive-picker-actions button { font: inherit; font-size: 11px; padding: 4px 7px; }
+  @media (max-width: 400px) { #actionbar { max-width: calc(100vw - 16px); } }
   #xpbar { height: 14px; border-radius: 7px; background: #120a1fb0; border: 1px solid #5a3f8a; overflow: hidden; position: relative; margin: 0 4px 6px; }
   #xpbar > i { position: absolute; inset: 0; transform-origin: left; transition: transform .2s;
     background: linear-gradient(90deg, #4a1f8f, #8a3fd8 55%, #c48bff); box-shadow: inset 0 0 8px #d9b3ff66; }
@@ -514,10 +545,10 @@
       <div class="lookrow"><label>Hair <select id="hairSel"></select></label><label>Beard <select id="beardSel"></select></label></div>
       <div class="lookrow"><label>Skin <input type="color" id="skinCol" value="#cba281"></label><label>Hair colour <input type="color" id="hairCol" value="#4a2e1a"></label></div>
     </div>
-    <div class="classrow" id="classRow">
-      <div class="classopt sel" data-cls="fighter"><img src="ui/fighter/emblem.png" alt=""><div><b>Fighter</b>Two-handed bruiser. Rage.</div></div>
-      <div class="classopt" data-cls="cleric"><img src="ui/cleric/emblem.png" alt=""><div><b>Cleric</b>Holy healer. Mana.</div></div>
-      <div class="classopt" data-cls="bard"><img src="ui/bard/emblem.png" alt=""><div><b>Bard</b>Songs and debuffs. Mana.</div></div>
+    <div class="classrow" id="classRow" role="group" aria-label="Character class">
+      <button type="button" aria-pressed="true" class="classopt sel" data-cls="fighter"><img src="ui/fighter/emblem.png" alt=""><span><b>Fighter</b>Two-handed bruiser. Rage.</span></button>
+      <button type="button" aria-pressed="false" class="classopt" data-cls="cleric"><img src="ui/cleric/emblem.png" alt=""><span><b>Cleric</b>Holy healer. Mana.</span></button>
+      <button type="button" aria-pressed="false" class="classopt" data-cls="bard"><img src="ui/bard/emblem.png" alt=""><span><b>Bard</b>Songs and debuffs. Mana.</span></button>
     </div>
     <button id="playBtn">Enter World</button>
     <small>Left-click to walk · left-click a monster to attack · right-click anything for options — mine rock veins, fish at the river, cook raw food at a campfire · arrow keys or drag to look · scroll to zoom · Enter to chat. WASD also moves. Open a second window to play together.</small>
@@ -553,11 +584,16 @@
       <div class="tot" id="tgttot"></div>
     </div>
   </div>
-  <!-- Action bar: class xp above, six ability slots (keys 1-6) below -->
+  <!-- Action bar: three passive slots above eight active slots (keys 1–8). -->
   <div id="actionbar">
     <div id="buffrow"></div>
     <div id="momentum"></div>
     <div id="xpbar"><i id="xpfill"></i><span id="xptext">XP 0 / 83</span></div>
+    <div id="passivebar" aria-label="Passive hotbar">
+      <div id="passiveSlots" role="group" aria-label="Three equipped passives"></div>
+      <div id="passiveHotStatus" role="status" aria-live="polite"></div>
+      <div id="passivePicker" role="dialog" aria-label="Choose a passive" hidden></div>
+    </div>
     <div id="slots"></div>
     <div id="castbar"><i></i><span></span></div>
     <div id="swingbar"><i></i></div>
@@ -565,7 +601,7 @@
   <div id="spellbook">
     <div class="sbhead"><img id="sbEmblem" alt=""><div><h3 id="sbTitle">Fighter</h3><div id="sbSub"></div></div><button id="sbClose">✕</button></div>
     <div id="sbList"></div>
-    <div class="sbhint">Click an ability, then a bar slot (or drag it there). Keys 1–6 · B closes</div>
+    <div class="sbhint">Click an ability, then a bar slot (or drag it there). Keys 1–8 · B closes</div>
   </div>
   <div id="settings">
     <div class="panel">
@@ -1475,7 +1511,7 @@ function connect(name, pass, look, cls) {
     if (ws !== socket) return;
     if (connectionState !== 'authenticated') showLoginError('Connection failed. Please try again.');
     else {
-      clearTimeout(loginTimer); resetGameplayInput(); ws = null; connectionState = 'disconnected';
+      clearTimeout(loginTimer); resetGameplayInput(); clearPendingQuestAccepts(); clearPassiveLoadout(); ws = null; connectionState = 'disconnected';
       try { socket.close(); } catch (_) {}
       // A fresh page owns the next session: never start a second render loop.
       const overlay = document.createElement('div');
@@ -1504,7 +1540,7 @@ function connect(name, pass, look, cls) {
 }
 
 function handle(m) {
-  if (m.t === 'logout') { location.reload(); return; }
+  if (m.t === 'logout') { clearPendingQuestAccepts(); clearPassiveLoadout(); location.reload(); return; }
   if (m.t === 'loginfail') { showLoginError(m.text); return; }
   switch (m.t) {
     case 'welcome':
@@ -1592,8 +1628,17 @@ function handle(m) {
       if (m.gcdLeft) gcdUntil = performance.now() + m.gcdLeft * 1000;
       fillBarDefaults(); renderActionBar(); renderSpellbook(); refreshDialogue();
       break;
+    case 'passives':
+      receivePassiveLoadout(m);
+      break;
+    case 'passives:result':
+      finishPassiveLoadout(m);
+      break;
     case 'status':
       selfMomentum = m.momentum || 0; buffList = m.buffs || []; selfBuffs = buffList.map(b => b.id); renderMomentum(); renderBuffs();
+      break;
+    case 'quest:accept':
+      finishQuestAccept(m);
       break;
     case 'quests':
       questData = { active: m.active || [], available: m.available || [], completed: m.completed || [], markers: m.markers || {} };
@@ -1890,6 +1935,54 @@ function updateSky(dt) {
   }
 }
 
+// Find GPU resources held by a known cache or scene subtree without following
+// Object3D.parent back into the world. Shared model/wardrobe/baked resources
+// outlive zones; resources owned only by the outgoing scene do not.
+function collectGraphicsResources(root, resources = new Set(), seen = new Set()) {
+  if (!root || typeof root !== 'object' || seen.has(root)) return resources;
+  seen.add(root);
+  if (root.isBufferGeometry || root.isTexture) { resources.add(root); return resources; }
+  if (root.isMaterial) {
+    resources.add(root);
+    for (const value of Object.values(root)) {
+      if (value?.isTexture) collectGraphicsResources(value, resources, seen);
+    }
+    if (root.uniforms) collectGraphicsResources(root.uniforms, resources, seen);
+    return resources;
+  }
+  if (root.isObject3D) {
+    if (!root.isSprite) collectGraphicsResources(root.geometry, resources, seen);
+    collectGraphicsResources(root.material, resources, seen);
+    if (root.skeleton) resources.add(root.skeleton);
+    if (root.shadow) resources.add(root.shadow);
+    // InstancedMesh.dispose releases renderer-owned instance attributes.
+    if (root.isInstancedMesh) resources.add(root);
+    for (const child of root.children) collectGraphicsResources(child, resources, seen);
+    return resources;
+  }
+  const values = root instanceof Map ? root.values() : Object.values(root);
+  for (const value of values) collectGraphicsResources(value, resources, seen);
+  return resources;
+}
+function retainedGraphicsResources() {
+  return collectGraphicsResources([LOADED, bodyTemplates, wardrobe, bakeCache,
+    _tileTex, detailAtlas, _waterCells, _barkTex, _leafTex, _bubGeo, _bubMat,
+    fxStarTex, runeTex, pillarTex, wingTex, noteTexs, ringTexObj, staffTexObj,
+    fxDotTex, crackTex, _rippleTex, _foamTex, _quad]);
+}
+function disposeGraphicsRoots(roots, retained) {
+  const owned = collectGraphicsResources(roots);
+  for (const resource of owned) if (!retained.has(resource)) resource.dispose?.();
+}
+function disposeZoneGraphics() {
+  const retained = retainedGraphicsResources();
+  // Inactive pooled critters are detached but still belong to this zone.
+  disposeGraphicsRoots([scene, [...critterBodies.values()].flatMap(p => p.free.map(b => b.wrap))], retained);
+  while (scene.children.length) scene.remove(scene.children[0]);
+  critterBodies.clear(); fishRigs.clear(); spawnMeshes.clear(); editMeshes.clear();
+  ripples.length = 0;
+}
+
 // Apply per-zone lighting + fog, then (re)build the world. Used on first load
 // and on every zone transition.
 function loadZone(zdata) {
@@ -1903,7 +1996,7 @@ function loadZone(zdata) {
   resetZoneEffects();
   itemMeshes.clear();
   // Tear down the previous zone.
-  while (scene.children.length) scene.remove(scene.children[0]);
+  disposeZoneGraphics();
   entityMeshes.clear();
   poiWorld.length = 0; poiLayer.innerHTML = ''; poiEls.length = 0;
   chestMeshes.clear(); npcMeshes.clear(); worldObjects.clear(); camBlockers.length = 0;
@@ -3057,7 +3150,8 @@ function buildZone() {
       cgeo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
     }
     const ceil = new THREE.Mesh(cgeo, detailize(new THREE.MeshStandardMaterial({ color: 0xc6cad1, roughness: 1, vertexColors: true }), 'rock', { scale: 4 }));
-    ceil.rotation.x = Math.PI / 2; ceil.position.set(cx, cy, cz); scene.add(ceil);
+    ceil.rotation.x = Math.PI / 2; ceil.position.set(cx, cy, cz);
+    ceil.userData.camBlocker = true; camBlockers.push(ceil); scene.add(ceil);
     // Line the boundary with natural rock so the walls read as piled stone, not
     // flat panels. The dark boxes above stay as a light/camera occluder behind.
     if (zone.boundary) buildCaveWalls(zone.boundary, cy);
@@ -5100,22 +5194,30 @@ function makeEditMesh(o) {
   editMeshes.set(o.id, wrap);
   return wrap;
 }
-function removeEditMesh(id) { const g = editMeshes.get(id); if (g) { scene.remove(g); editMeshes.delete(id); } }
+function removeEditMesh(id) { const g = editMeshes.get(id); if (g) { disposeGraphicsRoots([g], retainedGraphicsResources()); scene.remove(g); editMeshes.delete(id); } }
 async function buildEditObjects() {
+  const owner = zone;
+  disposeGraphicsRoots([...editMeshes.values()], retainedGraphicsResources());
   for (const g of editMeshes.values()) scene.remove(g);
   editMeshes.clear();
-  const objs = zone.editObjects || [];
+  const objs = [...(owner.editObjects || [])];
   const need = [...new Set(objs.map(o => o.m).filter(m => !m.startsWith('prim:') && LOADED[modelKey(m)] === undefined))];
   if (need.length) await loadModels(need).catch(() => {});
-  for (const o of objs) makeEditMesh(o);
+  if (zone !== owner) return;
+  for (const o of objs) {
+    if (!(owner.editObjects || []).includes(o) || editMeshes.has(o.id)) continue;
+    makeEditMesh(o);
+  }
 }
 // A live edit from the server (place / update / delete).
 async function applyEdit(m) {
+  const owner = zone;
   zone.editObjects = zone.editObjects || [];
   if (m.op === 'place' || m.op === 'update') {
     const o = m.obj; const i = zone.editObjects.findIndex(e => e.id === o.id);
     if (i >= 0) zone.editObjects[i] = o; else zone.editObjects.push(o);
     if (!o.m.startsWith('prim:') && LOADED[modelKey(o.m)] === undefined) await loadModels([o.m]).catch(() => {});
+    if (zone !== owner || !owner.editObjects.includes(o)) return;
     removeEditMesh(o.id); makeEditMesh(o);
     if (EDIT.selId === o.id) editSyncInspector();
   } else if (m.op === 'delete') {
@@ -6588,7 +6690,7 @@ function buildHeldWeapon(name) {
         // being re-derived from the hand each frame.
         const tip = new THREE.Object3D();
         tip.name = 'RodTip';
-        tip.position.set(0, 0, box.max.z * sc);
+        tip.position.set(0, 0, box.max.z); // model scale applies once through the parent
         model.add(tip);
         g.add(model);
         return;
@@ -7727,8 +7829,12 @@ function renderWorld(dt) {
       seen.add(e.id);
       const rec = ensureMesh(e, kind);
       const prev = a && a[kind === 'player' ? 'players' : 'monsters']?.find(x => x.id === e.id);
+      // A relocation is a discontinuity, not a very fast walk. The alive guard
+      // also handles revivals/monster respawns and older server snapshots.
+      const continuous = prev && prev.alive === e.alive && (prev.relocation || 0) === (e.relocation || 0);
+      if (prev && !continuous) rec.swimT = 0;
       let x = e.x, z = e.z, yaw = e.yaw;
-      if (prev) { x = prev.x + (e.x - prev.x) * t; z = prev.z + (e.z - prev.z) * t; yaw = lerpAngle(prev.yaw, e.yaw, t); }
+      if (continuous) { x = prev.x + (e.x - prev.x) * t; z = prev.z + (e.z - prev.z) * t; yaw = lerpAngle(prev.yaw, e.yaw, t); }
       // Corpses stay up briefly so the topple can play, then vanish.
       if (e.alive) rec.deadFor = 0;
       else rec.deadFor = (rec.deadFor || 0) + dt;
@@ -7743,7 +7849,8 @@ function renderWorld(dt) {
       let py = groundY(x, z);
       // e.y is the floor offset above terrain (placed floors, and the cave/tunnel
       // descent). Players and cave monsters both ride it; surface mobs send 0.
-      if (e.y != null) py += (prev && prev.y != null) ? prev.y + (e.y - prev.y) * t : e.y;
+      if (e.y != null) py += (continuous && prev.y != null) ? prev.y + (e.y - prev.y) * t : e.y;
+      rec.floorY = py; // interpolated terrain/deck floor, never the visual jump/bob
       // Swimming: float at the waterline, chest-deep, with a slow swell --
       // rather than standing on the bed three metres under.
       if (e.swim) {
@@ -7951,6 +8058,11 @@ function selfEnt() {
 }
 
 let lastInputSent = 0;
+function ringHeight(rec) {
+  const { x, z } = rec.mesh.position;
+  const floor = Number.isFinite(rec.floorY) ? rec.floorY : groundY(x, z) + (rec.data?.y || 0);
+  return (rec.data?.swim ? Math.max(floor, waterLevelAt(x, z)) : floor) + 0.12;
+}
 function updateControls(dt) {
   const self = selfEnt();
   if (!self || !self.alive) return;
@@ -8003,7 +8115,7 @@ function updateControls(dt) {
     camRay.far = want;
     const hit = camRay.intersectObjects(camBlockers, false)[0];
     if (hit) {
-      const back = Math.max(2.5, hit.distance - 0.8);
+      const back = Math.max(0, Math.min(want, hit.distance - 0.8));
       cx = px + _camDir.x * back;
       cy = py + 1.8 + _camDir.y * back;
       cz = pz + _camDir.z * back;
@@ -8024,9 +8136,12 @@ function updateControls(dt) {
     // Nothing along the line was inside: look straight down at the player.
     if (!placed) { cx = px; cz = pz; cy = Math.max(cy, py + 8); }
   }
+  // Even boundary fallback / jump hops must stay below an enclosed roof.
+  if (zone.enclosed) cy = Math.min(cy, (zone.ceilingY || 13) - 0.25);
   camera.position.set(cx, cy, cz);
   camera.lookAt(px, py + 1.6, pz);
   if (camShake > 0.001) { camera.position.x += (Math.random() - 0.5) * camShake; camera.position.y += (Math.random() - 0.5) * camShake * 0.7; camShake *= Math.exp(-dt * 9); }
+  if (zone.enclosed) camera.position.y = Math.min(camera.position.y, (zone.ceilingY || 13) - 0.25);
   }
 
   // Movement relative to camera yaw
@@ -8054,14 +8169,14 @@ function updateControls(dt) {
     const trec = targetId != null ? entityMeshes.get(targetId) : null;
     if (trec && trec.data && trec.data.alive) {
       targetRing.visible = true;
-      targetRing.position.set(trec.mesh.position.x, 0.12, trec.mesh.position.z);
+      targetRing.position.set(trec.mesh.position.x, ringHeight(trec), trec.mesh.position.z);
       const t = performance.now() / 400;
       const s = 1 + Math.sin(t) * 0.06; targetRing.scale.set(s, s, s);
     } else targetRing.visible = false;
   }
   if (friendRing) {
     const frec = friendId != null ? entityMeshes.get(friendId) : null;
-    if (frec && frec.data) { friendRing.visible = true; friendRing.position.set(frec.mesh.position.x, 0.12, frec.mesh.position.z); const s = 1 + Math.sin(performance.now() / 500) * 0.05; friendRing.scale.set(s, s, s); }
+    if (frec && frec.data) { friendRing.visible = true; friendRing.position.set(frec.mesh.position.x, ringHeight(frec), frec.mesh.position.z); const s = 1 + Math.sin(performance.now() / 500) * 0.05; friendRing.scale.set(s, s, s); }
     else friendRing.visible = false;
   }
 }
@@ -8071,8 +8186,9 @@ function updateControls(dt) {
 // ---------------------------------------------------------------------------
 let dragging = false, dragMoved = false, lastMX = 0, lastMY = 0, downMX = 0, downMY = 0;
 function gameplayInputBlocked(e) {
-  const editable = el => !!el && (el.isContentEditable || !!el.closest?.('input, textarea, select, button, form, [contenteditable]:not([contenteditable="false"]), [role="dialog"], [aria-modal="true"]'));
+  const editable = el => !!el && (el.isContentEditable || !!el.closest?.('input, textarea, select, button, summary, form, [contenteditable]:not([contenteditable="false"]), [role="dialog"], [aria-modal="true"]'));
   if (connectionState !== 'authenticated' || zoneLoading || document.hidden) return true;
+  if (typeof passivePickerSlot !== 'undefined' && passivePickerSlot != null) return true;
   if (editable(e.target) || editable(document.activeElement)) return true;
   if (settingsEl.classList.contains('show') && e.key !== 'Escape') return true;
   return !!document.querySelector('[aria-modal="true"], dialog[open]');
@@ -8087,6 +8203,7 @@ function addEventListeners() {
     camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
     renderer.setSize(innerWidth, innerHeight);
   });
+  addEventListener('mousedown', dismissPassivePickerOutside, true);
   const cv = renderer.domElement;
   cv.addEventListener('mousedown', (e) => {
     if (e.button !== 0) return;
@@ -8175,6 +8292,8 @@ function addEventListeners() {
   }, { passive: false });
 
   addEventListener('keydown', (e) => {
+    if (dismissPassivePickerKey(e)) return;
+    if (dismissSettingsKey(e)) return;
     if (gameplayInputBlocked(e)) { resetGameplayInput(); return; }
     if (e.key === 'Enter') { chatInput.focus(); e.preventDefault(); return; }
     if (e.key === 'F3') { e.preventDefault(); toggleEditor(); return; }
@@ -8453,24 +8572,32 @@ const INVITE_TEXT = {
   duel:  (n) => `<b>${n}</b> challenges you to a duel.`,
   trade: (n) => `<b>${n}</b> wants to trade with you.`,
 };
-function showInvite(m, kind) {
-  const box = document.getElementById('invite');
-  if (m.expired) { box.style.display = 'none'; return; }
-  inviteKind = kind;
-  document.getElementById('inviteText').innerHTML = INVITE_TEXT[kind](escapeHtml(m.name));
-  document.getElementById('inviteSub').textContent = `Expires in ${m.seconds}s`;
-  box.style.display = 'block';
-  clearInterval(showInvite._t); let left = m.seconds;
-  showInvite._t = setInterval(() => {
-    if (--left <= 0) { clearInterval(showInvite._t); box.style.display = 'none'; return; }
-    document.getElementById('inviteSub').textContent = `Expires in ${left}s`;
-  }, 1000);
-}
-let inviteKind = 'party';
-function answerInvite(yes) {
+const pendingInvites = new Map();
+let inviteKind = null;
+function renderInvite() {
   clearInterval(showInvite._t);
-  document.getElementById('invite').style.display = 'none';
-  ws?.send(JSON.stringify({ t: `${inviteKind}:${yes ? 'accept' : 'decline'}` }));
+  const now = Date.now();
+  for (const [kind, invite] of pendingInvites) if (invite.until <= now) pendingInvites.delete(kind);
+  const entry = [...pendingInvites.entries()].at(-1);
+  const box = document.getElementById('invite');
+  if (!entry) { inviteKind = null; box.style.display = 'none'; return; }
+  const [kind, invite] = entry; inviteKind = kind;
+  document.getElementById('inviteText').innerHTML = INVITE_TEXT[kind](escapeHtml(invite.name));
+  document.getElementById('inviteSub').textContent = `Expires in ${Math.ceil((invite.until - now) / 1000)}s`;
+  box.style.display = 'block';
+  showInvite._t = setInterval(renderInvite, 1000);
+}
+function showInvite(m, kind) {
+  if (m.expired) pendingInvites.delete(kind);
+  else { pendingInvites.delete(kind); pendingInvites.set(kind, { name: m.name, until: Date.now() + m.seconds * 1000 }); }
+  renderInvite();
+}
+function answerInvite(yes) {
+  const kind = inviteKind;
+  if (!kind) return;
+  const invite = pendingInvites.get(kind);
+  pendingInvites.delete(kind); renderInvite();
+  if (invite && invite.until > Date.now()) ws?.send(JSON.stringify({ t: `${kind}:${yes ? 'accept' : 'decline'}` }));
 }
 // ---------------------------------------------------------------------------
 // Trading. The server owns both offers and holds the goods while they are on
@@ -10994,13 +11121,17 @@ function updateHudFromSnapshot(snap) {
     cb.querySelector('i').style.transform = `scaleX(${Math.min(1, (performance.now() - castInfo.start) / 1000 / castInfo.dur)})`;
   } else { cb.style.display = 'none'; castInfo = null; }
   if (me.gold != null && bag.gold !== me.gold) { bag.gold = me.gold; setBagGold(); }
-  if (me.xpNext) {
-    const pct = Math.max(0, Math.min(1, me.xp / me.xpNext));
-    document.getElementById('xpfill').style.transform = `scaleX(${pct})`;
-    document.getElementById('xptext').textContent = `XP ${me.xp} / ${me.xpNext}`;
-  }
+  renderClassXp(me);
   if (!me.alive && death.style.display !== 'flex') showDeath();
   if (me.alive && death.style.display === 'flex') hideDeath();
+}
+
+function renderClassXp(me) {
+  const capped = me.classMaxLevel != null && me.level >= me.classMaxLevel;
+  if (!capped && !(me.xpNext > 0)) return;
+  const pct = capped ? 1 : Math.max(0, Math.min(1, me.xp / me.xpNext));
+  document.getElementById('xpfill').style.transform = `scaleX(${pct})`;
+  document.getElementById('xptext').textContent = capped ? `Level ${me.classMaxLevel} · Alpha cap` : `XP ${me.xp} / ${me.xpNext}`;
 }
 
 // XP + gold come via events (server-authoritative running totals)
@@ -11509,11 +11640,12 @@ function renderSkillWindow() {
   const cook = skills.cooking || { level: 1, into: 0, next: 1 };
   const med = skills.meditation || { level: 1, xp: 0, next: 1 };
   // The class is the combat "skill": one card, its level and xp.
-  const cpct = Math.max(0, Math.min(1, (c.into || 0) / (c.next || 1)));
+  const classCapped = c.maxLevel != null && c.level >= c.maxLevel;
+  const cpct = classCapped ? 1 : Math.max(0, Math.min(1, (c.into || 0) / (c.next || 1)));
   document.getElementById('skillStyles').innerHTML =
     `<div class="classcard"><div class="top">${c.icon && /[.\/]/.test(c.icon) ? `<img class="em" src="${c.icon}" alt="">` : `<span class="em">${c.icon || '⚔️'}</span>`}<span class="nm">${escapeHtml(c.name)}</span><b>${c.level}</b></div>` +
     `<div class="bar"><i style="transform:scaleX(${cpct})"></i></div>` +
-    `<div class="sub">${Math.floor(c.xp || 0).toLocaleString()} xp · ${(c.next === null || c.next == null) ? 'max' : ((c.next - (c.into || 0)).toLocaleString() + ' to next')}${c.desc ? ' · <i>' + escapeHtml(c.desc) + '</i>' : ''}</div></div>`;
+    `<div class="sub">${Math.floor(c.xp || 0).toLocaleString()} xp · ${classCapped ? ('alpha cap ' + c.maxLevel) : (c.next === null || c.next == null) ? 'max' : ((c.next - (c.into || 0)).toLocaleString() + ' to next')}${c.desc ? ' · <i>' + escapeHtml(c.desc) + '</i>' : ''}</div></div>`;
   grid.innerHTML =
     cell('⛏️', 'Mining', m.level, m.into, m.next, m.pick ? m.pick.replace(' Pickaxe', '') : 'no pickaxe') +
     cell('🎣', 'Fishing', fish.level, fish.into, fish.next, fish.rod ? fish.rod.replace(' Rod', '') : 'no rod') +
@@ -11524,14 +11656,14 @@ function renderSkillWindow() {
   document.getElementById('skillTotal').innerHTML = `Total level <b>${total}</b>`;
 }
 
-// ---- Action bar: six assignable slots (keys 1-6) fed from the class spellbook ----
+// ---- Action bar: eight assignable slots (keys 1-8) fed from the class spellbook ----
 let abilities = [], abilityClass = null, abilityResource = 'Rage', gcdUntil = 0;
 let selfBuffs = [];   // buff ids currently on the player (drives proc highlighting)
 let selfStam = 0, selfMomentum = 0, buffList = [], castInfo = null;
 let barSlots = [null, null, null, null, null, null, null, null];   // ability ids per slot (keys 1-8)
 let queuedId = null;                                   // the press waiting on the global cooldown
 let assignId = null;                                   // spellbook pick waiting for a slot
-const iconFor_ab = (id) => `ui/${(abilityClass && abilityClass.clsId) || 'fighter'}/icons/${id}.png`;
+const iconFor_ab = (id) => id === 'brace' ? 'ui/fighter/emblem.png' : `ui/${(abilityClass && abilityClass.clsId) || 'fighter'}/icons/${id}.png`;
 function barKey() { return 'bk.bar.' + ((abilityClass && abilityClass.clsId) || 'fighter'); }
 function loadBar() { try { const v = JSON.parse(localStorage.getItem(barKey()) || 'null'); if (Array.isArray(v)) barSlots = [...v, null, null].slice(0, 8); } catch (e) {} }
 function saveBar() { try { localStorage.setItem(barKey(), JSON.stringify(barSlots)); } catch (e) {} }
@@ -11621,7 +11753,7 @@ function renderMomentum() {
   const el = document.getElementById('momentum'); if (!el) return;
   el.innerHTML = [0, 1, 2, 3, 4].map(i => `<i class="${i < selfMomentum ? 'on' : ''}" title="Momentum ${selfMomentum}/5"></i>`).join('');
 }
-const BUFF_LABEL = { rushing_force: 'Rushing Force', weapon_flow: 'Weapon Flow', savage_watcher: 'Savage Watch', savage: 'Savage Momentum', bloodrush: 'Bloodrush',
+const BUFF_LABEL = { brace: 'Brace · 25% less direct damage', rushing_force: 'Rushing Force', weapon_flow: 'Weapon Flow', savage_watcher: 'Savage Watch', savage: 'Savage Momentum', bloodrush: 'Bloodrush',
   footwork: 'Footwork', berserkers_roar: "Berserker's Roar", reckless_exposure: 'Exposed', riposte_ready: 'Riposte Ready',
   renewing_prayer: 'Renewing Prayer', holy_ward: 'Holy Ward', blessed_barrier: 'Blessed Barrier', prayer_of_mending: 'Prayer of Mending', undead_ward: 'Undead Ward',
   purified_soul: 'Purified Soul', divine_intervention: 'Divine Intervention', di_mend: 'Intervention Mend', guardian_prayer: 'Guardian Prayer', revival_sickness: 'Revival Sickness', avatar_of_mercy: 'Avatar of Mercy',
@@ -11642,23 +11774,192 @@ function toggleSpellbook(force) {
   if (!spellbookOpen) assignId = null;
   renderSpellbook();
 }
+let passiveLoadout = null;
+let passiveRequestTimer = null;
+let passiveRequestId = null;
+let passiveRequestSequence = 0;
+let passiveNotice = '';
+let passivePickerSlot = null;
+function clearPassiveLoadout() {
+  if (passiveRequestTimer != null) clearTimeout(passiveRequestTimer);
+  passiveRequestTimer = null; passiveRequestId = null; passiveLoadout = null; passiveNotice = '';
+  closePassivePicker(false);
+}
+function receivePassiveLoadout(m) {
+  passiveLoadout = { catalogue: Array.isArray(m.catalogue) ? m.catalogue : [], equipped: Array.isArray(m.equipped) ? m.equipped : [], limit: Number.isInteger(m.limit) ? Math.max(0, Math.min(3, m.limit)) : 0, slotLevels: [5, 15, 30], locked: !!m.locked, reason: m.reason || '' };
+  if (passiveLoadout.locked || passivePickerSlot >= passiveLoadout.limit) passivePickerSlot = null;
+  renderPassiveViews();
+}
+function finishPassiveLoadout(m) {
+  if (passiveRequestTimer == null || m.requestId !== passiveRequestId) return;
+  clearTimeout(passiveRequestTimer); passiveRequestTimer = null; passiveRequestId = null;
+  passiveNotice = m.ok ? 'Passive loadout saved.' : (m.reason || 'Could not change passives. Try again.');
+  if (m.ok) passivePickerSlot = null;
+  renderPassiveViews();
+}
+function requestPassiveToggle(id) {
+  if (!passiveLoadout || passiveRequestTimer != null || passiveLoadout.locked) return;
+  const item = passiveLoadout.catalogue.find(p => p.id === id);
+  if (!item || item.available === false) return;
+  const equipped = passiveLoadout.equipped;
+  const ids = equipped.includes(id) ? equipped.filter(x => x !== id) : [...equipped, id];
+  requestPassiveSelection(ids);
+}
+function requestPassiveSelection(ids) {
+  if (!passiveLoadout || passiveRequestTimer != null || passiveLoadout.locked) return;
+  if (!Array.isArray(ids) || ids.length > passiveLoadout.limit || new Set(ids).size !== ids.length) { passiveNotice = passiveLoadout.limit ? `Unequip a passive before choosing another. You have ${passiveLoadout.limit} unlocked slot(s).` : 'Your first passive slot unlocks at level 5.'; renderPassiveViews(); return; }
+  if (ids.some(id => !passiveLoadout.catalogue.some(p => p.id === id && p.available !== false))) return;
+  if (ids.join('|') === passiveLoadout.equipped.join('|')) { closePassivePicker(); return; }
+  if (ws?.readyState !== WebSocket.OPEN) { passiveNotice = 'Not connected. Reconnect before changing passives.'; renderPassiveViews(); return; }
+  passiveNotice = '';
+  passiveRequestId = `passive-${++passiveRequestSequence}`;
+  passiveRequestTimer = setTimeout(() => {
+    passiveRequestTimer = null; passiveRequestId = null; passiveNotice = 'Change was not confirmed. Your last confirmed loadout is shown.'; renderPassiveViews();
+  }, 10000);
+  try { ws.send(JSON.stringify({ t: 'passives:set', ids, requestId: passiveRequestId })); }
+  catch (_) { clearTimeout(passiveRequestTimer); passiveRequestTimer = null; passiveRequestId = null; passiveNotice = 'Could not send the change. Try again after reconnecting.'; }
+  renderPassiveViews();
+}
+function renderPassiveViews() {
+  renderPassiveHotbar(); renderSpellbook();
+}
+function closePassivePicker(restoreFocus = true) {
+  const slot = passivePickerSlot;
+  passivePickerSlot = null;
+  renderPassiveHotbar();
+  if (restoreFocus && slot != null) document.querySelector(`[data-passive-slot="${slot}"]`)?.focus();
+}
+function openPassivePicker(slot) {
+  if (!passiveLoadout || passiveLoadout.locked || passiveRequestTimer != null || !Number.isInteger(slot) || slot < 0 || slot >= passiveLoadout.limit) return;
+  if (passivePickerSlot === slot) { closePassivePicker(); return; }
+  passivePickerSlot = slot;
+  resetGameplayInput(); renderPassiveHotbar();
+  document.querySelector('#passivePicker button:not(:disabled)')?.focus();
+}
+function choosePassiveForSlot(id) {
+  if (passivePickerSlot == null || !passiveLoadout || passivePickerSlot >= passiveLoadout.limit || passiveLoadout.locked || passiveRequestTimer != null) return;
+  const ids = [...passiveLoadout.equipped], slot = Math.min(passivePickerSlot, ids.length);
+  if (id == null) { if (slot < ids.length) ids.splice(slot, 1); }
+  else {
+    if (ids.includes(id) && ids[slot] !== id) return;
+    const item = passiveLoadout.catalogue.find(p => p.id === id);
+    if (!item || item.available === false) return;
+    ids[slot] = id;
+  }
+  requestPassiveSelection(ids);
+}
+function dismissPassivePickerKey(e) {
+  if (e.key !== 'Escape' || passivePickerSlot == null) return false;
+  e.preventDefault(); e.stopPropagation(); closePassivePicker(); return true;
+}
+function dismissPassivePickerOutside(e) {
+  if (passivePickerSlot == null || e.target.closest?.('#passivebar')) return;
+  // Consume the dismissal click so it cannot move/attack in the world behind it.
+  e.preventDefault(); e.stopPropagation(); resetGameplayInput(); closePassivePicker(false);
+}
+function passiveHotbarMarkup() {
+  const data = passiveLoadout, pending = passiveRequestTimer != null;
+  const icon = `ui/${['fighter', 'cleric', 'bard'].includes(abilityClass?.clsId) ? abilityClass.clsId : 'fighter'}/emblem.png`;
+  return Array.from({ length: 3 }, (_, i) => {
+    const item = data?.catalogue.find(p => p.id === data.equipped[i]);
+    const levelLocked = !!data && i >= data.limit, unlockLevel = (data?.slotLevels || [5, 15, 30])[i];
+    const text = levelLocked ? `Unlocks at level ${unlockLevel}` : item ? item.name : 'Choose passive';
+    const locked = !data || levelLocked || data.locked || pending;
+    return `<button type="button" class="passive-hot-slot${item ? '' : ' empty'}" data-passive-slot="${i}" aria-label="Passive slot ${i + 1}: ${escapeHtml(text)}" aria-haspopup="dialog" aria-controls="passivePicker" aria-expanded="${passivePickerSlot === i}" title="${escapeHtml(levelLocked ? `Passive slot ${i + 1} unlocks at level ${unlockLevel}` : data?.locked ? data.reason : item ? item.desc : 'Click to equip a passive')}"${locked ? ' disabled' : ''}><img src="${icon}" alt=""><span>${escapeHtml(text)}</span></button>`;
+  }).join('');
+}
+function passivePickerMarkup() {
+  if (passivePickerSlot == null || !passiveLoadout || passivePickerSlot >= passiveLoadout.limit) return '';
+  const { catalogue, equipped, locked } = passiveLoadout, pending = passiveRequestTimer != null;
+  const slot = Math.min(passivePickerSlot, equipped.length), current = equipped[slot];
+  const choices = catalogue.map(p => {
+    const elsewhere = equipped.includes(p.id) && p.id !== current;
+    const disabled = pending || locked || p.available === false || elsewhere;
+    return `<button type="button" class="sbpassive" data-passive-choice="${escapeHtml(p.id)}" aria-pressed="${p.id === current}"${disabled ? ' disabled' : ''}><b>${escapeHtml(p.name)} · Level ${p.level}${p.id === current ? ' · Current' : elsewhere ? ' · Already equipped' : ''}</b><span>${escapeHtml(p.desc || '')}</span>${p.available === false ? `<span>${escapeHtml(p.unavailableReason || p.reason || 'Not available yet.')}</span>` : ''}</button>`;
+  }).join('');
+  return `<h4>Choose passive · Slot ${slot + 1}</h4>${choices}<p>Outside combat only. Changing passives ends spells and songs you placed, including wards, and resets Momentum. Empty slots stay together.</p><div class="passive-picker-actions"><button type="button" data-passive-remove${!current || pending || locked ? ' disabled' : ''}>Unequip</button><button type="button" data-passive-close>Close</button></div>`;
+}
+function renderPassiveHotbar() {
+  const slots = document.getElementById('passiveSlots'), picker = document.getElementById('passivePicker'), status = document.getElementById('passiveHotStatus');
+  if (!slots || !picker || !status) return;
+  const active = document.activeElement, focusSlot = active?.dataset?.passiveSlot, focusChoice = active?.dataset?.passiveChoice;
+  if (passiveLoadout?.locked || (passiveLoadout && passivePickerSlot >= passiveLoadout.limit)) passivePickerSlot = null;
+  slots.innerHTML = passiveHotbarMarkup();
+  slots.querySelectorAll('[data-passive-slot]').forEach(b => { b.onclick = () => openPassivePicker(+b.dataset.passiveSlot); if (b.dataset.passiveSlot === focusSlot && !b.disabled) b.focus(); });
+  picker.hidden = passivePickerSlot == null; picker.innerHTML = passivePickerMarkup();
+  picker.querySelectorAll('[data-passive-choice]').forEach(b => { b.onclick = () => choosePassiveForSlot(b.dataset.passiveChoice); if (b.dataset.passiveChoice === focusChoice && !b.disabled) b.focus(); });
+  const remove = picker.querySelector('[data-passive-remove]'), close = picker.querySelector('[data-passive-close]');
+  if (remove) remove.onclick = () => choosePassiveForSlot(null);
+  if (close) close.onclick = () => closePassivePicker();
+  status.textContent = !passiveLoadout ? 'Passives loading…' : passiveRequestTimer != null ? 'Saving passives…' : passiveLoadout.locked ? passiveLoadout.reason || 'Locked in combat' : passiveNotice || (passiveLoadout.limit ? 'Passives · click a slot to change' : 'First passive slot unlocks at level 5');
+}
+
+function passiveLoadoutMarkup() {
+  if (!passiveLoadout) return '<section class="sbpassives"><h4>Passives</h4><p>Waiting for your passive loadout…</p></section>';
+  const { catalogue, equipped, locked, reason, limit } = passiveLoadout;
+  const pending = passiveRequestTimer != null;
+  const slots = Array.from({ length: 3 }, (_, i) => {
+    const item = catalogue.find(p => p.id === equipped[i]);
+    return `<span class="sbpassive-slot">${escapeHtml(i >= limit ? `Unlocks at level ${(passiveLoadout.slotLevels || [5, 15, 30])[i]}` : item ? item.name : 'Empty slot')}</span>`;
+  }).join('');
+  const status = pending ? 'Saving your loadout…' : locked ? (reason || 'Passives can only be changed outside combat.') : passiveNotice || (limit ? `Choose up to ${limit}. Changes are allowed only outside combat. Slots unlock at levels 5, 15 and 30.` : 'Your first passive and slot unlock at level 5.');
+  const choices = catalogue.map(p => {
+    const selected = equipped.includes(p.id), unavailable = p.available === false;
+    const disabled = pending || locked || unavailable || (!selected && equipped.length >= limit);
+    return `<button type="button" class="sbpassive" data-passive-id="${escapeHtml(p.id)}" aria-pressed="${selected}"${disabled ? ' disabled' : ''}><b>${escapeHtml(p.name)} · Level ${p.level}${selected ? ' · Equipped' : ''}</b><span>${escapeHtml(p.desc || '')}</span>${unavailable ? `<span>${escapeHtml(p.unavailableReason || p.reason || 'Not available yet.')}</span>` : ''}</button>`;
+  }).join('');
+  return `<section class="sbpassives" aria-label="Passive loadout"><h4>Passives · ${equipped.length}/${limit} equipped</h4><div class="sbpassive-slots" aria-label="Equipped passive slots">${slots}</div><p role="status" aria-live="polite">${escapeHtml(status)}</p><div class="sbpassive-grid">${choices}</div><p>Changing passives ends spells and songs you placed, including wards, and resets Momentum. It never restores health or resources.</p></section>`;
+}
+function classGuide(clsId, open = false) {
+  const guides = {
+    fighter: [
+      'Fight to build Rage, then spend it on heavy attacks. Your Rage bar holds 100; save a full bar for Perfect Masterstroke.',
+      'Learn Momentum from your trainer at level 5, then equip it to build stacks with heavy attacks. Crushing Blow strengthens Groundbreaker; Armor Splitter strengthens Perfect Masterstroke, which spends your Momentum.',
+      'Watch for Heavy Riposte after an enemy misses, and Final Swing below 30% enemy health. Reckless Strike and Bloodrush increase the damage you take.'
+    ],
+    cleric: [
+      'Select an ally for targeted healing and protection. With no friendly target, these spells target you. Stay in range; moving interrupts cast-time spells.',
+      'Use Minor Heal for smaller wounds, Greater Heal when you have time, and Radiant Touch for an urgent heal. Holy Ward absorbs damage before it reaches health.',
+      'Cleanse removes poison, burn, bleed or snare. Divine Intervention protects against a lethal blow; Radiant Revival raises a nearby fallen ally only out of combat.'
+    ],
+    bard: [
+      'Keep two major songs active. Starting a third removes your oldest song; recasting a song refreshes it. Stay near allies when singing to include them.',
+      'Pair Song of Mending with Mana Melody for recovery, or Hymn of Courage with Battle Hymn for offense. Chorus of War replaces Hymn of Courage.',
+      'Use sonic debuffs before Quick Note for its damage bonus. Echoing Verse adds charges to your next major song; Songweave combines your last two songs at half strength.'
+    ]
+  };
+  const tips = guides[clsId];
+  if (!tips) return '';
+  return `<details id="sbClassGuide" class="sbguide"${open ? ' open' : ''}><summary>Class guide · playstyle and combinations</summary><ul>${tips.map(t => `<li>${escapeHtml(t)}</li>`).join('')}</ul><p class="training">Buy later abilities through level 20 from your class trainer. Reaching the level makes an ability available to buy; it does not teach it automatically.</p></details>`;
+}
 function renderSpellbook() {
   if (!spellbookOpen || !abilityClass) return;
   const em = document.getElementById('sbEmblem'); em.src = abilityClass.icon || ''; em.style.display = abilityClass.icon ? 'block' : 'none';
   if (abilityClass.background) document.getElementById('spellbook').style.backgroundImage = `url('${abilityClass.background}')`;
   document.getElementById('sbTitle').textContent = abilityClass.cls || 'Class';
   const me = selfEnt();
-  const knownList = abilities.filter(a => a.known);
-  document.getElementById('sbSub').textContent = `Level ${me ? me.level : 1} · ${knownList.length}/${abilities.length} abilities learned · uses ${abilityResource}`;
+  const knownList = abilities.filter(a => a.known && !a.passive);
+  const activeList = abilities.filter(a => !a.passive), passiveList = abilities.filter(a => a.passive);
+  document.getElementById('sbSub').textContent = `Level ${me ? me.level : 1} · ${activeList.filter(a => a.known).length}/${activeList.length} active learned · ${passiveLoadout ? passiveLoadout.equipped.length : 0}/3 passives equipped · uses ${abilityResource}`;
   const list = document.getElementById('sbList');
-  const next = abilities.filter(a => !a.known).sort((a, b) => a.level - b.level)[0];
-  list.innerHTML = (knownList.length ? '' : '') + knownList.map(a => {
+  const next = abilities.filter(a => !a.known && !a.passive).sort((a, b) => a.level - b.level)[0];
+  const passiveFocus = document.activeElement?.dataset?.passiveId;
+  const scrollTop = list.scrollTop;
+  const guideOpen = !!list.querySelector('#sbClassGuide')?.open;
+  const guideFocused = document.activeElement === list.querySelector('#sbClassGuide > summary');
+  list.innerHTML = classGuide(abilityClass.clsId, guideOpen) + knownList.map(a => {
     const slot = barSlots.indexOf(a.id);
     const meta = a.passive ? 'Passive' : [`Lv ${a.level}`, a.cost ? `${a.cost} ${abilityResource.toLowerCase()}` : null, a.cd ? `${a.cd}s cd` : null, a.kind === 'channel' ? 'channel' : null].filter(Boolean).join(' · ');
     return `<div class="sbab${a.locked ? ' locked' : ''}${a.passive ? ' passive' : ''}${assignId === a.id ? ' sel' : ''}" data-id="${a.id}" draggable="${!a.locked && !a.passive}">` +
       `<img src="${iconFor_ab(a.id)}" alt=""><div><div class="nm">${escapeHtml(a.name)}${a.locked ? ` <span class="meta">(level ${a.level})</span>` : ''}</div><div class="meta">${meta}</div><div class="ds">${escapeHtml(a.desc)}</div></div>` +
       (slot >= 0 ? `<span class="slotno">${slot + 1}</span>` : '') + `</div>`;
-  }).join('') + (next ? `<div class="sbnext">Next to learn: <b>${escapeHtml(next.name)}</b> (level ${next.level}, ${next.price.toLocaleString()} gp) — see your class trainer.</div>` : '');
+  }).join('') + passiveLoadoutMarkup() + (next ? `<div class="sbnext">Next to learn: <b>${escapeHtml(next.name)}</b> (level ${next.level}, ${next.price.toLocaleString()} gp) — see your class trainer.</div>` : '');
+  if (guideFocused) list.querySelector('#sbClassGuide > summary')?.focus();
+  list.querySelectorAll('[data-passive-id]').forEach(button => {
+    button.onclick = () => requestPassiveToggle(button.dataset.passiveId);
+    if (button.dataset.passiveId === passiveFocus) button.focus();
+  });
+  list.scrollTop = scrollTop;
   list.querySelectorAll('.sbab').forEach(d => {
     const a = abilityById(d.dataset.id); if (!a || a.locked || a.passive) return;
     d.onclick = () => { assignId = assignId === a.id ? null : a.id; renderSpellbook(); };
@@ -11879,7 +12180,14 @@ function renderQuestLog() {
 // --- ESC menu (settings + controls) ---
 const settingsEl = document.getElementById('settings');
 function openSettings() { settingsEl.classList.add('show'); }
-function closeSettings() { settingsEl.classList.remove('show'); }
+function closeSettings() {
+  settingsEl.classList.remove('show');
+  if (settingsEl.contains(document.activeElement)) document.activeElement.blur();
+}
+function dismissSettingsKey(e) {
+  if (e.key !== 'Escape' || !settingsEl.classList.contains('show')) return false;
+  e.preventDefault(); closeSettings(); resetGameplayInput(); return true;
+}
 let showSplats = true; // toggled in the menu; showHit respects it
 document.getElementById('resumeBtn').onclick = closeSettings;
 // Logging out is refused for 30 s after any blow given or taken; the menu
@@ -11964,7 +12272,15 @@ function openDialogue(npcId) {
     : mine.length ? mine[0].text
     : (rec.def.idle || '…');
   playScript(script, speaker, fallback);
-
+  renderDialogueActions();
+  dialogueEl.style.display = 'block';
+}
+function renderDialogueActions() {
+  const npcId = dialogueNpc, rec = npcMeshes.get(npcId);
+  if (!rec) return;
+  const offers = questData.available.filter(q => q.giver === npcId);
+  const mine = questData.active.filter(q => q.giver === npcId);
+  const ready = mine.filter(q => q.complete);
   let html = '';
   for (const q of ready) {
     html += `<div class="d-quest"><div class="q-name">${escapeHtml(q.name)}</div>
@@ -12013,18 +12329,41 @@ function openDialogue(npcId) {
     b.onclick = () => ws?.send(JSON.stringify({ t: 'sell', item: b.dataset.sell, all: b.dataset.all === '1' }));
   });
   dialogueEl.querySelectorAll('[data-accept]').forEach(b => {
-    b.onclick = () => { ws?.send(JSON.stringify({ t: 'questaccept', id: b.dataset.accept })); b.disabled = true; b.textContent = 'Accepted'; };
+    const id = b.dataset.accept;
+    b.disabled = pendingQuestAccepts.has(id); b.textContent = b.disabled ? 'Accepting…' : 'Accept';
+    b.onclick = () => requestQuestAccept(id);
   });
   dialogueEl.querySelectorAll('[data-turnin]').forEach(b => {
     b.onclick = () => { ws?.send(JSON.stringify({ t: 'questturnin', id: b.dataset.turnin })); b.disabled = true; };
   });
   dialogueEl.style.display = 'block';
 }
-function closeDialogue() { dialogueEl.style.display = 'none'; dialogueNpc = null; }
+const pendingQuestAccepts = new Map();
+function clearPendingQuestAccepts() {
+  for (const timer of pendingQuestAccepts.values()) clearTimeout(timer);
+  pendingQuestAccepts.clear();
+}
+function requestQuestAccept(id) {
+  if (pendingQuestAccepts.has(id)) return;
+  if (ws?.readyState !== WebSocket.OPEN) { addChat('', 'Not connected. Try accepting the quest again after reconnecting.', true); return; }
+  const timer = setTimeout(() => {
+    pendingQuestAccepts.delete(id); refreshDialogue();
+    addChat('', 'Quest acceptance was not confirmed. Please try again.', true);
+  }, 10000);
+  pendingQuestAccepts.set(id, timer);
+  ws.send(JSON.stringify({ t: 'questaccept', id })); refreshDialogue();
+}
+function finishQuestAccept(m) {
+  if (!pendingQuestAccepts.has(m.id)) return;
+  clearTimeout(pendingQuestAccepts.get(m.id)); pendingQuestAccepts.delete(m.id);
+  refreshDialogue();
+  addChat('', m.ok ? 'Quest accepted.' : (m.reason || 'Could not accept that quest. Please try again.'), true);
+}
+function closeDialogue() { dialogueEl.style.display = 'none'; dialogueNpc = null; scriptState = null; }
 document.getElementById('dClose').onclick = closeDialogue;
 
 // Redraw an open dialogue when the server sends new quest state.
-function refreshDialogue() { if (dialogueNpc) openDialogue(dialogueNpc); }
+function refreshDialogue() { if (dialogueNpc) renderDialogueActions(); }
 
 // ---- ! / ? markers floating over quest givers ----
 const npcMarkLayer = document.getElementById('npcmarks');
@@ -13067,10 +13406,17 @@ function currentLook() {
 }
 // Class pick on the login card; remembered like the look.
 try { const c = localStorage.getItem('bk.cls'); if (['fighter', 'cleric', 'bard'].includes(c)) pickedClass = c; } catch (e) {}
-document.querySelectorAll('#classRow .classopt').forEach(d => {
-  d.classList.toggle('sel', d.dataset.cls === pickedClass);
-  d.onclick = () => { pickedClass = d.dataset.cls; document.querySelectorAll('#classRow .classopt').forEach(x => x.classList.toggle('sel', x === d)); if (CLASS_OUTFIT[pickedClass]) outfitSel.value = CLASS_OUTFIT[pickedClass]; try { localStorage.setItem('bk.cls', pickedClass); } catch (e) {} };
-});
+function selectClass(cls, changeOutfit = true) {
+  pickedClass = cls;
+  document.querySelectorAll('#classRow .classopt').forEach(x => {
+    const selected = x.dataset.cls === pickedClass;
+    x.classList.toggle('sel', selected); x.setAttribute('aria-pressed', String(selected));
+  });
+  if (changeOutfit && CLASS_OUTFIT[pickedClass]) outfitSel.value = CLASS_OUTFIT[pickedClass];
+  try { localStorage.setItem('bk.cls', pickedClass); } catch (e) {}
+}
+selectClass(pickedClass, false);
+document.querySelectorAll('#classRow .classopt').forEach(d => { d.onclick = () => selectClass(d.dataset.cls); });
 setInterval(() => { if (!zone) music.update(0.1); }, 100); // fades tick on the login screen too (the render loop isn't running yet)
 // Turned away at the door: say why, put the button back, and let them try
 // again rather than leaving a dead screen.

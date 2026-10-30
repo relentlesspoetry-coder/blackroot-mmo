@@ -1,3 +1,4 @@
+import * as passiveHelpers from '../passives.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -11,7 +12,7 @@ function setup() {
   const a = player('Alice',1), b = player('Bobby',2), escrow = new Map();
   let writes=0, encodes=0;
   const store = {state:{characters:{}},commit(state){ writes++; this.state=state; }};
-  const c=vm.createContext({ players:new Map([[1,a],[2,b]]),worldStore:store,graves:new Map(),groundItems:new Map(),
+  const c=vm.createContext({...passiveHelpers, players:new Map([[1,a],[2,b]]),worldStore:store,graves:new Map(),groundItems:new Map(),
     tradeOf:p=>escrow.get(p.id),fogToB64:()=>{encodes++;return 'encoded';},SAVE_EVERY:45,
     lastOwnership:'',lastCheckpoint:0,checkpointRequested:false });
   vm.runInContext(['serialisePlayer','durablePlayer','ownershipOf','commitWorld','savePlayer'].map(fn).join('\n'),c);

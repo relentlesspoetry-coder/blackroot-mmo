@@ -22,7 +22,9 @@ export function maxHpForLevel(level) { return 80 + (level - 1) * 28; }
 // 1..99 (83 xp to level 2, 1,154 to 10, 13,363 to 30, 101,333 to 50,
 // 13,034,431 to 99). Skills bank a running TOTAL of xp; level, progress into
 // the level and the cost of the next one are all read off the table.
-export const MAX_LEVEL = 99;
+export const MAX_LEVEL = 99; // Independent gathering/recovery skills retain the full curve.
+export const MAX_CLASS_LEVEL = 40; // Current alpha character progression cap.
+export function clampClassLevel(level) { return Math.max(1, Math.min(MAX_CLASS_LEVEL, Math.floor(Number(level) || 1))); }
 export const XP_TABLE = (() => {           // XP_TABLE[level] = total xp at which that level is reached
   const t = [0, 0]; let pts = 0;
   for (let l = 1; l < MAX_LEVEL; l++) { pts += Math.floor(l + 300 * Math.pow(2, l / 7)); t[l + 1] = Math.floor(pts / 4); }
@@ -31,6 +33,8 @@ export const XP_TABLE = (() => {           // XP_TABLE[level] = total xp at whic
 export function xpTotalForLevel(level) { return XP_TABLE[Math.max(1, Math.min(MAX_LEVEL, level))]; }
 export function xpForLevel(level) { return level >= MAX_LEVEL ? Infinity : XP_TABLE[level + 1] - XP_TABLE[level]; } // xp from this level to the next
 export function levelForXp(total) { let l = 1; while (l < MAX_LEVEL && total >= XP_TABLE[l + 1]) l++; return l; }
+export function classLevelForXp(total) { return Math.min(MAX_CLASS_LEVEL, levelForXp(total)); }
+export function classXpForLevel(level) { return level >= MAX_CLASS_LEVEL ? null : xpForLevel(level); }
 export function progressForXp(total) { const level = levelForXp(total); return { level, into: total - XP_TABLE[level], next: xpForLevel(level) }; }
 
 // What a kill is worth once you have outgrown it. A creature at your level --
@@ -63,7 +67,7 @@ export const TICK = 0.6;               // one game tick, seconds (OSRS)
 export const DEFAULT_ATTACK_SPEED = 4; // ticks between swings for a typical weapon
 // ---------------------------------------------------------------------------
 // Classes. There are no separate attack/strength/defence/hitpoints skills:
-// a character has one class and one class level (the OSRS 1..99 curve), and
+// a character has one class and one class level (currently capped at 40), and
 // the class says what that level is worth in the OSRS combat rolls below —
 // effective attack / strength / defence and the HP pool — plus which
 // abilities sit on the action bar and when they unlock.
@@ -100,6 +104,8 @@ export const CLASSES = {
         desc: 'Charge to a target within 20m. Your next melee ability deals +25% damage.' },
       { id: 'crushing_blow', name: 'Crushing Blow', level: 4, cost: 26, cd: 10, kind: 'melee', flat: 24, wd: 1.35, momentum: 1, heavy: true, debuff: { id: 'crushed_armor', dur: 12 },
         desc: 'Smash the enemy, reducing its armour by 8% for 12s. Generates Momentum.' },
+      { id: 'brace', name: 'Brace', level: 5, cost: 20, cd: 30, kind: 'self', offGcd: true, buff: { id: 'brace', dur: 4, directDr: 0.25 },
+        desc: 'Brace for impact: take 25% less direct damage for 4s. Does not reduce damage over time. Off the global cooldown; cannot interrupt your own cast or channel.' },
       { id: 'momentum', name: 'Momentum', level: 5, passive: true,
         desc: 'Passive. Heavy attacks build Momentum (max 5, 5 min): +2% attack speed per stack. Some abilities spend it.' },
       { id: 'groundbreaker', name: 'Groundbreaker', level: 6, cost: 38, cd: 18, kind: 'aoe', radius: 6, cap: 5, flat: 34, wd: 1.2, stagger: 0.75, interrupt: true, momentumIf2: 1, heavy: true,
@@ -124,13 +130,13 @@ export const CLASSES = {
         desc: '+18% melee damage and +12% crit chance for 10 melee abilities. You take +8% damage while it lasts.' },
       { id: 'shatter_guard', name: 'Shatter Guard', level: 16, cost: 92, cd: 30, kind: 'melee', flat: 70, wd: 1.75, momentum: 1, interrupt: true,
         desc: 'A heavy impact that breaks a defensive shield or guard if the enemy has one (+30% damage when it does).' },
-      { id: 'titan_chop', name: 'Titan Chop', level: 17, cost: 110, cd: 45, kind: 'melee', windup: 1, flat: 100, wd: 3.0, momentum: 1, heavy: true,
+      { id: 'titan_chop', name: 'Titan Chop', level: 17, cost: 95, cd: 45, kind: 'melee', windup: 1, flat: 100, wd: 3.0, momentum: 1, heavy: true,
         desc: 'A 1s wind-up overhead strike for massive damage. Crits deal +20% at 3+ Momentum.' },
       { id: 'unstoppable_footwork', name: 'Unstoppable Footwork', level: 18, cost: 70, cd: 90, kind: 'self', offGcd: true, buff: { id: 'footwork', dur: 300, move: 0.10 },
         desc: 'Break free of snares and move 10% faster for 5 min.' },
-      { id: 'berserkers_roar', name: "Berserker's Roar", level: 19, cost: 120, cd: 300, kind: 'self', taunt: 14, buff: { id: 'berserkers_roar', dur: 300, chargeTrigger: 'ability', charges: 8, dmg: 0.15, taken: 0.10, radius: 2 },
+      { id: 'berserkers_roar', name: "Berserker's Roar", level: 19, cost: 100, cd: 300, kind: 'self', taunt: 14, buff: { id: 'berserkers_roar', dur: 300, chargeTrigger: 'ability', charges: 8, dmg: 0.15, taken: 0.10, radius: 2 },
         desc: '+15% melee damage and +2m to cleave radius for 8 melee abilities, and every enemy within 14m turns on you. You take +10% damage.' },
-      { id: 'perfect_masterstroke', name: 'Perfect Masterstroke', level: 20, cost: 160, cd: 120, kind: 'melee', flat: 150, wd: 2.8, spendMomentum: { flat: 30, wd: 0.35 }, heavy: true,
+      { id: 'perfect_masterstroke', name: 'Perfect Masterstroke', level: 20, cost: 100, cd: 120, kind: 'melee', flat: 150, wd: 2.8, spendMomentum: { flat: 30, wd: 0.35 }, heavy: true,
         desc: 'The capstone: spends all Momentum for +30 damage and +35% weapon damage per stack. +15% vs Split Guard. Refunds 50 rage on a kill.' },
     ],
   },
@@ -273,6 +279,7 @@ export function abilityCost(a) { return a.level <= 1 ? 0 : 15 + a.level * a.leve
 export const DEFAULT_CLASS = 'fighter';
 export function classDef(id) { return Object.hasOwn(CLASSES, id) ? CLASSES[id] : CLASSES[DEFAULT_CLASS]; }
 export function classStats(id, level) {
+  level = clampClassLevel(level);
   const c = classDef(id);
   return { atk: c.atk(level), str: c.str(level), def: c.def(level), hp: c.hp(level), rage: c.rage ? c.rage.max : 0, mana: c.mana ? c.mana.max(level) : 0 };
 }
