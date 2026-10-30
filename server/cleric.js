@@ -1,3 +1,4 @@
+import { passiveValue, passiveDirectMult } from './passives.js';
 // Blackroot — the Cleric's spells.
 // The class definition (numbers, costs, cooldowns) lives in balance.js
 // CLASSES.cleric; this is what each spell kind actually does when it lands,
@@ -25,7 +26,7 @@ const evil = (m) => !!(m && m.evil);
 export function costOf(p, a) {
   let c = a.cost || 0;
   const av = buffOn(p, 'avatar_of_mercy'); if (av && HEAL_COST_KINDS.has(a.kind)) c = Math.round(c * (1 - (av.manaOff || 0)));
-  return c;
+  return Math.max(0, Math.round(c * (1 - (HEAL_COST_KINDS.has(a.kind) ? passiveValue(p, 'healingCost') : 0))));
 }
 
 // ---------------------------------------------------------------------------
@@ -81,7 +82,7 @@ export function checkCast(ctx, p, a) {
 // ---------------------------------------------------------------------------
 // How much more (or less) the healer's spells do on this target.
 export function healMult(ctx, by, t) {
-  let k = 1;
+  let k = 1 + passiveValue(by, 'healing');
   if (buffOn(t, 'holy_ward')) k += 0.05;
   const gp = buffOn(t, 'guardian_prayer'); if (gp && gp.by === by.id) k += gp.healIn || 0;
   const sanct = sanctuaryAt(ctx.zoneOf(t), t.x, t.z); if (sanct && sanct.by === by.id) k += sanct.healIn || 0;
@@ -101,6 +102,9 @@ export function healPlayer(ctx, by, t, amount, o = {}) {
   const real = Math.max(0, Math.min(amt, t.maxHp - t.hp));
   t.hp = Math.min(t.maxHp, t.hp + real);
   ctx.broadcast({ t: 'event', kind: 'heal', by: by.id, target: t.id, amount: amt, over: amt - real, crit, spell: o.id || null, tick: !!o.tick });
+  // One effective healing event consumes Blessed Hands: a HoT tick or the
+  // first injured recipient of an AoE counts; overheal and invalid targets do not.
+  if (real > 0 && buffOn(by, 'blessed_hands')) { delete by.buffs.blessed_hands; ctx.sendStatus(by); }
   if (real > 0 && ctx.healThreat) ctx.healThreat(by, t, real);   // a healer is never invisible
   return real;
 }
@@ -108,7 +112,7 @@ function spendMercy(p, a) {
   const av = buffOn(p, 'avatar_of_mercy'); if (!av || !MERCY_KINDS.has(a.kind)) return;
   av.charges--; if (av.charges <= 0) delete p.buffs.avatar_of_mercy;
 }
-function absorbMult(p) { const av = buffOn(p, 'avatar_of_mercy'); return 1 + (av ? av.absorbBonus || 0 : 0); }
+function absorbMult(p) { const av = buffOn(p, 'avatar_of_mercy'); return (1 + (av ? av.absorbBonus || 0 : 0)) * (1 + passiveValue(p, 'absorb')); }
 function alliesNear(ctx, p, x, z, r, exclude) {
   const out = [];
   for (const q of ctx.players.values()) { if (!q.alive || q.zoneId !== p.zoneId || q === exclude) continue; if (dist2(q.x, q.z, x, z) <= r * r) out.push(q); }
@@ -120,12 +124,13 @@ const mostHurt = (list) => list.slice().sort((a, b) => a.hp / a.maxHp - b.hp / b
 // stronger on the undead and the demonic, crits like everything else.
 function holyHit(ctx, p, m, a) {
   const L = p.level;
-  let mult = (1 + (evil(m) ? a.evil || 0 : 0)) * (1 + ctx.dmgBuff(p, false, true));   // Bard songs lift holy damage too
+  let mult = (1 + (evil(m) ? a.evil || 0 : 0)) * (1 + ctx.dmgBuff(p, false, true)) * (1 + passiveValue(p, 'holyDamage'));   // Bard songs lift holy damage too
   const av = buffOn(p, 'avatar_of_mercy'); if (av) mult += av.holyBonus || 0;
   if (buffOn(p, 'revival_sickness')) mult -= 0.15;
   const crit = Math.random() < ctx.critChance(p);
   if (crit) mult *= classDef(p.cls).critMult || 1.5;
   const dmg = Math.max(1, Math.round(a.dmg * spellScale(L) * mult * (0.9 + Math.random() * 0.2)));
+  if (a.interrupt && ctx.interruptMonster) ctx.interruptMonster(m, p);
   ctx.applyHit(p, m, dmg, crit, 'holy');
   return dmg;
 }
@@ -200,9 +205,10 @@ export function castSpell(ctx, p, a) {
       for (const q of ctx.monsters.values()) {
         if (!q.alive || q.zoneId !== p.zoneId || !evil(q) || dist2(q.x, q.z, m.x, m.z) > a.radius * a.radius) continue;
         q.debuffs = q.debuffs || {};
+        if (a.interrupt && ctx.interruptMonster) ctx.interruptMonster(q, p);
         if (q.boss) q.debuffs.turn_weak = 6;                 // bosses shrug it off: a small damage penalty
         else if (q.elite) q.debuffs.turn_weak = a.fear;      // elites: no fear, 15% less damage
-        else { q.debuffs.turned = a.fear; q.targetId = null; ctx.interruptMonster && ctx.interruptMonster(q, p); }
+        else { q.debuffs.turned = a.fear; q.targetId = null; }
         turned++;
       }
       for (const q of alliesNear(ctx, p, m.x, m.z, a.radius + 4)) ctx.addBuff(q, { id: 'undead_ward', dur: a.dur, charges: a.charges });
@@ -307,11 +313,19 @@ export function sanctuaryList(zone) {
   return (zone._sanct || []).map(s => ({ id: s.id, x: +s.x.toFixed(1), z: +s.z.toFixed(1), r: s.r, by: s.by, charges: s.charges, t: Math.round(s.t) }));
 }
 // Prayers and wards take their share of a blow before it reaches health.
-// Direct hits (kind null) spend "protected hit" charges; ticks don't.
+// Direct hits (independent of element / visual kind) spend "protected hit" charges; ticks don't.
 // Returns { dmg, absorbed }.
-export function mitigate(ctx, p, dmg, m, kind) {
-  const direct = !kind; let k = 1, absorbed = 0, changed = false;
-  const spend = (b, key) => { if (!direct) return; b[key]--; if (b[key] <= 0) { delete p.buffs[b.id]; changed = true; } };
+export function braceDamageMult(p, damage = {}) {
+  const brace = buffOn(p, 'brace');
+  return !damage?.isPeriodic && brace ? 1 - brace.directDr : 1;
+}
+export function mitigate(ctx, p, dmg, m, damage = {}) {
+  const direct = !damage?.isPeriodic; let k = 1, absorbed = 0, changed = false;
+  const spent = []; // expire after absorption so the last protected hit gets its ward
+  const spend = (b, key) => { if (!direct) return; b[key]--; if (b[key] <= 0) { spent.push(b.id); changed = true; } };
+  // Brace is personal, timed protection against direct hits only. Stack
+  // multiplicatively with existing protection before shields absorb damage.
+  k *= braceDamageMult(p, damage) * passiveDirectMult(p, damage);
   const gp = buffOn(p, 'guardian_prayer'); if (gp) { k *= 1 - gp.dr; spend(gp, 'charges'); }
   const di = buffOn(p, 'divine_intervention'); if (di && di.fired) { k *= 1 - di.dr; if (direct) { di.drCharges--; if (di.drCharges <= 0) { delete p.buffs.divine_intervention; changed = true; } } }
   const uw = buffOn(p, 'undead_ward'); if (uw && evil(m)) { k *= 0.9; spend(uw, 'charges'); }
@@ -325,6 +339,7 @@ export function mitigate(ctx, p, dmg, m, kind) {
     const take = Math.min(w.absorb, dmg); w.absorb -= take; dmg -= take; absorbed += take;
     if (w.absorb <= 0 && !w.song) { delete p.buffs[id]; changed = true; }
   }
+  for (const id of spent) delete p.buffs[id];
   return { dmg, absorbed, changed };
 }
 // A blow that would kill: Divine Intervention answers it. Returns the damage
@@ -339,8 +354,8 @@ export function onLethal(ctx, p, dmg) {
   return Math.max(0, p.hp - 1);
 }
 // After a direct hit lands: Prayer of Mending answers, then leaps on.
-export function afterHit(ctx, p, dmg, kind) {
-  if (kind || dmg <= 0) return;
+export function afterHit(ctx, p, dmg, damage = {}) {
+  if (damage?.isPeriodic || dmg <= 0) return;
   const pm = buffOn(p, 'prayer_of_mending'); if (!pm) return;
   const by = ctx.players.get(pm.by); if (!by) { delete p.buffs.prayer_of_mending; return; }
   healPlayer(ctx, by, p, pm.heal, { id: 'prayer_of_mending', crit: false });
@@ -387,7 +402,7 @@ export function stepHots(ctx, p, dt) {
     b.acc += dt; if (b.acc < b.tick) continue; b.acc -= b.tick;
     const by = ctx.players.get(b.by) || p;
     const left = b.cap - b.done; if (left < Math.max(1, b.heal * 0.15)) { delete p.buffs[id]; ctx.sendStatus(p); continue; }   // the cap is spent
-    const got = healPlayer(ctx, by, p, Math.min(b.heal, left) * (b.song && buffOn(p, 'dreamsong') ? 1.35 : 1), { id, crit: false, tick: true });
+    const got = healPlayer(ctx, by, p, Math.min(b.heal, left) * (b.song && buffOn(p, 'dreamsong') ? 1.35 : 1) * (b.song && by.id === b.by ? 1 + passiveValue(by, 'songHealing') : 1), { id, crit: false, tick: true });
     b.done += Math.max(got, Math.min(b.heal, left) * 0.5);   // overhealing still spends the cap, at half rate
     if (b.done >= b.cap) { delete p.buffs[id]; ctx.sendStatus(p); }
     else if (b.ticksLeft != null && --b.ticksLeft <= 0) { delete p.buffs[id]; ctx.sendStatus(p); }   // songs with a fixed number of ticks

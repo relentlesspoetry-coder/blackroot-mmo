@@ -1,175 +1,268 @@
-# Blackroot (3D browser MMO)
+# Blackroot
 
-A modern MMORPG vertical slice built from scratch with an **authoritative
-server**: the client is never trusted.
+A feature-rich, single-process **multiplayer browser RPG alpha / vertical slice**.
+The Node.js server simulates movement, combat and progression at 20 Hz and sends
+JSON snapshots at 12 Hz; the Three.js client has no build step. This is not a
+claim of production MMO capacity or security certification.
 
-- **Server:** Node.js + WebSocket. Simulates all movement, combat, AI and
-  progression at 20 Hz and broadcasts world snapshots at 12 Hz.
-- **Client:** Three.js (loaded from CDN — no build step). Third-person 3D,
-  snapshot interpolation, nameplates, HUD, chat.
+## Run
 
-## Run it
+Use Node.js 24 LTS (the regression baseline uses Node 24), then:
 
-```bash
+```sh
 cd server
-npm install
+npm ci
 npm start
 ```
 
-Then open **http://localhost:8080** in your browser. Open a **second window**
-to see real-time multiplayer (both players share one world).
+Open http://localhost:8080. `PORT=9000 npm start` selects another port. Create an
+account with a character name and a password of at least six characters; use the
+same credentials to return. Choose Fighter, Cleric or Bard. A second browser can
+join with a **different** account. Never reuse a real password on a local alpha.
+The client loads browser dependencies from a CDN and needs network access.
 
-> If port 8080 is busy, run `PORT=9000 npm start` and use that port instead.
+`BLACKROOT_DATA_DIR=/absolute/path` isolates accounts and character checkpoints
+from the default repository-local storage. Back up the **whole** account directory
+and `saves/world.checkpoint.json` checkpoint together while the server is stopped, rather
+than restoring individual characters from different generations. Checkpoints are
+atomic and keep a previous `.bak`; corrupt durable data fails closed and needs
+explicit operator recovery. Legacy per-character JSON saves are imported when no
+world checkpoint exists. Test tools always use disposable temporary storage.
+
+## Implemented in source
+
+- Blackroot: one composed surface world with **Dark Woods and Killing Fields**
+  regions, plus **Spider Den**, connected by portals; terrain, collision, weather,
+  day/night, fog of war and discovery.
+- 45 quests with dialogue, prerequisite chains, collect/kill/reach/chest/gather/use
+  objectives, NPC markers and rewards. Feathers and Hide and A Lantern for the
+  Road are starter quests, not the whole quest catalogue.
+- Accounts and character persistence; inventory, ground loot, equipment, gold,
+  death recovery, merchants that buy items, treasure chests and progression.
+- Fighter/Cleric/Bard class stats, abilities, resources, trainers, cooldowns,
+  buffs/debuffs, weapon profiles and attack tables; monster archetypes and bosses.
+- Mining, fishing and cooking; parties, trading and duels.
+- Fourteen-slot equipment UI, chat, map, quest log, procedural/split-mesh animation
+  and world/content tooling. These source features still require gameplay and
+  visual QA; animation/asset claims require the actual GLB checkout.
 
 ## Controls
 
-| Action | Input |
-| --- | --- |
-| Move | WASD / Arrow keys |
-| Look | Drag mouse |
-| Zoom | Scroll wheel |
-| Attack | Click a monster (auto-attacks while in range) |
-| Equipment | E |
-| Chat | Enter |
+WASD moves; arrow keys rotate the camera. Click ground to move, a monster to
+attack, or a world object to interact. Drag to look and scroll to zoom. **I** opens
+the bag, **E** equipment, **Q** quests; Enter opens chat. Consult the in-game UI for
+ability slots and additional controls.
 
-## What's implemented
+## Test layers
 
-- Real-time multiplayer: players see each other move and fight in one shared world
-- Two zones — **The Dark Woods** (organic boundary, river + bridge, trail, POIs,
-  hazards) and **The Hidden Cave** below it, joined by portals
-- Authoritative movement with collision (bounds, boundary polygon, rocks, trees, river)
-- Monster AI: wander -> aggro -> chase -> melee -> leash/return -> respawn
-- Six monster types, passive livestock, and named elites with their own tuning
-- Click-to-move / tab-target combat, OSRS-style hitsplats, floating HP bars
-- XP, levelling, gold, weighted loot tables, ground loot, bag, treasure chests
-- Synced day/night cycle and rain/mist weather, shared by all players
-- **Quests** — 8 quests across three givers, with kill / collect / reach / chest /
-  slay objectives, a quest log, NPC dialogue, and ! / ? markers over givers
-- **Procedural character animation** — stride-synced locomotion, attack lunges
-  and death topples (see the caveat below)
-- **Equipment** — a fourteen-slot paper-doll window (helmet, shoulders, chest,
-  gloves, legs, boots, cape, necklace, two earrings, two rings, weapon, offhand), attack and defence bonuses,
-  level requirements, and a merchant who buys what you're carrying
-- **Mining** — a separate skill with its own level, nine ore tiers, pickaxes
-  that set your swing speed, and veins that deplete and respawn
+From `server/`:
 
-## Combat balance
+```sh
+npm test                 # fast deterministic logic/data/client regression gates
+npm run test:e2e         # authenticated quest, equipment and mining gameplay
+npm run test:assets      # model/zone/animation validation: full GLB checkout required
+npm run test:world       # full map reachability scan (can take several minutes)
+npx playwright install chromium
+npm run test:browser     # real Chromium UI: full assets + CDN access required
+npm run test:client:browser # optional asset-independent DOM smoke (system Chromium)
+```
 
-The numbers live in `server/balance.js` and can be measured without booting the
-server:
+E2E scripts start their own server on a free local port, register unique throwaway
+accounts, bound waits, and clean up server processes and temporary storage in
+`finally`. They **never** attach to `PORT` or mutate a developer's running world.
+The equipment scenario seeds a valid isolated save with a Bronze Dagger rather
+than depending on a rare goblin drop, then uses real authenticated equip, hit,
+unequip and sale protocol. Its damage sheet uses class stats and weapon swing
+bands; actual hit assertions distinguish critical hits. The focused quest
+contract uses a saved level-five Fighter with legal gear, walks
+to the live giver, kills/loots livestock with auto-attacks and the known Heavy
+Swing skill (resource/cooldown-aware, at most one press/second), rejects remote
+turn-in and verifies
+reward and prerequisite changes. It is not fresh-character progression validation.
+Mining uses Mining level one on a combat-level-20 character five metres from a
+collision-verified real vein in the goblin camp; it checks real swing odds, the
+current 3–6-ore copper yield, depletion, respawn, level gates and remote interaction.
+It intentionally excludes long-distance travel (use the separate world scan).
+Gameplay timing is bounded but is not a
+performance benchmark; failures are failures, including timeouts. Quest checks
+use separate bounded approach/combat windows and retain a hard overall deadline
+plus snapshot/position/target-HP diagnostics. The generated-scenery spatial index
+reduced process CPU from 101.8% to 19.5% of one core and raised snapshots from
+6.12 to 9.85 per second in one controlled 60-second before/after movement test.
+The 20 Hz tick quantizes the configured 12 Hz snapshot target to approximately
+10 Hz. These results do not establish large-player capacity or public gameplay
+readiness; profile representative workloads before deployment.
 
-```bash
+A text-only checkout lacks `client/models/*.glb`. Asset and browser checks are
+**blocked**, not passed, in that case. `npm test` intentionally does not load GLBs
+or launch a browser. Browser runs require installed Chromium, working WebGL and
+CDN access. Do not infer visual quality, frame rate, full progression balance,
+multiplayer scalability or deployment readiness from the fast suite.
+
+## Diagnostics (from repository root)
+
+```sh
 node tools/balance.mjs
+CLASS=cleric node tools/balance.mjs  # fighter / cleric / bard
+BARE=1 node tools/balance.mjs        # no equipment
+SEED=123 node tools/balance.mjs     # reproducible attack-table sampling
+node tools/mining.mjs
 ```
 
-It prints, for every spawn group, how long the fight takes and how long the
-player survives it at the level and equipment that area is tuned for. Normal
-mobs sit at a 4-15x survive/kill ratio; both bosses land near 2.0.
+Combat diagnostics use the runtime class/weapon/attack-table formulas and live
+Blackroot/Spider Den content. They model **unbuffed auto-attacks only**, not a
+complete encounter: abilities, healing, movement, AI, player decisions and boss
+mechanics change outcomes. Ratios are not proof of an unwinnable or balanced
+fight. Mining prints ore/pickaxe progression and the runtime-prepared vein census;
+a census does not prove path reachability. `REGEN=1` is an obsolete model option.
 
-Two flags change what it models:
+## Generated scenery collision cache
 
-```bash
-node tools/mining.mjs            # ore tiers, pickaxe value, time-to-level
-node tools/assets.mjs            # checks every declared model exists and every drop resolves
-BARE=1 node tools/balance.mjs    # an unequipped character
-REGEN=1 node tools/balance.mjs   # the old always-on regen
+Collision queries use a spatial candidate index for generated `_trees` and
+`_scatter`, preserving the original collision order and rechecking candidates
+after displacement. Replacing either array or changing its length rebuilds the
+index automatically. After intentional in-place edits to generated coordinates,
+scale, collision radius or array order, call `invalidateCollisionScenery(zone)`
+from `server/collision.js` before the next query. Live editor objects remain
+uncached and continue to use their existing collision rules.
+
+Run `node --test test/collision-independent.test.js` from `server/` for the
+independent original-implementation parity checks. The frozen oracle is a test
+fixture, not another production collision implementation.
+`node tools/collision-independent-benchmark.mjs` measures identical query inputs
+against that oracle, separating index construction from warm queries. Its
+function timings are not whole-game or browser frame-rate measurements.
+
+## Next milestones
+
+1. Keep reproducible regression gates and restore/crash/reconnect/inventory
+   conservation checks; validate operations and backups in a closed alpha.
+2. Playtest one complete progression loop for every class, all quest objectives,
+   skill loops, transitions, death recovery and two-client social systems.
+3. Extend the economy only with transaction/conservation tests; cooking already
+   exists and generic crafting is not a substitute for economy design.
+4. Define player-count/latency budgets and profile tick, snapshot and frame costs
+   before selecting interest management or transport changes.
+5. Extract client/server modules and strengthen schemas/tooling; expand content
+   and animation with full asset and visual QA.
+
+## Layout
+
+`server/server.js` is the authoritative simulation and static host;
+`balance.js`, `combat.js`, `items.js`, `quests.js`, skill/class modules and
+`worldgen.js` supply shared rules. `server/zones/blackroot.js` is the composed live
+surface, `spiderden.js` the cave; standalone regional source files are not the
+running world. `server/tools/` contains gameplay and animation checks,
+`server/test/` deterministic regressions. `client/index.html` contains the browser
+client and `client/models/` its assets. Root `tools/` contains diagnostics, data,
+reachability, asset and browser checks and world/asset authoring utilities.
+
+### Bounded multiplayer checks
+
+On Linux with Node 24, from `server/`:
+
+```sh
+node tools/multiplayertest.mjs --smoke   # 2-client harness/functional check, not a benchmark
+node tools/multiplayertest.mjs --clients=2 # stop after the full 2-client tier
+node tools/multiplayertest.mjs --input-only # separate 2-client, 60s ~20Hz input workload
+node tools/multiplayertest.mjs           # gated 2/8/16-client characterization
 ```
 
-`BARE=1` reports the Rootbound Guardian as UNWINNABLE at 0.9, and that's
-deliberate — the bosses assume you turned up wearing something.
+The harness owns a free local port and a disposable `BLACKROOT_DATA_DIR`, uses
+random throwaway passwords, and serializes joins at 5.1-second spacing to respect
+the 12-authentication-starts/IP/minute limit. The server also permits at most
+eight concurrent sockets per IP: the 16-client tier therefore binds clients
+0–7 to source `127.0.0.1` and clients 8–15 to source `127.0.0.2`. No production
+limit is disabled or increased. A ninth same-IP socket was observed being
+rejected with close code 1006, verifying that admission cap rather than showing
+a gameplay defect. The harness never targets an existing world.
+Normal runs warm up for 30 seconds, measure 60 seconds idle and 120 seconds moving
+per tier, then verify trade escrow on logout/heartbeat expiry, exactly-once trade
+completion, abrupt disconnect, reconnect and a graceful server restart. Every
+moving client must actually move, not merely send inputs. Movement sends one
+`move` destination per client per second; idle sends no game inputs. In contrast,
+the shipped browser sends `input` packets at a render-frame-dependent interval
+greater than 50 ms (up to roughly 20 Hz). This is therefore a **moderate scripted
+pathfinding workload**, not full typical browser packet volume. The separate
+`--input-only` phase sends only `input` (no `move` destinations) every 50 ms,
+alternating forward/back every 500 ms for 60 seconds, and reports achieved send
+frequency. It exercises browser-like packet volume without claiming browser
+rendering or real-world user behavior. Healthy-client presence
+and post-departure cleanup are checked. The existing integrity suite separately
+covers SIGKILL, grave recovery, ground transfer and checkpoint corruption.
 
-Two things were tuned the hard way and are worth not undoing. Defence is a
-percentage with diminishing returns rather than flat subtraction: flat armour
-collapsed the whole curve the moment a player had any gear (every fight in the
-game read as "trivial"). And regen is locked out for 5 seconds after taking a
-hit — ticking straight through a fight, it was quietly paying for about a third
-of all incoming damage.
+Results, raw snapshot timestamps/resource samples, and bounded server logs are
+written to a fresh temporary results directory printed at completion; set
+`MULTIPLAYER_RESULTS` to choose a results directory. The directory contains no
+account files or passwords. Server processes/sockets and disposable account data
+are cleaned on success, failure, interruption, or the 25-minute overall deadline
+(3 minutes for smoke). A 1 GiB server-RSS ceiling and 10-second snapshot-liveness
+deadline are test safety stops, **not** agreed performance budgets. Failing tiers
+prevent escalation. Linux `/proc` and `getconf CLK_TCK` supply CPU/RSS readings;
+100% CPU means one logical core. The generator's CPU and RSS are reported too.
 
-## Tests
+Metrics include admission latency, per-client snapshot inter-arrival percentiles,
+delivered snapshot frequency, bytes/sec, movement distance and server CPU/RSS.
+Snapshot arrival gaps are not server serialization timings or synchronized
+network latency. This clustered, synthetic loopback workload is not a rendered
+browser test, geographically dispersed workload, sustained soak, leak proof,
+stale-social-invite audit or capacity certification. After lower tiers have passed on identical production source, `--only-tier=16`
+can resume just the 16-client tier; the default still gates 2 → 8 → 16.
+No player-count/latency SLO is asserted; a passing run does not override other known regression failures.
 
-```bash
-cd server
-node server.js &            # or PORT=8099 node server.js &
-node tools/questtest.mjs    # plays the first quest end to end against the live server
-node tools/equiptest.mjs    # loots a weapon, equips it, checks the damage actually changes
-node tools/miningtest.mjs  # walks to a real vein, mines it, checks depletion and respawn
-node tools/animtest.mjs     # runs the client's animation code against the real GLBs
+### Alpha passive loadouts
 
-cd ..
-npm i -D playwright && npx playwright install chromium
-PORT=8080 node tools/uicheck.mjs  # headless assertions: camera, nameplates, panels, dialogue
-PORT=8080 node tools/render.mjs   # same, but saves screenshots (much slower)
-```
+Each class has seven passive choices and can equip up to three in the spellbook,
+separate from its twenty active abilities. New alpha characters start with empty
+passive slots. Choices unlock in catalogue order at levels 5, 10, 15, 20, 25, 30 and 35.
+The first slot unlocks at level 5, the second at 15, and the third at 30.
+Fighter Momentum retains its level-five trainer purchase. Existing characters who already
+learned Momentum keep it equipped on migration; saved loadouts are validated on
+login and persisted with the character.
 
-`questtest` joins as a real client, accepts a quest, kills and loots for the
-objectives, proves turn-in is refused away from the giver, and checks the
-rewards. `equiptest` earns a weapon off a goblin and verifies every landed hit
-falls inside the geared damage range. `animtest` pulls the animation functions
-out of `client/index.html` itself, so it can't drift from what ships.
+Only the server can accept a loadout change. Combat, active enemy threat, duels
+(including their countdown), death, lingering damage, and committed/queued actions
+block changes. Switching ends spells and songs placed by that character, including
+wards, and resets Momentum. Leaving the world also removes those outgoing effects
+so reconnecting cannot retain bonuses from a previous loadout. Negative effects,
+other casters' protection, cooldowns, health, and resources are not reset.
 
-`uicheck.mjs` is the one that catches what the others can't — it opens the game
-in headless Chromium and reads real numbers back out of the running page. It
-found two bugs the unit tests couldn't see: the spawn camera pointed at the
-north boundary wall, and nameplates from the entire zone piling up at the top
-of the screen (47 mobs alive, 47 plates drawn). Prefer it over `render.mjs` —
-screenshots are what make browser testing slow, and most of what you want to
-assert is a number. Opening the client with `?debug=1` attaches a
-`window.__bk` handle (scene, camera, quest state, and a `pick(x, y)` raycast)
-that the harness uses to interrogate what's actually on screen. Software
-rendering is slow, so take screenshots sparingly.
+New numerical bonuses are deliberately small (generally 2–6%); defensive bonuses
+exclude periodic damage and stack multiplicatively with existing protection.
+Momentum retains its established mechanics. Contract tests cover all 105 possible
+three-passive selections, but these bounds are not a substitute for encounter and
+multiplayer balance testing. The catalogue is defined in `server/passives.js`.
 
-## A note on the character models
+### Live passive-loadout regression
 
-None of the character GLBs are rigged — no skins, no animation clips, and most
-(Male, Bandit, Guard, Cow, Chicken) are a single merged mesh with no separable
-limbs. Walk cycles with swinging arms and legs are therefore not possible in the
-engine; they need the models re-authored in Blender with a skeleton.
+From `server/`, run `node tools/passiveloadouttest.mjs` for a bounded, disposable
+real-auth check with at most two simultaneous clients. It checks before/at every
+five-level passive unlock and slot thresholds 5/15/30, plus the fighter's
+seven-choice catalogue, legacy over-capacity sanitation, correlated request
+acknowledgements, authoritative state,
+invalid selections, actual duel-countdown locking, no healing of a seeded
+low-HP character, peer isolation, reconnect/restart persistence and clearing a
+loadout. `PASSIVE_RESULTS` selects the report/log directory. It creates no real
+accounts and removes its server and temporary data in cleanup. Other-class
+modifiers, PvE/action locks and caster-effect ownership are covered separately
+by the pure tests; this protocol check is not rendered-browser validation.
 
-What runs instead is procedural: stride-synced bob, roll and lean driven by
-measured speed, an attack lunge, and a death topple. The two models that *do*
-have separate parts get real animation — the Spider's eight leg nodes move in an
-alternating tripod, and the Hill Ogre swings its club. When the models get
-rigged, replace `animateEntity()` in `client/index.html` with an `AnimationMixer`.
+### Scene loading handshake
 
-## Where this goes next (roadmap)
+The browser acknowledges a connection-specific token and increasing zone generation
+only after scene construction and a rendering opportunity. Until then the server
+sends the zone packet alone, omits transient output, and refuses gameplay commands.
+It rebuilds bag/quests, skills, abilities, status, passives, objects, fog and party
+state on readiness, followed by a current snapshot. No event history is queued.
+Combat, targeting, death and ordinary persistence continue during loading.
 
-1. **Persistence** — accounts + character save/load (SQLite/Postgres, parameterized
-   queries). Replaces the in-memory state, including quest progress.
-2. **Shops & crafting** — merchants currently buy but don't sell, and materials
-   (silk, hide, bones) have no use beyond their sale value.
-3. **Abilities & classes** — a hotbar, cooldowns, resource (mana), a few classes.
-4. **Rigged characters** — skeletons + clips, replacing the procedural animation.
-5. **Netcode hardening** — binary protocol, client-side prediction + reconciliation
-   for the local player, interest management (only send nearby entities).
-6. **Content tooling** — data-driven monsters/items/spawns from JSON tables.
+The loading deadline is 120 seconds and cannot be extended by another pending
+transition; the ten-second heartbeat sweep closes expired loads within 130 seconds.
+Ordinary heartbeat rules resume when ready. The 1 MiB output-buffer protection is
+unchanged, including after readiness. This handshake does not optimize slow scene
+construction or prevent later rendering stalls from exceeding the output limit.
 
-## File layout
-
-```
-server/
-  server.js        # authoritative game server + static file host
-  balance.js       # combat & progression maths (no side effects)
-  quests.js        # quest definitions + objective tracking
-  mining.js        # ore tiers, pickaxes, swing odds, mining xp curve
-  worldgen.js      # deterministic tree and cave-dressing placement
-  items.js         # item table, equip slots, stat bonuses
-  zones/
-    darkwoods.js   # zone 1 layout, spawns, NPCs, hazards
-    hiddencave.js  # zone 2 layout, chests, spawns
-  tools/
-    questtest.mjs  # end-to-end quest test against a live server
-    equiptest.mjs  # end-to-end equipment test against a live server
-    miningtest.mjs # end-to-end mining test against a live server
-    animtest.mjs   # headless test of the client's animation code
-client/
-  index.html       # entire Three.js client (renderer, netcode, HUD, quests)
-  models/*.glb     # characters, trees, bushes
-tools/
-  balance.mjs      # prints the combat curve
-  mining.mjs       # prints the mining curve
-  assets.mjs       # verifies model declarations and drop-model coverage
-  worldgen.mjs     # prints what world generation places
-  map.mjs          # draws each zone's map from its own data
-  rig_split.mjs    # splits merged character meshes into animatable parts
-README.md
-```
+From `server/`, `npm run test:scene` runs a disposable real-socket regression
+(about 132 seconds), including a 25-second load without pong, a welcome above
+1 MiB, input gating, fresh state, movement, duplicate/stale readiness, reconnect
+and a never-ready client that keeps answering heartbeats.

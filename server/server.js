@@ -1,11 +1,18 @@
+import { PASSIVES, PASSIVE_LIMIT, PASSIVE_SLOT_LEVELS, passiveSlotLimit, passiveAvailable, sanitizePassives, restorePassives, passiveValue, passiveDirectMult, passiveWeaponMult } from './passives.js';
 // Blackroot — a 3D browser MMO (vertical slice)
 // Authoritative game server. All movement, combat, AI and progression are
 // simulated here; the client only sends intents. Security lesson from the old
 // codebase applied correctly: never trust the client.
 
 import http from 'http';
+import { createStaticHandler } from './static-host.js';
+import { atomicWrite, readJson, WorldStore } from './persistence.js';
+import { validMessage } from './protocol.js';
+import { sceneLoading, beginSceneLoad, acceptSceneReady, heartbeatExpired } from './scene-loading.js';
 import fs from 'fs';
 import crypto from 'crypto';
+import { promisify } from 'node:util';
+const scryptAsync = promisify(crypto.scrypt);
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { WebSocketServer } from 'ws';
@@ -13,14 +20,14 @@ import { blackroot } from './zones/blackroot.js';
 import { spiderden } from './zones/spiderden.js';
 import {
   PLAYER, ELITE, MONSTER_TEMPLATES,
-  xpForLevel, xpTotalForLevel, levelForXp, xpForKill, MAX_LEVEL, attackRoll, defenceRoll, hitChance, scaledMonster, rollLoot, REGEN,
+  xpForLevel, xpTotalForLevel, levelForXp, xpForKill, MAX_CLASS_LEVEL, clampClassLevel, classLevelForXp, classXpForLevel, attackRoll, defenceRoll, hitChance, scaledMonster, rollLoot, REGEN,
   TICK, CLASSES, DEFAULT_CLASS, classDef, classStats, abilityCost,
   maxHit, MEDITATION, meditationHealPerTick, rollGear, STARTING_INVENTORY, MOB_ART, ALWAYS_ART } from './balance.js';
-import { ITEMS, SLOTS, SLOT_INFO, DOLL, itemDef, slotOf, valueOf, equipStats, slotsFor, emptySlots, stackable, bagStacks } from './items.js';
+import { ITEMS, SLOTS, SLOT_INFO, DOLL, itemDef, slotOf, valueOf, equipStats, slotsFor, emptySlots, starterEquipment, stackable, bagStacks } from './items.js';
 import { weaponProfile, swingSeconds, weaponRange, swingBand, resolveAttack, facing,
          MOB_ARCH, MOB_DEF, archOf, addThreat, threatOf, dropThreat, clearThreat, taunt, topThreat, decayThreat } from './combat.js';
 import { BOSS_TEMPLATES, BOSS_ITEMS, maybeSpawnCluckifer, stepCluckifer, stepMinion, stepHazards, hazardList, onMinionKilled, onBossKilled } from './cluckifer.js';
-import { isSpell, checkCast, castSpell, costOf, hymnTick, mitigate, onLethal, afterHit, resistsDot, monsterDmgMult, fleeStep, stepHots, stepSanctuaries, sanctuaryList } from './cleric.js';
+import { isSpell, checkCast, castSpell, costOf, hymnTick, mitigate, braceDamageMult, onLethal, afterHit, resistsDot, monsterDmgMult, fleeStep, stepHots, stepSanctuaries, sanctuaryList } from './cleric.js';
 import { isBardSpell, checkBardCast, castBard, spendSongCharges, songAmp, atkSpeedMult, castTimeMult, meditationMult, manaRegenMult, controlMult, hasBardDebuff,
   bardMonsterDmgMult, bardMonsterDefMult, bardMonsterTakenMult, bardMonsterSpeedMult, bardMonsterAtkSpeedMult, stepSongs } from './bard.js';
 import {
@@ -425,7 +432,7 @@ const lootOverridesPath = () => path.join(__dirname, 'loot.overrides.json');
 (function loadLootOverrides() { try { LOOT_OVERRIDES = JSON.parse(fs.readFileSync(lootOverridesPath(), 'utf8')) || {}; } catch { LOOT_OVERRIDES = {}; } })();
 function saveLootOverrides() { try { fs.writeFileSync(lootOverridesPath(), JSON.stringify(LOOT_OVERRIDES, null, 2)); } catch (e) { console.error('saveLootOverrides:', e.message); } }
 const LOOT_ITEMS = ['Coins', ...Object.keys(ITEMS)];
-const lootItemOk = (name) => name === 'Coins' || !!ITEMS[name];
+const lootItemOk = (name) => name === 'Coins' || Object.hasOwn(ITEMS, name);
 // A template's loot, expressed in the editor's independent-roll format
 // ({item, min, max, chance=1-in-N}). Weighted tables convert approximately.
 function templateLootAsEditor(type) {
@@ -457,7 +464,7 @@ function rollMobLoot(type) {
 }
 function broadcastZone(zoneId, obj) {
   const s = JSON.stringify(obj);
-  for (const p of players.values()) if (p.zoneId === zoneId && p.ws.readyState === p.ws.OPEN) p.ws.send(s);
+  for (const p of players.values()) if (p.zoneId === zoneId && p.ws.readyState === p.ws.OPEN) sendRaw(p.ws, s);
 }
 // Every .glb under client/models, as model keys for the editor palette.
 let MODEL_MANIFEST = [];
@@ -496,10 +503,43 @@ checkPortals();
 // ---------------------------------------------------------------------------
 // Networking helpers
 // ---------------------------------------------------------------------------
-function send(ws, obj) { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(obj)); }
+function sendRaw(ws, data, sceneControl = false) {
+  // No backlog: transient events are omitted and durable/UI state is rebuilt
+  // on readiness. This also lets the >1 MiB welcome drain without a second send.
+  if (sceneLoading(ws) && !sceneControl) return;
+  if (outbound) { outbound.push([ws, data, sceneControl]); return; }
+  if (ws.readyState !== ws.OPEN) return;
+  if (ws.bufferedAmount > 1024 * 1024) { ws.terminate(); return; }
+  ws.send(data, error => { if (error) ws.terminate(); });
+}
+function send(ws, obj) { sendRaw(ws, JSON.stringify(obj)); }
+function sendScene(p, message) {
+  p.ws.sceneToken ||= crypto.randomBytes(16).toString('hex');
+  message.scene = beginSceneLoad(p.ws, p.zoneId, p.ws.sceneToken);
+  sendRaw(p.ws, JSON.stringify(message), true);
+}
+function sendSceneState(p) {
+  sendBag(p); // includes current quests
+  sendSkills(p); sendAbilities(p); sendStatus(p); sendPassives(p); sendObjects(p);
+  send(p.ws, { t: 'fog:sync', fog: fogPayload(p, zoneOf(p)), visited: [...p.visited] });
+  p._fogNew.length = 0; p._visitedNew = false;
+  const party = partyOf(p);
+  if (party) sendParty(party);
+  else send(p.ws, { t: 'party', leader: null, members: [] });
+  const trade = tradeOf(p);
+  send(p.ws, trade ? tradePayload(trade, p.id) : { t: 'trade', closed: true });
+  for (const [key, type] of [['partyInvite', 'party:invite'], ['duelChallenge', 'duel:challenge'], ['tradeRequest', 'trade:request']]) {
+    const pending = p[key];
+    send(p.ws, pending && pending.t > 0
+      ? { t: type, from: pending.from, name: pending.name, seconds: pending.t }
+      : { t: type, expired: true });
+  }
+  if (p._loginNotice) { notice(p, p._loginNotice); delete p._loginNotice; }
+  notice(p, 'The world kept running while this scene loaded. Check your health and surroundings.');
+}
 function broadcast(obj) {
   const s = JSON.stringify(obj);
-  for (const p of players.values()) if (p.ws.readyState === p.ws.OPEN) p.ws.send(s);
+  for (const p of players.values()) if (p.ws.readyState === p.ws.OPEN) sendRaw(p.ws, s);
 }
 function systemChat(msg) { broadcast({ t: 'chat', from: 'System', msg, sys: true }); }
 // One line of yellow text to one person. The six local `notice`/`no` closures
@@ -511,10 +551,10 @@ function notice(p, text) { if (p && p.ws) send(p.ws, { t: 'event', kind: 'notice
 // ---------------------------------------------------------------------------
 function grantXp(p, amount) {
   if (!(amount > 0)) return;   // a creature you have long outgrown: no xp, and no "+0" to explain
-  p.xp += amount; // running total; the level is read off the shared 1..99 table
+  p.xp += amount; // Keep total XP banked, including above the current alpha class cap.
   send(p.ws, { t: 'event', kind: 'xp', amount });
   let leveled = false;
-  while (p.level < levelForXp(p.xp)) {
+  while (p.level < classLevelForXp(p.xp)) {
     p.level++; leveled = true;
     const old = p.maxHp; p.maxHp = classStats(p.cls, p.level).hp; p.hp = Math.min(p.maxHp, p.hp + (p.maxHp - old));
     send(p.ws, { t: 'event', kind: 'levelup', level: p.level, cls: classDef(p.cls).name });
@@ -536,7 +576,8 @@ function grantXp(p, amount) {
 // password crosses the wire in the clear, so put this behind wss:// (TLS)
 // before letting anyone reach it over a network.
 // ---------------------------------------------------------------------------
-const ACCOUNT_DIR = path.join(__dirname, '..', 'accounts');
+const DATA_DIR = process.env.BLACKROOT_DATA_DIR || path.join(__dirname, '..');
+const ACCOUNT_DIR = path.join(DATA_DIR, 'accounts');
 const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 64 };
 const PASS_MIN = 6, PASS_MAX = 128;
 const LOGIN_TRIES = 6;                 // wrong guesses before a name goes quiet
@@ -544,18 +585,17 @@ const LOGIN_LOCK_MS = 60 * 1000;
 const loginFails = new Map();          // account slug -> { n, until }
 
 const accountPath = (name) => path.join(ACCOUNT_DIR, saveSlug(name) + '.json');
-function hashPass(pass, salt) { return crypto.scryptSync(pass, salt, SCRYPT.keylen, SCRYPT).toString('hex'); }
+async function hashPass(pass, salt) { return (await scryptAsync(pass, salt, SCRYPT.keylen, SCRYPT)).toString('hex'); }
 function readAccount(name) {
-  try { const a = JSON.parse(fs.readFileSync(accountPath(name), 'utf8')); return a && a.salt && a.hash ? a : null; }
-  catch (e) { return null; }
+  const a = readJson(accountPath(name));
+  if (!a && fs.existsSync(accountPath(name) + '.bak')) throw new Error('Account record missing; explicit backup recovery required');
+  if (a && (a.v !== 1 || a.name !== name || !/^[a-f0-9]{32}$/.test(a.salt) || !/^[a-f0-9]{128}$/.test(a.hash))) throw new Error('Invalid or conflicting account record');
+  return a;
 }
-function writeAccount(a) {
-  fs.mkdirSync(ACCOUNT_DIR, { recursive: true });
-  fs.writeFileSync(accountPath(a.name), JSON.stringify(a));
-}
+function writeAccount(a) { atomicWrite(accountPath(a.name), a); }
 // Returns { ok: true } or { error } -- never anything derived from the stored
 // password, and the same wording whether the name or the password was wrong.
-function authenticate(name, pass) {
+async function authenticate(name, pass) {
   const slug = saveSlug(name);
   const lock = loginFails.get(slug);
   if (lock && lock.until > Date.now()) {
@@ -573,15 +613,16 @@ function authenticate(name, pass) {
   }
   if (!acct) {
     const salt = crypto.randomBytes(16).toString('hex');
-    writeAccount({ v: 1, name, salt, hash: hashPass(pass, salt), created: Date.now() });
+    writeAccount({ v: 1, name, salt, hash: await hashPass(pass, salt), created: Date.now() });
     return { ok: true, created: true };
   }
-  const got = Buffer.from(hashPass(pass, acct.salt), 'hex');
+  const got = Buffer.from(await hashPass(pass, acct.salt), 'hex');
   const want = Buffer.from(acct.hash, 'hex');
   const good = got.length === want.length && crypto.timingSafeEqual(got, want);
   if (!good) {
     const f = loginFails.get(slug) || { n: 0, until: 0 };
     f.n++; if (f.n >= LOGIN_TRIES) { f.until = Date.now() + LOGIN_LOCK_MS; f.n = 0; }
+    if (loginFails.size >= 10000) loginFails.delete(loginFails.keys().next().value);
     loginFails.set(slug, f);
     return { error: 'That name is taken, and the password does not match it.' };
   }
@@ -594,17 +635,17 @@ function authenticate(name, pass) {
 //
 // A character is its name. Log in with a name that has been here before and
 // you get that character back -- where you stood, what you carried, what you
-// had learned and how far through every errand you were. There are no
-// passwords, so a name is all that identifies anyone; that is fine for a world
-// you run yourself and would not be for one you opened to strangers.
+// had learned and how far through every errand you were. Account passwords
+// authenticate access before the durable character is restored.
 //
-// Only durable things are written. Buffs, cooldowns, the swing in progress,
-// the party you were in and the trade you were half way through are all
-// deliberately dropped: they belong to a session, not to a character.
+// Session combat state is dropped. Ownership is checkpointed across every
+// character, grave and ground item together; pending trade escrow is refunded
+// to its original owner in the durable representation.
 // ---------------------------------------------------------------------------
 // Beside the repo, not beside whatever directory the process happens to have
 // been started from -- the same anchor CLIENT_DIR uses.
-const SAVE_DIR = path.join(__dirname, '..', 'saves');
+const SAVE_DIR = path.join(DATA_DIR, 'saves');
+const worldStore = new WorldStore(SAVE_DIR);
 const SAVE_EVERY = 45;                 // seconds between background saves
 const saveSlug = (name) => String(name).toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 24) || 'adventurer';
 const savePath = (name) => path.join(SAVE_DIR, saveSlug(name) + '.json');
@@ -616,7 +657,7 @@ function serialisePlayer(p) {
     level: p.level, xp: p.xp, gold: p.gold,
     hp: Math.round(p.hp), mana: Math.round(p.mana || 0),
     inventory: p.inventory.slice(), equipment: { ...p.equipment },
-    known: [...p.known],
+    known: [...p.known], passives: sanitizePassives(p, p.passives),
     miningXp: p.miningXp, fishingXp: p.fishingXp, cookingXp: p.cookingXp,
     meditation: { ...p.meditation },
     // Quests: the live map of progress, plus everything already finished and
@@ -632,30 +673,71 @@ function serialisePlayer(p) {
     savedAt: Date.now(),
   };
 }
+// savePlayer stages a departing player; commitWorld writes ALL owners together.
 function savePlayer(p) {
-  if (!p || !p.name) return;
-  try {
-    fs.mkdirSync(SAVE_DIR, { recursive: true });
-    fs.writeFileSync(savePath(p.name), JSON.stringify(serialisePlayer(p)));
-  } catch (e) { console.warn('[save] could not write', p.name, 'to', SAVE_DIR, '-', e.message); }
+  if (p && p.name) { worldStore.state.characters[p.name] = durablePlayer(p); checkpointRequested = true; }
 }
-function loadSave(name) {
+function loadSave(name) { return Object.hasOwn(worldStore.state.characters, name) ? worldStore.state.characters[name] : null; }
+function durablePlayer(p) {
+  const d = serialisePlayer(p), t = tradeOf(p);
+  // Pending trades are canceled on recovery: escrow is owned by its offerer.
+  if (t) { d.inventory.push(...(t.items[p.id] || [])); d.gold += t.gold[p.id] || 0; }
+  return d;
+}
+// A lightweight projection for dirty detection. In particular, do not encode
+// fog or build a full character save on every input packet and simulation tick.
+// Escrow has exactly the same canonical ownership here and in durablePlayer.
+function ownershipOf(p, live = false) {
+  const t = live ? tradeOf(p) : null;
+  return [t ? p.inventory.concat(t.items[p.id] || []) : p.inventory,
+    p.equipment, p.gold + (t ? t.gold[p.id] || 0 : 0),
+    [...p.known], p.passives || [], p.xp, p.miningXp, p.fishingXp, p.cookingXp,
+    [...(p.quests || [])], [...(p.questDone || [])], [...(p.questFlags || [])], p.questKills, p.meditation,
+    [...(p.visited || [])], [...(p.openedChests || [])], [...(p.usedObjects || [])]];
+}
+let lastOwnership = '', lastCheckpoint = 0, checkpointRequested = false;
+function commitWorld(force = false) {
+  const owned = Object.fromEntries(Object.entries(worldStore.state.characters).map(([name, d]) => [name, ownershipOf(d)]));
+  for (const p of players.values()) Object.defineProperty(owned, p.name, { value: ownershipOf(p, true), enumerable: true, writable: true, configurable: true });
+  // Movement, regen, fog and timer decrements need only periodic persistence;
+  // any ownership/progression transition commits the complete world immediately.
+  const ownership = JSON.stringify({ characters: owned,
+    graves: [...graves.values()].map(({ ttl, owner, ...g }) => g),
+    groundItems: [...groundItems.values()].map(({ ttl, owner, ...g }) => g) });
+  if (!force && !checkpointRequested && ownership === lastOwnership && Date.now() - lastCheckpoint < SAVE_EVERY * 1000) return;
+  // Full serialization, including fog, happens only on the actual write path.
+  const characters = { ...worldStore.state.characters };
+  for (const p of players.values()) Object.defineProperty(characters, p.name, { value: durablePlayer(p), enumerable: true, writable: true, configurable: true });
+  const state = { v: 1, characters, graves: [...graves.values()].map(g => ({ ...g, owner: null })),
+    groundItems: [...groundItems.values()].map(g => ({ ...g, owner: null })) };
+  worldStore.commit(state); checkpointRequested = false; lastOwnership = ownership; lastCheckpoint = Date.now();
+}
+let outbound = null;
+function transaction(fn) {
+  if (outbound) return fn();
+  outbound = [];
   try {
-    const raw = fs.readFileSync(savePath(name), 'utf8');
-    const d = JSON.parse(raw);
-    return (d && d.v === 1 && d.name === name) ? d : null;   // exact name, not just the same slug
-  } catch (e) { return null; }   // no save, or one we cannot read: start fresh
+    const result = fn(); commitWorld();
+    const messages = outbound; outbound = null;
+    for (const [ws, data, sceneControl] of messages) sendRaw(ws, data, sceneControl);
+    return result;
+  } catch (error) {
+    // Never checkpoint a partially executed operation or acknowledge it. A
+    // restart recovers the last complete generation, including both owners.
+    outbound = null; console.error('[transaction] fail closed:', error);
+    process.exit(1);
+  }
 }
 // Put a loaded save onto a freshly built player. The player is built first with
 // all its defaults so anything a save predates simply keeps the new default.
 function applySave(p, d) {
-  const zone = ZONES[d.zoneId] ? d.zoneId : START_ZONE;
-  p.cls = CLASSES[d.cls] ? d.cls : p.cls;
+  const zone = Object.hasOwn(ZONES, d.zoneId) ? d.zoneId : START_ZONE;
+  p.cls = Object.hasOwn(CLASSES, d.cls) ? d.cls : p.cls;
   if (d.look) p.look = sanitizeLook(d.look);
   p.zoneId = zone;
-  p.level = Math.max(1, Math.min(MAX_LEVEL, d.level | 0 || 1));
+  p.level = clampClassLevel(d.level);
   p.xp = Math.max(0, +d.xp || 0);
-  p.gold = Math.max(0, d.gold | 0);
+  p.gold = Math.max(0, Math.floor(d.gold));
   const cs = classStats(p.cls, p.level);
   p.maxHp = cs.hp; p.manaMax = cs.mana; p.rageMax = cs.rage;
   // Somebody who logged out dead comes back on their feet at the zone's spawn
@@ -680,13 +762,13 @@ function applySave(p, d) {
     p.x = sp.x; p.z = sp.z; p.y = 0; p.yaw = sp.yaw || 0;
     p._movedByRevamp = true;
   }
-  p.inventory = Array.isArray(d.inventory) ? d.inventory.filter(n => ITEMS[n]) : p.inventory;
-  if (d.equipment) { p.equipment = Object.assign(emptySlots(), d.equipment); p.gear = gearOf(p.equipment); }
-  // Abilities are re-derived from the class and level, then anything bought is
-  // added back: a save from before a class was rebalanced still ends up with a
-  // legal spellbook.
-  p.known = new Set(classDef(p.cls).abilities.filter(a => a.level <= p.level).map(a => a.id));
-  for (const id of (d.known || [])) if (classDef(p.cls).abilities.some(a => a.id === id)) p.known.add(id);
+  p.inventory = Array.isArray(d.inventory) ? d.inventory.filter(n => Object.hasOwn(ITEMS, n)) : p.inventory;
+  if (d.equipment) { p.equipment = emptySlots(); for (const slot of Object.keys(p.equipment)) { const item = d.equipment[slot]; if (typeof item === 'string' && Object.hasOwn(ITEMS, item) && slotsFor(slotOf(item)).includes(slot)) p.equipment[slot] = item; } p.gear = gearOf(p.equipment); }
+  // Only starting abilities are free. Restore valid purchased abilities,
+  // never silently unlock every trainer skill eligible at this level.
+  p.known = new Set(classDef(p.cls).abilities.filter(a => a.level <= 1).map(a => a.id));
+  for (const id of (d.known || [])) if (classDef(p.cls).abilities.some(a => a.id === id && a.level <= p.level)) p.known.add(id);
+  p.passives = restorePassives(p, d.passives);
   p.miningXp = +d.miningXp || 0; p.fishingXp = +d.fishingXp || 0; p.cookingXp = +d.cookingXp || 0;
   if (d.meditation) p.meditation = { level: d.meditation.level | 0 || 1, xp: +d.meditation.xp || 0 };
   // Fog is restored per zone and only where the grid still fits: a zone whose
@@ -694,12 +776,12 @@ function applySave(p, d) {
   // ground (fogOf drops a mismatched grid the same way).
   p.fog = {};
   for (const [zid, b64] of Object.entries(d.fog || {})) {
-    if (!ZONES[zid]) continue;
+    if (!Object.hasOwn(ZONES, zid)) continue;
     p.fog[zid] = fogFromB64(b64, fogBytes(fogDims(ZONES[zid])));
   }
   p.visited = new Set((d.visited || []).filter(v => typeof v === 'string'));
-  p.quests = new Map((d.quests || []).filter(([id]) => QUESTS[id]));
-  p.questDone = new Set((d.questDone || []).filter(id => QUESTS[id]));
+  p.quests = new Map((d.quests || []).filter(([id]) => Object.hasOwn(QUESTS, id)));
+  p.questDone = new Set((d.questDone || []).filter(id => Object.hasOwn(QUESTS, id)));
   p.questKills = d.questKills && typeof d.questKills === 'object' ? d.questKills : {};
   p.questFlags = new Set(d.questFlags || []);
   p.questAnnounced = new Set(d.questAnnounced || []);
@@ -725,6 +807,12 @@ const TRADE_REQUEST_TTL = 30;
 const TRADE_START_RANGE = 12;          // how close you must be to ask
 const TRADE_BREAK_RANGE = 16;          // how far apart calls it off
 
+// A closed socket may leave a combat body in the world; it cannot consent.
+function interactionReady(p) { return !!p && p.alive && p.lingerT == null && !!p.ws && p.ws.readyState === p.ws.OPEN; }
+function tradePairValid(a, b, range) {
+  return interactionReady(a) && interactionReady(b) && a !== b && a.zoneId === b.zoneId
+    && !duelOf(a) && !duelOf(b) && dist2(a.x, a.z, b.x, b.z) <= range * range;
+}
 function tradeOf(p) { return (p && p.tradeId && trades.get(p.tradeId)) || null; }
 function tradePair(t) { return [players.get(t.a), players.get(t.b)]; }
 function tradePayload(t, forId) {
@@ -757,7 +845,7 @@ function tradeAccept(p) {
   const rq = p.tradeRequest; p.tradeRequest = null;
   if (!rq || rq.t <= 0) return send(p.ws, { t: 'event', kind: 'notice', text: 'That offer to trade has lapsed.' });
   const from = players.get(rq.from);
-  if (!from || !from.alive || !p.alive) return send(p.ws, { t: 'event', kind: 'notice', text: 'They are in no state to trade.' });
+  if (!tradePairValid(from, p, TRADE_START_RANGE)) return notice(p, 'They are in no state to trade, or too far away.');
   if (tradeOf(from) || tradeOf(p)) return send(p.ws, { t: 'event', kind: 'notice', text: 'One of you is already trading.' });
   const t = { id: nextTradeId++, a: from.id, b: p.id, items: { [from.id]: [], [p.id]: [] }, gold: { [from.id]: 0, [p.id]: 0 }, ok: {} };
   trades.set(t.id, t); from.tradeId = t.id; p.tradeId = t.id;
@@ -802,7 +890,8 @@ function tradeOk(p, on) {
 // pile to the other person -- there is nothing left that can fail half way.
 function tradeCommit(t) {
   const [a, b] = tradePair(t);
-  if (!a || !b) return tradeCancel(t, 'The trade fell through.');
+  if (!trades.has(t.id)) return;
+  if (!tradePairValid(a, b, TRADE_BREAK_RANGE)) return tradeCancel(t, 'The trade fell through.');
   for (const [from, to] of [[a, b], [b, a]]) {
     for (const name of t.items[from.id]) to.inventory.push(name);
     to.gold += t.gold[from.id] || 0;
@@ -827,11 +916,7 @@ function tradeAbort(p, why) { const t = tradeOf(p); if (t) tradeCancel(t, why ||
 function stepTrades() {
   for (const t of [...trades.values()]) {
     const [a, b] = tradePair(t);
-    if (!a || !b) { tradeCancel(t, 'The trade fell through.'); continue; }
-    if (!a.alive || !b.alive) { tradeCancel(t, 'The trade is off.'); continue; }
-    if (a.zoneId !== b.zoneId || dist2(a.x, a.z, b.x, b.z) > TRADE_BREAK_RANGE * TRADE_BREAK_RANGE) {
-      tradeCancel(t, 'You are too far apart to trade.');
-    }
+    if (!tradePairValid(a, b, TRADE_BREAK_RANGE)) tradeCancel(t, 'The trade is off: you can no longer trade.');
   }
 }
 
@@ -873,6 +958,15 @@ function combatTargetOf(p) {
 function duelPair(d) { return [players.get(d.a), players.get(d.b)]; }
 function duelSay(d, text) { for (const q of duelPair(d)) if (q) send(q.ws, { t: 'event', kind: 'notice', text }); }
 
+function inPveCombat(p) {
+  return p.combatId != null || (p.combatTimer || 0) > 0
+    || (p.engagedWith != null && (p.engagedT || 0) > 0);
+}
+function duelPairReady(a, b, range) {
+  return interactionReady(a) && interactionReady(b) && a !== b && a.zoneId === b.zoneId
+    && !tradeOf(a) && !tradeOf(b) && !inPveCombat(a) && !inPveCombat(b)
+    && dist2(a.x, a.z, b.x, b.z) <= range * range;
+}
 function duelChallenge(from, toId) {
   const to = players.get(Number(toId));
   const no = (text) => notice(from, text);
@@ -880,7 +974,7 @@ function duelChallenge(from, toId) {
   if (to.zoneId !== from.zoneId) return no(`${to.name} is not in this zone.`);
   if (!from.alive || !to.alive) return no('Not while one of you is dead.');
   if (duelOf(from) || duelOf(to)) return no('One of you is already in a duel.');
-  if (from.combatId != null || to.combatId != null) return no('Not in the middle of a fight.');
+  if (!duelPairReady(from, to, DUEL_START_RANGE)) return no('You cannot duel while fighting, trading, disconnected, or too far apart.');
   if (dist2(from.x, from.z, to.x, to.z) > DUEL_START_RANGE * DUEL_START_RANGE) return no(`${to.name} is too far away.`);
   if (to.duelChallenge && to.duelChallenge.t > 0) return no(`${to.name} has already been challenged.`);
   to.duelChallenge = { from: from.id, name: from.name, t: DUEL_CHALLENGE_TTL };
@@ -891,7 +985,7 @@ function duelAccept(p) {
   const ch = p.duelChallenge; p.duelChallenge = null;
   if (!ch || ch.t <= 0) return send(p.ws, { t: 'event', kind: 'notice', text: 'That challenge has lapsed.' });
   const from = players.get(ch.from);
-  if (!from || !from.alive || !p.alive) return send(p.ws, { t: 'event', kind: 'notice', text: 'They are in no state to duel.' });
+  if (!duelPairReady(from, p, DUEL_START_RANGE)) return notice(p, 'You can no longer start this duel.');
   if (duelOf(from) || duelOf(p)) return send(p.ws, { t: 'event', kind: 'notice', text: 'One of you is already in a duel.' });
   const d = { id: nextDuelId++, a: from.id, b: p.id, state: 'countdown', t: DUEL_COUNTDOWN, zoneId: p.zoneId };
   duels.set(d.id, d); from.duelId = d.id; p.duelId = d.id;
@@ -905,15 +999,17 @@ function duelDecline(p) {
   const from = players.get(ch.from);
   if (from) send(from.ws, { t: 'event', kind: 'notice', text: `${p.name} declined your challenge.` });
 }
-// However it ends -- yielded, walked away, logged out -- it ends the same way:
-// both of them whole, and nothing changed hands.
+// A started duel restores both players. Cancelling the salute must not heal
+// anyone or erase PvE combat that began during the countdown.
 function duelEnd(d, winnerId, how) {
   if (!duels.has(d.id)) return;
   duels.delete(d.id);
   const [a, b] = duelPair(d);
   for (const q of [a, b]) {
     if (!q) continue;
-    q.duelId = null; q.swing = null; q.queued = null;
+    q.duelId = null;
+    if (d.state !== 'fighting') continue;
+    q.swing = null; q.queued = null;
     if (q.combatId != null && (q.combatId === d.a || q.combatId === d.b)) q.combatId = null;
     if (q.alive) { q.hp = q.maxHp; if (q.manaMax) q.mana = q.manaMax; q.rage = 0; q.combatTimer = 0; sendStatus(q); }
   }
@@ -947,6 +1043,7 @@ function duelHit(p, t, dmg, crit, kind, res) {
   const d = duelOf(p);
   if (!d || d.state !== 'fighting') return;
   p.lastCombat = Date.now(); p.combatTimer = REGEN.combatLockout;
+  dmg = Math.max(0, Math.round(dmg * braceDamageMult(t) * passiveDirectMult(t)));
   const floor = Math.max(1, Math.round(t.maxHp * DUEL_YIELD));
   let done = false;
   if (dmg > 0) {
@@ -965,6 +1062,9 @@ function stepDuels(dt) {
   for (const d of [...duels.values()]) {
     const [a, b] = duelPair(d);
     if (!a || !b) { duelEnd(d, null, 'The duel is called off.'); continue; }
+    if (d.state === 'countdown' && (!duelPairReady(a, b, DUEL_START_RANGE) || a.zoneId !== d.zoneId)) {
+      duelEnd(d, null, 'The duel is called off before the fight.'); continue;
+    }
     if (!a.alive || !b.alive) { duelEnd(d, a.alive ? a.id : b.id, null); continue; }
     if (a.zoneId !== b.zoneId) { duelEnd(d, null, `${a.name} and ${b.name} part without a winner.`); continue; }
     if (dist2(a.x, a.z, b.x, b.z) > DUEL_BREAK_RANGE * DUEL_BREAK_RANGE) { duelEnd(d, null, `${a.name} and ${b.name} lose each other, and the duel with it.`); continue; }
@@ -1048,10 +1148,13 @@ function partyPayload(party) {
 // time and the client would parse a string with no message type on it.
 function sendParty(party) {
   const pay = JSON.stringify(partyPayload(party));
-  for (const m of partyMembers(party)) if (m.ws.readyState === m.ws.OPEN) m.ws.send(pay);
+  for (const m of partyMembers(party)) if (m.ws.readyState === m.ws.OPEN) sendRaw(m.ws, pay);
 }
 function partyNotice(party, text) { for (const m of partyMembers(party)) send(m.ws, { t: 'event', kind: 'notice', text }); }
 
+function clearPartyInvitesFrom(id) {
+  for (const q of players.values()) if (q.partyInvite?.from === id) q.partyInvite = null;
+}
 function partyInvite(from, toId) {
   const to = players.get(Number(toId));
   if (!to || to === from) return send(from.ws, { t: 'event', kind: 'notice', text: 'There is nobody there to invite.' });
@@ -1061,7 +1164,7 @@ function partyInvite(from, toId) {
   if (mine && mine.leader !== from.id) return send(from.ws, { t: 'event', kind: 'notice', text: 'Only the party leader can invite.' });
   if (mine && mine.members.length >= PARTY_MAX) return send(from.ws, { t: 'event', kind: 'notice', text: 'Your party is full.' });
   if (to.partyInvite && to.partyInvite.t > 0) return send(from.ws, { t: 'event', kind: 'notice', text: `${to.name} already has an invitation pending.` });
-  to.partyInvite = { from: from.id, name: from.name, t: PARTY_INVITE_TTL };
+  to.partyInvite = { from: from.id, partyId: mine ? mine.id : null, name: from.name, t: PARTY_INVITE_TTL };
   send(to.ws, { t: 'party:invite', from: from.id, name: from.name, seconds: PARTY_INVITE_TTL });
   send(from.ws, { t: 'event', kind: 'notice', text: `You invite ${to.name} to your party.` });
 }
@@ -1072,11 +1175,15 @@ function partyAccept(p) {
   if (!from) return send(p.ws, { t: 'event', kind: 'notice', text: 'They are no longer here.' });
   if (partyOf(p)) return send(p.ws, { t: 'event', kind: 'notice', text: 'You are already in a party.' });
   let party = partyOf(from);
+  if ((party ? party.id : null) !== inv.partyId || (party && party.leader !== from.id)) return notice(p, 'That party invitation is no longer valid.');
   if (!party) {   // the inviter's party starts the moment someone says yes
     party = { id: nextPartyId++, leader: from.id, members: [from.id] };
     parties.set(party.id, party); from.partyId = party.id;
+    // Other invitations from this solo leader now refer to this same party.
+    for (const q of players.values()) if (q.partyInvite?.from === from.id && q.partyInvite.partyId === null) q.partyInvite.partyId = party.id;
   }
   if (party.members.length >= PARTY_MAX) return send(p.ws, { t: 'event', kind: 'notice', text: 'That party is full.' });
+  clearPartyInvitesFrom(p.id);
   party.members.push(p.id); p.partyId = party.id;
   partyNotice(party, `${p.name} has joined the party.`);
   sendParty(party);
@@ -1091,11 +1198,12 @@ function partyDecline(p) {
 // all mean the same thing to everyone still in the party.
 function partyRemove(p, why) {
   const party = partyOf(p); if (!party) return;
+  clearPartyInvitesFrom(p.id);
   party.members = party.members.filter(id => id !== p.id);
   p.partyId = null;
   send(p.ws, partyPayload(null));
   if (party.members.length < 2) {            // a party of one is just a person
-    for (const m of partyMembers(party)) { m.partyId = null; send(m.ws, partyPayload(null)); send(m.ws, { t: 'event', kind: 'notice', text: 'The party has disbanded.' }); }
+    for (const m of partyMembers(party)) { clearPartyInvitesFrom(m.id); m.partyId = null; send(m.ws, partyPayload(null)); send(m.ws, { t: 'event', kind: 'notice', text: 'The party has disbanded.' }); }
     parties.delete(party.id);
     return;
   }
@@ -1256,6 +1364,7 @@ function sellItem(p, name, all) {
   const merchant = (zoneOf(p).npcs || []).find(n => n.trade);
   if (!merchant) return;
   if (dist2(p.x, p.z, merchant.x, merchant.z) > NPC_TALK_RADIUS * NPC_TALK_RADIUS) return;
+  if (valueOf(name) === 0) return notice(p, 'That item has no resale value.');
   const each = Math.max(1, Math.round(valueOf(name) * 0.4));   // merchants buy low
   let n = 0;
   do {
@@ -1286,7 +1395,7 @@ function sendSkills(p) {
   send(p.ws, { t: 'skills', mining: { level: st.level, xp: p.miningXp, into: st.into, next: st.next, pick: st.pick },
     fishing: { level: fp.level, into: fp.into, next: fp.next, rod: fisherStats(p).rod },
     cooking: { level: cp.level, into: cp.into, next: cp.next },
-    cls: { id: p.cls, name: classDef(p.cls).name, icon: classDef(p.cls).icon, desc: classDef(p.cls).desc, level: p.level, xp: Math.floor(p.xp), into: Math.floor(p.xp - xpTotalForLevel(p.level)), next: xpForLevel(p.level) },
+    cls: { id: p.cls, name: classDef(p.cls).name, icon: classDef(p.cls).icon, desc: classDef(p.cls).desc, level: p.level, xp: Math.floor(p.xp), into: Math.floor(p.xp - xpTotalForLevel(p.level)), next: classXpForLevel(p.level), maxLevel: MAX_CLASS_LEVEL },
     meditation: { level: p.meditation.level, xp: Math.floor(p.meditation.xp), into: Math.floor(p.meditation.xp - xpTotalForLevel(p.meditation.level)), next: xpForLevel(p.meditation.level) },
     resting: !!p.resting });
 }
@@ -1543,7 +1652,7 @@ function questBonus(p, q) {
 function notifyQuestProgress(p, ids) {
   if (!ids || !ids.length) return;
   for (const id of new Set(ids)) {
-    const q = QUESTS[id]; if (!q) continue;
+    const q = Object.hasOwn(QUESTS, id) ? QUESTS[id] : null; if (!q) continue;
     const pr = questProgress(p, q);
     const line = pr.objectives.filter(o => !o.done || o.need > 1)
       .map(o => `${o.label} ${o.have}/${o.need}`).join(', ');
@@ -1552,28 +1661,43 @@ function notifyQuestProgress(p, ids) {
   sendQuests(p);
 }
 
-function npcFor(zone, giverId) { return (zone.npcs || []).find(n => n.id === giverId); }
+function npcFor(zone, giverId) { return (zone?.npcs || []).find(n => n.id === giverId); }
 
-// The giver must actually be standing next to you — the client asking nicely
-// isn't enough.
-function nearGiver(p, q) {
-  const npc = npcFor(zoneOf(p), q.giver);
+// Resolve the NPC in the player's current zone, never from a client-provided
+// location. Conversation can consume delivery items, so it needs the same
+// living-player and distance checks as accepting work.
+function nearNpc(p, npcId) {
+  if (!p || !p.alive) return false;
+  const npc = npcFor(zoneOf(p), npcId);
   if (!npc) return false;
-  return dist2(p.x, p.z, npc.x, npc.z) <= NPC_TALK_RADIUS * NPC_TALK_RADIUS;
+  const distance = dist2(p.x, p.z, npc.x, npc.z);
+  return Number.isFinite(distance) && distance <= NPC_TALK_RADIUS * NPC_TALK_RADIUS;
+}
+function nearGiver(p, q) { return nearNpc(p, q.giver); }
+
+function talkToNpc(p, npcId) {
+  if (!nearNpc(p, npcId)) return;
+  const moved = recordTalk(p, npcId);
+  if (moved.length) { sendBag(p); notifyQuestProgress(p, moved); }
 }
 
 function acceptQuest(p, id) {
-  const q = QUESTS[id];
-  if (!q || !canStart(p, q) || !nearGiver(p, q)) return;
+  const reply = (ok, reason) => send(p.ws, { t: 'quest:accept', id, ok, ...(reason ? { reason } : {}) });
+  if (!p.alive) return reply(false, 'You cannot accept a quest while dead.');
+  const q = Object.hasOwn(QUESTS, id) ? QUESTS[id] : null;
+  if (!q) return reply(false, 'That quest is no longer available.');
+  if (!canStart(p, q)) return reply(false, 'You cannot accept that quest now. Check your quest log.');
+  if (!nearGiver(p, q)) return reply(false, 'Move closer to the quest giver to accept this quest.');
   p.quests.set(id, true);
   p.questKills[id] = p.questKills[id] || {};
   send(p.ws, { t: 'event', kind: 'questaccepted', id, name: q.name });
   systemChat(`${p.name} started "${q.name}".`);
   sendQuests(p);
+  reply(true);
 }
 
 function turnInQuest(p, id) {
-  const q = QUESTS[id];
+  const q = Object.hasOwn(QUESTS, id) ? QUESTS[id] : null;
   if (!q || !p.quests.has(id)) return;
   // Say why, rather than doing nothing: "walk back to them" is a fair thing
   // for the game to tell you.
@@ -1615,7 +1739,7 @@ function checkQuestReach(p) {
 // swapping a dagger for a maul changes the whole rhythm of the fight.
 function weaponOf(p) { return weaponProfile(p.equipment && p.equipment.weapon); }
 function playerAttackSpeed(p) {
-  const mo = classDef(p.cls).momentum, k = mo ? 1 - mo.atkSpeedPerStack * (p.momentum || 0) : 1;
+  const mo = classDef(p.cls).momentum, k = mo && passiveValue(p, 'momentum') ? 1 - mo.atkSpeedPerStack * (p.momentum || 0) : 1;
   return swingSeconds(weaponOf(p)) * k * atkSpeedMult(p);
 }
 // How far this player can reach their target: a spear fights from a step back,
@@ -1902,7 +2026,7 @@ function playerSwing(p, m, dmgMult) {
     level: cs.atk, hitBonus: bonus * 0.004, type: w.type,
     crit: critChance(p) + (w.crit || 0), critMult: classDef(p.cls).critMult || 2.0,
     band: swingBand(w, cs.str, bonus),
-    mult: dmgMult * (1 + dmgBuff(p, false)) * takenMult(m),
+    mult: dmgMult * (1 + dmgBuff(p, false)) * takenMult(m) * passiveWeaponMult(p, m),
   }, monsterDefence(m, p));
   applyHit(p, m, res.dmg, res.outcome === 'crit', w.type, res);
   if (res.dmg > 0) { addRage(p, (classDef(p.cls).rage || {}).autoHit || 0); spendSongCharges(clericCtx, p, 'weapon'); }   // landing a blow feeds the rage (and spends Blade Rhythm)
@@ -1924,7 +2048,7 @@ function monsterDefence(m, from) {
     facing: from ? facing(m.x, m.z, m.yaw, from.x, from.z) : true,
   };
 }
-function addRage(p, n) { const R = classDef(p.cls).rage; if (!R || !n) return; p.rage = Math.min(R.max, (p.rage || 0) + n); p.rageIdle = 0; }
+function addRage(p, n) { const R = classDef(p.cls).rage; if (!R || !n) return; p.rage = Math.min(R.max, (p.rage || 0) + n * (1 + passiveValue(p, 'rageGain'))); p.rageIdle = 0; }
 // The class resource on the bar: rage for the Fighter, mana for the Cleric.
 function resOf(p) { return classDef(p.cls).mana ? (p.mana || 0) : (p.rage || 0); }
 function spendRes(p, n) { if (classDef(p.cls).mana) p.mana = Math.max(0, (p.mana || 0) - n); else p.rage = Math.max(0, (p.rage || 0) - n); }
@@ -1944,7 +2068,7 @@ function dmgBuff(p, heavy, spell) {
   }
   return b;
 }
-function critChance(p) { let c = classDef(p.cls).critBase || 0.05; for (const bf of Object.values(p.buffs)) if (bf.t > 0 && bf.crit) c += bf.crit * songAmp(p, bf); return c; }
+function critChance(p) { let c = (classDef(p.cls).critBase || 0.05) + passiveValue(p, 'crit'); for (const bf of Object.values(p.buffs)) if (bf.t > 0 && bf.crit) c += bf.crit * songAmp(p, bf); return c; }
 function incomingMult(p) { let m = 1; for (const bf of Object.values(p.buffs)) if (bf.t > 0 && bf.taken) m += bf.taken; return m; }
 // Deep water, either a lake cell or one of the traced channels. A player in it
 // is swimming: slower, and with both hands busy.
@@ -2005,7 +2129,7 @@ function swimNow(zone, p) {
   return want;
 }
 function moveMult(p) {
-  let m = p.swimming ? SWIM_SPEED : 1;
+  let m = (p.swimming ? SWIM_SPEED : 1) * (1 + passiveValue(p, 'moveSpeed'));
   for (const bf of Object.values(p.buffs)) { if (!(bf.t > 0) || !bf.move) continue; const v = bf.moveCombat != null && (p.combatTimer || 0) > 0 ? bf.moveCombat : bf.move; m += v * songAmp(p, bf); }
   if (p.channel) m *= 0.6; if (p.slow && p.slow.t > 0) m *= p.slow.k; return m;
 }
@@ -2057,7 +2181,7 @@ function retarget(m) {
   if (was != null) broadcast({ t: 'event', kind: 'aggro', monster: m.id, target: id, from: was });
 }
 function addMomentum(p, n) {
-  const mo = classDef(p.cls).momentum; if (!mo || !p.known.has('momentum')) return; // the passive has to be learned too
+  const mo = classDef(p.cls).momentum; if (!mo || !passiveValue(p, 'momentum')) return; // the passive has to be learned too
   p.momentum = Math.min(mo.max, (p.momentum || 0) + n); p.momentumT = mo.dur;
 }
 // A crit can open a window: the classic "your next one is free" flash that
@@ -2065,7 +2189,7 @@ function addMomentum(p, n) {
 // one, and it is spent by the ability it lights up (see spendCharges / the
 // free-cost check in useAbility).
 const CRIT_PROCS = {
-  fighter: { id: 'opening', chance: 0.25, dur: 8,  name: 'Opening', dmg: 0.30, charges: 1, text: 'An opening! Your next ability strikes for +30%.' },
+  fighter: { id: 'opening', chance: 0.25, dur: 8,  name: 'Opening', dmg: 0.30, chargeTrigger: 'ability', charges: 1, text: 'An opening! Your next ability strikes for +30%.' },
   cleric:  { id: 'blessed_hands',   chance: 0.20, dur: 10, name: 'Blessed Hands', heal: 0.30, charges: 1, text: 'Your hands blaze with light!' },
   bard:    { id: 'encore',          chance: 0.22, dur: 10, name: 'Encore', free: true, charges: 1, text: 'Encore! Your next song is free.' },
 };
@@ -2074,7 +2198,7 @@ function procOnCrit(p) {
   if (!d || Math.random() >= d.chance) return;
   const have = p.buffs[d.id];
   if (have && have.t > 0) { have.t = d.dur; return; }   // already lit: just refresh it
-  addBuff(p, { id: d.id, dur: d.dur, charges: d.charges, dmg: d.dmg || 0, heal: d.heal || 0, free: !!d.free, proc: true, vis: 'proc' });
+  addBuff(p, { id: d.id, dur: d.dur, charges: d.charges, chargeTrigger: d.chargeTrigger, dmg: d.dmg || 0, heal: d.heal || 0, free: !!d.free, proc: true, vis: 'proc' });
   send(p.ws, { t: 'event', kind: 'proc', id: d.id, name: d.name, text: d.text });
 }
 // The global cooldown: the deliberate beat classic combat is built on. Most
@@ -2087,12 +2211,12 @@ function gcdFor(p, a) {
 }
 function savageTrigger(p) {
   const w = p.buffs.savage_watcher; if (!w || !(w.t > 0) || (p.savageCd || 0) > 0) return;
-  p.savageCd = 20; addBuff(p, { id: 'savage', dur: 300, charges: 6, dmg: 0.08, move: 0.12 });
+  p.savageCd = 20; addBuff(p, { id: 'savage', dur: 300, chargeTrigger: 'ability', charges: 6, dmg: 0.08, move: 0.12 });
 }
 // Spend one charge from every charge-limited buff that a melee ability consumes.
 function spendCharges(p, ab) {
   for (const [id, bf] of Object.entries(p.buffs)) {
-    if (!(bf.t > 0) || !bf.charges) continue;
+    if (!(bf.t > 0) || !bf.charges || bf.chargeTrigger !== 'ability') continue;
     if (bf.heavyOnly && !ab.heavy) continue;
     bf.charges--; if (bf.charges <= 0) delete p.buffs[id];
   }
@@ -2106,7 +2230,7 @@ function abilityHit(p, m, ab, extra = {}) {
   const wroll = maxHit(cs.str, bonus) * (0.6 + 0.4 * Math.random());
   let base = (ab.flat || 0) * scale + (ab.wd || 0) * wroll;
   if (extra.flat) base += extra.flat * scale; if (extra.wd) base += extra.wd * wroll;
-  let mult = (1 + dmgBuff(p, !!ab.heavy)) * takenMult(m) * (extra.mult || 1);
+  let mult = (1 + dmgBuff(p, !!ab.heavy)) * takenMult(m) * (extra.mult || 1) * passiveWeaponMult(p, m);
   const crit = Math.random() < critChance(p) + (extra.crit || 0);
   if (crit) mult *= (classDef(p.cls).critMult || 1.5) + (extra.critDmg || 0);
   const dmg = Math.max(1, Math.round(base * mult));
@@ -2132,9 +2256,54 @@ function monstersNear(p, x, z, r, cap, coneDeg) {
 }
 function aoeRadius(p, ab) { let r = ab.radius || 0; const br = p.buffs.berserkers_roar; if (br && br.t > 0 && br.radius) r += br.radius; return r; }
 
+
+// Passive effects are server-owned, with at most three class-specific choices.
+function passiveLockReason(p) {
+  if (!interactionReady(p)) return 'You must be alive and connected to change passives.';
+  if (duelOf(p)) return 'Finish your duel before changing passives.';
+  if (inPveCombat(p) || (p.engagedT || 0) > 0) return 'Leave combat before changing passives.';
+  for (const m of monsters.values()) if (m.alive && m.zoneId === p.zoneId && (m.targetId === p.id || (m.state === 'combat' && threatOf(m, p.id) > 0))) return 'An enemy is still fighting you.';
+  if (p.windup || p.channel || p.swing || p.queued) return 'Finish your action before changing passives.';
+  if (Object.values(p.dots || {}).some(d => d && d.t > 0)) return 'Wait for damaging effects to end before changing passives.';
+  return null;
+}
+function sendPassives(p, changedOnly = false) {
+  const reason = passiveLockReason(p);
+  const catalogue = (PASSIVES[p.cls] || []).map(a => ({ id: a.id, name: a.name, desc: a.desc, level: a.level,
+    available: passiveAvailable(p, a), unavailableReason: passiveAvailable(p, a) ? null : p.level < a.level ? `Unlocks at level ${a.level}.` : `Learn ${a.name} from your trainer at level ${a.level}.` }));
+  const payload = { t: 'passives', catalogue, equipped: sanitizePassives(p, p.passives), limit: passiveSlotLimit(p), slotLevels: PASSIVE_SLOT_LEVELS, locked: !!reason, reason };
+  const key = JSON.stringify(payload);
+  if (!changedOnly || p._passiveState !== key) { p._passiveState = key; send(p.ws, payload); }
+}
+function clearPassiveOwnedEffects(p) {
+  // Clear only effects placed by this caster. Never cleanse penalties, other
+  // casters' protection, damage-over-time, cooldowns or proc lockouts.
+  for (const q of players.values()) {
+    let changed = false;
+    for (const [id, b] of Object.entries(q.buffs || {})) {
+      if (b.by === p.id && id !== 'revival_sickness' && !(b.taken > 0)) { delete q.buffs[id]; changed = true; }
+    }
+    if (changed) sendStatus(q);
+  }
+  for (const zone of Object.values(ZONES)) if (zone._sanct) zone._sanct = zone._sanct.filter(s => s.by !== p.id);
+  p.momentum = 0; p.momentumT = 0; p.songs = []; p.songHistory = [];
+}
+
+function setPassives(p, ids, requestId) {
+  const reject = reason => { send(p.ws, { t: 'passives:result', ok: false, reason, requestId }); sendPassives(p); };
+  const clean = sanitizePassives(p, ids);
+  if (!Array.isArray(ids) || ids.length > PASSIVE_LIMIT || clean.length !== ids.length || new Set(ids).size !== ids.length) return reject(`Choose up to ${passiveSlotLimit(p)} different unlocked passives from your class. Slots unlock at levels 5, 15 and 30.`);
+  const reason = passiveLockReason(p); if (reason) return reject(reason);
+  if (JSON.stringify([...clean].sort()) !== JSON.stringify([...(p.passives || [])].sort())) {
+    clearPassiveOwnedEffects(p);
+    p.passives = clean; checkpointRequested = true; sendStatus(p); sendAbilities(p);
+  }
+  sendPassives(p); send(p.ws, { t: 'passives:result', ok: true, requestId });
+}
+
 // ---- Abilities (the action bar) ----
 function abilityList(p) {
-  return classDef(p.cls).abilities.map(a => ({ id: a.id, name: a.name, level: a.level, cd: a.cd || 0, cost: a.cost || 0, desc: a.desc,
+  return classDef(p.cls).abilities.map(a => ({ id: a.id, name: a.name, level: a.level, cd: a.cd || 0, cost: isSpell(a) ? costOf(p, a) : Math.round((a.cost || 0) * (isBardSpell(a) ? 1 - passiveValue(p, 'bardCost') : 1)), desc: a.desc,
     passive: !!a.passive, kind: a.kind || null, known: p.known.has(a.id), price: abilityCost(a),
     locked: p.level < a.level || !p.known.has(a.id), left: Math.max(0, p.cooldowns[a.id] || 0) }));
 }
@@ -2150,7 +2319,7 @@ function learnAbility(p, id) {
   if (p.gold < price) return say(`${a.name} costs ${price} gp — you have ${p.gold}.`);
   p.gold -= price; p.known.add(id);
   send(p.ws, { t: 'event', kind: 'learned', id, name: a.name, price });
-  sendBag(p); sendAbilities(p);
+  sendBag(p); sendAbilities(p); sendPassives(p);
 }
 function sendAbilities(p) {
   const c = classDef(p.cls);
@@ -2180,15 +2349,15 @@ function useAbility(p, id, fromQueue) {
   if (!p.known.has(id)) return say(`You haven't learned ${a.name}.`);
   if (p.level < a.level) return say(`${a.name} unlocks at level ${a.level}.`);
   // Busy, but nearly free: hold the press instead of dropping it.
-  const busy = Math.max(p.gcd || 0, p.windup ? p.windup.t : 0, p.channel ? 0.2 : 0);
+  const busy = Math.max(a.offGcd ? 0 : p.gcd || 0, p.windup ? p.windup.t : 0, p.channel ? 0.2 : 0);
   if (!fromQueue && busy > 0 && busy <= QUEUE_WINDOW && (p.cooldowns[id] || 0) <= busy) return queueAbility(p, id);
   if (p.swimming) return say('Not while you are swimming.');
   if ((p.cooldowns[id] || 0) > 0) return say(`${a.name} is not ready.`);
   if (p.channel || p.windup) return say('You are busy.');
-  if ((p.gcd || 0) > 0) return;
+  if (!a.offGcd && (p.gcd || 0) > 0) return;
   if (a.requires && !(p.buffs[a.requires] && p.buffs[a.requires].t > 0)) return say(`${a.name} needs an enemy to have just missed you.`);
   const freeProc = Object.values(p.buffs).find(b => b.t > 0 && b.free && b.charges > 0);
-  const cost = freeProc ? 0 : (isSpell(a) ? costOf(p, a) : (a.cost || 0));
+  const cost = freeProc ? 0 : (isSpell(a) ? costOf(p, a) : Math.round((a.cost || 0) * (isBardSpell(a) ? 1 - passiveValue(p, 'bardCost') : 1)));
   if (resOf(p) < cost) return say(`Not enough ${(c.resource || 'rage').toLowerCase()}.`);
   if (isSpell(a)) { const err = checkCast(clericCtx, p, a); if (err) return say(err); }
   if (isBardSpell(a)) { const err = checkBardCast(clericCtx, p, a); if (err) return say(err); }
@@ -2280,7 +2449,7 @@ function useAbility(p, id, fromQueue) {
   if (freeProc && (isSpell(a) ? costOf(p, a) : (a.cost || 0)) > 0) {
     freeProc.charges--; if (freeProc.charges <= 0) delete p.buffs[freeProc.id];
   }
-  p.cooldowns[id] = a.cd || 0; p.gcd = gcdFor(p, a);
+  p.cooldowns[id] = a.cd || 0; p.gcd = Math.max(p.gcd || 0, gcdFor(p, a));
   const gcd = p.gcd;
   let windup = a.windup || a.cast || 0;
   if (windup && a.cast) windup = Math.max(Math.min(windup, 1), windup * castTimeMult(p));   // Battle Hymn quickens casts, never under a second
@@ -2296,7 +2465,7 @@ function stepClass(p, inCombat) {
   if (p.rage == null) p.rage = 0;
   if (R) {
     // Rage builds while in a fight and bleeds away a while after it ends.
-    if (inCombat) { p.rage = Math.min(p.rageMax, p.rage + R.combatTick * DT); p.rageIdle = 0; }
+    if (inCombat) { p.rage = Math.min(p.rageMax, p.rage + R.combatTick * DT * (1 + passiveValue(p, 'rageGain'))); p.rageIdle = 0; }
     else { p.rageIdle = (p.rageIdle || 0) + DT; if (p.rageIdle > R.decayDelay) p.rage = Math.max(0, p.rage - R.decay * DT); }
   }
   if (M) {
@@ -2312,7 +2481,7 @@ function stepClass(p, inCombat) {
   if (p.slow && p.slow.t > 0) p.slow.t -= DT;
   if (p.dots) for (const [k, d] of Object.entries(p.dots)) {   // bleeds / burns tick every 1.5 s
     d.t -= DT; d.acc += DT;
-    if (d.acc >= 1.5) { d.acc -= 1.5; hurtPlayer(p, Math.round(d.dps * 1.5), null, k); }
+    if (d.acc >= 1.5) { d.acc -= 1.5; hurtPlayer(p, Math.round(d.dps * 1.5), null, k, undefined, { isPeriodic: true }); }
     if (d.t <= 0) delete p.dots[k];
   }
   for (const k of Object.keys(p.cooldowns)) if (p.cooldowns[k] > 0) p.cooldowns[k] = Math.max(0, p.cooldowns[k] - DT);
@@ -2443,7 +2612,7 @@ function monsterStrike(m, target, o = {}) {
   if (res.dmg <= 0) addBuff(target, { id: 'riposte_ready', dur: 300 });
   if (res.dmg > 0) {
     hurtPlayer(target, res.dmg, m, o.kind || o.type || arch.dmgType, res);
-    if (o.poison) { target.dots = target.dots || []; target.dots.push({ kind: 'poison', dmg: o.poison, t: 12, period: 3, next: 3 }); }
+    if (o.poison && target.alive) addDot(target, 'poison', 12, o.poison / 3);
   } else {
     engage(target, m);
     broadcast({ t: 'event', kind: 'hit', by: m.id, target: target.id, dmg: 0, targetKind: 'player', res: res.outcome, spell: o.name || null });
@@ -2462,17 +2631,18 @@ function landMonsterSwing(m) {
   monsterStrike(m, t);
 }
 
-function hurtPlayer(p, dmg, m, kind, res) {
+// Element / hitKind is visual; only explicit metadata marks periodic damage.
+function hurtPlayer(p, dmg, m, kind, res, damage = {}) {
   if (!p.alive || dmg <= 0) return;
   if (m && m.debuffs) dmg = Math.max(1, Math.round(dmg * monsterDmgMult(m) * bardMonsterDmgMult(m)));
-  const mit = mitigate(clericCtx, p, dmg, m, kind); dmg = mit.dmg;
+  const mit = mitigate(clericCtx, p, dmg, m, damage); dmg = mit.dmg;
   if (dmg >= p.hp) dmg = onLethal(clericCtx, p, dmg);
   p.hp -= dmg; p.combatTimer = REGEN.combatLockout; p.lastCombat = Date.now();
   if (classDef(p.cls).rage) addRage(p, (dmg + mit.absorbed) * classDef(p.cls).rage.damageTaken);
   if (m) engage(p, m);
   broadcast({ t: 'event', kind: 'hit', by: m ? m.id : null, target: p.id, dmg, absorbed: mit.absorbed || undefined, targetKind: 'player',
               hitKind: kind || null, res: res ? res.outcome : (dmg > 0 ? 'hit' : 'miss'), blocked: (res && res.blocked) || 0, spell: (res && res.spell) || undefined });
-  if (p.alive && p.hp > 0) afterHit(clericCtx, p, dmg + mit.absorbed, kind);
+  if (p.alive && p.hp > 0) afterHit(clericCtx, p, dmg + mit.absorbed, damage);
   if (mit.changed) sendStatus(p);
   if (p.hp <= 0) {
     if (m) { m.targetId = null; m.provoked = false; m.state = 'idle'; }
@@ -2483,7 +2653,13 @@ function hurtPlayer(p, dmg, m, kind, res) {
 // they fell; it stands for GRAVE_TTL seconds, and only they can dig it up.
 const GRAVE_TTL = 120;
 const graves = new Map();
+for (const g of worldStore.state.graves) { const id = nextId++; graves.set(id, { ...g, id, owner: null }); }
+for (const g of worldStore.state.groundItems) { const id = nextId++; groundItems.set(id, { ...g, id, owner: null }); }
 function killPlayer(p, how) {
+  // Escrow is still carried property: return it before taking the grave snapshot.
+  // Gold stays in the purse on death, including refunded trade gold.
+  tradeAbort(p, 'The trade is off.');
+  if (p.buffs) delete p.buffs.brace; // A short defensive stance ends when its owner falls.
   p.hp = 0; p.alive = false; p.deathTimer = RESPAWN_TIME; p.engagedWith = null;
   // Where you fell, so you can be put back on the ground that belongs to it.
   // Taken here rather than at respawn because by then you have been lying in
@@ -2523,7 +2699,7 @@ function lootGrave(p, id) {
   const g = graves.get(id); if (!g || g.zoneId !== p.zoneId) return;
   const say = (text) => notice(p, text);
   if (dist2(p.x, p.z, g.x, g.z) > 3.5 * 3.5) return say('You need to be at the grave.');
-  if (g.owner !== p.id && g.name !== p.name) return say(`This is ${g.name}'s grave. It is not yours to open.`);
+  if (g.name !== p.name) return say(`This is ${g.name}'s grave. It is not yours to open.`);
   let n = 0;
   for (const [slot, name] of Object.entries(g.equipment)) { if (!name) continue; if (!p.equipment[slot]) p.equipment[slot] = name; else p.inventory.push(name); n++; }
   for (const name of g.items) { p.inventory.push(name); n++; }
@@ -2538,7 +2714,7 @@ function graveList(zid) {
   return out;
 }
 function addSlow(p, t, k) { const ck = controlMult(p); if (ck < 1) spendSongCharges(clericCtx, p, 'control'); p.slow = { t: t * ck, k }; }
-function addDot(p, kind, t, dps) { if (resistsDot(clericCtx, p)) return; p.dots = p.dots || {}; p.dots[kind] = { t, dps, acc: 0 }; }
+function addDot(p, kind, t, dps) { if (!p.alive || resistsDot(clericCtx, p)) return; p.dots = p.dots || {}; p.dots[kind] = { t, dps, acc: 0 }; }
 // What the Cleric module needs from the world.
 const clericCtx = {
   players, monsters, send, broadcast, systemChat, zoneOf, addBuff, applyHit, critChance, sendStatus, dmgBuff, interruptMonster, addThreat, healThreat,
@@ -2662,6 +2838,7 @@ function stepMonster(m) {
 }
 
 function stepPlayer(p) {
+  sendPassives(p, true);
   if (!p.alive) { p.deathTimer -= DT; return; }
   const zone = zoneOf(p);
   p.canSwim = true;
@@ -2899,6 +3076,13 @@ function graveyardFor(p) {
   const place = placeAt(zone, where.x, where.z, where.y);
   return { zone, at: (place && place.graveyard) || zone.graveyard || zone.spawn };
 }
+// Relocations start from the destination floor, never the ledge we left.
+// Authored y selects a raised storey; absent y selects ground/step-height floors.
+function relocatePlayer(p, zone, at) {
+  p.x = at.x; p.z = at.z;
+  p.y = floorHeightAt(zone, p.x, p.z, Number.isFinite(at.y) ? at.y : 0);
+  p.relocation = (p.relocation || 0) + 1;
+}
 function respawnPlayer(p) {
   const { zone, at } = graveyardFor(p);
   // Nothing moves a corpse, so the zone you died in is the one you are in --
@@ -2907,7 +3091,7 @@ function respawnPlayer(p) {
   if (zone.id !== p.zoneId) { transitionPlayer(p, zone.id, at); p.alive = true; p.hp = p.maxHp; p.diedAt = null; return; }
   p.swing = null; p.queued = null;
   p.diedAt = null;
-  p.x = at.x; p.z = at.z; p.yaw = at.yaw != null ? at.yaw : p.yaw; p.hp = p.maxHp; p.rage = 0; p.mana = Math.round((p.manaMax || 0) * 0.5); p.buffs = {}; p.dots = null; p.slow = null; p.channel = null; p.windup = null; p.alive = true; p.moving = false; p.resting = false;
+  relocatePlayer(p, zone, at); p.yaw = at.yaw != null ? at.yaw : p.yaw; p.hp = p.maxHp; p.rage = 0; p.mana = Math.round((p.manaMax || 0) * 0.5); p.buffs = {}; p.dots = null; p.slow = null; p.channel = null; p.windup = null; p.alive = true; p.moving = false; p.resting = false;
   p.moveTo = null; p.combatId = null; p.pendingChest = null; p.pendingPickup = null;
   send(p.ws, { t: 'event', kind: 'respawned' });
 }
@@ -2916,12 +3100,12 @@ function transitionPlayer(p, toId, spawn) {
   const to = ZONES[toId];
   if (!to) { p.portalCd = 2; return; } // destination zone not built yet — ignore
   p.zoneId = toId;
-  p.x = spawn.x; p.z = spawn.z; p.yaw = spawn.yaw || 0;
+  relocatePlayer(p, to, spawn); p.yaw = spawn.yaw || 0;
   p.input = { f: 0, r: 0, yaw: 0 }; p.moving = false; p.hazardAccum = 0;
   p.moveTo = null; p.combatId = null; p.pendingChest = null; p.pendingPickup = null; p.pendingMine = null;
   p.portalCd = 2; // don't immediately re-trigger the return portal
   revealFog(p, to);   // arriving is seeing: the cave mouth is on the map you land on
-  send(p.ws, { t: 'transition', zone: zoneForClient(to), fog: fogPayload(p, to), visited: [...p.visited] });
+  sendScene(p, { t: 'transition', zone: zoneForClient(to), fog: fogPayload(p, to), visited: [...p.visited] });
   sendObjects(p);
   sendQuests(p); // giver markers are per-zone
   systemChat(`${p.name} entered ${to.name}.`);
@@ -3014,7 +3198,6 @@ let weatherTimer = 120;
 
 // Main loop
 let lastSnap = 0;
-let saveTimer = 0;
 // Stopping the server should not cost anybody their evening.
 let shuttingDown = false;
 function saveEveryoneAndExit(sig, code = 0) {
@@ -3026,14 +3209,14 @@ function saveEveryoneAndExit(sig, code = 0) {
     try { savePlayer(p); n++; } catch (e) { console.error(`[save] ${p.name} failed:`, e && e.message); }
   }
   console.log(`[save] ${sig}: wrote ${n} character${n === 1 ? '' : 's'}`);
+  commitWorld(true);
   process.exit(code);
 }
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => saveEveryoneAndExit(sig));
-// Last line of defence. A throw that reaches here has already left the game in
-// an unknown state, so the only safe thing is to write everybody out and stop
-// -- but nobody should lose their evening to a bug we did not foresee.
-process.on('uncaughtException', (err) => { console.error('[fatal]', err); saveEveryoneAndExit('uncaughtException', 1); });
-process.on('unhandledRejection', (err) => { console.error('[fatal] unhandled rejection', err); saveEveryoneAndExit('unhandledRejection', 1); });
+// A fatal exception may leave partial in-memory ownership changes. Never save
+// that state: stop and recover the last complete checkpoint on restart.
+process.on('uncaughtException', (err) => { console.error('[fatal] recovering last complete checkpoint', err); process.exit(1); });
+process.on('unhandledRejection', (err) => { console.error('[fatal] unhandled rejection', err); process.exit(1); });
 // Taking somebody out of the world, the only way it should be done.
 //
 // Order matters and used to be wrong: anything a player has on a trade table
@@ -3042,6 +3225,7 @@ process.on('unhandledRejection', (err) => { console.error('[fatal] unhandled rej
 // and the party come off first for the same reason -- what they hand back
 // belongs in the file.
 function leaveWorld(p) {
+  clearPassiveOwnedEffects(p);
   tradeAbort(p, `${p.name} leaves. The trade is off.`);
   duelForfeit(p, `${p.name} leaves the duel.`);
   partyRemove(p, `${p.name} has left the party.`);
@@ -3050,7 +3234,7 @@ function leaveWorld(p) {
   systemChat(`${p.name} has left the world.`);
 }
 
-setInterval(() => {
+setInterval(() => transaction(() => {
   if (DAY_NIGHT_CYCLE) dayTime = (dayTime + DT / DAY_LENGTH) % 1;
   weatherTimer -= DT;
   if (weatherTimer <= 0) {
@@ -3088,17 +3272,11 @@ setInterval(() => {
   }
   stepDuels(DT);
   stepTrades();
-  // A background save, staggered by id so thirty players are not all written
-  // in the same tick. A crash then costs the last three-quarters of a minute.
-  saveTimer += DT;
-  if (saveTimer >= 1) {
-    saveTimer = 0;
-    const slot = Math.floor(Date.now() / 1000) % SAVE_EVERY;
-    for (const p of players.values()) if (p.alive && p.id % SAVE_EVERY === slot) savePlayer(p);
-  }
+  // transaction() checkpoints the whole world every 45s, or immediately
+  // when ownership/progression changes; per-character save slots are unsafe.
 
   const now = Date.now();
-  if (now - lastSnap >= 1000 / SNAPSHOT_HZ) {
+  if (now - lastSnap >= 1000 / SNAPSHOT_HZ || [...players.values()].some(p => p.ws.readyState === p.ws.OPEN && p.ws.sceneLoad?.needsSnapshot)) {
     lastSnap = now;
     // Build one snapshot per zone; each player only sees entities in their zone.
     const byZone = {};
@@ -3107,10 +3285,10 @@ setInterval(() => {
       const ps = [], ms = [];
       for (const p of players.values()) {
         if (p.zoneId !== zid) continue;
-        ps.push({ id: p.id, name: p.name, x: +p.x.toFixed(2), z: +p.z.toFixed(2), y: +(p.y || 0).toFixed(2),
+        ps.push({ id: p.id, relocation: p.relocation || 0, name: p.name, x: +p.x.toFixed(2), z: +p.z.toFixed(2), y: +(p.y || 0).toFixed(2),
           yaw: +p.yaw.toFixed(2), hp: Math.round(p.hp), maxHp: p.maxHp, level: p.level,
           cls: p.cls,
-          xp: p.xp - xpTotalForLevel(p.level), xpNext: xpForLevel(p.level), gold: p.gold, alive: p.alive,
+          xp: p.xp - xpTotalForLevel(p.level), xpNext: classXpForLevel(p.level), classMaxLevel: MAX_CLASS_LEVEL, gold: p.gold, alive: p.alive,
           rage: Math.round(p.rage || 0), rageMax: p.rageMax || 0, momentum: p.momentum || 0,
           mana: p.manaMax ? Math.round(p.mana || 0) : undefined, manaMax: p.manaMax || undefined,
           channel: p.channel ? p.channel.id : null, windup: p.windup ? p.windup.id : null,
@@ -3164,8 +3342,9 @@ setInterval(() => {
         time: +dayTime.toFixed(4), weather }));
     };
     for (const p of players.values()) {
-      if (p.ws.readyState !== p.ws.OPEN) continue;
-      p.ws.send(zoneSnap(p.zoneId));
+      if (p.ws.readyState !== p.ws.OPEN || sceneLoading(p.ws)) continue;
+      sendRaw(p.ws, zoneSnap(p.zoneId));
+      if (p.ws.sceneLoad) p.ws.sceneLoad.needsSnapshot = false;
       // The snapshot is built once per zone and shared by everyone in it, so
       // the fog -- which is one player's own -- rides separately. Only the cells
       // uncovered since the last tick, which is a handful while walking and
@@ -3181,39 +3360,16 @@ setInterval(() => {
     // payload per party, not per member.
     for (const party of parties.values()) sendParty(party);
   }
-}, 1000 / TICK_HZ);
+}), 1000 / TICK_HZ);
 
-setInterval(() => {
-  for (const p of players.values()) if (!p.alive && p.deathTimer > 0) p.deathTimer -= 0.25;
-}, 250);
+// Death timers are advanced only by stepPlayer at the simulation rate.
 
 // ---------------------------------------------------------------------------
 // HTTP static host + WebSocket
 // ---------------------------------------------------------------------------
-const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.glb': 'model/gltf-binary', '.png': 'image/png', '.jpg': 'image/jpeg', '.mp3': 'audio/mpeg', '.wav': 'audio/wav' };
-const httpServer = http.createServer((req, res) => {
-  // decodeURIComponent throws on a malformed escape (GET /%zz). That throw used
-  // to come straight out of the request listener and take the whole world down,
-  // so a bad URL is answered rather than raised.
-  let urlPath;
-  try { urlPath = decodeURIComponent(req.url.split('?')[0]); }
-  catch { res.writeHead(400); res.end('Bad request'); return; }
-  if (urlPath === '/') urlPath = '/index.html';
-  // /shared/* is the one thing outside the client directory the browser may
-  // have: the modules the client and the server both import, so that there is
-  // one implementation of the world's shape and not two that drift.
-  const clean = path.normalize(urlPath).replace(/^(\.\.[/\\])+/, '');
-  const root = clean.startsWith('/shared/') || clean.startsWith('\\shared\\') ? SHARED_DIR : CLIENT_DIR;
-  const filePath = root === SHARED_DIR
-    ? path.join(SHARED_DIR, clean.slice('/shared'.length))
-    : path.join(CLIENT_DIR, clean);
-  if (!filePath.startsWith(root)) { res.writeHead(403); res.end('Forbidden'); return; }
-  fs.readFile(filePath, (err, data) => {
-    if (err) { res.writeHead(404); res.end('Not found'); return; }
-    res.writeHead(200, { 'Content-Type': MIME[path.extname(filePath)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });   // always revalidate: a refresh gets the current build
-    res.end(data);
-  });
-});
+// Only the client and shared roots are public; private server data is never
+// routed here. Unversioned assets revalidate rather than hiding hotfixes.
+const httpServer = http.createServer(createStaticHandler(CLIENT_DIR, SHARED_DIR));
 
 // Every model a zone needs: its scenery list plus the art of every monster
 // that spawns in it (and the boss set, which can turn up anywhere).
@@ -3300,14 +3456,36 @@ const wss = new WebSocketServer({ server: httpServer, maxPayload: MAX_MSG_BYTES 
 wss.on('error', (e) => console.warn('[ws] server error:', e && e.message));
 httpServer.on('clientError', (e, socket) => { try { socket.destroy(); } catch { /* already gone */ } });
 
-wss.on('connection', (ws) => {
+const pendingLogins = new Set(), authByIp = new Map();
+let activeAuth = 0, authWindow = 0, authCount = 0;
+function allowAuth(ip) {
+  const now = Date.now();
+  if (now - authWindow >= 1000) { authWindow = now; authCount = 0; }
+  for (const [key, value] of authByIp) if (now - value.start >= 60000) authByIp.delete(key);
+  const bucket = authByIp.get(ip) || { start: now, count: 0 };
+  if (activeAuth >= 2 || authCount >= 16 || bucket.count >= 12 || (!authByIp.has(ip) && authByIp.size >= 10000)) return false;
+  bucket.count++; authCount++; authByIp.set(ip, bucket); return true;
+}
+const heartbeat = setInterval(() => {
+  for (const ws of wss.clients) {
+    if (heartbeatExpired(ws)) { ws.terminate(); continue; }
+    ws.isAlive = false; ws.ping();
+  }
+}, 10000);
+heartbeat.unref();
+wss.on('connection', (ws, request) => {
+  const ip = request.socket.remoteAddress;
+  ws.isAlive = true; ws.connectedAt = Date.now();
+  ws.on('pong', () => { ws.isAlive = true; });
+  if ([...wss.clients].filter(s => s.remoteIp === ip).length >= 8) { ws.terminate(); return; }
+  ws.remoteIp = ip;
   let player = null;
   let msgCount = 0, msgWindow = Date.now(), floodNoted = 0;
   ws.on('error', (e) => {
     console.warn(`[ws] ${player ? player.name : 'a socket'}: ${e && e.message}`);
     try { ws.terminate(); } catch { /* already gone */ }   // the 'close' handler does the cleanup
   });
-  ws.on('message', (raw) => {
+  ws.on('message', async (raw) => {
     const now = Date.now();
     if (now - msgWindow >= MSG_WINDOW_MS) { msgCount = 0; msgWindow = now; }
     if (++msgCount > MSG_BURST) {
@@ -3315,7 +3493,24 @@ wss.on('connection', (ws) => {
       return;
     }
     let msg; try { msg = JSON.parse(raw); } catch { return; }
-    if (!msg || typeof msg !== 'object') return;
+    if (!validMessage(msg)) { send(ws, { t: 'error', text: 'Invalid message.' }); return; }
+    // Loading is an output/input gate, never a simulation or damage exemption.
+    if (player && sceneLoading(ws) && msg.t !== 'scene:ready' && msg.t !== 'logout') return;
+    let auth;
+    if (msg.t === 'join') {
+      if (player || ws.authPending) return;
+      msg.name = msg.name.slice(0, 16).replace(/[^\w \-]/g, '').replace(/\s+/g, ' ').trim();
+      const slug = saveSlug(msg.name);
+      if (!msg.name || pendingLogins.has(slug) || [...players.values()].some(q => saveSlug(q.name) === slug)) { send(ws, { t: 'loginfail', text: 'Name unavailable or already logged in.' }); return; }
+      if (!allowAuth(ip)) { send(ws, { t: 'loginfail', text: 'Too many login attempts. Try again later.' }); return; }
+      ws.authPending = true; pendingLogins.add(slug); activeAuth++;
+      try { auth = await authenticate(msg.name, msg.pass); }
+      catch (error) { console.warn('[account] login refused:', error.message); auth = { error: 'Account data unavailable. Contact the administrator.' }; }
+      finally { activeAuth--; pendingLogins.delete(slug); ws.authPending = false; }
+      if (ws.readyState !== ws.OPEN) return;
+      if (!auth.ok) { send(ws, { t: 'loginfail', text: auth.error }); return; }
+    }
+    transaction(() => {
     switch (msg.t) {
       case 'join': {
         if (player) return;
@@ -3326,11 +3521,10 @@ wss.on('connection', (ws) => {
         if ([...players.values()].some(q => saveSlug(q.name) === saveSlug(name))) {
           send(ws, { t: 'loginfail', text: `${name} is already logged in.` }); break;
         }
-        const auth = authenticate(name, msg.pass);
         if (!auth.ok) { send(ws, { t: 'loginfail', text: auth.error }); break; }
         const id = nextId++;
         const look = sanitizeLook(msg.look);
-        const cls = CLASSES[msg.cls] ? String(msg.cls) : DEFAULT_CLASS;
+        const cls = Object.hasOwn(CLASSES, msg.cls) ? String(msg.cls) : DEFAULT_CLASS;
         const start = ZONES[START_ZONE];
         player = {
           id, ws, kind: 'player', name, look, zoneId: START_ZONE,
@@ -3342,7 +3536,7 @@ wss.on('connection', (ws) => {
           // world map is allowed to name). Both are per player and both save.
           fog: {}, visited: new Set(), _fogNew: [], _fogCell: -1, _fogZone: null,
           known: new Set(classDef(cls).abilities.filter(a => a.level <= 1).map(a => a.id)), // learned abilities
-          cooldowns: {}, buffs: {}, gcd: 0, momentum: 0, momentumT: 0, rage: 0, rageMax: classStats(cls, 1).rage, rageIdle: 0,
+          passives: [], cooldowns: {}, buffs: {}, gcd: 0, momentum: 0, momentumT: 0, rage: 0, rageMax: classStats(cls, 1).rage, rageIdle: 0,
           mana: classStats(cls, 1).mana, manaMax: classStats(cls, 1).mana, friendId: null,
           partyId: null, partyInvite: null, duelId: null, duelChallenge: null, tradeId: null, tradeRequest: null,
           meditation: { level: 1, xp: 0 }, resting: false,
@@ -3350,7 +3544,7 @@ wss.on('connection', (ws) => {
           // pickaxe rides in the bag (it counts for mining from there); the
           // class's own weapon is what's in hand.
           inventory: [...STARTING_INVENTORY],
-          equipment: Object.assign(emptySlots(), { weapon: classDef(cls).startWeapon || 'Bronze Dagger' }), gear: {},
+          equipment: emptySlots(), gear: {},
           miningXp: 0, pendingMine: null, mineTimer: 0,
           fishingXp: 0, pendingFish: null, fishTimer: 0, fishing: null, fishReel: 0, fishCaught: null,
           fishBite: 0, fishOnLine: null,
@@ -3366,25 +3560,33 @@ wss.on('connection', (ws) => {
         // showing, because the character is the thing being resumed.
         const saved = loadSave(name);
         if (saved) applySave(player, saved);
-        players.set(id, player);
+        // Creation-only: reconnects and existing saves never replenish a kit.
+        else { player.equipment = starterEquipment(player.cls); player.gear = gearOf(player.equipment); }
+        players.set(id, player); ws.joined = true;
+        for (const g of graves.values()) if (g.name === name) g.owner = id;
         const here = ZONES[player.zoneId] || start;
         revealFog(player, here);   // you can see where you are standing before you move
-        send(ws, { t: 'welcome', id, tickRate: SNAPSHOT_HZ, zone: zoneForClient(here), items: ITEM_CATALOG,
+        sendScene(player, { t: 'welcome', id, tickRate: SNAPSHOT_HZ, zone: zoneForClient(here), items: ITEM_CATALOG,
                    atlas: worldAtlas(), fog: fogPayload(player, here), visited: [...player.visited] });
         sendBag(player); // sends the quest payload too
         sendSkills(player);
-        sendAbilities(player); sendStatus(player);
+        sendAbilities(player); sendStatus(player); sendPassives(player);
         sendObjects(player);
-        if (auth.created) send(ws, { t: 'event', kind: 'notice', text: `Account created for ${player.name}. Use the same password next time.` });
-        else if (saved) send(ws, { t: 'event', kind: 'notice', text: `Welcome back, ${player.name}.` });
+        player._loginNotice = auth.created ? `Account created for ${player.name}. Use the same password next time.`
+          : saved ? `Welcome back, ${player.name}.` : null;
         // Say so rather than let somebody wonder why they woke up somewhere else.
         if (player._movedByRevamp) {
           delete player._movedByRevamp;
-          send(ws, { t: 'event', kind: 'notice', text: 'The woods have changed since you were last here. You have been set back on the road.' });
+          player._loginNotice = `${player._loginNotice || ''} The woods have changed since you were last here. You have been set back on the road.`;
         }
         systemChat(`${name} has entered ${here.name}.`);
         break;
       }
+      case 'scene:ready': {
+        if (player && acceptSceneReady(ws, msg, player.zoneId)) sendSceneState(player);
+        break;
+      }
+      case 'passives:set': { if (player) setPassives(player, msg.ids, msg.requestId); break; }
       case 'input': {
         if (!player) return;
         player.input = {
@@ -3478,9 +3680,7 @@ wss.on('connection', (ws) => {
         break;
       }
       case 'talk': {
-        if (!player) break;
-        const moved = recordTalk(player, String(msg.npc || ''));   // may also hand over what you were asked to bring
-        if (moved.length) { sendBag(player); notifyQuestProgress(player, moved); }
+        if (player) talkToNpc(player, String(msg.npc || ''));
         break;
       }
       case 'useobject': {
@@ -3548,20 +3748,20 @@ wss.on('connection', (ws) => {
         break;
       }
       case 'give': {   // editor tool: hand the player any item, to test gear without grinding for it
-        if (!player || !editAllowed(msg.key) || !ITEMS[msg.item]) break;
+        if (!player || !editAllowed(msg.key) || !Object.hasOwn(ITEMS, msg.item)) break;
         for (let i = 0; i < Math.min(28, Math.max(1, msg.qty | 0)); i++) player.inventory.push(String(msg.item));
         sendBag(player); break;
       }
       case 'tp': {   // editor tool: stand somewhere, to test a fight without the walk
         if (!player || !editAllowed(msg.key)) break;
         const b = zoneOf(player).bounds;
-        player.x = clamp(Number(msg.x) || 0, b.minX, b.maxX); player.z = clamp(Number(msg.z) || 0, b.minZ, b.maxZ);
+        relocatePlayer(player, zoneOf(player), { x: clamp(Number(msg.x) || 0, b.minX, b.maxX), z: clamp(Number(msg.z) || 0, b.minZ, b.maxZ) });
         player.moveTo = null; player._nav = null; player.combatId = null;
         break;
       }
       case 'setlevel': {   // editor tool: jump to a class level with every ability learned, to test a class
         if (!player || !editAllowed(msg.key)) break;
-        const L = Math.max(1, Math.min(MAX_LEVEL, msg.level | 0)); player.level = L; player.xp = xpTotalForLevel(L);
+        const L = clampClassLevel(msg.level); player.level = L; player.xp = xpTotalForLevel(L);
         const cs = classStats(player.cls, L); player.maxHp = cs.hp; player.hp = cs.hp; player.manaMax = cs.mana; player.mana = cs.mana;
         for (const a of classDef(player.cls).abilities) if (a.level <= L) player.known.add(a.id);
         sendAbilities(player); sendBag(player); break;
@@ -3571,7 +3771,7 @@ wss.on('connection', (ws) => {
         break;
       }
       case 'edit:loot:set': {
-        if (!editAllowed(msg.key) || !MONSTER_TEMPLATES[msg.type] || !Array.isArray(msg.table)) break;
+        if (!editAllowed(msg.key) || !Object.hasOwn(MONSTER_TEMPLATES, msg.type) || !Array.isArray(msg.table)) break;
         const table = msg.table.filter(e => e && lootItemOk(e.item)).map(e => ({
           item: String(e.item), min: Math.max(0, Math.min(9999, (+e.min | 0) || 1)),
           max: Math.max(1, Math.min(9999, (+e.max | 0) || 1)), chance: Math.max(1, Math.min(100000, (+e.chance | 0) || 1)),
@@ -3581,7 +3781,7 @@ wss.on('connection', (ws) => {
         break;
       }
       case 'edit:spawn:place': {
-        if (!player || !editAllowed(msg.key) || !MONSTER_TEMPLATES[msg.type]) break;
+        if (!player || !editAllowed(msg.key) || !Object.hasOwn(MONSTER_TEMPLATES, msg.type)) break;
         const z = zoneOf(player);
         const sp = { id: 's' + (editSeq++), type: String(msg.type), cx: +(+msg.x).toFixed(2), cz: +(+msg.z).toFixed(2),
           r: +(+(msg.r || 8)).toFixed(1), count: Math.max(1, Math.min(20, +(msg.count || 3) | 0)),
@@ -3593,7 +3793,7 @@ wss.on('connection', (ws) => {
       case 'edit:spawn:update': {
         if (!player || !editAllowed(msg.key)) break;
         const z = zoneOf(player); const sp = (z._editSpawns || []).find(s => s.id === msg.id); if (!sp) break;
-        if (msg.type != null && MONSTER_TEMPLATES[msg.type]) sp.type = String(msg.type);
+        if (msg.type != null && Object.hasOwn(MONSTER_TEMPLATES, msg.type)) sp.type = String(msg.type);
         if (msg.cx != null) sp.cx = +(+msg.cx).toFixed(2);
         if (msg.cz != null) sp.cz = +(+msg.cz).toFixed(2);
         if (msg.r != null) sp.r = Math.max(1, Math.min(60, +(+msg.r).toFixed(1)));
@@ -3669,7 +3869,7 @@ wss.on('connection', (ws) => {
         player.pendingChest = null; player.pendingPickup = null;
         break;
       }
-      case 'questaccept': if (player && player.alive) acceptQuest(player, String(msg.id || '')); break;
+      case 'questaccept': if (player) acceptQuest(player, String(msg.id || '')); break;
       case 'questturnin': if (player && player.alive) turnInQuest(player, String(msg.id || '')); break;
       case 'questsync': if (player) { sendQuests(player); sendObjects(player); } break;
       case 'respawn': if (player && !player.alive && player.deathTimer <= 0) respawnPlayer(player); break;
@@ -3677,7 +3877,7 @@ wss.on('connection', (ws) => {
         if (!player) return;
         const wait = player.lastCombat ? LOGOUT_COMBAT_WAIT - (Date.now() - player.lastCombat) / 1000 : 0;
         if (player.alive && wait > 0) { send(ws, { t: 'event', kind: 'notice', text: `You can't log out in combat. Wait ${Math.ceil(wait)}s.` }); break; }
-        send(ws, { t: 'logout' }); leaveWorld(player); player = null;
+        sendRaw(ws, JSON.stringify({ t: 'logout' }), true); leaveWorld(player); player = null; ws.joined = false; ws.sceneLoad = null; ws.connectedAt = Date.now();
         break;
       }
       case 'chat': {
@@ -3687,19 +3887,22 @@ wss.on('connection', (ws) => {
         break;
       }
     }
+    });
   });
-  ws.on('close', () => {
+  ws.on('close', () => transaction(() => {
     if (!player) return;
     const wait = player.lastCombat ? LOGOUT_COMBAT_WAIT - (Date.now() - player.lastCombat) / 1000 : 0;
     if (player.alive && wait > 0) {
       // Closed the game mid-fight: the character stays in the world, defenceless,
       // for the rest of the combat wait. Monsters may finish the job.
+      player.input = { f: 0, r: 0, yaw: player.yaw };
+      player.pendingChest = player.pendingPickup = player.pendingMine = player.pendingFish = player.pendingCook = player.pendingUse = player.pendingSeat = null;
       player.lingerT = wait; player.moveTo = null; player._nav = null; player.combatId = null;
       systemChat(`${player.name} tried to flee the fight — their body lingers.`);
       return;
     }
     leaveWorld(player);
-  });
+  }));
 });
 
 httpServer.listen(PORT, () => {

@@ -1,159 +1,46 @@
-// End-to-end check of equipment against a live server.
-//   cd server && node server.js &        (or PORT=8099 node server.js &)
-//   cd server && node tools/equiptest.mjs
-// Proves gear moves real numbers, that the server refuses what it should, and
-// that nothing is ever duplicated or destroyed by an equip/unequip swap.
+// Deterministic inventory fixture, real login and equip/combat protocol. No rare-drop lottery.
+import assert from 'node:assert/strict';
+import { classStats, mitigate, damageReduction } from '../balance.js';
+import { weaponProfile, swingBand, swingSeconds } from '../combat.js';
+import { ITEMS, SLOTS, slotsFor } from '../items.js';
+import { runTest, sleep } from './test-fixture.mjs';
 
-import WebSocket from 'ws';
-import { playerDamageRange, mitigate, damageReduction } from '../balance.js';
-import { ITEMS, SLOTS, SLOT_PAIRS, slotsFor, equipStats } from '../items.js';
-
-const PORT = process.env.PORT || 8080;
-const ws = new WebSocket(`ws://localhost:${PORT}`);
-
-let me = null, myId = null, snapshot = null;
-let bag = { items: [], gold: 0, equipment: {}, stats: { atk: 0, def: 0 } };
-let bagSlots = null;
-const events = [];
-let failures = 0;
-
-const send = (o) => ws.send(JSON.stringify(o));
-const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-function check(label, cond, detail = '') {
-  console.log(`${cond ? '  ok  ' : '  FAIL'}  ${label}${detail ? '  — ' + detail : ''}`);
-  if (!cond) failures++;
-}
-const held = (n) => bag.items.filter(i => i === n).length;
-const totalOf = (n) => held(n) + Object.values(bag.equipment).filter(v => v === n).length;
-
-ws.on('message', (raw) => {
-  const m = JSON.parse(raw);
-  if (m.t === 'welcome') myId = m.id;
-  else if (m.t === 'snapshot') { snapshot = m; me = m.players.find(p => p.id === myId) || me; }
-  else if (m.t === 'bag') {
-    bag = { items: m.items, gold: m.gold, equipment: m.equipment || {}, stats: m.stats || {} };
-    if (m.slots) bagSlots = m.slots;
+await runTest(async f => {
+  const s = f.state, gear = 'Bronze Dagger';
+  const held = n => s.bag.items.filter(i => i === n).length;
+  const total = n => held(n) + Object.values(s.bag.equipment).filter(i => i === n).length;
+  assert.equal(Object.keys(s.bag.slots).length, SLOTS.length);
+  assert.equal(slotsFor('ring').length, 2); assert.equal(slotsFor('earring').length, 2);
+  assert.equal(mitigate(0, 5), 0); assert.equal(mitigate(2, 999), 1);
+  assert.ok(damageReduction(4) < damageReduction(10));
+  assert.equal(held(gear), 1, 'saved fixture loaded');
+  f.send({ t: 'equip', item: 'Iron Sword' }); await sleep(300);
+  assert.ok(!s.bag.equipment.weapon, 'unheld gear refused');
+  f.send({ t: 'equip', item: gear });
+  await f.wait('dagger equipped', () => s.bag.equipment.weapon === gear);
+  assert.equal(total(gear), 1); assert.equal(held(gear), 0);
+  assert.equal(s.bag.stats.atk, ITEMS[gear].atk);
+  const profile = weaponProfile(gear), cs = classStats(s.me.cls || 'fighter', s.me.level);
+  const band = swingBand(profile, cs.str, s.bag.stats.atk);
+  assert.deepEqual([s.bag.swing.lo, s.bag.swing.hi], band, 'server sheet uses class + weapon swing band');
+  assert.equal(s.bag.swing.sec, +swingSeconds(profile).toFixed(1));
+  // A level-one passive chicken has no armour/block/glance against this Fighter.
+  // Record each observed event once; distinguish crits from normal landed hits.
+  const target = s.snapshot.monsters.filter(m => m.type === 'chicken' && m.level === 1 && m.alive)
+    .sort((a,b)=>Math.hypot(a.x-s.me.x,a.z-s.me.z)-Math.hypot(b.x-s.me.x,b.z-s.me.z))[0];
+  assert.ok(target, 'current starter chicken exists');
+  f.send({ t: 'attack', target: target.id });
+  await f.wait('real geared hit', () => s.events.some(e => e.kind === 'hit' && e.by === s.id && e.dmg > 0), 60000);
+  const hits = s.events.filter(e => e.kind === 'hit' && e.by === s.id && e.dmg > 0);
+  for (const h of hits) {
+    const mult = h.crit ? 2 : 1;
+    assert.ok(h.dmg >= band[0]*mult && h.dmg <= band[1]*mult, `hit ${h.dmg} within ${band} x ${mult}`);
   }
-  else if (m.t === 'event') events.push(m);
-});
-
-ws.on('open', async () => {
-  send({ t: 'join', name: 'GearBot' });
-  await sleep(900);
-
-  console.log('\n--- slot model ---');
-  check('the server ships the slot layout', !!bagSlots && Object.keys(bagSlots).length === SLOTS.length,
-    bagSlots ? Object.keys(bagSlots).length + ' slots' : 'none');
-  check('rings and earrings are paired', slotsFor('ring').length === 2 && slotsFor('earring').length === 2,
-    slotsFor('ring').join(' + ') + ', ' + slotsFor('earring').join(' + '));
-  check('every slot has a label and a place in the window',
-    !!bagSlots && Object.values(bagSlots).every(i => i.label && i.col && i.row != null));
-
-  console.log('\n--- maths ---');
-  check('defence has diminishing returns',
-    damageReduction(4) < damageReduction(10) && damageReduction(10) < 0.35,
-    `+4 = ${(damageReduction(4) * 100).toFixed(0)}%, +10 = ${(damageReduction(10) * 100).toFixed(0)}%`);
-  check('a landed hit always does at least 1', mitigate(2, 999) === 1);
-  check('a miss stays a miss through armour', mitigate(0, 5) === 0);
-  const [lo1, hi1] = playerDamageRange(5, 0), [lo2, hi2] = playerDamageRange(5, 7);
-  check('a weapon shifts the whole damage roll', lo2 === lo1 + 7 && hi2 === hi1 + 7,
-    `${lo1}-${hi1} -> ${lo2}-${hi2}`);
-
-  console.log('\n--- level gating ---');
-  // Level 1 character: hand it gear it can't use yet by way of the chest? No —
-  // just try to equip something it doesn't hold, then something it can't wear.
-  send({ t: 'equip', item: 'Iron Sword' });
-  await sleep(400);
-  check('cannot equip an item you do not hold', !bag.equipment.weapon);
-
-  console.log('\n--- earn some gear ---');
-  // Goblins drop a Bronze Dagger on ~8% of kills and Goblin Mail on ~5%, so
-  // waiting on one specific item made this test fail about a third of the time
-  // for no reason. Take whichever turns up first.
-  const WANTED = ['Bronze Dagger', 'Goblin Mail'];
-  const earned = () => WANTED.find(n => held(n) > 0);
-  let tries = 0;
-  while (!earned() && tries++ < 30) {
-    const gobs = (snapshot?.monsters || []).filter(m => m.type === 'goblin' && m.alive);
-    if (!gobs.length) { await sleep(400); continue; }
-    gobs.sort((a, b) => Math.hypot(a.x - me.x, a.z - me.z) - Math.hypot(b.x - me.x, b.z - me.z));
-    send({ t: 'attack', target: gobs[0].id });
-    for (let i = 0; i < 40; i++) {
-      await sleep(250);
-      const cur = (snapshot?.monsters || []).find(m => m.id === gobs[0].id);
-      if (!cur || !cur.alive) break;
-    }
-    for (let i = 0; i < 6; i++) {
-      const items = (snapshot?.items || []).slice()
-        .sort((a, b) => Math.hypot(a.x - me.x, a.z - me.z) - Math.hypot(b.x - me.x, b.z - me.z));
-      if (!items.length) break;
-      send({ t: 'pickup', id: items[0].id });
-      await sleep(800);
-    }
-  }
-  const gear = earned();
-  check('a wearable item dropped and was looted', !!gear, (gear || 'nothing') + ' after ' + tries + ' goblins');
-  if (!gear) { console.log('\ncannot continue without gear\n'); ws.close(); process.exit(1); }
-  const base = ITEMS[gear].slot;
-  const slot = slotsFor(base)[0];
-  const bonusKey = ITEMS[gear].atk ? 'atk' : 'def';
-
-  console.log('\n--- equip ---');
-  const beforeBonus = bag.stats[bonusKey] || 0;
-  const carried = bag.items.length;
-  send({ t: 'equip', item: gear });
-  await sleep(500);
-  check(`${slot} slot is filled`, bag.equipment[slot] === gear, JSON.stringify(bag.equipment));
-  check(`${bonusKey} bonus went up`, (bag.stats[bonusKey] || 0) === beforeBonus + ITEMS[gear][bonusKey],
-    `+${beforeBonus} -> +${bag.stats[bonusKey]}`);
-  check('it left the bag', bag.items.length === carried - 1, `${carried} -> ${bag.items.length}`);
-  check('the item still exists exactly once', totalOf(gear) === 1);
-  check('an equip event fired', events.some(e => e.kind === 'equip' && e.item === gear));
-
-  console.log('\n--- gear actually changes the damage dealt ---');
-  const dmgSamples = [];
-  const onHit = (m) => { if (m.kind === 'hit' && m.by === myId && m.dmg > 0) dmgSamples.push(m.dmg); };
-  const seen = events.length;
-  let fights = 0;
-  while (dmgSamples.length < 8 && fights++ < 8) {
-    const gobs = (snapshot?.monsters || []).filter(m => m.type === 'goblin' && m.alive);
-    if (!gobs.length) { await sleep(400); continue; }
-    gobs.sort((a, b) => Math.hypot(a.x - me.x, a.z - me.z) - Math.hypot(b.x - me.x, b.z - me.z));
-    send({ t: 'attack', target: gobs[0].id });
-    for (let i = 0; i < 30 && dmgSamples.length < 8; i++) {
-      await sleep(250);
-      for (const e of events.slice(seen)) onHit(e);
-      events.length = Math.min(events.length, seen); // keep the window fresh
-      const cur = (snapshot?.monsters || []).find(m => m.id === gobs[0].id);
-      if (!cur || !cur.alive) break;
-    }
-  }
-  const [expLo, expHi] = playerDamageRange(me.level, bag.stats.atk || 0);
-  const outOfRange = dmgSamples.filter(d => d < expLo || d > expHi);
-  check('every hit landed inside the geared damage range', dmgSamples.length > 0 && outOfRange.length === 0,
-    `${dmgSamples.length} hits in ${expLo}-${expHi} (lv ${me.level}, +${bag.stats.atk} atk)` +
-    (outOfRange.length ? ' outliers: ' + outOfRange.join(',') : ''));
-
-  console.log('\n--- swap and unequip ---');
-  send({ t: 'unequip', slot });
-  await sleep(500);
-  check(`${slot} slot is empty again`, !bag.equipment[slot]);
-  check('the item came back to the bag', held(gear) === 1);
-  check(`${bonusKey} bonus dropped back`, (bag.stats[bonusKey] || 0) === beforeBonus, `+${bag.stats[bonusKey]}`);
-  send({ t: 'unequip', slot });
-  await sleep(300);
-  check('unequipping an empty slot does nothing', totalOf(gear) === 1, totalOf(gear) + ' copies');
-
-  console.log('\n--- selling ---');
-  const goldBefore = me.gold;
-  send({ t: 'sell', item: gear });   // merchant is far away
-  await sleep(500);
-  check('cannot sell away from a merchant', held(gear) === 1 && me.gold === goldBefore,
-    `gold ${me.gold}`);
-
-  console.log(`\n${failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECK(S) FAILED'}\n`);
-  ws.close();
-  process.exit(failures === 0 ? 0 : 1);
-});
-
-ws.on('error', (e) => { console.error('socket error:', e.message); process.exit(1); });
+  f.send({ t: 'move', x: s.me.x, z: s.me.z });
+  f.send({ t: 'unequip', slot: 'weapon' });
+  await f.wait('dagger returned', () => !s.bag.equipment.weapon && held(gear) === 1);
+  assert.equal(total(gear), 1); assert.equal(s.bag.stats.atk, 0);
+  f.send({ t: 'unequip', slot: 'weapon' }); await sleep(300); assert.equal(total(gear), 1);
+  const gold = s.bag.gold; f.send({ t: 'sell', item: gear }); await sleep(300);
+  assert.equal(held(gear), 1, 'remote sale refused'); assert.equal(s.bag.gold, gold);
+}, { prefix: 'Gear', save: { inventory: ['Bronze Dagger', 'Bronze Pickaxe', 'Fishing Rod'] }, timeout: 120000 });

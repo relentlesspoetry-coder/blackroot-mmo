@@ -623,7 +623,10 @@ export function prepareZone(z) {
   z._scatter = generateScatter(z);
   // Anything the zone places by hand goes down after the scatter and is not
   // rejection-sampled: a camp that was laid out is a camp, not a suggestion.
-  for (const pr of (z.props || [])) z._scatter.push({ i: z._scatter.length, m: pr.m, x: pr.x, z: pr.z, s: pr.s || 1, r: pr.yaw || 0, c: pr.c || 0 });
+  // Preserve authored length-only scaling: the native farm gate spans 2 m
+  // between posts, while these farms reserve a 4 m opening. Scaling height too
+  // would make it twice as tall as the fence. The client already supports sx.
+  for (const pr of (z.props || [])) z._scatter.push({ i: z._scatter.length, m: pr.m, x: pr.x, z: pr.z, s: pr.s || 1, ...(pr.sx != null ? { sx: pr.sx } : {}), r: pr.yaw || 0, c: pr.c || 0 });
   // Trees the zone asks for by hand -- ones inside a clearing the forest was
   // told to keep out of -- join the generated forest, so they get the same
   // trunk collision and the same species-for-a-position as any other tree.
