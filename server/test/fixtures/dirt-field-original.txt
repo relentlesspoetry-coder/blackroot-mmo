@@ -1,0 +1,86 @@
+function buildDirtField(shapes, discs, material, y, T, polys = []) {
+  const CELL = 0.55;
+  let mnx = 1e9, mxx = -1e9, mnz = 1e9, mxz = -1e9;
+  const grow = (x, z, r) => { mnx = Math.min(mnx, x - r); mxx = Math.max(mxx, x + r); mnz = Math.min(mnz, z - r); mxz = Math.max(mxz, z + r); };
+  for (const s of shapes) for (const p of s.pts) grow(p.x, p.z, s.hw + s.fr);
+  for (const d of discs) grow(d.x, d.z, d.r + d.fr);
+  for (const pg of polys) { pg.ring = pg.pts.concat([pg.pts[0]]); for (const p of pg.pts) grow(p.x, p.z, pg.fr); }
+  if (mnx > mxx) return null;
+  // segment lengths (for end fades)
+  for (const s of shapes) { s.cum = [0]; for (let i = 1; i < s.pts.length; i++) s.cum.push(s.cum[i - 1] + Math.hypot(s.pts[i].x - s.pts[i - 1].x, s.pts[i].z - s.pts[i - 1].z)); s.total = s.cum[s.cum.length - 1]; }
+  const alphaAt = (x, z) => {
+    let best = 0;
+    for (const s of shapes) {
+      const R = s.hw + s.fr, pts = s.pts;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const a = pts[i], b = pts[i + 1];
+        // cheap reject
+        if (x < Math.min(a.x, b.x) - R || x > Math.max(a.x, b.x) + R || z < Math.min(a.z, b.z) - R || z > Math.max(a.z, b.z) + R) continue;
+        const dx = b.x - a.x, dz = b.z - a.z, L2 = dx * dx + dz * dz || 1;
+        const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / L2));
+        const d = Math.hypot(x - (a.x + dx * t), z - (a.z + dz * t));
+        if (d >= R) continue;
+        let al = d <= s.hw ? 1 : 1 - (d - s.hw) / s.fr;
+        if (s.fadeEnd) { const along = s.cum[i] + Math.sqrt(L2) * t; al *= Math.max(0, Math.min(1, (s.total - along) / s.fadeEnd)); }
+        if (s.river) for (const r of worldRivers()) { const rd = distToPolyline(x, z, r.points); al *= Math.max(0, Math.min(1, (rd - riverWaterHalf(r.width)) / 2.5)); }
+        if (al > best) best = al;
+      }
+    }
+    for (const dsc of discs) {
+      const d = Math.hypot(x - dsc.x, z - dsc.z), R = dsc.r + dsc.fr;
+      if (d >= R) continue;
+      const al = d <= dsc.r ? 1 : 1 - (d - dsc.r) / dsc.fr;
+      if (al > best) best = al;
+    }
+    // closed outlines (the mining scrapes): solid inside, feathered outside
+    for (const pg of polys) {
+      if (best >= 1) break;
+      if (pointInPoly(x, z, pg.pts)) { best = 1; break; }
+      const d = distToPolyline(x, z, pg.ring);
+      if (d < pg.fr) {
+        // a ragged edge: noise pushes the fringe in and out so grass creeps in as patches
+        const t = 1 - d / pg.fr, n = fbm2(x * 2.2 + 91, z * 2.2 - 47, 53);
+        const al = Math.max(0, Math.min(1, (t - 0.5) * 1.6 + 0.5 + (n - 0.5) * 0.9));
+        best = Math.max(best, al * al * (3 - 2 * al));
+      }
+    }
+    return best;
+  };
+  const nx = Math.ceil((mxx - mnx) / CELL), nz = Math.ceil((mxz - mnz) / CELL);
+  const A = new Float32Array((nx + 1) * (nz + 1));
+  for (let j = 0; j <= nz; j++) for (let i = 0; i <= nx; i++) A[j * (nx + 1) + i] = alphaAt(mnx + i * CELL, mnz + j * CELL);
+  const pos = [], uv = [], col = [], idx = [], vid = new Int32Array((nx + 1) * (nz + 1)).fill(-1);
+  const vert = (i, j) => {
+    const k = j * (nx + 1) + i; if (vid[k] >= 0) return vid[k];
+    const x = mnx + i * CELL, z = mnz + j * CELL;
+    // Shades of brown drifting across the ground. The coordinates are scaled up
+    // before the noise so its features come out around 2-18m rather than
+    // 6-45m: across a camp the size of a clearing the wide version barely
+    // changed at all, and the ground read as one flat tone.
+    const hueN = fbm2((x + 57) * 2.6, (z - 211) * 2.6, 41);
+    const ligN = fbm2((x - 389) * 2.6, (z + 133) * 2.6, 43);
+    const satN = fbm2((x + 907) * 2.6, (z + 619) * 2.6, 47);
+    // Earth, not khaki: the hue stays inside orange-brown, the saturation
+    // never drops far enough to go grey, and the lightness has the widest
+    // spread of the three so the brown reads as a gradient drifting across
+    // the ground rather than one flat tone.
+    dirtCol.setHSL(0.047 + hueN * 0.045, 0.36 + satN * 0.32, 0.11 + ligN * 0.28);
+    vid[k] = pos.length / 3; pos.push(x, groundMeshY(x, z) + y, z); uv.push(x / T, z / T); col.push(dirtCol.r, dirtCol.g, dirtCol.b, A[k]); return vid[k];
+  };
+  for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
+    const k = j * (nx + 1) + i;
+    if (A[k] <= 0 && A[k + 1] <= 0 && A[k + nx + 1] <= 0 && A[k + nx + 2] <= 0) continue;
+    const a = vert(i, j), b = vert(i + 1, j), c = vert(i, j + 1), d = vert(i + 1, j + 1);
+    idx.push(a, c, b, b, c, d);
+  }
+  if (!idx.length) return null;
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
+  g.setIndex(idx); g.computeVertexNormals();
+  const m = new THREE.Mesh(g, material); m.receiveShadow = true; scene.add(m);
+  m.userData.alphaAt = alphaAt;   // how much dirt is at a spot: the pebbles ask the same question
+  m.userData.groundDecal = { name: 'dirt', lift: y };   // __bk.groundFit() checks it lies flat
+  return m;
+}

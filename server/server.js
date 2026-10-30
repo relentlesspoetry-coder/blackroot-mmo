@@ -5,6 +5,7 @@ import { PASSIVES, PASSIVE_LIMIT, PASSIVE_SLOT_LEVELS, passiveSlotLimit, passive
 // codebase applied correctly: never trust the client.
 
 import http from 'http';
+import { createStaticHandler } from './static-host.js';
 import { atomicWrite, readJson, WorldStore } from './persistence.js';
 import { validMessage } from './protocol.js';
 import { sceneLoading, beginSceneLoad, acceptSceneReady, heartbeatExpired } from './scene-loading.js';
@@ -3366,30 +3367,9 @@ setInterval(() => transaction(() => {
 // ---------------------------------------------------------------------------
 // HTTP static host + WebSocket
 // ---------------------------------------------------------------------------
-const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.glb': 'model/gltf-binary', '.png': 'image/png', '.jpg': 'image/jpeg', '.mp3': 'audio/mpeg', '.wav': 'audio/wav' };
-const httpServer = http.createServer((req, res) => {
-  // decodeURIComponent throws on a malformed escape (GET /%zz). That throw used
-  // to come straight out of the request listener and take the whole world down,
-  // so a bad URL is answered rather than raised.
-  let urlPath;
-  try { urlPath = decodeURIComponent(req.url.split('?')[0]); }
-  catch { res.writeHead(400); res.end('Bad request'); return; }
-  if (urlPath === '/') urlPath = '/index.html';
-  // /shared/* is the one thing outside the client directory the browser may
-  // have: the modules the client and the server both import, so that there is
-  // one implementation of the world's shape and not two that drift.
-  const clean = path.normalize(urlPath).replace(/^(\.\.[/\\])+/, '');
-  const root = clean.startsWith('/shared/') || clean.startsWith('\\shared\\') ? SHARED_DIR : CLIENT_DIR;
-  const filePath = root === SHARED_DIR
-    ? path.join(SHARED_DIR, clean.slice('/shared'.length))
-    : path.join(CLIENT_DIR, clean);
-  if (!filePath.startsWith(root)) { res.writeHead(403); res.end('Forbidden'); return; }
-  fs.readFile(filePath, (err, data) => {
-    if (err) { res.writeHead(404); res.end('Not found'); return; }
-    res.writeHead(200, { 'Content-Type': MIME[path.extname(filePath)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });   // always revalidate: a refresh gets the current build
-    res.end(data);
-  });
-});
+// Only the client and shared roots are public; private server data is never
+// routed here. Unversioned assets revalidate rather than hiding hotfixes.
+const httpServer = http.createServer(createStaticHandler(CLIENT_DIR, SHARED_DIR));
 
 // Every model a zone needs: its scenery list plus the art of every monster
 // that spawns in it (and the boss set, which can turn up anywhere).

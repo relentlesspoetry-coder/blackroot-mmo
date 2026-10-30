@@ -11,7 +11,7 @@ function fn(name) {
   return source.slice(match.index, source.indexOf('\n}', match.index) + 2);
 }
 function context(values, names) {
-  const c = vm.createContext({ ...values });
+  const c = vm.createContext({ bkPerf: { begin() { return null; }, end() {} }, ...values });
   vm.runInContext(names.map(fn).join('\n'), c);
   return c;
 }

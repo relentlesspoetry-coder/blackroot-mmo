@@ -123,7 +123,7 @@ test('loading leaves damage, monster engagement and lethal hits authoritative', 
 function clientFixture() {
   const sent = [], models = new Map(), frames = [], built = [];
   const ws = { readyState: 1, send: raw => sent.push(JSON.parse(raw)) };
-  const c = vm.createContext({ ws, WebSocket: { OPEN: 1 }, zoneLoadGeneration: 0, zoneLoading: false,
+  const c = vm.createContext({ bkPerf: { begin() { return null; }, end() {} }, ws, WebSocket: { OPEN: 1 }, zoneLoadGeneration: 0, zoneLoading: false,
     resetGameplayInput() {}, document: { getElementById: () => ({}) },
     loadModels: ([id]) => new Promise(resolve => models.set(id, resolve)),
     loadZone: zone => built.push(zone.id), requestAnimationFrame: callback => frames.push(callback), handle() {} });

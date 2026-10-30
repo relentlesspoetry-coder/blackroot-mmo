@@ -817,6 +817,69 @@ import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import * as TERRAIN from '/shared/terrain.js';
 import * as FOGLIB from '/shared/fog.js';
 
+// Local opt-in diagnostics: ?perf=1 before loading, or __bkPerf.start() in
+// the console. __bkProf = {} remains supported. No samples, URLs or telemetry.
+// BEGIN BLACKROOT PERF
+const bkPerf = (() => {
+  let enabled = new URLSearchParams(location.search).get('perf') === '1';
+  let epoch = 0, frame = null;
+  let data = { frame: {}, startup: {} };
+  const active = () => enabled || !!window.__bkProf;
+  function begin(group, name) {
+    return active() ? { group, name, start: performance.now(), epoch, legacy: window.__bkProf } : null;
+  }
+  function record(group, name, ms) {
+    const table = data[group];
+    // Only fixed internal names are used; also bound storage defensively.
+    if (!table[name] && Object.keys(table).length >= 64) return;
+    const row = table[name] || (table[name] = { calls: 0, totalMs: 0, maxMs: 0 });
+    row.calls++; row.totalMs += ms; row.maxMs = Math.max(row.maxMs, ms);
+  }
+  function end(token) {
+    if (!token || token.epoch !== epoch) return;
+    const ms = Math.max(0, performance.now() - token.start);
+    record(token.group, token.name, ms);
+    if (token.group === 'frame') {
+      if (frame && token !== frame) frame.measured += ms;
+      if (token.legacy) token.legacy[token.name] = (token.legacy[token.name] || 0) + ms;
+    }
+    return ms;
+  }
+  function measure(group, name, fn) {
+    const token = begin(group, name);
+    try { return fn(); } finally { end(token); }
+  }
+  function beginFrame() {
+    frame = begin('frame', 'total');
+    if (frame) frame.measured = 0;
+    return frame;
+  }
+  function endFrame(token) {
+    if (!token) return;
+    frame = null;
+    const ms = end(token);
+    if (ms === undefined) return;
+    record('frame', 'other', Math.max(0, ms - token.measured));
+    if (token.legacy) token.legacy.frames = (token.legacy.frames || 0) + 1;
+  }
+  const api = Object.freeze({
+    start() { enabled = true; },
+    stop() { enabled = false; window.__bkProf = null; },
+    reset() { epoch++; frame = null; data = { frame: {}, startup: {} }; if (window.__bkProf) window.__bkProf = {}; },
+    report() {
+      return JSON.parse(JSON.stringify({ enabled: active(), units: 'milliseconds',
+        notes: 'Frame total is inclusive CPU callback wall time, not GPU time or FPS. Sections are disjoint; other includes unwrapped work and profiling overhead. Startup stages are inclusive and can overlap/nest: do not sum them. Counts include calls that throw. Reset discards in-flight measurements.',
+        ...data }));
+    },
+  });
+  Object.defineProperty(window, '__bkPerf', { value: api, writable: false, configurable: false });
+  return { begin, end, measure, beginFrame, endFrame };
+})();
+const _ps = (name, fn) => bkPerf.measure('startup', name, fn);
+const _pf = (name, fn) => bkPerf.measure('frame', name, fn);
+// END BLACKROOT PERF
+
+
 // ---------------------------------------------------------------------------
 // 3D model assets (GLB). Loaded once up front.
 // ---------------------------------------------------------------------------
@@ -1021,6 +1084,8 @@ function ensureNormals(root) {
   return n;
 }
 async function loadModels(list, onProgress) {
+  const perfStage = bkPerf.begin('startup', 'assetModels');
+  try {
   const wanted = list.filter(p => LOADED[modelKey(p)] === undefined);
   if (!wanted.length) { if (onProgress) onProgress(1, 1); return; }
   let done = 0;
@@ -1030,6 +1095,7 @@ async function loadModels(list, onProgress) {
     catch (e) { console.warn('Model failed to load:', path, e); LOADED[key] = null; }
     done++; if (onProgress) onProgress(done, wanted.length);
   }));
+  } finally { bkPerf.end(perfStage); }
 }
 
 // Clone a model normalized to a target height with its base at y=0, centered.
@@ -1296,6 +1362,7 @@ let wardrobe = null, wardrobeLoading = null;
 function loadWardrobe() {
   if (wardrobe) return Promise.resolve(wardrobe);
   if (wardrobeLoading) return wardrobeLoading;
+  const perfWardrobe = bkPerf.begin('startup', 'wardrobe');
   wardrobeLoading = Promise.all([
     gltfLoader.loadAsync('models/human/Wardrobe.glb'),
     fetch('models/human/wardrobe.json').then(r => r.json()).catch(() => null),
@@ -1327,6 +1394,7 @@ function loadWardrobe() {
     wardrobe = { pieces, manifest, boneNames, geos: new Map() };
     return wardrobe;
   }).catch(e => { console.warn('Wardrobe failed to load', e); wardrobe = { pieces: new Map(), manifest: null, boneNames: null, geos: new Map() }; return wardrobe; });
+  if (perfWardrobe) wardrobeLoading = wardrobeLoading.finally(() => bkPerf.end(perfWardrobe));
   return wardrobeLoading;
 }
 // Which garments a look wears: an outfit number out of the manifest, with any
@@ -1989,6 +2057,8 @@ function disposeZoneGraphics() {
 // Apply per-zone lighting + fog, then (re)build the world. Used on first load
 // and on every zone transition.
 function loadZone(zdata) {
+  const perfStage = bkPerf.begin('startup', 'loadZone');
+  try {
   zone = zdata; lastRegionId = null;
   TERRAIN.resetTerrain(zone);    // fields, pads, lattice and river profiles, for THIS zone
   // Sit the camera behind the character's spawn facing. Without this it
@@ -2053,6 +2123,7 @@ function loadZone(zdata) {
   // announces itself here.
   lastRegionId = null;
   if (!(zone && zone.regions && zone.regions.length)) showZoneTitle();
+  } finally { bkPerf.end(perfStage); }
 }
 
 // ---------------------------------------------------------------------------
@@ -2248,23 +2319,48 @@ function buildDirtField(shapes, discs, material, y, T, polys = []) {
   if (mnx > mxx) return null;
   // segment lengths (for end fades)
   for (const s of shapes) { s.cum = [0]; for (let i = 1; i < s.pts.length; i++) s.cum.push(s.cum[i - 1] + Math.hypot(s.pts[i].x - s.pts[i - 1].x, s.pts[i].z - s.pts[i - 1].z)); s.total = s.cum[s.cum.length - 1]; }
+  // Index only the original segment rejection boxes. This changes candidate
+  // lookup, not the 0.55m grid, blending math, river mask or mesh topology.
+  // Build per field (including editor rebuilds); never retain a stale zone index.
+  const BIN = 16, bins = new Map(), wide = [], empty = [];
+  let segmentId = 0;
+  for (const s of shapes) for (let i = 0; i < s.pts.length - 1; i++) {
+    const a = s.pts[i], b = s.pts[i + 1], R = s.hw + s.fr;
+    const seg = { s, i, a, b, R, id: segmentId++,
+      minX: Math.min(a.x, b.x) - R, maxX: Math.max(a.x, b.x) + R,
+      minZ: Math.min(a.z, b.z) - R, maxZ: Math.max(a.z, b.z) + R };
+    const x0 = Math.floor(seg.minX / BIN), x1 = Math.floor(seg.maxX / BIN);
+    const z0 = Math.floor(seg.minZ / BIN), z1 = Math.floor(seg.maxZ / BIN);
+    // Long diagonal/editor segments must not allocate millions of bin entries.
+    if ((x1 - x0 + 1) * (z1 - z0 + 1) > 256) { wide.push(seg); continue; }
+    for (let bx = x0; bx <= x1; bx++) {
+      let column = bins.get(bx);
+      if (!column) bins.set(bx, column = new Map());
+      for (let bz = z0; bz <= z1; bz++) {
+        let bucket = column.get(bz);
+        if (!bucket) column.set(bz, bucket = []);
+        bucket.push(seg);
+      }
+    }
+  }
   const alphaAt = (x, z) => {
     let best = 0;
-    for (const s of shapes) {
-      const R = s.hw + s.fr, pts = s.pts;
-      for (let i = 0; i < pts.length - 1; i++) {
-        const a = pts[i], b = pts[i + 1];
-        // cheap reject
-        if (x < Math.min(a.x, b.x) - R || x > Math.max(a.x, b.x) + R || z < Math.min(a.z, b.z) - R || z > Math.max(a.z, b.z) + R) continue;
-        const dx = b.x - a.x, dz = b.z - a.z, L2 = dx * dx + dz * dz || 1;
-        const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / L2));
-        const d = Math.hypot(x - (a.x + dx * t), z - (a.z + dz * t));
-        if (d >= R) continue;
-        let al = d <= s.hw ? 1 : 1 - (d - s.hw) / s.fr;
-        if (s.fadeEnd) { const along = s.cum[i] + Math.sqrt(L2) * t; al *= Math.max(0, Math.min(1, (s.total - along) / s.fadeEnd)); }
-        if (s.river) for (const r of worldRivers()) { const rd = distToPolyline(x, z, r.points); al *= Math.max(0, Math.min(1, (rd - riverWaterHalf(r.width)) / 2.5)); }
-        if (al > best) best = al;
-      }
+    const nearby = bins.get(Math.floor(x / BIN))?.get(Math.floor(z / BIN)) || empty;
+    // Both lists are in source order. Merge without allocations, preserving the
+    // original evaluation order even when a very long segment uses the fallback.
+    let n = 0, w = 0;
+    while (n < nearby.length || w < wide.length) {
+      const seg = w >= wide.length || (n < nearby.length && nearby[n].id < wide[w].id) ? nearby[n++] : wide[w++];
+      const { s, i, a, b, R } = seg;
+      if (x < seg.minX || x > seg.maxX || z < seg.minZ || z > seg.maxZ) continue;
+      const dx = b.x - a.x, dz = b.z - a.z, L2 = dx * dx + dz * dz || 1;
+      const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / L2));
+      const d = Math.hypot(x - (a.x + dx * t), z - (a.z + dz * t));
+      if (d >= R) continue;
+      let al = d <= s.hw ? 1 : 1 - (d - s.hw) / s.fr;
+      if (s.fadeEnd) { const along = s.cum[i] + Math.sqrt(L2) * t; al *= Math.max(0, Math.min(1, (s.total - along) / s.fadeEnd)); }
+      if (s.river) for (const r of worldRivers()) { const rd = distToPolyline(x, z, r.points); al *= Math.max(0, Math.min(1, (rd - riverWaterHalf(r.width)) / 2.5)); }
+      if (al > best) best = al;
     }
     for (const dsc of discs) {
       const d = Math.hypot(x - dsc.x, z - dsc.z), R = dsc.r + dsc.fr;
@@ -3086,12 +3182,14 @@ function updateWaterSurface(tSec) {
 // takes the ground's 'grass' grain, which is what the lake and fen shores have
 // always done.
 function buildZone() {
+  const perfStage = bkPerf.begin('startup', 'buildZone');
+  try {
   bridgeInfos = []; riverMesh = null; riverTex = null; // rebuilt below per river
   const b = zone.bounds;
   const W = b.maxX - b.minX, D = b.maxZ - b.minZ, cx = (b.minX + b.maxX) / 2, cz = (b.minZ + b.maxZ) / 2;
 
   // Low-poly faceted, vertex-coloured ground (Old School RuneScape style)
-  buildLowPolyGround(W, D, cx, cz);
+  _ps('ground', () => buildLowPolyGround(W, D, cx, cz));
 
   // Boundary walls. In the cave these are the visible dark rock/light occluder;
   // in the open air the mountain range IS the border, so the walls are invisible
@@ -3184,7 +3282,7 @@ function buildZone() {
   // Ground a camp has worn bare. Same field as the roads, so where a path runs
   // into a camp the two are one piece of dirt rather than two overlapping ones.
   for (const d of (zone.dirt || [])) discs.push({ x: d.x, z: d.z, r: d.r, fr: d.fr != null ? d.fr : 3 });
-  buildDirtStones(buildDirtField(shapes, discs, dirtMat, 0.05, 3, []), shapes, discs, []);
+  _ps('dirt', () => buildDirtStones(buildDirtField(shapes, discs, dirtMat, 0.05, 3, []), shapes, discs, []));
 
 
 // Rivers — deep flowing water sitting in the carved channel, one per river.
@@ -3192,7 +3290,7 @@ function buildZone() {
   // and every river channel, contoured together off depth. The rivers used to
   // get their own ribbon laid on top of the traced sheets, which is how a
   // river mouth ended up with three translucent layers stacked on it.
-  buildTerrainWater();
+  _ps('water', () => buildTerrainWater());
 
   for (const river of worldRivers()) {
     // A body of water can carry several crossings (`bridges`); `bridge` is the
@@ -3264,10 +3362,10 @@ function buildZone() {
   for (const p of zone.pois) { buildPoi(p); poiWorld.push(p); }
 
   // Cave dressing (stalagmites, crystals, ore veins, cobwebs)
-  buildScatter();
+  _ps('scatter', () => buildScatter());
 
   // Quest givers / merchants
-  buildNpcs();
+  _ps('npcs', () => buildNpcs());
 
   // The farm gate — a standalone model that swings open/shut (server-driven).
 
@@ -3295,13 +3393,14 @@ function buildZone() {
   if (zone.hazards) buildHazards();
 
   // Forest — dense trees avoiding path, river, clearings and rocks.
-  buildForest();
+  _ps('forest', () => buildForest());
 
   // Undergrowth detail + ambient particles.
-  buildDetails();
-  buildFireflies();
-  buildCritters();
+  _ps('details', () => buildDetails());
+  _ps('fireflies', () => buildFireflies());
+  _ps('critters', () => buildCritters());
 
+  } finally { bkPerf.end(perfStage); }
 }
 
 function nearestSeg(pts, x, z) {
@@ -13119,14 +13218,13 @@ document.getElementById('mapTabWorld').addEventListener('click', () => setMapMod
 document.getElementById('mapBtn').addEventListener('click', toggleMap);
 mapWin.addEventListener('click', (e) => { if (e.target === mapWin) closeMap(); });
 
-// ?debug=1 profiling: `window.__bkProf = {}` then read it back — ms accumulated per
-// frame step, so a stall can be pinned to the function that causes it.
-const _pf = (name, fn) => { const P = window.__bkProf; if (!P) return fn(); const t = performance.now(); fn(); P[name] = (P[name] || 0) + performance.now() - t; };
 function animate() {
+  const perfFrame = bkPerf.beginFrame();
+  try {
   requestAnimationFrame(animate);
   frameCount++;
   const dt = Math.min(0.05, clock.getDelta());
-  if (zoneLoading || connectionState === 'disconnected') { renderer.render(scene, camera); return; }
+  if (zoneLoading || connectionState === 'disconnected') { _pf('loadingRender', () => renderer.render(scene, camera)); return; }
   _pf('renderWorld', () => renderWorld(dt));
   _pf('sky', () => updateSky(dt));
   _pf('controls', () => updateControls(dt));
@@ -13151,7 +13249,8 @@ function animate() {
   if (riverTex && !waterSurfaces.length) riverTex.offset.y = (riverTex.offset.y - dt * 0.12 + 1) % 1;
   _pf('fires', () => updateCampfires(dt));
   // expanding ripple rings on fishing spots -- and the fish making them
-  updateAmbientFish(dt, performance.now() / 1000);
+  _pf('ambientFish', () => updateAmbientFish(dt, performance.now() / 1000));
+  _pf('fishingSpots', () => {
   if (fishSpots.length) {
     const tf = performance.now() / 1000;
     const _bm = _bubMtx;
@@ -13211,7 +13310,9 @@ function animate() {
       }
     }
   }
+  });
   windClock.value = performance.now() / 1000;
+  _pf('fireflies', () => {
   // Fireflies: drift, blink, and only after dark.
   if (fireflies) {
     const t = performance.now() / 1000, ud = fireflies.userData;
@@ -13296,11 +13397,12 @@ function animate() {
       fireflies.geometry.attributes.color.needsUpdate = true;
     }
   }
+  });
   _pf('critters', () => updateCritters(dt));
   _pf('amb', () => updateAmbience());
   _pf('cull', () => cullFarChunks(camera));
   _pf('render', () => renderer.render(scene, camera));
-  if (window.__bkProf) window.__bkProf.frames = (window.__bkProf.frames || 0) + 1;
+  } finally { bkPerf.endFrame(perfFrame); }
 }
 
 // ---------------------------------------------------------------------------
@@ -13355,6 +13457,7 @@ const modelsReady = loadModels(CORE_MODELS, (d, t) => {
 // the client knowing anything about it.
 let zoneLoading = false, zoneLoadGeneration = 0, incomingZoneId = null, pendingZoneSnapshot = null;
 async function enterZone(zdata, sceneReceipt = null) {
+  const perfEnter = bkPerf.begin('startup', 'enterZone');
   const socket = sceneReceipt ? ws : null;
   const generation = ++zoneLoadGeneration;
   zoneLoading = true; incomingZoneId = zdata.id; pendingZoneSnapshot = null;
@@ -13383,7 +13486,7 @@ async function enterZone(zdata, sceneReceipt = null) {
   } catch (e) {
     if (generation !== zoneLoadGeneration) return;
     document.getElementById('ztMain').textContent = 'Zone could not load. Reload to retry.';
-  }
+  } finally { bkPerf.end(perfEnter); }
 }
 
 let pickedClass = 'fighter';
