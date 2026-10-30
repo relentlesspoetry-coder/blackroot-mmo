@@ -76,7 +76,7 @@ export function stepHazards(ctx, zone, dt) {
     if (!p.alive || p.zoneId !== zone.id) continue;
     if (p._hazTick) {
       p._hazT = (p._hazT || 0) + dt;
-      if (p._hazT >= HAZARD_TICK) { p._hazT -= HAZARD_TICK; ctx.hurtPlayer(p, Math.round(p._hazTick.dps * HAZARD_TICK), null, p._hazTick.kind); }
+      if (p._hazT >= HAZARD_TICK) { p._hazT -= HAZARD_TICK; ctx.hurtPlayer(p, Math.round(p._hazTick.dps * HAZARD_TICK), null, p._hazTick.kind, undefined, { isPeriodic: true }); }
       p._hazTick = null;
     } else p._hazT = Math.min(p._hazT || 0, HAZARD_TICK * 0.6);   // stepping out and back in doesn't reset the clock to zero
   }
@@ -126,7 +126,7 @@ function spawnMinion(ctx, m, type, x, z, extra = {}) {
   bossFx(ctx, m, 'minion', { mid: c.id, type, mx: +x.toFixed(2), mz: +z.toFixed(2) });
   return c;
 }
-function hit(ctx, m, p, dmg, kind) { if (!p || !p.alive) return 0; const d = Math.max(1, Math.round(dmg * ctx.incomingMult(p))); ctx.hurtPlayer(p, d, m, kind); return d; }
+function hit(ctx, m, p, dmg, kind) { if (!p || !p.alive || p.zoneId !== m.zoneId || ctx.players.get(p.id) !== p) return 0; const d = Math.max(1, Math.round(dmg * ctx.incomingMult(p))); ctx.hurtPlayer(p, d, m, kind); return d; }
 function heal(ctx, m, n) { m.hp = Math.min(m.maxHp, m.hp + n); bossFx(ctx, m, 'heal', { n: Math.round(n) }); }
 
 // ---------------------------------------------------------------- the mechanics
@@ -199,7 +199,7 @@ M.chicken_run = (ctx, m, t) => { const zone = ctx.zoneOf(m); let dir = rand(0, M
   return { busy: 5.2, cd: 45, steps }; };
 M.peckening = (ctx, m, t) => { if (!t) return null; const zone = ctx.zoneOf(m); const steps = [{ at: 0, do: () => bossFx(ctx, m, 'mark', { pid: t.id, t: 3.4 }) }];
   for (let k = 0; k < 4; k++) steps.push({ at: 0.8 + k * 0.7, do: () => {
-    if (!t.alive) return;
+    if (!t.alive || t.zoneId !== m.zoneId || ctx.players.get(t.id) !== t) return;
     const a = Math.atan2(t.x - m.x, t.z - m.z); const lx = t.x - Math.sin(a) * 2.2, lz = t.z - Math.cos(a) * 2.2;
     const from = { x: m.x, z: m.z }; m.x = lx; m.z = lz; m.yaw = a; ctx.resolveCollision(zone, m, 1.2);
     bossFx(ctx, m, 'lunge', { fx0: +from.x.toFixed(2), fz0: +from.z.toFixed(2) });
@@ -257,7 +257,11 @@ const MELEE = new Set(['hell_peck', 'wing', 'scratch', 'blood_peck']);
 
 // ---------------------------------------------------------------- per-tick boss AI
 export function stepCluckifer(ctx, m, dt) {
+  if (!m.alive) { m.script = null; return; }
   const zone = ctx.zoneOf(m);
+  // Cancel the encounter before running delayed effects when its players leave.
+  const t = target(ctx, m);
+  if (!t) { m.script = null; despawnBoss(ctx, m); return; }
   for (const k of Object.keys(m.cds)) if (m.cds[k] > 0) m.cds[k] -= dt;
   if (m.vulnerable > 0) m.vulnerable -= dt;
   // phase 2 at half health
@@ -266,14 +270,10 @@ export function stepCluckifer(ctx, m, dt) {
   if (m.script) {
     const s = m.script; s.t += dt;
     while (s.i < s.steps.length && s.steps[s.i].at <= s.t) { try { s.steps[s.i].do(); } catch (e) { console.error('boss step', e); } s.i++; }
-    if (s.t >= s.busy) { m.script = null; m.gcd = m.phase === 2 ? 2.4 : 3.2; }   // a breath between moves so the fight reads, not a blur
+    if (s.t >= s.busy && s.i >= s.steps.length) { m.script = null; m.gcd = m.phase === 2 ? 2.4 : 3.2; }   // a breath between moves so the fight reads, not a blur
     return;
   }
   if (m.stunT > 0) { m.stunT -= dt; return; }
-  const t = target(ctx, m);
-  // Nobody left standing (the challenger died or left): the event is over —
-  // Cluckifer and his brood vanish rather than roaming the farm.
-  if (!t) { despawnBoss(ctx, m); return; }
   // the ultimate, once, at low health
   if (!m.ultDone && m.hp <= m.maxHp * 0.2) { m.ultDone = true; startScript(m, M.final_cluck(ctx, m, t)); return; }
   m.gcd = Math.max(0, (m.gcd || 0) - dt);
@@ -344,6 +344,7 @@ function despawnBoss(ctx, m) {
 }
 // The boss dies: clear its brood and the fires.
 export function onBossKilled(ctx, m) {
+  m.script = null;
   for (const c of ctx.monsters.values()) if (c.ownerId === m.id && c.alive) { c.alive = false; c.hp = 0; c.state = 'dead'; c.respawnTimer = 999999; }
   const zone = ctx.zoneOf(m); if (zone._bossHazards) zone._bossHazards.length = 0;
   bossFx(ctx, m, 'die');

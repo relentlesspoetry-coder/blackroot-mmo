@@ -4,8 +4,12 @@
 // codebase applied correctly: never trust the client.
 
 import http from 'http';
+import { atomicWrite, readJson, WorldStore } from './persistence.js';
+import { validMessage } from './protocol.js';
 import fs from 'fs';
 import crypto from 'crypto';
+import { promisify } from 'node:util';
+const scryptAsync = promisify(crypto.scrypt);
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { WebSocketServer } from 'ws';
@@ -425,7 +429,7 @@ const lootOverridesPath = () => path.join(__dirname, 'loot.overrides.json');
 (function loadLootOverrides() { try { LOOT_OVERRIDES = JSON.parse(fs.readFileSync(lootOverridesPath(), 'utf8')) || {}; } catch { LOOT_OVERRIDES = {}; } })();
 function saveLootOverrides() { try { fs.writeFileSync(lootOverridesPath(), JSON.stringify(LOOT_OVERRIDES, null, 2)); } catch (e) { console.error('saveLootOverrides:', e.message); } }
 const LOOT_ITEMS = ['Coins', ...Object.keys(ITEMS)];
-const lootItemOk = (name) => name === 'Coins' || !!ITEMS[name];
+const lootItemOk = (name) => name === 'Coins' || Object.hasOwn(ITEMS, name);
 // A template's loot, expressed in the editor's independent-roll format
 // ({item, min, max, chance=1-in-N}). Weighted tables convert approximately.
 function templateLootAsEditor(type) {
@@ -457,7 +461,7 @@ function rollMobLoot(type) {
 }
 function broadcastZone(zoneId, obj) {
   const s = JSON.stringify(obj);
-  for (const p of players.values()) if (p.zoneId === zoneId && p.ws.readyState === p.ws.OPEN) p.ws.send(s);
+  for (const p of players.values()) if (p.zoneId === zoneId && p.ws.readyState === p.ws.OPEN) sendRaw(p.ws, s);
 }
 // Every .glb under client/models, as model keys for the editor palette.
 let MODEL_MANIFEST = [];
@@ -496,10 +500,16 @@ checkPortals();
 // ---------------------------------------------------------------------------
 // Networking helpers
 // ---------------------------------------------------------------------------
-function send(ws, obj) { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(obj)); }
+function sendRaw(ws, data) {
+  if (outbound) { outbound.push([ws, data]); return; }
+  if (ws.readyState !== ws.OPEN) return;
+  if (ws.bufferedAmount > 1024 * 1024) { ws.terminate(); return; }
+  ws.send(data, error => { if (error) ws.terminate(); });
+}
+function send(ws, obj) { sendRaw(ws, JSON.stringify(obj)); }
 function broadcast(obj) {
   const s = JSON.stringify(obj);
-  for (const p of players.values()) if (p.ws.readyState === p.ws.OPEN) p.ws.send(s);
+  for (const p of players.values()) if (p.ws.readyState === p.ws.OPEN) sendRaw(p.ws, s);
 }
 function systemChat(msg) { broadcast({ t: 'chat', from: 'System', msg, sys: true }); }
 // One line of yellow text to one person. The six local `notice`/`no` closures
@@ -536,7 +546,8 @@ function grantXp(p, amount) {
 // password crosses the wire in the clear, so put this behind wss:// (TLS)
 // before letting anyone reach it over a network.
 // ---------------------------------------------------------------------------
-const ACCOUNT_DIR = path.join(__dirname, '..', 'accounts');
+const DATA_DIR = process.env.BLACKROOT_DATA_DIR || path.join(__dirname, '..');
+const ACCOUNT_DIR = path.join(DATA_DIR, 'accounts');
 const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 64 };
 const PASS_MIN = 6, PASS_MAX = 128;
 const LOGIN_TRIES = 6;                 // wrong guesses before a name goes quiet
@@ -544,18 +555,17 @@ const LOGIN_LOCK_MS = 60 * 1000;
 const loginFails = new Map();          // account slug -> { n, until }
 
 const accountPath = (name) => path.join(ACCOUNT_DIR, saveSlug(name) + '.json');
-function hashPass(pass, salt) { return crypto.scryptSync(pass, salt, SCRYPT.keylen, SCRYPT).toString('hex'); }
+async function hashPass(pass, salt) { return (await scryptAsync(pass, salt, SCRYPT.keylen, SCRYPT)).toString('hex'); }
 function readAccount(name) {
-  try { const a = JSON.parse(fs.readFileSync(accountPath(name), 'utf8')); return a && a.salt && a.hash ? a : null; }
-  catch (e) { return null; }
+  const a = readJson(accountPath(name));
+  if (!a && fs.existsSync(accountPath(name) + '.bak')) throw new Error('Account record missing; explicit backup recovery required');
+  if (a && (a.v !== 1 || a.name !== name || !/^[a-f0-9]{32}$/.test(a.salt) || !/^[a-f0-9]{128}$/.test(a.hash))) throw new Error('Invalid or conflicting account record');
+  return a;
 }
-function writeAccount(a) {
-  fs.mkdirSync(ACCOUNT_DIR, { recursive: true });
-  fs.writeFileSync(accountPath(a.name), JSON.stringify(a));
-}
+function writeAccount(a) { atomicWrite(accountPath(a.name), a); }
 // Returns { ok: true } or { error } -- never anything derived from the stored
 // password, and the same wording whether the name or the password was wrong.
-function authenticate(name, pass) {
+async function authenticate(name, pass) {
   const slug = saveSlug(name);
   const lock = loginFails.get(slug);
   if (lock && lock.until > Date.now()) {
@@ -573,15 +583,16 @@ function authenticate(name, pass) {
   }
   if (!acct) {
     const salt = crypto.randomBytes(16).toString('hex');
-    writeAccount({ v: 1, name, salt, hash: hashPass(pass, salt), created: Date.now() });
+    writeAccount({ v: 1, name, salt, hash: await hashPass(pass, salt), created: Date.now() });
     return { ok: true, created: true };
   }
-  const got = Buffer.from(hashPass(pass, acct.salt), 'hex');
+  const got = Buffer.from(await hashPass(pass, acct.salt), 'hex');
   const want = Buffer.from(acct.hash, 'hex');
   const good = got.length === want.length && crypto.timingSafeEqual(got, want);
   if (!good) {
     const f = loginFails.get(slug) || { n: 0, until: 0 };
     f.n++; if (f.n >= LOGIN_TRIES) { f.until = Date.now() + LOGIN_LOCK_MS; f.n = 0; }
+    if (loginFails.size >= 10000) loginFails.delete(loginFails.keys().next().value);
     loginFails.set(slug, f);
     return { error: 'That name is taken, and the password does not match it.' };
   }
@@ -594,17 +605,17 @@ function authenticate(name, pass) {
 //
 // A character is its name. Log in with a name that has been here before and
 // you get that character back -- where you stood, what you carried, what you
-// had learned and how far through every errand you were. There are no
-// passwords, so a name is all that identifies anyone; that is fine for a world
-// you run yourself and would not be for one you opened to strangers.
+// had learned and how far through every errand you were. Account passwords
+// authenticate access before the durable character is restored.
 //
-// Only durable things are written. Buffs, cooldowns, the swing in progress,
-// the party you were in and the trade you were half way through are all
-// deliberately dropped: they belong to a session, not to a character.
+// Session combat state is dropped. Ownership is checkpointed across every
+// character, grave and ground item together; pending trade escrow is refunded
+// to its original owner in the durable representation.
 // ---------------------------------------------------------------------------
 // Beside the repo, not beside whatever directory the process happens to have
 // been started from -- the same anchor CLIENT_DIR uses.
-const SAVE_DIR = path.join(__dirname, '..', 'saves');
+const SAVE_DIR = path.join(DATA_DIR, 'saves');
+const worldStore = new WorldStore(SAVE_DIR);
 const SAVE_EVERY = 45;                 // seconds between background saves
 const saveSlug = (name) => String(name).toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 24) || 'adventurer';
 const savePath = (name) => path.join(SAVE_DIR, saveSlug(name) + '.json');
@@ -632,30 +643,71 @@ function serialisePlayer(p) {
     savedAt: Date.now(),
   };
 }
+// savePlayer stages a departing player; commitWorld writes ALL owners together.
 function savePlayer(p) {
-  if (!p || !p.name) return;
-  try {
-    fs.mkdirSync(SAVE_DIR, { recursive: true });
-    fs.writeFileSync(savePath(p.name), JSON.stringify(serialisePlayer(p)));
-  } catch (e) { console.warn('[save] could not write', p.name, 'to', SAVE_DIR, '-', e.message); }
+  if (p && p.name) { worldStore.state.characters[p.name] = durablePlayer(p); checkpointRequested = true; }
 }
-function loadSave(name) {
+function loadSave(name) { return Object.hasOwn(worldStore.state.characters, name) ? worldStore.state.characters[name] : null; }
+function durablePlayer(p) {
+  const d = serialisePlayer(p), t = tradeOf(p);
+  // Pending trades are canceled on recovery: escrow is owned by its offerer.
+  if (t) { d.inventory.push(...(t.items[p.id] || [])); d.gold += t.gold[p.id] || 0; }
+  return d;
+}
+// A lightweight projection for dirty detection. In particular, do not encode
+// fog or build a full character save on every input packet and simulation tick.
+// Escrow has exactly the same canonical ownership here and in durablePlayer.
+function ownershipOf(p, live = false) {
+  const t = live ? tradeOf(p) : null;
+  return [t ? p.inventory.concat(t.items[p.id] || []) : p.inventory,
+    p.equipment, p.gold + (t ? t.gold[p.id] || 0 : 0),
+    [...p.known], p.xp, p.miningXp, p.fishingXp, p.cookingXp,
+    [...(p.quests || [])], [...(p.questDone || [])], [...(p.questFlags || [])], p.questKills, p.meditation,
+    [...(p.visited || [])], [...(p.openedChests || [])], [...(p.usedObjects || [])]];
+}
+let lastOwnership = '', lastCheckpoint = 0, checkpointRequested = false;
+function commitWorld(force = false) {
+  const owned = Object.fromEntries(Object.entries(worldStore.state.characters).map(([name, d]) => [name, ownershipOf(d)]));
+  for (const p of players.values()) Object.defineProperty(owned, p.name, { value: ownershipOf(p, true), enumerable: true, writable: true, configurable: true });
+  // Movement, regen, fog and timer decrements need only periodic persistence;
+  // any ownership/progression transition commits the complete world immediately.
+  const ownership = JSON.stringify({ characters: owned,
+    graves: [...graves.values()].map(({ ttl, owner, ...g }) => g),
+    groundItems: [...groundItems.values()].map(({ ttl, owner, ...g }) => g) });
+  if (!force && !checkpointRequested && ownership === lastOwnership && Date.now() - lastCheckpoint < SAVE_EVERY * 1000) return;
+  // Full serialization, including fog, happens only on the actual write path.
+  const characters = { ...worldStore.state.characters };
+  for (const p of players.values()) Object.defineProperty(characters, p.name, { value: durablePlayer(p), enumerable: true, writable: true, configurable: true });
+  const state = { v: 1, characters, graves: [...graves.values()].map(g => ({ ...g, owner: null })),
+    groundItems: [...groundItems.values()].map(g => ({ ...g, owner: null })) };
+  worldStore.commit(state); checkpointRequested = false; lastOwnership = ownership; lastCheckpoint = Date.now();
+}
+let outbound = null;
+function transaction(fn) {
+  if (outbound) return fn();
+  outbound = [];
   try {
-    const raw = fs.readFileSync(savePath(name), 'utf8');
-    const d = JSON.parse(raw);
-    return (d && d.v === 1 && d.name === name) ? d : null;   // exact name, not just the same slug
-  } catch (e) { return null; }   // no save, or one we cannot read: start fresh
+    const result = fn(); commitWorld();
+    const messages = outbound; outbound = null;
+    for (const [ws, data] of messages) sendRaw(ws, data);
+    return result;
+  } catch (error) {
+    // Never checkpoint a partially executed operation or acknowledge it. A
+    // restart recovers the last complete generation, including both owners.
+    outbound = null; console.error('[transaction] fail closed:', error);
+    process.exit(1);
+  }
 }
 // Put a loaded save onto a freshly built player. The player is built first with
 // all its defaults so anything a save predates simply keeps the new default.
 function applySave(p, d) {
-  const zone = ZONES[d.zoneId] ? d.zoneId : START_ZONE;
-  p.cls = CLASSES[d.cls] ? d.cls : p.cls;
+  const zone = Object.hasOwn(ZONES, d.zoneId) ? d.zoneId : START_ZONE;
+  p.cls = Object.hasOwn(CLASSES, d.cls) ? d.cls : p.cls;
   if (d.look) p.look = sanitizeLook(d.look);
   p.zoneId = zone;
   p.level = Math.max(1, Math.min(MAX_LEVEL, d.level | 0 || 1));
   p.xp = Math.max(0, +d.xp || 0);
-  p.gold = Math.max(0, d.gold | 0);
+  p.gold = Math.max(0, Math.floor(d.gold));
   const cs = classStats(p.cls, p.level);
   p.maxHp = cs.hp; p.manaMax = cs.mana; p.rageMax = cs.rage;
   // Somebody who logged out dead comes back on their feet at the zone's spawn
@@ -680,13 +732,12 @@ function applySave(p, d) {
     p.x = sp.x; p.z = sp.z; p.y = 0; p.yaw = sp.yaw || 0;
     p._movedByRevamp = true;
   }
-  p.inventory = Array.isArray(d.inventory) ? d.inventory.filter(n => ITEMS[n]) : p.inventory;
-  if (d.equipment) { p.equipment = Object.assign(emptySlots(), d.equipment); p.gear = gearOf(p.equipment); }
-  // Abilities are re-derived from the class and level, then anything bought is
-  // added back: a save from before a class was rebalanced still ends up with a
-  // legal spellbook.
-  p.known = new Set(classDef(p.cls).abilities.filter(a => a.level <= p.level).map(a => a.id));
-  for (const id of (d.known || [])) if (classDef(p.cls).abilities.some(a => a.id === id)) p.known.add(id);
+  p.inventory = Array.isArray(d.inventory) ? d.inventory.filter(n => Object.hasOwn(ITEMS, n)) : p.inventory;
+  if (d.equipment) { p.equipment = emptySlots(); for (const slot of Object.keys(p.equipment)) { const item = d.equipment[slot]; if (typeof item === 'string' && Object.hasOwn(ITEMS, item) && slotsFor(slotOf(item)).includes(slot)) p.equipment[slot] = item; } p.gear = gearOf(p.equipment); }
+  // Only starting abilities are free. Restore valid purchased abilities,
+  // never silently unlock every trainer skill eligible at this level.
+  p.known = new Set(classDef(p.cls).abilities.filter(a => a.level <= 1).map(a => a.id));
+  for (const id of (d.known || [])) if (classDef(p.cls).abilities.some(a => a.id === id && a.level <= p.level)) p.known.add(id);
   p.miningXp = +d.miningXp || 0; p.fishingXp = +d.fishingXp || 0; p.cookingXp = +d.cookingXp || 0;
   if (d.meditation) p.meditation = { level: d.meditation.level | 0 || 1, xp: +d.meditation.xp || 0 };
   // Fog is restored per zone and only where the grid still fits: a zone whose
@@ -694,12 +745,12 @@ function applySave(p, d) {
   // ground (fogOf drops a mismatched grid the same way).
   p.fog = {};
   for (const [zid, b64] of Object.entries(d.fog || {})) {
-    if (!ZONES[zid]) continue;
+    if (!Object.hasOwn(ZONES, zid)) continue;
     p.fog[zid] = fogFromB64(b64, fogBytes(fogDims(ZONES[zid])));
   }
   p.visited = new Set((d.visited || []).filter(v => typeof v === 'string'));
-  p.quests = new Map((d.quests || []).filter(([id]) => QUESTS[id]));
-  p.questDone = new Set((d.questDone || []).filter(id => QUESTS[id]));
+  p.quests = new Map((d.quests || []).filter(([id]) => Object.hasOwn(QUESTS, id)));
+  p.questDone = new Set((d.questDone || []).filter(id => Object.hasOwn(QUESTS, id)));
   p.questKills = d.questKills && typeof d.questKills === 'object' ? d.questKills : {};
   p.questFlags = new Set(d.questFlags || []);
   p.questAnnounced = new Set(d.questAnnounced || []);
@@ -725,6 +776,12 @@ const TRADE_REQUEST_TTL = 30;
 const TRADE_START_RANGE = 12;          // how close you must be to ask
 const TRADE_BREAK_RANGE = 16;          // how far apart calls it off
 
+// A closed socket may leave a combat body in the world; it cannot consent.
+function interactionReady(p) { return !!p && p.alive && p.lingerT == null && !!p.ws && p.ws.readyState === p.ws.OPEN; }
+function tradePairValid(a, b, range) {
+  return interactionReady(a) && interactionReady(b) && a !== b && a.zoneId === b.zoneId
+    && !duelOf(a) && !duelOf(b) && dist2(a.x, a.z, b.x, b.z) <= range * range;
+}
 function tradeOf(p) { return (p && p.tradeId && trades.get(p.tradeId)) || null; }
 function tradePair(t) { return [players.get(t.a), players.get(t.b)]; }
 function tradePayload(t, forId) {
@@ -757,7 +814,7 @@ function tradeAccept(p) {
   const rq = p.tradeRequest; p.tradeRequest = null;
   if (!rq || rq.t <= 0) return send(p.ws, { t: 'event', kind: 'notice', text: 'That offer to trade has lapsed.' });
   const from = players.get(rq.from);
-  if (!from || !from.alive || !p.alive) return send(p.ws, { t: 'event', kind: 'notice', text: 'They are in no state to trade.' });
+  if (!tradePairValid(from, p, TRADE_START_RANGE)) return notice(p, 'They are in no state to trade, or too far away.');
   if (tradeOf(from) || tradeOf(p)) return send(p.ws, { t: 'event', kind: 'notice', text: 'One of you is already trading.' });
   const t = { id: nextTradeId++, a: from.id, b: p.id, items: { [from.id]: [], [p.id]: [] }, gold: { [from.id]: 0, [p.id]: 0 }, ok: {} };
   trades.set(t.id, t); from.tradeId = t.id; p.tradeId = t.id;
@@ -802,7 +859,8 @@ function tradeOk(p, on) {
 // pile to the other person -- there is nothing left that can fail half way.
 function tradeCommit(t) {
   const [a, b] = tradePair(t);
-  if (!a || !b) return tradeCancel(t, 'The trade fell through.');
+  if (!trades.has(t.id)) return;
+  if (!tradePairValid(a, b, TRADE_BREAK_RANGE)) return tradeCancel(t, 'The trade fell through.');
   for (const [from, to] of [[a, b], [b, a]]) {
     for (const name of t.items[from.id]) to.inventory.push(name);
     to.gold += t.gold[from.id] || 0;
@@ -827,11 +885,7 @@ function tradeAbort(p, why) { const t = tradeOf(p); if (t) tradeCancel(t, why ||
 function stepTrades() {
   for (const t of [...trades.values()]) {
     const [a, b] = tradePair(t);
-    if (!a || !b) { tradeCancel(t, 'The trade fell through.'); continue; }
-    if (!a.alive || !b.alive) { tradeCancel(t, 'The trade is off.'); continue; }
-    if (a.zoneId !== b.zoneId || dist2(a.x, a.z, b.x, b.z) > TRADE_BREAK_RANGE * TRADE_BREAK_RANGE) {
-      tradeCancel(t, 'You are too far apart to trade.');
-    }
+    if (!tradePairValid(a, b, TRADE_BREAK_RANGE)) tradeCancel(t, 'The trade is off: you can no longer trade.');
   }
 }
 
@@ -873,6 +927,15 @@ function combatTargetOf(p) {
 function duelPair(d) { return [players.get(d.a), players.get(d.b)]; }
 function duelSay(d, text) { for (const q of duelPair(d)) if (q) send(q.ws, { t: 'event', kind: 'notice', text }); }
 
+function inPveCombat(p) {
+  return p.combatId != null || (p.combatTimer || 0) > 0
+    || (p.engagedWith != null && (p.engagedT || 0) > 0);
+}
+function duelPairReady(a, b, range) {
+  return interactionReady(a) && interactionReady(b) && a !== b && a.zoneId === b.zoneId
+    && !tradeOf(a) && !tradeOf(b) && !inPveCombat(a) && !inPveCombat(b)
+    && dist2(a.x, a.z, b.x, b.z) <= range * range;
+}
 function duelChallenge(from, toId) {
   const to = players.get(Number(toId));
   const no = (text) => notice(from, text);
@@ -880,7 +943,7 @@ function duelChallenge(from, toId) {
   if (to.zoneId !== from.zoneId) return no(`${to.name} is not in this zone.`);
   if (!from.alive || !to.alive) return no('Not while one of you is dead.');
   if (duelOf(from) || duelOf(to)) return no('One of you is already in a duel.');
-  if (from.combatId != null || to.combatId != null) return no('Not in the middle of a fight.');
+  if (!duelPairReady(from, to, DUEL_START_RANGE)) return no('You cannot duel while fighting, trading, disconnected, or too far apart.');
   if (dist2(from.x, from.z, to.x, to.z) > DUEL_START_RANGE * DUEL_START_RANGE) return no(`${to.name} is too far away.`);
   if (to.duelChallenge && to.duelChallenge.t > 0) return no(`${to.name} has already been challenged.`);
   to.duelChallenge = { from: from.id, name: from.name, t: DUEL_CHALLENGE_TTL };
@@ -891,7 +954,7 @@ function duelAccept(p) {
   const ch = p.duelChallenge; p.duelChallenge = null;
   if (!ch || ch.t <= 0) return send(p.ws, { t: 'event', kind: 'notice', text: 'That challenge has lapsed.' });
   const from = players.get(ch.from);
-  if (!from || !from.alive || !p.alive) return send(p.ws, { t: 'event', kind: 'notice', text: 'They are in no state to duel.' });
+  if (!duelPairReady(from, p, DUEL_START_RANGE)) return notice(p, 'You can no longer start this duel.');
   if (duelOf(from) || duelOf(p)) return send(p.ws, { t: 'event', kind: 'notice', text: 'One of you is already in a duel.' });
   const d = { id: nextDuelId++, a: from.id, b: p.id, state: 'countdown', t: DUEL_COUNTDOWN, zoneId: p.zoneId };
   duels.set(d.id, d); from.duelId = d.id; p.duelId = d.id;
@@ -905,15 +968,17 @@ function duelDecline(p) {
   const from = players.get(ch.from);
   if (from) send(from.ws, { t: 'event', kind: 'notice', text: `${p.name} declined your challenge.` });
 }
-// However it ends -- yielded, walked away, logged out -- it ends the same way:
-// both of them whole, and nothing changed hands.
+// A started duel restores both players. Cancelling the salute must not heal
+// anyone or erase PvE combat that began during the countdown.
 function duelEnd(d, winnerId, how) {
   if (!duels.has(d.id)) return;
   duels.delete(d.id);
   const [a, b] = duelPair(d);
   for (const q of [a, b]) {
     if (!q) continue;
-    q.duelId = null; q.swing = null; q.queued = null;
+    q.duelId = null;
+    if (d.state !== 'fighting') continue;
+    q.swing = null; q.queued = null;
     if (q.combatId != null && (q.combatId === d.a || q.combatId === d.b)) q.combatId = null;
     if (q.alive) { q.hp = q.maxHp; if (q.manaMax) q.mana = q.manaMax; q.rage = 0; q.combatTimer = 0; sendStatus(q); }
   }
@@ -965,6 +1030,9 @@ function stepDuels(dt) {
   for (const d of [...duels.values()]) {
     const [a, b] = duelPair(d);
     if (!a || !b) { duelEnd(d, null, 'The duel is called off.'); continue; }
+    if (d.state === 'countdown' && (!duelPairReady(a, b, DUEL_START_RANGE) || a.zoneId !== d.zoneId)) {
+      duelEnd(d, null, 'The duel is called off before the fight.'); continue;
+    }
     if (!a.alive || !b.alive) { duelEnd(d, a.alive ? a.id : b.id, null); continue; }
     if (a.zoneId !== b.zoneId) { duelEnd(d, null, `${a.name} and ${b.name} part without a winner.`); continue; }
     if (dist2(a.x, a.z, b.x, b.z) > DUEL_BREAK_RANGE * DUEL_BREAK_RANGE) { duelEnd(d, null, `${a.name} and ${b.name} lose each other, and the duel with it.`); continue; }
@@ -1048,10 +1116,13 @@ function partyPayload(party) {
 // time and the client would parse a string with no message type on it.
 function sendParty(party) {
   const pay = JSON.stringify(partyPayload(party));
-  for (const m of partyMembers(party)) if (m.ws.readyState === m.ws.OPEN) m.ws.send(pay);
+  for (const m of partyMembers(party)) if (m.ws.readyState === m.ws.OPEN) sendRaw(m.ws, pay);
 }
 function partyNotice(party, text) { for (const m of partyMembers(party)) send(m.ws, { t: 'event', kind: 'notice', text }); }
 
+function clearPartyInvitesFrom(id) {
+  for (const q of players.values()) if (q.partyInvite?.from === id) q.partyInvite = null;
+}
 function partyInvite(from, toId) {
   const to = players.get(Number(toId));
   if (!to || to === from) return send(from.ws, { t: 'event', kind: 'notice', text: 'There is nobody there to invite.' });
@@ -1061,7 +1132,7 @@ function partyInvite(from, toId) {
   if (mine && mine.leader !== from.id) return send(from.ws, { t: 'event', kind: 'notice', text: 'Only the party leader can invite.' });
   if (mine && mine.members.length >= PARTY_MAX) return send(from.ws, { t: 'event', kind: 'notice', text: 'Your party is full.' });
   if (to.partyInvite && to.partyInvite.t > 0) return send(from.ws, { t: 'event', kind: 'notice', text: `${to.name} already has an invitation pending.` });
-  to.partyInvite = { from: from.id, name: from.name, t: PARTY_INVITE_TTL };
+  to.partyInvite = { from: from.id, partyId: mine ? mine.id : null, name: from.name, t: PARTY_INVITE_TTL };
   send(to.ws, { t: 'party:invite', from: from.id, name: from.name, seconds: PARTY_INVITE_TTL });
   send(from.ws, { t: 'event', kind: 'notice', text: `You invite ${to.name} to your party.` });
 }
@@ -1072,11 +1143,15 @@ function partyAccept(p) {
   if (!from) return send(p.ws, { t: 'event', kind: 'notice', text: 'They are no longer here.' });
   if (partyOf(p)) return send(p.ws, { t: 'event', kind: 'notice', text: 'You are already in a party.' });
   let party = partyOf(from);
+  if ((party ? party.id : null) !== inv.partyId || (party && party.leader !== from.id)) return notice(p, 'That party invitation is no longer valid.');
   if (!party) {   // the inviter's party starts the moment someone says yes
     party = { id: nextPartyId++, leader: from.id, members: [from.id] };
     parties.set(party.id, party); from.partyId = party.id;
+    // Other invitations from this solo leader now refer to this same party.
+    for (const q of players.values()) if (q.partyInvite?.from === from.id && q.partyInvite.partyId === null) q.partyInvite.partyId = party.id;
   }
   if (party.members.length >= PARTY_MAX) return send(p.ws, { t: 'event', kind: 'notice', text: 'That party is full.' });
+  clearPartyInvitesFrom(p.id);
   party.members.push(p.id); p.partyId = party.id;
   partyNotice(party, `${p.name} has joined the party.`);
   sendParty(party);
@@ -1091,11 +1166,12 @@ function partyDecline(p) {
 // all mean the same thing to everyone still in the party.
 function partyRemove(p, why) {
   const party = partyOf(p); if (!party) return;
+  clearPartyInvitesFrom(p.id);
   party.members = party.members.filter(id => id !== p.id);
   p.partyId = null;
   send(p.ws, partyPayload(null));
   if (party.members.length < 2) {            // a party of one is just a person
-    for (const m of partyMembers(party)) { m.partyId = null; send(m.ws, partyPayload(null)); send(m.ws, { t: 'event', kind: 'notice', text: 'The party has disbanded.' }); }
+    for (const m of partyMembers(party)) { clearPartyInvitesFrom(m.id); m.partyId = null; send(m.ws, partyPayload(null)); send(m.ws, { t: 'event', kind: 'notice', text: 'The party has disbanded.' }); }
     parties.delete(party.id);
     return;
   }
@@ -1543,7 +1619,7 @@ function questBonus(p, q) {
 function notifyQuestProgress(p, ids) {
   if (!ids || !ids.length) return;
   for (const id of new Set(ids)) {
-    const q = QUESTS[id]; if (!q) continue;
+    const q = Object.hasOwn(QUESTS, id) ? QUESTS[id] : null; if (!q) continue;
     const pr = questProgress(p, q);
     const line = pr.objectives.filter(o => !o.done || o.need > 1)
       .map(o => `${o.label} ${o.have}/${o.need}`).join(', ');
@@ -1563,7 +1639,7 @@ function nearGiver(p, q) {
 }
 
 function acceptQuest(p, id) {
-  const q = QUESTS[id];
+  const q = Object.hasOwn(QUESTS, id) ? QUESTS[id] : null;
   if (!q || !canStart(p, q) || !nearGiver(p, q)) return;
   p.quests.set(id, true);
   p.questKills[id] = p.questKills[id] || {};
@@ -1573,7 +1649,7 @@ function acceptQuest(p, id) {
 }
 
 function turnInQuest(p, id) {
-  const q = QUESTS[id];
+  const q = Object.hasOwn(QUESTS, id) ? QUESTS[id] : null;
   if (!q || !p.quests.has(id)) return;
   // Say why, rather than doing nothing: "walk back to them" is a fair thing
   // for the game to tell you.
@@ -2065,7 +2141,7 @@ function addMomentum(p, n) {
 // one, and it is spent by the ability it lights up (see spendCharges / the
 // free-cost check in useAbility).
 const CRIT_PROCS = {
-  fighter: { id: 'opening', chance: 0.25, dur: 8,  name: 'Opening', dmg: 0.30, charges: 1, text: 'An opening! Your next ability strikes for +30%.' },
+  fighter: { id: 'opening', chance: 0.25, dur: 8,  name: 'Opening', dmg: 0.30, chargeTrigger: 'ability', charges: 1, text: 'An opening! Your next ability strikes for +30%.' },
   cleric:  { id: 'blessed_hands',   chance: 0.20, dur: 10, name: 'Blessed Hands', heal: 0.30, charges: 1, text: 'Your hands blaze with light!' },
   bard:    { id: 'encore',          chance: 0.22, dur: 10, name: 'Encore', free: true, charges: 1, text: 'Encore! Your next song is free.' },
 };
@@ -2074,7 +2150,7 @@ function procOnCrit(p) {
   if (!d || Math.random() >= d.chance) return;
   const have = p.buffs[d.id];
   if (have && have.t > 0) { have.t = d.dur; return; }   // already lit: just refresh it
-  addBuff(p, { id: d.id, dur: d.dur, charges: d.charges, dmg: d.dmg || 0, heal: d.heal || 0, free: !!d.free, proc: true, vis: 'proc' });
+  addBuff(p, { id: d.id, dur: d.dur, charges: d.charges, chargeTrigger: d.chargeTrigger, dmg: d.dmg || 0, heal: d.heal || 0, free: !!d.free, proc: true, vis: 'proc' });
   send(p.ws, { t: 'event', kind: 'proc', id: d.id, name: d.name, text: d.text });
 }
 // The global cooldown: the deliberate beat classic combat is built on. Most
@@ -2087,12 +2163,12 @@ function gcdFor(p, a) {
 }
 function savageTrigger(p) {
   const w = p.buffs.savage_watcher; if (!w || !(w.t > 0) || (p.savageCd || 0) > 0) return;
-  p.savageCd = 20; addBuff(p, { id: 'savage', dur: 300, charges: 6, dmg: 0.08, move: 0.12 });
+  p.savageCd = 20; addBuff(p, { id: 'savage', dur: 300, chargeTrigger: 'ability', charges: 6, dmg: 0.08, move: 0.12 });
 }
 // Spend one charge from every charge-limited buff that a melee ability consumes.
 function spendCharges(p, ab) {
   for (const [id, bf] of Object.entries(p.buffs)) {
-    if (!(bf.t > 0) || !bf.charges) continue;
+    if (!(bf.t > 0) || !bf.charges || bf.chargeTrigger !== 'ability') continue;
     if (bf.heavyOnly && !ab.heavy) continue;
     bf.charges--; if (bf.charges <= 0) delete p.buffs[id];
   }
@@ -2180,12 +2256,12 @@ function useAbility(p, id, fromQueue) {
   if (!p.known.has(id)) return say(`You haven't learned ${a.name}.`);
   if (p.level < a.level) return say(`${a.name} unlocks at level ${a.level}.`);
   // Busy, but nearly free: hold the press instead of dropping it.
-  const busy = Math.max(p.gcd || 0, p.windup ? p.windup.t : 0, p.channel ? 0.2 : 0);
+  const busy = Math.max(a.offGcd ? 0 : p.gcd || 0, p.windup ? p.windup.t : 0, p.channel ? 0.2 : 0);
   if (!fromQueue && busy > 0 && busy <= QUEUE_WINDOW && (p.cooldowns[id] || 0) <= busy) return queueAbility(p, id);
   if (p.swimming) return say('Not while you are swimming.');
   if ((p.cooldowns[id] || 0) > 0) return say(`${a.name} is not ready.`);
   if (p.channel || p.windup) return say('You are busy.');
-  if ((p.gcd || 0) > 0) return;
+  if (!a.offGcd && (p.gcd || 0) > 0) return;
   if (a.requires && !(p.buffs[a.requires] && p.buffs[a.requires].t > 0)) return say(`${a.name} needs an enemy to have just missed you.`);
   const freeProc = Object.values(p.buffs).find(b => b.t > 0 && b.free && b.charges > 0);
   const cost = freeProc ? 0 : (isSpell(a) ? costOf(p, a) : (a.cost || 0));
@@ -2280,7 +2356,7 @@ function useAbility(p, id, fromQueue) {
   if (freeProc && (isSpell(a) ? costOf(p, a) : (a.cost || 0)) > 0) {
     freeProc.charges--; if (freeProc.charges <= 0) delete p.buffs[freeProc.id];
   }
-  p.cooldowns[id] = a.cd || 0; p.gcd = gcdFor(p, a);
+  p.cooldowns[id] = a.cd || 0; p.gcd = Math.max(p.gcd || 0, gcdFor(p, a));
   const gcd = p.gcd;
   let windup = a.windup || a.cast || 0;
   if (windup && a.cast) windup = Math.max(Math.min(windup, 1), windup * castTimeMult(p));   // Battle Hymn quickens casts, never under a second
@@ -2312,7 +2388,7 @@ function stepClass(p, inCombat) {
   if (p.slow && p.slow.t > 0) p.slow.t -= DT;
   if (p.dots) for (const [k, d] of Object.entries(p.dots)) {   // bleeds / burns tick every 1.5 s
     d.t -= DT; d.acc += DT;
-    if (d.acc >= 1.5) { d.acc -= 1.5; hurtPlayer(p, Math.round(d.dps * 1.5), null, k); }
+    if (d.acc >= 1.5) { d.acc -= 1.5; hurtPlayer(p, Math.round(d.dps * 1.5), null, k, undefined, { isPeriodic: true }); }
     if (d.t <= 0) delete p.dots[k];
   }
   for (const k of Object.keys(p.cooldowns)) if (p.cooldowns[k] > 0) p.cooldowns[k] = Math.max(0, p.cooldowns[k] - DT);
@@ -2443,7 +2519,7 @@ function monsterStrike(m, target, o = {}) {
   if (res.dmg <= 0) addBuff(target, { id: 'riposte_ready', dur: 300 });
   if (res.dmg > 0) {
     hurtPlayer(target, res.dmg, m, o.kind || o.type || arch.dmgType, res);
-    if (o.poison) { target.dots = target.dots || []; target.dots.push({ kind: 'poison', dmg: o.poison, t: 12, period: 3, next: 3 }); }
+    if (o.poison && target.alive) addDot(target, 'poison', 12, o.poison / 3);
   } else {
     engage(target, m);
     broadcast({ t: 'event', kind: 'hit', by: m.id, target: target.id, dmg: 0, targetKind: 'player', res: res.outcome, spell: o.name || null });
@@ -2462,17 +2538,18 @@ function landMonsterSwing(m) {
   monsterStrike(m, t);
 }
 
-function hurtPlayer(p, dmg, m, kind, res) {
+// Element / hitKind is visual; only explicit metadata marks periodic damage.
+function hurtPlayer(p, dmg, m, kind, res, damage = {}) {
   if (!p.alive || dmg <= 0) return;
   if (m && m.debuffs) dmg = Math.max(1, Math.round(dmg * monsterDmgMult(m) * bardMonsterDmgMult(m)));
-  const mit = mitigate(clericCtx, p, dmg, m, kind); dmg = mit.dmg;
+  const mit = mitigate(clericCtx, p, dmg, m, damage); dmg = mit.dmg;
   if (dmg >= p.hp) dmg = onLethal(clericCtx, p, dmg);
   p.hp -= dmg; p.combatTimer = REGEN.combatLockout; p.lastCombat = Date.now();
   if (classDef(p.cls).rage) addRage(p, (dmg + mit.absorbed) * classDef(p.cls).rage.damageTaken);
   if (m) engage(p, m);
   broadcast({ t: 'event', kind: 'hit', by: m ? m.id : null, target: p.id, dmg, absorbed: mit.absorbed || undefined, targetKind: 'player',
               hitKind: kind || null, res: res ? res.outcome : (dmg > 0 ? 'hit' : 'miss'), blocked: (res && res.blocked) || 0, spell: (res && res.spell) || undefined });
-  if (p.alive && p.hp > 0) afterHit(clericCtx, p, dmg + mit.absorbed, kind);
+  if (p.alive && p.hp > 0) afterHit(clericCtx, p, dmg + mit.absorbed, damage);
   if (mit.changed) sendStatus(p);
   if (p.hp <= 0) {
     if (m) { m.targetId = null; m.provoked = false; m.state = 'idle'; }
@@ -2483,7 +2560,12 @@ function hurtPlayer(p, dmg, m, kind, res) {
 // they fell; it stands for GRAVE_TTL seconds, and only they can dig it up.
 const GRAVE_TTL = 120;
 const graves = new Map();
+for (const g of worldStore.state.graves) { const id = nextId++; graves.set(id, { ...g, id, owner: null }); }
+for (const g of worldStore.state.groundItems) { const id = nextId++; groundItems.set(id, { ...g, id, owner: null }); }
 function killPlayer(p, how) {
+  // Escrow is still carried property: return it before taking the grave snapshot.
+  // Gold stays in the purse on death, including refunded trade gold.
+  tradeAbort(p, 'The trade is off.');
   p.hp = 0; p.alive = false; p.deathTimer = RESPAWN_TIME; p.engagedWith = null;
   // Where you fell, so you can be put back on the ground that belongs to it.
   // Taken here rather than at respawn because by then you have been lying in
@@ -2523,7 +2605,7 @@ function lootGrave(p, id) {
   const g = graves.get(id); if (!g || g.zoneId !== p.zoneId) return;
   const say = (text) => notice(p, text);
   if (dist2(p.x, p.z, g.x, g.z) > 3.5 * 3.5) return say('You need to be at the grave.');
-  if (g.owner !== p.id && g.name !== p.name) return say(`This is ${g.name}'s grave. It is not yours to open.`);
+  if (g.name !== p.name) return say(`This is ${g.name}'s grave. It is not yours to open.`);
   let n = 0;
   for (const [slot, name] of Object.entries(g.equipment)) { if (!name) continue; if (!p.equipment[slot]) p.equipment[slot] = name; else p.inventory.push(name); n++; }
   for (const name of g.items) { p.inventory.push(name); n++; }
@@ -2538,7 +2620,7 @@ function graveList(zid) {
   return out;
 }
 function addSlow(p, t, k) { const ck = controlMult(p); if (ck < 1) spendSongCharges(clericCtx, p, 'control'); p.slow = { t: t * ck, k }; }
-function addDot(p, kind, t, dps) { if (resistsDot(clericCtx, p)) return; p.dots = p.dots || {}; p.dots[kind] = { t, dps, acc: 0 }; }
+function addDot(p, kind, t, dps) { if (!p.alive || resistsDot(clericCtx, p)) return; p.dots = p.dots || {}; p.dots[kind] = { t, dps, acc: 0 }; }
 // What the Cleric module needs from the world.
 const clericCtx = {
   players, monsters, send, broadcast, systemChat, zoneOf, addBuff, applyHit, critChance, sendStatus, dmgBuff, interruptMonster, addThreat, healThreat,
@@ -3014,7 +3096,6 @@ let weatherTimer = 120;
 
 // Main loop
 let lastSnap = 0;
-let saveTimer = 0;
 // Stopping the server should not cost anybody their evening.
 let shuttingDown = false;
 function saveEveryoneAndExit(sig, code = 0) {
@@ -3026,14 +3107,14 @@ function saveEveryoneAndExit(sig, code = 0) {
     try { savePlayer(p); n++; } catch (e) { console.error(`[save] ${p.name} failed:`, e && e.message); }
   }
   console.log(`[save] ${sig}: wrote ${n} character${n === 1 ? '' : 's'}`);
+  commitWorld(true);
   process.exit(code);
 }
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => saveEveryoneAndExit(sig));
-// Last line of defence. A throw that reaches here has already left the game in
-// an unknown state, so the only safe thing is to write everybody out and stop
-// -- but nobody should lose their evening to a bug we did not foresee.
-process.on('uncaughtException', (err) => { console.error('[fatal]', err); saveEveryoneAndExit('uncaughtException', 1); });
-process.on('unhandledRejection', (err) => { console.error('[fatal] unhandled rejection', err); saveEveryoneAndExit('unhandledRejection', 1); });
+// A fatal exception may leave partial in-memory ownership changes. Never save
+// that state: stop and recover the last complete checkpoint on restart.
+process.on('uncaughtException', (err) => { console.error('[fatal] recovering last complete checkpoint', err); process.exit(1); });
+process.on('unhandledRejection', (err) => { console.error('[fatal] unhandled rejection', err); process.exit(1); });
 // Taking somebody out of the world, the only way it should be done.
 //
 // Order matters and used to be wrong: anything a player has on a trade table
@@ -3050,7 +3131,7 @@ function leaveWorld(p) {
   systemChat(`${p.name} has left the world.`);
 }
 
-setInterval(() => {
+setInterval(() => transaction(() => {
   if (DAY_NIGHT_CYCLE) dayTime = (dayTime + DT / DAY_LENGTH) % 1;
   weatherTimer -= DT;
   if (weatherTimer <= 0) {
@@ -3088,14 +3169,8 @@ setInterval(() => {
   }
   stepDuels(DT);
   stepTrades();
-  // A background save, staggered by id so thirty players are not all written
-  // in the same tick. A crash then costs the last three-quarters of a minute.
-  saveTimer += DT;
-  if (saveTimer >= 1) {
-    saveTimer = 0;
-    const slot = Math.floor(Date.now() / 1000) % SAVE_EVERY;
-    for (const p of players.values()) if (p.alive && p.id % SAVE_EVERY === slot) savePlayer(p);
-  }
+  // transaction() checkpoints the whole world every 45s, or immediately
+  // when ownership/progression changes; per-character save slots are unsafe.
 
   const now = Date.now();
   if (now - lastSnap >= 1000 / SNAPSHOT_HZ) {
@@ -3165,7 +3240,7 @@ setInterval(() => {
     };
     for (const p of players.values()) {
       if (p.ws.readyState !== p.ws.OPEN) continue;
-      p.ws.send(zoneSnap(p.zoneId));
+      sendRaw(p.ws, zoneSnap(p.zoneId));
       // The snapshot is built once per zone and shared by everyone in it, so
       // the fog -- which is one player's own -- rides separately. Only the cells
       // uncovered since the last tick, which is a handful while walking and
@@ -3181,11 +3256,9 @@ setInterval(() => {
     // payload per party, not per member.
     for (const party of parties.values()) sendParty(party);
   }
-}, 1000 / TICK_HZ);
+}), 1000 / TICK_HZ);
 
-setInterval(() => {
-  for (const p of players.values()) if (!p.alive && p.deathTimer > 0) p.deathTimer -= 0.25;
-}, 250);
+// Death timers are advanced only by stepPlayer at the simulation rate.
 
 // ---------------------------------------------------------------------------
 // HTTP static host + WebSocket
@@ -3300,14 +3373,36 @@ const wss = new WebSocketServer({ server: httpServer, maxPayload: MAX_MSG_BYTES 
 wss.on('error', (e) => console.warn('[ws] server error:', e && e.message));
 httpServer.on('clientError', (e, socket) => { try { socket.destroy(); } catch { /* already gone */ } });
 
-wss.on('connection', (ws) => {
+const pendingLogins = new Set(), authByIp = new Map();
+let activeAuth = 0, authWindow = 0, authCount = 0;
+function allowAuth(ip) {
+  const now = Date.now();
+  if (now - authWindow >= 1000) { authWindow = now; authCount = 0; }
+  for (const [key, value] of authByIp) if (now - value.start >= 60000) authByIp.delete(key);
+  const bucket = authByIp.get(ip) || { start: now, count: 0 };
+  if (activeAuth >= 2 || authCount >= 16 || bucket.count >= 12 || (!authByIp.has(ip) && authByIp.size >= 10000)) return false;
+  bucket.count++; authCount++; authByIp.set(ip, bucket); return true;
+}
+const heartbeat = setInterval(() => {
+  for (const ws of wss.clients) {
+    if (!ws.isAlive || (!ws.joined && Date.now() - ws.connectedAt > 15000)) { ws.terminate(); continue; }
+    ws.isAlive = false; ws.ping();
+  }
+}, 10000);
+heartbeat.unref();
+wss.on('connection', (ws, request) => {
+  const ip = request.socket.remoteAddress;
+  ws.isAlive = true; ws.connectedAt = Date.now();
+  ws.on('pong', () => { ws.isAlive = true; });
+  if ([...wss.clients].filter(s => s.remoteIp === ip).length >= 8) { ws.terminate(); return; }
+  ws.remoteIp = ip;
   let player = null;
   let msgCount = 0, msgWindow = Date.now(), floodNoted = 0;
   ws.on('error', (e) => {
     console.warn(`[ws] ${player ? player.name : 'a socket'}: ${e && e.message}`);
     try { ws.terminate(); } catch { /* already gone */ }   // the 'close' handler does the cleanup
   });
-  ws.on('message', (raw) => {
+  ws.on('message', async (raw) => {
     const now = Date.now();
     if (now - msgWindow >= MSG_WINDOW_MS) { msgCount = 0; msgWindow = now; }
     if (++msgCount > MSG_BURST) {
@@ -3315,7 +3410,22 @@ wss.on('connection', (ws) => {
       return;
     }
     let msg; try { msg = JSON.parse(raw); } catch { return; }
-    if (!msg || typeof msg !== 'object') return;
+    if (!validMessage(msg)) { send(ws, { t: 'error', text: 'Invalid message.' }); return; }
+    let auth;
+    if (msg.t === 'join') {
+      if (player || ws.authPending) return;
+      msg.name = msg.name.slice(0, 16).replace(/[^\w \-]/g, '').replace(/\s+/g, ' ').trim();
+      const slug = saveSlug(msg.name);
+      if (!msg.name || pendingLogins.has(slug) || [...players.values()].some(q => saveSlug(q.name) === slug)) { send(ws, { t: 'loginfail', text: 'Name unavailable or already logged in.' }); return; }
+      if (!allowAuth(ip)) { send(ws, { t: 'loginfail', text: 'Too many login attempts. Try again later.' }); return; }
+      ws.authPending = true; pendingLogins.add(slug); activeAuth++;
+      try { auth = await authenticate(msg.name, msg.pass); }
+      catch (error) { console.warn('[account] login refused:', error.message); auth = { error: 'Account data unavailable. Contact the administrator.' }; }
+      finally { activeAuth--; pendingLogins.delete(slug); ws.authPending = false; }
+      if (ws.readyState !== ws.OPEN) return;
+      if (!auth.ok) { send(ws, { t: 'loginfail', text: auth.error }); return; }
+    }
+    transaction(() => {
     switch (msg.t) {
       case 'join': {
         if (player) return;
@@ -3326,11 +3436,10 @@ wss.on('connection', (ws) => {
         if ([...players.values()].some(q => saveSlug(q.name) === saveSlug(name))) {
           send(ws, { t: 'loginfail', text: `${name} is already logged in.` }); break;
         }
-        const auth = authenticate(name, msg.pass);
         if (!auth.ok) { send(ws, { t: 'loginfail', text: auth.error }); break; }
         const id = nextId++;
         const look = sanitizeLook(msg.look);
-        const cls = CLASSES[msg.cls] ? String(msg.cls) : DEFAULT_CLASS;
+        const cls = Object.hasOwn(CLASSES, msg.cls) ? String(msg.cls) : DEFAULT_CLASS;
         const start = ZONES[START_ZONE];
         player = {
           id, ws, kind: 'player', name, look, zoneId: START_ZONE,
@@ -3366,7 +3475,8 @@ wss.on('connection', (ws) => {
         // showing, because the character is the thing being resumed.
         const saved = loadSave(name);
         if (saved) applySave(player, saved);
-        players.set(id, player);
+        players.set(id, player); ws.joined = true;
+        for (const g of graves.values()) if (g.name === name) g.owner = id;
         const here = ZONES[player.zoneId] || start;
         revealFog(player, here);   // you can see where you are standing before you move
         send(ws, { t: 'welcome', id, tickRate: SNAPSHOT_HZ, zone: zoneForClient(here), items: ITEM_CATALOG,
@@ -3548,7 +3658,7 @@ wss.on('connection', (ws) => {
         break;
       }
       case 'give': {   // editor tool: hand the player any item, to test gear without grinding for it
-        if (!player || !editAllowed(msg.key) || !ITEMS[msg.item]) break;
+        if (!player || !editAllowed(msg.key) || !Object.hasOwn(ITEMS, msg.item)) break;
         for (let i = 0; i < Math.min(28, Math.max(1, msg.qty | 0)); i++) player.inventory.push(String(msg.item));
         sendBag(player); break;
       }
@@ -3571,7 +3681,7 @@ wss.on('connection', (ws) => {
         break;
       }
       case 'edit:loot:set': {
-        if (!editAllowed(msg.key) || !MONSTER_TEMPLATES[msg.type] || !Array.isArray(msg.table)) break;
+        if (!editAllowed(msg.key) || !Object.hasOwn(MONSTER_TEMPLATES, msg.type) || !Array.isArray(msg.table)) break;
         const table = msg.table.filter(e => e && lootItemOk(e.item)).map(e => ({
           item: String(e.item), min: Math.max(0, Math.min(9999, (+e.min | 0) || 1)),
           max: Math.max(1, Math.min(9999, (+e.max | 0) || 1)), chance: Math.max(1, Math.min(100000, (+e.chance | 0) || 1)),
@@ -3581,7 +3691,7 @@ wss.on('connection', (ws) => {
         break;
       }
       case 'edit:spawn:place': {
-        if (!player || !editAllowed(msg.key) || !MONSTER_TEMPLATES[msg.type]) break;
+        if (!player || !editAllowed(msg.key) || !Object.hasOwn(MONSTER_TEMPLATES, msg.type)) break;
         const z = zoneOf(player);
         const sp = { id: 's' + (editSeq++), type: String(msg.type), cx: +(+msg.x).toFixed(2), cz: +(+msg.z).toFixed(2),
           r: +(+(msg.r || 8)).toFixed(1), count: Math.max(1, Math.min(20, +(msg.count || 3) | 0)),
@@ -3593,7 +3703,7 @@ wss.on('connection', (ws) => {
       case 'edit:spawn:update': {
         if (!player || !editAllowed(msg.key)) break;
         const z = zoneOf(player); const sp = (z._editSpawns || []).find(s => s.id === msg.id); if (!sp) break;
-        if (msg.type != null && MONSTER_TEMPLATES[msg.type]) sp.type = String(msg.type);
+        if (msg.type != null && Object.hasOwn(MONSTER_TEMPLATES, msg.type)) sp.type = String(msg.type);
         if (msg.cx != null) sp.cx = +(+msg.cx).toFixed(2);
         if (msg.cz != null) sp.cz = +(+msg.cz).toFixed(2);
         if (msg.r != null) sp.r = Math.max(1, Math.min(60, +(+msg.r).toFixed(1)));
@@ -3677,7 +3787,7 @@ wss.on('connection', (ws) => {
         if (!player) return;
         const wait = player.lastCombat ? LOGOUT_COMBAT_WAIT - (Date.now() - player.lastCombat) / 1000 : 0;
         if (player.alive && wait > 0) { send(ws, { t: 'event', kind: 'notice', text: `You can't log out in combat. Wait ${Math.ceil(wait)}s.` }); break; }
-        send(ws, { t: 'logout' }); leaveWorld(player); player = null;
+        send(ws, { t: 'logout' }); leaveWorld(player); player = null; ws.joined = false; ws.connectedAt = Date.now();
         break;
       }
       case 'chat': {
@@ -3687,19 +3797,22 @@ wss.on('connection', (ws) => {
         break;
       }
     }
+    });
   });
-  ws.on('close', () => {
+  ws.on('close', () => transaction(() => {
     if (!player) return;
     const wait = player.lastCombat ? LOGOUT_COMBAT_WAIT - (Date.now() - player.lastCombat) / 1000 : 0;
     if (player.alive && wait > 0) {
       // Closed the game mid-fight: the character stays in the world, defenceless,
       // for the rest of the combat wait. Monsters may finish the job.
+      player.input = { f: 0, r: 0, yaw: player.yaw };
+      player.pendingChest = player.pendingPickup = player.pendingMine = player.pendingFish = player.pendingCook = player.pendingUse = player.pendingSeat = null;
       player.lingerT = wait; player.moveTo = null; player._nav = null; player.combatId = null;
       systemChat(`${player.name} tried to flee the fight — their body lingers.`);
       return;
     }
     leaveWorld(player);
-  });
+  }));
 });
 
 httpServer.listen(PORT, () => {

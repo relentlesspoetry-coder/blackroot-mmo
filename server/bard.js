@@ -77,6 +77,7 @@ function sonicHit(ctx, p, m, a, extra = {}) {
   if (crit) mult *= classDef(p.cls).critMult || 1.5;
   // the Bard's numbers climb a little slower than the Cleric's (the spec's level-20 targets sit lower)
   const dmg = Math.max(1, Math.round(a.dmg * (1 + (spellScale(p.level) - 1) * 0.8) * mult * (0.9 + Math.random() * 0.2)));
+  if (a.interrupt && ctx.interruptMonster) ctx.interruptMonster(m, p);
   ctx.applyHit(p, m, dmg, crit, 'sonic');
   return dmg;
 }

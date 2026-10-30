@@ -1464,14 +1464,43 @@ let snapPrev = null, snapCur = null, snapPrevT = 0, snapCurT = 0;
 const SNAP_INTERP = 100; // ms behind for smooth interpolation
 const ENTITY_CULL_D = 150; // mobs further than this from the camera aren't drawn
 
+let connectionState = 'idle', loginTimer = null;
 function connect(name, pass, look, cls) {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  ws = new WebSocket(`${proto}://${location.host}`);
-  // The password goes to the server and is not kept here: it is not written to
-  // localStorage, not held in a module variable, and not sent anywhere else.
-  ws.onopen = () => { ws.send(JSON.stringify({ t: 'join', name, pass, look, cls })); pass = null; };
-  ws.onmessage = (e) => handle(JSON.parse(e.data));
-  ws.onclose = () => addChat('System', 'Disconnected from server.', true);
+  let socket;
+  try { socket = new WebSocket(`${proto}://${location.host}`); }
+  catch (e) { showLoginError('Could not connect. Please try again.'); return; }
+  ws = socket; connectionState = 'connecting';
+  const failed = () => {
+    if (ws !== socket) return;
+    if (connectionState !== 'authenticated') showLoginError('Connection failed. Please try again.');
+    else {
+      clearTimeout(loginTimer); resetGameplayInput(); ws = null; connectionState = 'disconnected';
+      try { socket.close(); } catch (_) {}
+      // A fresh page owns the next session: never start a second render loop.
+      const overlay = document.createElement('div');
+      overlay.setAttribute('role', 'dialog'); overlay.setAttribute('aria-modal', 'true');
+      overlay.style.cssText = 'position:fixed;inset:0;z-index:10000;background:#101014ee;display:grid;place-content:center;text-align:center;color:white';
+      const message = document.createElement('p'); message.textContent = 'Disconnected from server.';
+      const retry = document.createElement('button'); retry.textContent = 'Return to login'; retry.onclick = () => location.reload();
+      overlay.append(message, retry); document.body.append(overlay); retry.focus();
+    }
+  };
+  loginTimer = setTimeout(() => {
+    if (ws === socket && connectionState === 'connecting') showLoginError('Connection timed out. Please try again.');
+  }, 15000);
+  // Socket-local callbacks cannot send credentials through a replacement socket.
+  socket.onopen = () => { if (ws !== socket) return; socket.send(JSON.stringify({ t: 'join', name, pass, look, cls })); pass = null; };
+  socket.onmessage = (e) => {
+    if (ws !== socket) return;
+    let m; try { m = JSON.parse(e.data); } catch (_) { return; }
+    if (m.t === 'welcome') {
+      if (connectionState !== 'connecting') return;
+      clearTimeout(loginTimer); connectionState = 'authenticated';
+    }
+    handle(m);
+  };
+  socket.onerror = failed; socket.onclose = failed;
 }
 
 function handle(m) {
@@ -1485,6 +1514,7 @@ function handle(m) {
       if (EDIT.on) { editInit(); ws?.send(JSON.stringify({ t: 'edit:list', key: EDIT.key })); }
       break;
     case 'snapshot':
+      if (zoneLoading) { pendingZoneSnapshot = m; break; }
       snapPrev = snapCur; snapPrevT = snapCurT;
       snapCur = m; snapCurT = performance.now();
       if (m.time != null && !timeFrozen) worldTime = m.time;
@@ -1538,11 +1568,10 @@ function handle(m) {
     // Which quest objects are done (per player) and which gathering nodes are
     // picked clean (shared) — the server owns both.
     case 'objects': {
-      const used = new Set(m.used || []), spent = new Set(m.spent || []);
-      // `used` is yours; `lit` is the world's -- a lantern anybody lit is lit
-      // for everybody standing there.
-      litObjects = new Set(m.lit || []);
-      for (const [id, rec] of worldObjects) { rec.used = used.has(id); rec.spent = spent.has(id); applyObjectState(rec); }
+      const id = m.zoneId || incomingZoneId || zone?.id;
+      const state = { used: new Set(m.used || []), spent: new Set(m.spent || []), lit: new Set(m.lit || []) };
+      objectStateByZone.set(id, state);
+      if (!zoneLoading && zone?.id === id) restoreObjectState();
       break;
     }
     case 'bag':
@@ -1559,7 +1588,7 @@ function handle(m) {
       renderSkills();
       break;
     case 'abilities':
-      abilities = m.list || []; abilityClass = m; abilityResource = m.resource || 'Rage';
+      abilities = (m.list || []).map(a => ({ ...a, readyAt: performance.now() + (a.left || 0) * 1000 })); abilityClass = m; abilityResource = m.resource || 'Rage';
       if (m.gcdLeft) gcdUntil = performance.now() + m.gcdLeft * 1000;
       fillBarDefaults(); renderActionBar(); renderSpellbook(); refreshDialogue();
       break;
@@ -1716,8 +1745,8 @@ function initThree() {
   clock = new THREE.Clock();
 
   addEventListeners();
-  animate();          // render loop starts immediately; the zone fills in
   enterZone(zone);
+  animate();          // render loop starts immediately; the zone fills in
 }
 
 // ---------------------------------------------------------------------------
@@ -1870,6 +1899,9 @@ function loadZone(zdata) {
   // defaulted to yaw 0 and every new player spawned staring at the north
   // boundary wall with the entire zone behind them.
   camYaw = (zone.spawn && zone.spawn.yaw != null ? zone.spawn.yaw : 0) + Math.PI;
+  // Tear down scene-owned effect caches before removing their meshes.
+  resetZoneEffects();
+  itemMeshes.clear();
   // Tear down the previous zone.
   while (scene.children.length) scene.remove(scene.children[0]);
   entityMeshes.clear();
@@ -1901,7 +1933,9 @@ function loadZone(zdata) {
   hazardLight = new THREE.PointLight(0xff6a20, 0, 14); scene.add(hazardLight);
   bossLight = new THREE.PointLight(0xff4a20, 0, 16); scene.add(bossLight);
 
+  restoreObjectState();
   buildZone();
+  restoreObjectState();
 
   // Sky, day/night and weather only outdoors (caves keep their static env).
   sky = {};
@@ -5615,6 +5649,15 @@ function animateNpcs(dt) {
 // that are finished (a lit lantern keeps its flame) and makes them clickable.
 // ---------------------------------------------------------------------------
 const worldObjects = new Map();   // id -> { def, group, light, used, spent }
+const objectStateByZone = new Map();
+function restoreObjectState() {
+  const state = objectStateByZone.get(zone?.id);
+  litObjects = state?.lit || new Set();
+  for (const [id, rec] of worldObjects) {
+    rec.used = state?.used.has(id) || false; rec.spent = state?.spent.has(id) || false;
+    applyObjectState(rec);
+  }
+}
 let litObjects = new Set();       // ids of toggled-on lights, shared by everyone in the zone
 // Seats out in the world -- the camp's bedrolls and stools -- are instanced
 // scatter props, and an InstancedMesh cannot be picked apart by a raycast.
@@ -5644,8 +5687,9 @@ function buildWorldObjects() {
     const rec = { def: o, group, used: false, spent: false, light: null };
     worldObjects.set(o.id, rec);
     loadModels([o.m]).then(() => {
+      if (worldObjects.get(o.id) !== rec || zoneLoading) return;
       const g = cloneModel(modelKey(o.m), null);
-      if (!g) return;
+      if (!g || rec.swapped) return;
       if (o.s) g.scale.setScalar(o.s);
       g.traverse(x => { if (x.isMesh) { x.userData.pickKind = 'object'; x.userData.pickId = o.id; x.castShadow = true; } });
       group.add(g);
@@ -5661,6 +5705,7 @@ function applyObjectState(rec) {
   if (o.doused && rec.used && !rec.swapped) {
     rec.swapped = true;
     loadModels([o.doused]).then(() => {
+      if (worldObjects.get(o.id) !== rec || zoneLoading) return;
       const g = cloneModel(modelKey(o.doused), null);
       if (!g) return;
       for (const c of [...rec.group.children]) if (c.isObject3D && !c.isLight) rec.group.remove(c);
@@ -8025,6 +8070,18 @@ function updateControls(dt) {
 // Input handlers
 // ---------------------------------------------------------------------------
 let dragging = false, dragMoved = false, lastMX = 0, lastMY = 0, downMX = 0, downMY = 0;
+function gameplayInputBlocked(e) {
+  const editable = el => !!el && (el.isContentEditable || !!el.closest?.('input, textarea, select, button, form, [contenteditable]:not([contenteditable="false"]), [role="dialog"], [aria-modal="true"]'));
+  if (connectionState !== 'authenticated' || zoneLoading || document.hidden) return true;
+  if (editable(e.target) || editable(document.activeElement)) return true;
+  if (settingsEl.classList.contains('show') && e.key !== 'Escape') return true;
+  return !!document.querySelector('[aria-modal="true"], dialog[open]');
+}
+function resetGameplayInput() {
+  for (const k of Object.keys(keys)) keys[k] = false;
+  dragging = false; jump.active = false;
+  if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'input', f: 0, r: 0, yaw: camYaw + Math.PI }));
+}
 function addEventListeners() {
   addEventListener('resize', () => {
     camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
@@ -8118,7 +8175,7 @@ function addEventListeners() {
   }, { passive: false });
 
   addEventListener('keydown', (e) => {
-    if (document.activeElement === chatInput) return;
+    if (gameplayInputBlocked(e)) { resetGameplayInput(); return; }
     if (e.key === 'Enter') { chatInput.focus(); e.preventDefault(); return; }
     if (e.key === 'F3') { e.preventDefault(); toggleEditor(); return; }
     // Tab switches between the region map and the world map -- but only while
@@ -8158,6 +8215,9 @@ function addEventListeners() {
     keys[k] = true;
   });
   addEventListener('keyup', (e) => { keys[e.key.toLowerCase()] = false; });
+  addEventListener('blur', resetGameplayInput);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) resetGameplayInput(); });
+  document.addEventListener('focusin', e => { if (gameplayInputBlocked(e)) resetGameplayInput(); });
 
   chatInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
@@ -8446,7 +8506,7 @@ function renderTrade() {
 document.getElementById('tradeOk').onclick = () => ws?.send(JSON.stringify({ t: 'trade:ok', on: !(tradeState && tradeState.myOk) }));
 document.getElementById('tradeCancel').onclick = () => ws?.send(JSON.stringify({ t: 'trade:cancel' }));
 document.getElementById('tradeX').onclick = () => ws?.send(JSON.stringify({ t: 'trade:cancel' }));
-document.getElementById('tradeGold').onchange = (e) => ws?.send(JSON.stringify({ t: 'trade:gold', gold: e.target.value }));
+document.getElementById('tradeGold').onchange = (e) => ws?.send(JSON.stringify({ t: 'trade:gold', gold: Number(e.target.value) }));
 // The banner runs off the snapshot, so it survives a reload mid-duel and
 // clears itself the moment the duel is over however that happened.
 let duelCount = 0;
@@ -10133,8 +10193,27 @@ function makeNoiseTex() {
   ctx.putImageData(img, 0, 0);
   const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; return t;
 }
+function resetZoneEffects() {
+  // Textures shared by other effects/models remain cached. Only owned GPU
+  // resources and ownership records are released here.
+  for (const h of holyFx.values()) dropHoly(h);
+  for (const cache of [sanctFx, monFx, castFxMap]) for (const rec of cache.values())
+    for (const value of Object.values(rec)) if (value?.isObject3D) dropObj(value);
+  for (const rec of bossMarks.values()) dropObj(rec.spr);
+  for (const rec of _bossEmb.values()) dropObj(rec.pts);
+  for (const rec of hazardFx.values()) scene.remove(rec.g);
+  for (const cache of [holyFx, sanctFx, monFx, bossMarks, _bossEmb, hazardFx, statusFx, castFxMap]) cache.clear();
+  for (const f of fxList) { dropObj(f.obj); dropObj(f.trail); }
+  fxList.length = 0;
+  dropObj(auraObj); dropObj(momentumObj); auraObj = momentumObj = null;
+  if (flameField) {
+    const material = flameField.mesh.material;
+    material.uniforms.uMask.value.dispose(); material.uniforms.uNoise.value.dispose();
+    dropObj(flameField.mesh); flameField = null;
+  }
+}
 function getFlameField() {
-  if (flameField) return flameField;
+  if (flameField) { if (flameField.mesh.parent !== scene) scene.add(flameField.mesh); return flameField; }
   const base = new THREE.PlaneGeometry(1, 1);
   const geo = new THREE.InstancedBufferGeometry(); geo.index = base.index; geo.attributes.position = base.attributes.position; geo.attributes.uv = base.attributes.uv;
   const iPos = new Float32Array(FLAME_MAX * 3), iSize = new Float32Array(FLAME_MAX), iPhase = new Float32Array(FLAME_MAX), iKind = new Float32Array(FLAME_MAX), iOn = new Float32Array(FLAME_MAX);
@@ -10253,6 +10332,10 @@ function updateHazardFx(dt) {
 }
 // The boss events themselves.
 const bossMarks = new Map();   // player id -> mark sprite (The Peckening)
+function zoneEffectTimeout(callback, delay) {
+  const generation = zoneLoadGeneration;
+  return setTimeout(() => { if (generation === zoneLoadGeneration && !zoneLoading) callback(); }, delay);
+}
 function bossEvent(m) {
   const rec = m.id != null ? entityMeshes.get(m.id) : null;
   const mp = rec ? rec.mesh.position : { x: m.x, y: groundY(m.x || 0, m.z || 0), z: m.z };
@@ -10263,13 +10346,13 @@ function bossEvent(m) {
     case 'arrive':
       spawnFx('flash', m.x, gy(m.x, m.z) - 0.2, m.z, 0, { r: 6, color: 0xff3a10, life: 0.6 });
       spawnFx('shock', m.x, gy(m.x, m.z), m.z, 0, { r: 12, color: 0xff4a10, life: 1.0 });
-      for (let i = 0; i < 6; i++) setTimeout(() => spawnFx('impact', m.x + (Math.random() - 0.5) * 4, gy(m.x, m.z), m.z + (Math.random() - 0.5) * 4, 0, { y: 1.5, n: 16, color: 0xff6a20, sparkColor: 0x2a0a0a }), i * 120);
+      for (let i = 0; i < 6; i++) zoneEffectTimeout(() => spawnFx('impact', m.x + (Math.random() - 0.5) * 4, gy(m.x, m.z), m.z + (Math.random() - 0.5) * 4, 0, { y: 1.5, n: 16, color: 0xff6a20, sparkColor: 0x2a0a0a }), i * 120);
       S('thunder_roll', { rate: 0.6, vol: 1 }); cluck(0.25, 1.2); camShake = Math.max(camShake, 0.5);
       addChat('System', 'CLUCKIFER has come!', true); break;
     case 'hell_peck': startBossAnim(rec, 'hell_peck'); telegraph('cone', { x: mp.x, z: mp.z, r: 4.2, half: 0.6, yaw: m.yaw, dur: 0.45 }); cluck(0.5, 0.8); break;
-    case 'blood_peck': startBossAnim(rec, 'blood_peck'); telegraph('cone', { x: mp.x, z: mp.z, r: 4.4, half: 0.55, yaw: m.yaw, dur: 1.2, color: 0xb00020 }); cluck(0.35, 1); setTimeout(() => spawnFx('streak', mp.x, mp.y, mp.z, m.yaw, { fwd: 2.5, len: 4, color: 0xd01030 }), 1150); break;
-    case 'wing': startBossAnim(rec, 'wing'); telegraph('cone', { x: mp.x, z: mp.z, r: 7, half: 1.05, yaw: m.yaw, dur: 0.8 }); setTimeout(() => { spawnFx('arc', mp.x, mp.y, mp.z, m.yaw, { r: 6, spread: 2.1, color: 0xff7a30 }); spawnFx('dust', mp.x, mp.y, mp.z, 0, { r: 7 }); S('attack_slash', { rate: 0.5, vol: 1 }); camShake = Math.max(camShake, 0.2); }, 780); break;
-    case 'scratch': startBossAnim(rec, 'scratch'); telegraph('cone', { x: mp.x, z: mp.z, r: 4, half: 0.7, yaw: m.yaw, dur: 0.85 }); [350, 600, 850].forEach((t, i) => setTimeout(() => { spawnFx('sparks', mp.x, mp.y, mp.z, m.yaw, { n: 10, color: i === 2 ? 0xd01030 : 0xff8a30 }); S('attack_claw', { rate: 1.1 + i * 0.1, vol: 0.8 }); }, t)); break;
+    case 'blood_peck': startBossAnim(rec, 'blood_peck'); telegraph('cone', { x: mp.x, z: mp.z, r: 4.4, half: 0.55, yaw: m.yaw, dur: 1.2, color: 0xb00020 }); cluck(0.35, 1); zoneEffectTimeout(() => spawnFx('streak', mp.x, mp.y, mp.z, m.yaw, { fwd: 2.5, len: 4, color: 0xd01030 }), 1150); break;
+    case 'wing': startBossAnim(rec, 'wing'); telegraph('cone', { x: mp.x, z: mp.z, r: 7, half: 1.05, yaw: m.yaw, dur: 0.8 }); zoneEffectTimeout(() => { spawnFx('arc', mp.x, mp.y, mp.z, m.yaw, { r: 6, spread: 2.1, color: 0xff7a30 }); spawnFx('dust', mp.x, mp.y, mp.z, 0, { r: 7 }); S('attack_slash', { rate: 0.5, vol: 1 }); camShake = Math.max(camShake, 0.2); }, 780); break;
+    case 'scratch': startBossAnim(rec, 'scratch'); telegraph('cone', { x: mp.x, z: mp.z, r: 4, half: 0.7, yaw: m.yaw, dur: 0.85 }); [350, 600, 850].forEach((t, i) => zoneEffectTimeout(() => { spawnFx('sparks', mp.x, mp.y, mp.z, m.yaw, { n: 10, color: i === 2 ? 0xd01030 : 0xff8a30 }); S('attack_claw', { rate: 1.1 + i * 0.1, vol: 0.8 }); }, t)); break;
     case 'lay': startBossAnim(rec, 'lay'); cluck(0.45, 0.6); break;
     case 'fire_egg': {
       startBossAnim(rec, 'lay', 0.9);
@@ -10278,11 +10361,11 @@ function bossEvent(m) {
     case 'egg_burst':
       spawnFx('flash', m.tx, gy(m.tx, m.tz) - 0.6, m.tz, 0, { r: 4.5, color: 0xffb040, life: 0.35 }); spawnFx('shock', m.tx, gy(m.tx, m.tz), m.tz, 0, { r: 5, color: 0xff5a10 });
       spawnFx('impact', m.tx, gy(m.tx, m.tz), m.tz, 0, { y: 0.6, n: 22, color: 0xfff0c0, sparkColor: 0xff7a20 }); sfx.play('cave_rock', { x: m.tx, z: m.tz, rate: 0.9, vol: 0.9 }); camShake = Math.max(camShake, 0.15); break;
-    case 'demon_cluck': startBossAnim(rec, 'demon_cluck'); telegraph('circle', { x: mp.x, z: mp.z, r: 9, dur: 1.0, color: 0xff2a2a }); cluck(0.22, 1.4); setTimeout(() => { for (let i = 0; i < 3; i++) setTimeout(() => spawnFx('shock', mp.x, mp.y, mp.z, 0, { r: 10 + i * 2, color: 0xff3a30, life: 0.7 }), i * 120); S('thunder_roll', { rate: 1.4, vol: 0.9, lowpass: 1200 }); camShake = Math.max(camShake, 0.35); }, 1000); break;
+    case 'demon_cluck': startBossAnim(rec, 'demon_cluck'); telegraph('circle', { x: mp.x, z: mp.z, r: 9, dur: 1.0, color: 0xff2a2a }); cluck(0.22, 1.4); zoneEffectTimeout(() => { for (let i = 0; i < 3; i++) zoneEffectTimeout(() => spawnFx('shock', mp.x, mp.y, mp.z, 0, { r: 10 + i * 2, color: 0xff3a30, life: 0.7 }), i * 120); S('thunder_roll', { rate: 1.4, vol: 0.9, lowpass: 1200 }); camShake = Math.max(camShake, 0.35); }, 1000); break;
     case 'summon': startBossAnim(rec, 'summon'); S('magic_cast', { rate: 0.6, vol: 0.8, lowpass: 900 }); spawnFx('glow', mp.x, mp.y, mp.z, 0, { color: 0xb01020, life: 0.9 }); break;
     case 'minion': spawnFx('impact', m.mx, gy(m.mx, m.mz), m.mz, 0, { y: 0.5, n: 10, color: 0x3a0a0a, sparkColor: 0xff5a20 }); spawnFx('dust', m.mx, gy(m.mx, m.mz), m.mz, 0, { r: 1.5 }); break;
     case 'barrage': startBossAnim(rec, 'barrage'); for (const a of m.lanes) telegraph('lane', { x: mp.x, z: mp.z, yaw: a, len: m.len, w: 1.4, dur: m.delay });
-      setTimeout(() => { for (const a of m.lanes) for (let k = 0; k < 3; k++) setTimeout(() => projectile({ from: { x: mp.x, y: mp.y + 1.6, z: mp.z }, to: { x: mp.x + Math.sin(a) * m.len, y: 0.6, z: mp.z + Math.cos(a) * m.len }, dur: 0.45, color: k ? 0xff7a20 : 0xffc060, size: 0.9, trail: true }), k * 80); S('attack_slash', { rate: 0.8, vol: 0.9 }); }, m.delay * 1000); break;
+      zoneEffectTimeout(() => { for (const a of m.lanes) for (let k = 0; k < 3; k++) zoneEffectTimeout(() => projectile({ from: { x: mp.x, y: mp.y + 1.6, z: mp.z }, to: { x: mp.x + Math.sin(a) * m.len, y: 0.6, z: mp.z + Math.cos(a) * m.len }, dur: 0.45, color: k ? 0xff7a20 : 0xffc060, size: 0.9, trail: true }), k * 80); S('attack_slash', { rate: 0.8, vol: 0.9 }); }, m.delay * 1000); break;
     case 'rush': startBossAnim(rec, 'rush'); telegraph('lane', { x: mp.x, z: mp.z, yaw: m.dir, len: 26, w: 2.2, dur: 0.5 }); cluck(0.4, 1); break;
     case 'stunned': startBossAnim(rec, 'stunned', m.t); spawnFx('impact', mp.x, mp.y, mp.z, 0, { y: 2.5, n: 14, color: 0xffe080, sparkColor: 0xffd040 }); S('cave_rock', { rate: 0.7, vol: 1 }); camShake = Math.max(camShake, 0.3); if (m.vulnerable) addChat('System', 'Cluckifer is stunned and vulnerable!', true); break;
     case 'roost_jump': startBossAnim(rec, 'roost_jump'); telegraph('circle', { x: m.tx, z: m.tz, r: m.r, dur: m.delay, color: 0xff2a10 }); spawnFx('dust', mp.x, mp.y, mp.z, 0, { r: 4 }); cluck(0.3, 1); break;
@@ -10293,9 +10376,9 @@ function bossEvent(m) {
     case 'mark': { const pr = entityMeshes.get(m.pid); if (pr) { const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: fxStar(), color: 0xff2020, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })); spr.scale.set(1.6, 1.6, 1); spr.frustumCulled = false; scene.add(spr); bossMarks.set(m.pid, { spr, t: m.t }); } cluck(0.3, 1); if (m.pid === myId) addChat('System', 'Cluckifer has marked you!', true); break; }
     case 'lunge': startBossAnim(rec, 'lunge'); spawnFx('streak', (m.fx0 + mp.x) / 2, mp.y, (m.fz0 + mp.z) / 2, Math.atan2(mp.x - m.fx0, mp.z - m.fz0), { len: Math.hypot(mp.x - m.fx0, mp.z - m.fz0), color: 0xff4a20, y: 1.2 }); spawnFx('dust', m.fx0, gy(m.fx0, m.fz0), m.fz0, 0, { r: 2 }); S('attack_slash', { rate: 0.7, vol: 0.7 }); break;
     case 'miss_blast': spawnFx('flash', mp.x, mp.y - 0.6, mp.z, 0, { r: 3, color: 0xff8030, life: 0.3 }); spawnFx('shock', mp.x, mp.y, mp.z, 0, { r: m.r * 1.4, color: 0xff5a10 }); spawnFx('cracks', mp.x, mp.y, mp.z, 0, { r: 1.6, fwd: 0 }); S('hit_thud', { rate: 0.5, vol: 0.9 }); break;
-    case 'molt': startBossAnim(rec, 'molt'); for (let i = 0; i < 12; i++) setTimeout(() => projectile({ from: { x: mp.x, y: mp.y + 2, z: mp.z }, to: { x: mp.x + (Math.random() - 0.5) * 30, y: 0.3, z: mp.z + (Math.random() - 0.5) * 30 }, dur: 0.9, arc: 5, color: 0xff6a20, size: 0.7, trail: true }), i * 60); S('magic_cast', { rate: 0.5, vol: 0.8 }); break;
-    case 'crow': startBossAnim(rec, 'crow', 3.6); m.radii.forEach((r, i) => telegraph('ring', { x: mp.x, z: mp.z, r, w: 1.3, gaps: m.gaps, dur: 1.2 + i * 0.9, color: 0xff3a30 })); m.radii.forEach((r, i) => setTimeout(() => { spawnFx('shock', mp.x, mp.y, mp.z, 0, { r: r * 1.15, color: 0xff3020, life: 0.6 }); S('thunder_roll', { rate: 1.2 + i * 0.2, vol: 0.7, lowpass: 1500 }); camShake = Math.max(camShake, 0.2); }, 1200 + i * 900)); cluck(0.2, 1.4); break;
-    case 'meteor': startBossAnim(rec, 'meteor'); m.pts.forEach(([x, z], i) => { telegraph('circle', { x, z, r: m.r, dur: m.delay + i * 0.25, color: 0xff3a10 }); setTimeout(() => projectile({ from: { x: x + 6, y: 34, z: z - 4 }, to: { x, y: gy(x, z) + 0.3, z }, dur: 0.5, color: 0xffa030, size: 2.2, trail: true }), (m.delay + i * 0.25 - 0.5) * 1000); }); cluck(0.3, 1); break;
+    case 'molt': startBossAnim(rec, 'molt'); for (let i = 0; i < 12; i++) zoneEffectTimeout(() => projectile({ from: { x: mp.x, y: mp.y + 2, z: mp.z }, to: { x: mp.x + (Math.random() - 0.5) * 30, y: 0.3, z: mp.z + (Math.random() - 0.5) * 30 }, dur: 0.9, arc: 5, color: 0xff6a20, size: 0.7, trail: true }), i * 60); S('magic_cast', { rate: 0.5, vol: 0.8 }); break;
+    case 'crow': startBossAnim(rec, 'crow', 3.6); m.radii.forEach((r, i) => telegraph('ring', { x: mp.x, z: mp.z, r, w: 1.3, gaps: m.gaps, dur: 1.2 + i * 0.9, color: 0xff3a30 })); m.radii.forEach((r, i) => zoneEffectTimeout(() => { spawnFx('shock', mp.x, mp.y, mp.z, 0, { r: r * 1.15, color: 0xff3020, life: 0.6 }); S('thunder_roll', { rate: 1.2 + i * 0.2, vol: 0.7, lowpass: 1500 }); camShake = Math.max(camShake, 0.2); }, 1200 + i * 900)); cluck(0.2, 1.4); break;
+    case 'meteor': startBossAnim(rec, 'meteor'); m.pts.forEach(([x, z], i) => { telegraph('circle', { x, z, r: m.r, dur: m.delay + i * 0.25, color: 0xff3a10 }); zoneEffectTimeout(() => projectile({ from: { x: x + 6, y: 34, z: z - 4 }, to: { x, y: gy(x, z) + 0.3, z }, dur: 0.5, color: 0xffa030, size: 2.2, trail: true }), (m.delay + i * 0.25 - 0.5) * 1000); }); cluck(0.3, 1); break;
     case 'meteor_hit': spawnFx('flash', m.tx, gy(m.tx, m.tz) - 0.5, m.tz, 0, { r: 5, color: 0xffb050, life: 0.35 }); spawnFx('shock', m.tx, gy(m.tx, m.tz), m.tz, 0, { r: m.r * 1.6, color: 0xff5a10 }); spawnFx('cracks', m.tx, gy(m.tx, m.tz), m.tz, 0, { r: 2, fwd: 0 }); spawnFx('impact', m.tx, gy(m.tx, m.tz), m.tz, 0, { y: 0.6, n: 20, color: 0xfff0c0, sparkColor: 0xff7a20 }); sfx.play('cave_rock', { x: m.tx, z: m.tz, rate: 0.7, vol: 1 }); camShake = Math.max(camShake, 0.25); break;
     case 'phase2': startBossAnim(rec, 'phase2'); if (rec) rec.phase2 = true; spawnFx('flash', mp.x, mp.y, mp.z, 0, { r: 9, color: 0xff3a10, life: 0.8 }); spawnFx('shock', mp.x, mp.y, mp.z, 0, { r: 14, color: 0xff2a10, life: 1.2 }); S('thunder_roll', { rate: 0.7, vol: 1 }); cluck(0.18, 1.5); camShake = Math.max(camShake, 0.5); addChat('System', 'The Devil Chicken is unleashed!', true); break;
     case 'final_start': startBossAnim(rec, 'final_start', m.t); spawnFx('glow', mp.x, mp.y, mp.z, 0, { color: 0xff2a10, life: 1.5 }); S('thunder_roll', { rate: 0.5, vol: 1 }); cluck(0.15, 1.6); addChat('System', 'THE FINAL CLUCK!', true); break;
@@ -10307,8 +10390,8 @@ function bossEvent(m) {
     case 'rotten_burst': spawnFx('flash', m.mx, gy(m.mx, m.mz) - 0.5, m.mz, 0, { r: 8, color: 0x8aff40, life: 0.6 }); spawnFx('shock', m.mx, gy(m.mx, m.mz), m.mz, 0, { r: m.r * 1.5, color: 0x6ae030, life: 1.0 }); spawnFx('impact', m.mx, gy(m.mx, m.mz), m.mz, 0, { y: 0.8, n: 30, color: 0xd8ff90, sparkColor: 0x4a9a20 }); sfx.play('thunder_roll', { x: m.mx, z: m.mz, rate: 1.1, vol: 0.9, lowpass: 1000 }); camShake = Math.max(camShake, 0.3); break;
     case 'chick_burst': spawnFx('flash', m.mx, gy(m.mx, m.mz) - 0.6, m.mz, 0, { r: 3.5, color: 0xffa040, life: 0.3 }); spawnFx('shock', m.mx, gy(m.mx, m.mz), m.mz, 0, { r: m.r * 1.4, color: 0xff5a10 }); spawnFx('impact', m.mx, gy(m.mx, m.mz), m.mz, 0, { y: 0.4, n: 14, color: 0xfff0c0, sparkColor: 0xff7a20 }); sfx.play('cave_rock', { x: m.mx, z: m.mz, rate: 1.2, vol: 0.7 }); break;
     case 'knock': camShake = Math.max(camShake, 0.25); break;
-    case 'vanish': spawnFx('flash', mp.x, mp.y, mp.z, 0, { r: 7, color: 0xff3a10, life: 0.8 }); spawnFx('glow', mp.x, mp.y, mp.z, 0, { color: 0x3a0a0a, life: 1.2 }); for (let i = 0; i < 6; i++) setTimeout(() => spawnFx('impact', mp.x + (Math.random() - 0.5) * 4, mp.y, mp.z + (Math.random() - 0.5) * 4, 0, { y: 0.6, n: 12, color: 0x2a0a0a, sparkColor: 0xff5a20 }), i * 90); S('thunder_roll', { rate: 0.55, vol: 0.8 }); cluck(0.2, 0.9); break;
-    case 'die': spawnFx('flash', mp.x, mp.y, mp.z, 0, { r: 10, color: 0xff3a10, life: 1.0 }); spawnFx('shock', mp.x, mp.y, mp.z, 0, { r: 16, color: 0xff4a10, life: 1.4 }); for (let i = 0; i < 10; i++) setTimeout(() => spawnFx('impact', mp.x + (Math.random() - 0.5) * 6, mp.y, mp.z + (Math.random() - 0.5) * 6, 0, { y: 1 + Math.random() * 2, n: 16, color: 0xff8a30, sparkColor: 0x2a0a0a }), i * 100); S('enemy_die', { rate: 0.45, vol: 1 }); S('thunder_roll', { rate: 0.6, vol: 1 }); camShake = Math.max(camShake, 0.6); break;
+    case 'vanish': spawnFx('flash', mp.x, mp.y, mp.z, 0, { r: 7, color: 0xff3a10, life: 0.8 }); spawnFx('glow', mp.x, mp.y, mp.z, 0, { color: 0x3a0a0a, life: 1.2 }); for (let i = 0; i < 6; i++) zoneEffectTimeout(() => spawnFx('impact', mp.x + (Math.random() - 0.5) * 4, mp.y, mp.z + (Math.random() - 0.5) * 4, 0, { y: 0.6, n: 12, color: 0x2a0a0a, sparkColor: 0xff5a20 }), i * 90); S('thunder_roll', { rate: 0.55, vol: 0.8 }); cluck(0.2, 0.9); break;
+    case 'die': spawnFx('flash', mp.x, mp.y, mp.z, 0, { r: 10, color: 0xff3a10, life: 1.0 }); spawnFx('shock', mp.x, mp.y, mp.z, 0, { r: 16, color: 0xff4a10, life: 1.4 }); for (let i = 0; i < 10; i++) zoneEffectTimeout(() => spawnFx('impact', mp.x + (Math.random() - 0.5) * 6, mp.y, mp.z + (Math.random() - 0.5) * 6, 0, { y: 1 + Math.random() * 2, n: 16, color: 0xff8a30, sparkColor: 0x2a0a0a }), i * 100); S('enemy_die', { rate: 0.45, vol: 1 }); S('thunder_roll', { rate: 0.6, vol: 1 }); camShake = Math.max(camShake, 0.6); break;
     case 'hazard': spawnFx('flash', m.x, gy(m.x, m.z) - 0.8, m.z, 0, { r: m.r, color: m.kind2 === 'poison' ? 0x8aff40 : 0xff7a20, life: 0.3 }); break;
   }
 }
@@ -11071,7 +11154,7 @@ function onEvent(m) {
       if (R && !m.ranged) startTrail(R, m.dur, m.type);
       if (m.ranged) {
         const T = entityMeshes.get(m.target);
-        if (R && T) setTimeout(() => shotStreak(R, T, m.type), Math.max(0, m.dur * 1000 - 120));
+        if (R && T) zoneEffectTimeout(() => shotStreak(R, T, m.type), Math.max(0, m.dur * 1000 - 120));
       }
       break;
     }
@@ -11484,7 +11567,6 @@ function renderActionBar() {
     d.ondragleave = () => d.classList.remove('drop');
     d.ondrop = (e) => { e.preventDefault(); d.classList.remove('drop'); const id = e.dataTransfer.getData('text/ability'); if (id) placeInSlot(i, id); };
   });
-  for (const a of abilities) { a._t0 = performance.now(); a._left0 = a.left || 0; }
 }
 function placeInSlot(i, id) {
   const j = barSlots.indexOf(id); if (j >= 0) barSlots[j] = barSlots[i]; // swap if it was elsewhere
@@ -11501,7 +11583,7 @@ function updateActionBar() {
   const hasTarget = !!(tRec && tRec.data && tRec.data.alive);
   el.querySelectorAll('.abslot[data-id]').forEach(d => {
     const a = abilityById(d.dataset.id); if (!a) return;
-    const left = Math.max(0, (a._left0 || 0) - (now - (a._t0 || now)) / 1000);
+    const left = Math.max(0, ((a.readyAt || 0) - now) / 1000);
     const cd = d.querySelector('.cd'), t = d.querySelector('.cdt');
     if (left > 0.05) { cd.style.setProperty('--p', (left / (a.cd || 1) * 100) + '%'); t.textContent = left >= 10 ? Math.ceil(left) : left.toFixed(1); }
     else { cd.style.setProperty('--p', '0%'); t.textContent = ''; }
@@ -12702,6 +12784,7 @@ function animate() {
   requestAnimationFrame(animate);
   frameCount++;
   const dt = Math.min(0.05, clock.getDelta());
+  if (zoneLoading || connectionState === 'disconnected') { renderer.render(scene, camera); return; }
   _pf('renderWorld', () => renderWorld(dt));
   _pf('sky', () => updateSky(dt));
   _pf('controls', () => updateControls(dt));
@@ -12928,18 +13011,28 @@ const modelsReady = loadModels(CORE_MODELS, (d, t) => {
 
 // Zone assets arrive with the zone itself, so a zone can add content without
 // the client knowing anything about it.
-let zoneLoading = false;
+let zoneLoading = false, zoneLoadGeneration = 0, incomingZoneId = null, pendingZoneSnapshot = null;
 async function enterZone(zdata) {
-  zoneLoading = true;
+  const generation = ++zoneLoadGeneration;
+  zoneLoading = true; incomingZoneId = zdata.id; pendingZoneSnapshot = null;
+  snapPrev = snapCur = null; resetGameplayInput();
   const list = zdata.models || [];
-  if (list.length) {
-    const el = document.getElementById('ztMain');
-    await loadModels(list, (d, t) => {
-      if (el && d < t) el.textContent = `Loading ${zdata.name}… ${d}/${t}`;
-    });
+  try {
+    if (list.length) {
+      const el = document.getElementById('ztMain');
+      await loadModels(list, (d, t) => {
+        if (generation === zoneLoadGeneration && el && d < t) el.textContent = `Loading ${zdata.name}… ${d}/${t}`;
+      });
+    }
+    if (generation !== zoneLoadGeneration) return;
+    loadZone(zdata);
+    zoneLoading = false;
+    const snapshot = pendingZoneSnapshot; pendingZoneSnapshot = null;
+    if (snapshot) handle(snapshot);
+  } catch (e) {
+    if (generation !== zoneLoadGeneration) return;
+    document.getElementById('ztMain').textContent = 'Zone could not load. Reload to retry.';
   }
-  zoneLoading = false;
-  loadZone(zdata);
 }
 
 let pickedClass = 'fighter';
@@ -12986,11 +13079,13 @@ function showLoginError(text) {
   el.textContent = text || 'Could not log in.';
   el.style.display = 'block';
   playBtn.disabled = false; playBtn.textContent = 'Enter World';
-  try { ws.onclose = null; ws.close(); } catch (e) {}
-  ws = null;
+  clearTimeout(loginTimer); connectionState = 'idle';
+  const socket = ws; ws = null;
+  if (socket) { socket.onopen = socket.onmessage = socket.onerror = socket.onclose = null; try { socket.close(); } catch (e) {} }
   passInput.value = ''; passInput.focus();
 }
 async function play() {
+  if (connectionState !== 'idle') return;
   const name = nameInput.value.trim();
   const pass = passInput.value;
   if (!name) return showLoginError('Pick a name.');
@@ -12998,8 +13093,10 @@ async function play() {
   document.getElementById('loginErr').style.display = 'none';
   const look = currentLook();
   try { localStorage.setItem('bk.look', JSON.stringify(look)); } catch (e) {}   // the look, never the password
-  playBtn.disabled = true;
-  if (!modelsDone) { playBtn.textContent = 'Loading models…'; await modelsReady; }
+  playBtn.disabled = true; connectionState = 'loading';
+  try { if (!modelsDone) { playBtn.textContent = 'Loading models…'; await modelsReady; } }
+  catch (e) { showLoginError('Models could not load. Please reload to retry.'); return; }
+  playBtn.textContent = 'Connecting…';
   connect(name, pass, look, pickedClass);
   passInput.value = '';
 }

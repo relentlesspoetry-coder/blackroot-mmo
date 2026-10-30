@@ -7,6 +7,7 @@
 // inside something. Tools import THIS, so a check and the game ask one question.
 
 import { PLAYER } from './balance.js';
+import { sceneryCandidates, invalidateSceneryArray } from './collision-spatial.js';
 import {
   dist2, closestOnPolyline, pointInPoly, polyCentroid,
   riversOf, bridgesOf, pathsOf, terrainAt, rockSolidAt, T_OFF, T_DEEP,
@@ -84,6 +85,15 @@ function standableAt(zone, x, z) {
   }
   return true;
 }
+
+// Generated scenery is static between prepareZone calls (which replace arrays).
+// In-place tooling changes must explicitly invalidate; live editor props never
+// use this cache. Array replacement and length changes are detected automatically.
+function invalidateCollisionScenery(zone) {
+  invalidateSceneryArray(zone._trees);
+  invalidateSceneryArray(zone._scatter);
+}
+function scatterRadius(o) { return o.c ? o.c * o.s : null; }
 
 function resolveCollision(zone, ent, radius) {
   const b = zone.bounds;
@@ -172,7 +182,7 @@ function resolveCollision(zone, ent, radius) {
 
 
   // Solid cave dressing (columns, big stalagmites, ore veins).
-  for (const o of (zone._scatter || [])) {
+  for (const o of sceneryCandidates(zone._scatter, ent, radius, scatterRadius)) {
     if (!o.c) continue;
     const dx = ent.x - o.x, dz = ent.z - o.z, d = Math.hypot(dx, dz), min = o.c * o.s + radius;
     if (d < min && d > 1e-4) { ent.x = o.x + (dx / d) * min; ent.z = o.z + (dz / d) * min; }
@@ -205,7 +215,7 @@ function resolveCollision(zone, ent, radius) {
   // Trees are solid at their trunk. Which species stands at a spot is the
   // client's own hash of the position (speciesFor), so the trunk radius here
   // matches the trunk drawn there, scaled by the tree's size.
-  for (const t of (zone._trees || [])) {
+  for (const t of sceneryCandidates(zone._trees, ent, radius, treeTrunkRadius)) {
     const dx = ent.x - t.x, dz = ent.z - t.z, d = Math.hypot(dx, dz), min = treeTrunkRadius(t) + radius;
     if (d < min && d > 1e-4) { ent.x = t.x + (dx / d) * min; ent.z = t.z + (dz / d) * min; }
   }
@@ -276,4 +286,4 @@ function lineClear(zone, ax, az, bx, bz, radius = PLAYER_RADIUS * 0.9) {
 }
 
 export { RIVER_BANK, STEP_UP, PLAYER_TALL, primTopAt, floorHeightAt, standableAt,
-         resolveCollision, treeTrunkRadius, navBlocked, lineClear, segDirAt };
+         resolveCollision, invalidateCollisionScenery, treeTrunkRadius, navBlocked, lineClear, segDirAt };

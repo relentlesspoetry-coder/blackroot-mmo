@@ -94,7 +94,7 @@ export function swingBand(prof, strLevel, strBonus) {
   const mid = (maxHit(strLevel, strBonus) * 0.5 + strBonus * 0.25) * (prof.spd / DEFAULT_ATTACK_SPEED);
   return [Math.max(1, Math.round(mid * 0.72)), Math.max(2, Math.round(mid * 1.28))];
 }
-export function rollBand([lo, hi]) { return lo + Math.floor(Math.random() * (hi - lo + 1)); }
+export function rollBand([lo, hi], rng = Math.random) { return lo + Math.floor(rng() * (hi - lo + 1)); }
 
 // ---------------------------------------------------------------------------
 // The attack table
@@ -134,7 +134,7 @@ export function resolveAttack(atk, def, rng = Math.random) {
   // parry it with — this is the whole reason a tank turns a monster around.
   if (def.facing !== false && (r -= (def.parry || 0)) < 0) return { outcome: 'parry', dmg: 0 };
 
-  let dmg = rollBand(atk.band) * (atk.mult || 1);
+  let dmg = rollBand(atk.band, rng) * (atk.mult || 1);
   let outcome = 'hit', blocked = 0;
   // A shield does not stop a blow outright, it eats a chunk of it.
   if (def.facing !== false && rng() < (def.block || 0) * blockMod) {

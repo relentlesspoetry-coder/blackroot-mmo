@@ -1,17 +1,26 @@
 {
   "name": "blackroot-server",
   "version": "0.1.0",
-  "description": "Blackroot — authoritative 3D browser MMO server",
+  "description": "Blackroot \u2014 authoritative 3D browser MMO server",
   "type": "module",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node tools/questtest.mjs && node tools/equiptest.mjs && node tools/animtest.mjs"
+    "test": "node --test test/*.test.js && node tools/integritytest.mjs && node tools/gameplaytest.mjs && node ../tools/fogcheck.mjs && node ../tools/questcheck.mjs",
+    "test:e2e": "node tools/questtest.mjs && node tools/equiptest.mjs && node tools/miningtest.mjs",
+    "test:assets": "node tools/asset-preflight.mjs && node ../tools/assets.mjs && node ../tools/zonecheck.mjs && node tools/animtest.mjs",
+    "test:world": "node ../tools/walkcheck.mjs",
+    "test:browser": "node tools/asset-preflight.mjs && node ../tools/uicheck.mjs",
+    "test:client:browser": "node test/client-browser-smoke.mjs"
   },
   "dependencies": {
     "ws": "^8.18.0"
   },
   "devDependencies": {
+    "playwright": "^1.64.1",
     "three": "^0.186.0"
+  },
+  "engines": {
+    "node": ">=24 <25"
   }
 }

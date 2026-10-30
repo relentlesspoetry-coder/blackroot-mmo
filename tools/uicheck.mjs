@@ -2,20 +2,24 @@
 // this takes no screenshots — software rendering makes PNG encoding the slow
 // part, and everything here is a number we can just read out of the page.
 //
-//   npm i -D playwright && npx playwright install chromium
-//   cd server && node server.js &
-//   PORT=8080 node tools/uicheck.mjs
+//   cd server && npx playwright install chromium && npm run test:browser
+// Starts an isolated disposable server/account; full assets required.
 
-import { chromium } from 'playwright';
+import { createRequire } from 'node:module';
+import { fixture } from '../server/tools/test-fixture.mjs';
+const { chromium } = createRequire(new URL('../server/package.json', import.meta.url))('playwright');
+const f = await fixture({ prefix: 'UI', timeout: 360000 });
 
-const PORT = process.env.PORT || 8080;
+const PORT = f.port;
+let browser;
+try {
 let failures = 0;
 function check(label, cond, detail = '') {
   console.log(`${cond ? '  ok  ' : '  FAIL'}  ${label}${detail ? '  — ' + detail : ''}`);
   if (!cond) failures++;
 }
 
-const browser = await chromium.launch({
+browser = await chromium.launch({
   args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader',
          '--ignore-gpu-blocklist', '--enable-webgl',
          // some networks (and CI proxies) re-sign TLS, which Chromium won't trust
@@ -28,9 +32,13 @@ page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
 page.on('pageerror', e => errors.push('PAGEERROR: ' + e.message));
 
 await page.goto(`http://localhost:${PORT}/?debug=1`, { waitUntil: 'load', timeout: 60000 });
-await page.waitForFunction(() => document.getElementById('playBtn').textContent === 'Enter World', { timeout: 180000 });
-await page.fill('#nameInput', 'UICheck');
+await page.waitForFunction(() => document.getElementById('playBtn').textContent === 'Enter World', null, { timeout: 180000 });
+await page.fill('#nameInput', 'UI' + f.name);
+await page.fill('#passInput', f.pass);
 await page.click('#playBtn');
+await page.waitForFunction(() => getComputedStyle(document.getElementById('hud')).display !== 'none' || getComputedStyle(document.getElementById('loginErr')).display !== 'none', null, { timeout: 30000 });
+const loginError = await page.locator('#loginErr').evaluate(el => getComputedStyle(el).display !== 'none' ? el.textContent : '');
+if (loginError) throw new Error(`UI login rejected: ${loginError}`);
 await page.waitForSelector('#hud', { state: 'visible', timeout: 30000 });
 await page.waitForTimeout(3500);
 
@@ -40,16 +48,17 @@ check('debug handle attached', await page.evaluate(() => !!window.__bk));
 
 console.log('\n--- spawn camera ---');
 const spawn = await page.evaluate(() => ({
-  camYaw: null,
+  camYaw: window.__bk.camYaw,
   cam: window.__bk.camera.position.toArray().map(v => +v.toFixed(2)),
   player: window.__bk.self.mesh.position.toArray().map(v => +v.toFixed(2)),
   zoneSpawn: window.__bk.zone.spawn,
   centre: window.__bk.pick(0, 0, 3),
 }));
-// The character spawns facing south (+Z), so the camera belongs north of them
-// (a smaller z) and the view should open onto the zone, not the boundary wall.
-check('camera sits behind the spawn facing', spawn.cam[2] < spawn.player[2],
-  `cam z ${spawn.cam[2]} vs player z ${spawn.player[2]}`);
+// Compare with the live spawn orientation, not the old map's north wall.
+const dx = spawn.cam[0] - spawn.player[0], dz = spawn.cam[2] - spawn.player[2];
+check('camera sits behind the spawn facing',
+  dx * Math.sin(spawn.zoneSpawn.yaw || 0) + dz * Math.cos(spawn.zoneSpawn.yaw || 0) < 0,
+  `spawn yaw ${spawn.zoneSpawn.yaw}, camera offset ${dx}, ${dz}`);
 const centreNames = spawn.centre.map(h => h.name || '(unnamed)');
 check('the view opens onto the world, not a wall at point-blank range',
   !spawn.centre.length || spawn.centre[0].dist > 4,
@@ -73,7 +82,7 @@ const camBefore = before.z;
 await page.keyboard.down('ArrowLeft');
 const startFrames = await page.evaluate(() => window.__bk.frames);
 await page.waitForFunction(
-  (f) => window.__bk.frames > f + 6, startFrames, { timeout: 30000 }).catch(() => {});
+  (f) => window.__bk.frames > f + 6, startFrames, { timeout: 30000 });
 const heldFrames = (await page.evaluate(() => window.__bk.frames)) - startFrames;
 await page.keyboard.up('ArrowLeft');
 await page.waitForTimeout(600);
@@ -260,5 +269,5 @@ console.log('\n--- after all that ---');
 check('still no client-side errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 
 console.log(`\n${failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECK(S) FAILED'}\n`);
-await browser.close();
-process.exit(failures === 0 ? 0 : 1);
+if (failures) throw new Error(`${failures} UI checks failed`);
+} finally { if (browser) await browser.close(); await f.cleanup(); }

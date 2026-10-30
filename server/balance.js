@@ -96,7 +96,7 @@ export const CLASSES = {
         desc: 'A slow, heavy two-handed strike. Generates Momentum (2 on a crit).' },
       { id: 'cleave', name: 'Cleave', level: 2, cost: 18, cd: 6, kind: 'cone', cone: 100, cap: 3, flat: 10, wd: 1.05, momentumIf2: 1,
         desc: 'Swing in a wide arc, hitting up to 3 enemies in front of you. Generates Momentum if it hits 2+.' },
-      { id: 'battle_rush', name: 'Battle Rush', level: 3, cost: 20, cd: 20, kind: 'rush', range: 20, interrupt: true, offGcd: true, threatSpike: 40, buff: { id: 'rushing_force', dur: 300, charges: 1, dmg: 0.25 },
+      { id: 'battle_rush', name: 'Battle Rush', level: 3, cost: 20, cd: 20, kind: 'rush', range: 20, interrupt: true, offGcd: true, threatSpike: 40, buff: { id: 'rushing_force', dur: 300, chargeTrigger: 'ability', charges: 1, dmg: 0.25 },
         desc: 'Charge to a target within 20m. Your next melee ability deals +25% damage.' },
       { id: 'crushing_blow', name: 'Crushing Blow', level: 4, cost: 26, cd: 10, kind: 'melee', flat: 24, wd: 1.35, momentum: 1, heavy: true, debuff: { id: 'crushed_armor', dur: 12 },
         desc: 'Smash the enemy, reducing its armour by 8% for 12s. Generates Momentum.' },
@@ -108,7 +108,7 @@ export const CLASSES = {
         desc: 'A brutal strike. You take +8% damage for 8s afterwards.' },
       { id: 'heavy_riposte', name: 'Heavy Riposte', level: 8, cost: 18, cd: 8, kind: 'melee', flat: 30, wd: 1.8, momentum: 1, requires: 'riposte_ready',
         desc: 'After an enemy misses you, answer with a heavy counter. +15% crit chance if used within 3s.' },
-      { id: 'weapon_flow', name: 'Weapon Flow', level: 9, cost: 45, cd: 45, kind: 'self', buff: { id: 'weapon_flow', dur: 300, charges: 2, dmg: 0.18, heavyOnly: true },
+      { id: 'weapon_flow', name: 'Weapon Flow', level: 9, cost: 45, cd: 45, kind: 'self', buff: { id: 'weapon_flow', dur: 300, chargeTrigger: 'ability', charges: 2, dmg: 0.18, heavyOnly: true },
         desc: 'Your next 2 heavy-weapon abilities deal +18% damage.' },
       { id: 'armor_splitter', name: 'Armor Splitter', level: 10, cost: 52, cd: 18, kind: 'melee', flat: 46, wd: 1.6, momentum: 1, debuff: { id: 'split_guard', dur: 10 },
         desc: 'Drive through the guard: the target takes +8% physical damage for 10s.' },
@@ -120,7 +120,7 @@ export const CLASSES = {
         desc: 'Spin for 3s, hitting up to 6 enemies within 6m each second. You move at 60% while spinning.' },
       { id: 'final_swing', name: 'Final Swing', level: 14, cost: 76, cd: 12, kind: 'execute', flat: 62, wd: 1.9, momentum: 1,
         desc: 'Only on targets at or below 30% HP: up to +75% damage the closer they are to death. Refunds 30 rage on a kill.' },
-      { id: 'bloodrush', name: 'Bloodrush', level: 15, cost: 90, cd: 180, kind: 'self', buff: { id: 'bloodrush', dur: 300, charges: 10, dmg: 0.18, crit: 0.12, taken: 0.08 },
+      { id: 'bloodrush', name: 'Bloodrush', level: 15, cost: 90, cd: 180, kind: 'self', buff: { id: 'bloodrush', dur: 300, chargeTrigger: 'ability', charges: 10, dmg: 0.18, crit: 0.12, taken: 0.08 },
         desc: '+18% melee damage and +12% crit chance for 10 melee abilities. You take +8% damage while it lasts.' },
       { id: 'shatter_guard', name: 'Shatter Guard', level: 16, cost: 92, cd: 30, kind: 'melee', flat: 70, wd: 1.75, momentum: 1, interrupt: true,
         desc: 'A heavy impact that breaks a defensive shield or guard if the enemy has one (+30% damage when it does).' },
@@ -128,7 +128,7 @@ export const CLASSES = {
         desc: 'A 1s wind-up overhead strike for massive damage. Crits deal +20% at 3+ Momentum.' },
       { id: 'unstoppable_footwork', name: 'Unstoppable Footwork', level: 18, cost: 70, cd: 90, kind: 'self', offGcd: true, buff: { id: 'footwork', dur: 300, move: 0.10 },
         desc: 'Break free of snares and move 10% faster for 5 min.' },
-      { id: 'berserkers_roar', name: "Berserker's Roar", level: 19, cost: 120, cd: 300, kind: 'self', taunt: 14, buff: { id: 'berserkers_roar', dur: 300, charges: 8, dmg: 0.15, taken: 0.10, radius: 2 },
+      { id: 'berserkers_roar', name: "Berserker's Roar", level: 19, cost: 120, cd: 300, kind: 'self', taunt: 14, buff: { id: 'berserkers_roar', dur: 300, chargeTrigger: 'ability', charges: 8, dmg: 0.15, taken: 0.10, radius: 2 },
         desc: '+15% melee damage and +2m to cleave radius for 8 melee abilities, and every enemy within 14m turns on you. You take +10% damage.' },
       { id: 'perfect_masterstroke', name: 'Perfect Masterstroke', level: 20, cost: 160, cd: 120, kind: 'melee', flat: 150, wd: 2.8, spendMomentum: { flat: 30, wd: 0.35 }, heavy: true,
         desc: 'The capstone: spends all Momentum for +30 damage and +35% weapon damage per stack. +15% vs Split Guard. Refunds 50 rage on a kill.' },
@@ -271,7 +271,7 @@ export const CLASSES = {
 // else is bought from the class trainer once the level is reached.
 export function abilityCost(a) { return a.level <= 1 ? 0 : 15 + a.level * a.level * 4; } // L2 31gp .. L10 415gp .. L20 1,615gp
 export const DEFAULT_CLASS = 'fighter';
-export function classDef(id) { return CLASSES[id] || CLASSES[DEFAULT_CLASS]; }
+export function classDef(id) { return Object.hasOwn(CLASSES, id) ? CLASSES[id] : CLASSES[DEFAULT_CLASS]; }
 export function classStats(id, level) {
   const c = classDef(id);
   return { atk: c.atk(level), str: c.str(level), def: c.def(level), hp: c.hp(level), rage: c.rage ? c.rage.max : 0, mana: c.mana ? c.mana.max(level) : 0 };

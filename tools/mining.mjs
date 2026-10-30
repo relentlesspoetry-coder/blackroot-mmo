@@ -6,9 +6,9 @@ import {
   ORES, PICKAXES, swingChance, swingTime, secondsPerOre,
   xpForMiningLevel, miningLevelFromXp,
 } from '../server/mining.js';
-import { darkwoods } from '../server/zones/darkwoods.js';
+import { blackroot } from '../server/zones/blackroot.js';
 import { spiderden } from '../server/zones/spiderden.js';
-import { generateScatter } from '../server/worldgen.js';
+import { prepareZone } from '../server/worldgen.js';
 import { oreFromModel } from '../server/mining.js';
 
 const pad = (s, n) => String(s).padEnd(n);
@@ -54,8 +54,9 @@ for (const l of [1, 5, 8, 12, 16, 22, 30, 38, 46]) {
 
 console.log('\n=== Veins in the world ===');
 let problems = 0;
-for (const zone of [darkwoods, spiderden]) {
-  const scatter = generateScatter(zone);
+for (const zone of [blackroot, spiderden]) {
+  prepareZone(zone); // Match runtime props, water filtering and placement IDs.
+  const scatter = zone._scatter;
   const veins = scatter.filter(o => oreFromModel(o.m));
   const by = {};
   for (const v of veins) by[oreFromModel(v.m)] = (by[oreFromModel(v.m)] || 0) + 1;
@@ -70,10 +71,10 @@ for (const zone of [darkwoods, spiderden]) {
 }
 
 // Can a fresh character actually start? Copper and tin must exist above ground.
-const surface = generateScatter(darkwoods).filter(o => oreFromModel(o.m));
+const surface = blackroot._scatter.filter(o => oreFromModel(o.m));
 const starters = surface.filter(o => ORES[oreFromModel(o.m)].level === 1);
 if (!starters.length) { console.log('  !! nothing minable at level 1 outside the cave'); problems++; }
-else console.log(`\nA level-1 miner has ${starters.length} veins reachable without entering the cave.`);
+else console.log(`\nA level-1 miner has ${starters.length} surface veins (availability only; run walkcheck for reachability).`);
 
 console.log(`\n${problems === 0 ? 'NO PROBLEMS' : problems + ' PROBLEM(S)'}\n`);
 process.exit(problems === 0 ? 0 : 1);
