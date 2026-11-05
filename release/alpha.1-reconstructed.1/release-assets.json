@@ -1,0 +1,43 @@
+{
+  "package_version": "0.1.0~alpha.1+reconstructed.1",
+  "tag": "v0.1.0-alpha.1-reconstructed.1",
+  "note": "Installer bytes are unchanged. Public asset filenames use GitHub-safe hyphens; build-manifest.json and BUILD-SHA256SUMS preserve the original build filenames. SHA256SUMS verifies the public download filenames.",
+  "assets": [
+    {
+      "file": "blackroot-client_0.1.0-alpha.1-reconstructed.1_amd64.deb",
+      "bytes": 4728,
+      "sha256": "9f533147006ff121518525bf5ce9c24f41fd3d8be4b4dbba81ad12aa296b4e5e",
+      "build_file": "blackroot-client_0.1.0~alpha.1+reconstructed.1_amd64.deb"
+    },
+    {
+      "file": "blackroot-reconstructed-source_0.1.0-alpha.1-reconstructed.1.tar.gz",
+      "bytes": 65812377,
+      "sha256": "b6587263da54c157a96345566d0ca1d79851ba94543404cadb1d998d5eeb1485",
+      "build_file": "blackroot-reconstructed-source_0.1.0-alpha.1-reconstructed.1.tar.gz"
+    },
+    {
+      "file": "blackroot-server_0.1.0-alpha.1-reconstructed.1_amd64.deb",
+      "bytes": 46132268,
+      "sha256": "0f931bda45510ad3c78f0ca15c8c793c86836467b7e0819cc10b361695f3e00d",
+      "build_file": "blackroot-server_0.1.0~alpha.1+reconstructed.1_amd64.deb"
+    },
+    {
+      "file": "build-manifest.json",
+      "bytes": 990,
+      "sha256": "913e772e39ea840e0f638fe8e395f17b37c6a277f2758119c6eb4680911cc285",
+      "build_file": "build-manifest.json"
+    },
+    {
+      "file": "validation-report.json",
+      "bytes": 5403,
+      "sha256": "ce2ad151cc5f24c11efc1b228229add464ba9dfa8da71d35b21d416fcb41c9cb",
+      "build_file": "validation-report.json"
+    },
+    {
+      "file": "BUILD-SHA256SUMS",
+      "build_file": "BUILD-SHA256SUMS",
+      "bytes": 555,
+      "sha256": "03b87f719d4f3ec53e65b6cbd2eb2478f1094d33ba8920a234e089e7ccc3dd1a"
+    }
+  ]
+}

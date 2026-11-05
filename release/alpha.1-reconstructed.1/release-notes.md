@@ -8,7 +8,7 @@ The client is a launcher for a WebGL-capable default browser, not an embedded re
 
 ### Downloads
 
-Use both `blackroot-server_0.1.0~alpha.1+reconstructed.1_amd64.deb` and `blackroot-client_0.1.0~alpha.1+reconstructed.1_amd64.deb`. The client depends on this exact server package version. `SHA256SUMS`, `build-manifest.json` and `validation-report.json` accompany the packages.
+Use both `blackroot-server_0.1.0-alpha.1-reconstructed.1_amd64.deb` and `blackroot-client_0.1.0-alpha.1-reconstructed.1_amd64.deb`. The client depends on this exact server package version. `SHA256SUMS`, `build-manifest.json` and `validation-report.json` accompany the packages.
 
 The server uses per-user XDG data/state/config directories and defaults to loopback port 8282. No system service, boot autostart, firewall change or automatic save migration is provided. Existing manually launched servers and saves remain separate. Closing a launcher window is intended to leave its local server running; Stop is intended to save and shut it down. Those intended UI actions still require desktop testing.
 
@@ -44,3 +44,5 @@ Verify downloaded assets with:
 ```sh
 sha256sum -c SHA256SUMS
 ```
+
+Public download filenames use GitHub-safe hyphens; the Debian package version remains `0.1.0~alpha.1+reconstructed.1`. `build-manifest.json` and `BUILD-SHA256SUMS` preserve the original build filenames. Use `SHA256SUMS` to verify the public download filenames; `release-assets.json` records their mapping.
