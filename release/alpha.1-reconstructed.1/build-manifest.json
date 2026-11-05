@@ -1,0 +1,24 @@
+{
+  "artifacts": [
+    {
+      "bytes": 46132268,
+      "file": "blackroot-server_0.1.0~alpha.1+reconstructed.1_amd64.deb",
+      "sha256": "0f931bda45510ad3c78f0ca15c8c793c86836467b7e0819cc10b361695f3e00d"
+    },
+    {
+      "bytes": 4728,
+      "file": "blackroot-client_0.1.0~alpha.1+reconstructed.1_amd64.deb",
+      "sha256": "9f533147006ff121518525bf5ce9c24f41fd3d8be4b4dbba81ad12aa296b4e5e"
+    }
+  ],
+  "game_patch": "evidence/packaged-server-host.patch",
+  "game_revision": "8e8c7dccb2f86bacf816fc768bf6b98884996eba",
+  "original_recipe_recovered": false,
+  "provenance_sha256": "3fc67ae0266adf5c877cb45482afbf31af9da018b9befb3982c138828ff93102",
+  "recipe_sha256": "4e8f747bb4a46203d8c3289f3ab7ed397c07bfe3d3759c15c4651efd15968c6e",
+  "recovered_file_count": 554,
+  "recovered_files_manifest_sha256": "1c27dc8adc309961f80831507c2d2f15b0eb18e30a0e66027c3a792f387c3240",
+  "source_date_epoch": 1793318400,
+  "status": "RECONSTRUCTED",
+  "version": "0.1.0~alpha.1+reconstructed.1"
+}

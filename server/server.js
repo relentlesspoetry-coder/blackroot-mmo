@@ -3905,7 +3905,7 @@ wss.on('connection', (ws, request) => {
   }));
 });
 
-httpServer.listen(PORT, () => {
+httpServer.listen(PORT, process.env.HOST || undefined, () => {
   console.log(`\n  Blackroot — ${ZONES[START_ZONE].name}`);
   console.log(`  Open http://localhost:${PORT} in your browser.`);
   console.log(`  Open it in two windows to see multiplayer.\n`);

@@ -1,0 +1,122 @@
+{
+  "version": "0.1.0~alpha.1+reconstructed.1",
+  "game_revision": "8e8c7dccb2f86bacf816fc768bf6b98884996eba plus recorded HOST patch",
+  "original_recipe_recovered": false,
+  "artifacts": [
+    {
+      "bytes": 46132268,
+      "file": "blackroot-server_0.1.0~alpha.1+reconstructed.1_amd64.deb",
+      "sha256": "0f931bda45510ad3c78f0ca15c8c793c86836467b7e0819cc10b361695f3e00d"
+    },
+    {
+      "bytes": 4728,
+      "file": "blackroot-client_0.1.0~alpha.1+reconstructed.1_amd64.deb",
+      "sha256": "9f533147006ff121518525bf5ce9c24f41fd3d8be4b4dbba81ad12aa296b4e5e"
+    }
+  ],
+  "reproducibility": "Both DEBs and build manifests byte-identical across two separate builds.",
+  "comparison": {
+    "passed": true,
+    "packages": [
+      {
+        "package": "server",
+        "original_file_count": 549,
+        "new_file_count": 551,
+        "shared_files_byte_identical": 549,
+        "removed": [],
+        "added": [
+          "usr/share/doc/blackroot-server/RECONSTRUCTED.md",
+          "usr/share/doc/blackroot-server/reconstruction-provenance.json"
+        ],
+        "content_changes": [],
+        "mode_changes": [
+          "usr/lib/blackroot/runtime.py",
+          "usr/lib/blackroot/ui.py"
+        ],
+        "control": {
+          "Package": "blackroot-server",
+          "Version": "0.1.0~alpha.1+reconstructed.1",
+          "Section": "games",
+          "Priority": "optional",
+          "Architecture": "amd64",
+          "Maintainer": "Blackroot Project <noreply@localhost>",
+          "Installed-Size": "190089",
+          "Depends": "python3 (>= 3.10), python3-gi, gir1.2-gtk-3.0, xdg-utils, libc6 (>= 2.28), libstdc++6 (>= 5), libgcc-s1",
+          "Description": "Blackroot server launcher - reconstructed alpha packaging"
+        }
+      },
+      {
+        "package": "client",
+        "original_file_count": 5,
+        "new_file_count": 7,
+        "shared_files_byte_identical": 5,
+        "removed": [],
+        "added": [
+          "usr/share/doc/blackroot-client/RECONSTRUCTED.md",
+          "usr/share/doc/blackroot-client/reconstruction-provenance.json"
+        ],
+        "content_changes": [],
+        "mode_changes": [],
+        "control": {
+          "Package": "blackroot-client",
+          "Version": "0.1.0~alpha.1+reconstructed.1",
+          "Section": "games",
+          "Priority": "optional",
+          "Architecture": "amd64",
+          "Maintainer": "Blackroot Project <noreply@localhost>",
+          "Installed-Size": "8",
+          "Depends": "blackroot-server (= 0.1.0~alpha.1+reconstructed.1)",
+          "Description": "Blackroot client launcher - reconstructed alpha packaging"
+        }
+      }
+    ],
+    "checks": [
+      "all shared payload bytes identical",
+      "only declared provenance additions",
+      "root-owned, non-world-writable archive entries",
+      "no maintainer scripts",
+      "exact-version client dependency",
+      "348 GLBs",
+      "no packaged saves/accounts",
+      "manifest hashes and sizes"
+    ]
+  },
+  "dependencies": {
+    "passed": true,
+    "node_version": "24.22.2",
+    "node_archive_sha256": "48cc0e21e048790e54c0cf5749c2725005313d652651c40b7a21feb9697aaf75",
+    "node_binary_sha256": "904a6d3484241d466989f9df9ba3aab822b1496191bdb28230eb491a55c32a52",
+    "node_license_matches": true,
+    "ws_version": "8.21.3",
+    "ws_archive_sha256": "df3454ef205791ce50b5b9241762dcf9bfe1aa9f7f01d3057229be7dac0c2dc3",
+    "ws_integrity": "sha512-201TZ/kPWxoPr/OKWjquZR1SWKXcvxdH+e1xrx89b3YbmzLMFCLfnaG1HFIgWzJOEWZ7MvpK++odZufgYR50Rw==",
+    "ws_files_matched": 19,
+    "note": "Downloaded only official Node HTTPS distribution and lockfile-pinned npm archive. No installation."
+  },
+  "tests": {
+    "supervisor_lifecycle": "5 passed in 1.264s; harness runtime copied from the new extracted package",
+    "real_package_smoke": "Passed bundled Node24.22.2, HTTP, WebSocket upgrade, loopback-only listener, graceful checkpoint Stop",
+    "real_concurrent_and_foreign_server": {
+      "passed": true,
+      "checks": [
+        "five concurrent real starts and repeated start create one real game server",
+        "HTTP serves Blackroot from the owned ephemeral loopback port",
+        "graceful Stop writes a checkpoint in disposable XDG data",
+        "occupied-port start refuses the foreign server; Stop leaves it serving its marker",
+        "existing disposable checkpoint survives a refused start and Stop"
+      ],
+      "node": "v24.22.2",
+      "game_port": 46703,
+      "foreign_test_port": 44213,
+      "cleanup": "Only owned test processes and temporary XDG profile were used; all stopped and removed."
+    },
+    "elf_dependencies": "All bundled Node ELF dependencies resolved on this host"
+  },
+  "limitations": [
+    "Original packaging worktree remains unavailable; this is an explicitly new reconstruction.",
+    "Interactive GTK controls, default-browser routing and system installation not verified; native UI automation is unavailable.",
+    "No new full browser gameplay run was performed; game and launcher bytes are identical to the previously tested original payload."
+  ],
+  "initial_recipe_defect": "Independent archive validator rejected initial mode-0777 staging root; builder fixed to mode0755, rejected DEBs removed, both final builds passed archive permissions checks.",
+  "status": "Automated validation passed; desktop controls, default-browser routing and installation remain unverified."
+}

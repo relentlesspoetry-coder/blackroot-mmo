@@ -1,0 +1,12 @@
+{
+  "github_commit": "8e8c7dccb2f86bacf816fc768bf6b98884996eba",
+  "matched_files": 519,
+  "different": [
+    {
+      "path": "server/server.js",
+      "packaged_sha": "c739beb058c1590d15a24623ca72890a8deabab8",
+      "github_sha": "69ecad157d55484fe996bae6b5397a4fb002fb59"
+    }
+  ],
+  "not_in_github_commit": []
+}

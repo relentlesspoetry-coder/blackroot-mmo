@@ -1,0 +1,35 @@
+{
+  "status": "RECONSTRUCTED PACKAGING SOURCE; not the missing original packaging worktree",
+  "game_base_commit": "8e8c7dccb2f86bacf816fc768bf6b98884996eba",
+  "game_changes": [
+    "server/server.js HOST bind-address support, recorded in evidence/packaged-server-host.patch"
+  ],
+  "recovery_date": "2026-11-04",
+  "original_installers": [
+    {
+      "filename": "blackroot-server_0.1.0~alpha.1_amd64.deb",
+      "bytes": 46132560,
+      "sha256": "4613c95ce46d5cdc9d8cf39adf8d1ba5fe61f54f56116ab6cd5e29da3d24dbf8"
+    },
+    {
+      "filename": "blackroot-client_0.1.0~alpha.1_amd64.deb",
+      "bytes": 3340,
+      "sha256": "74df5659f68b3069c783617bce036afce298fd35bd30296a44bb2979277196c1"
+    }
+  ],
+  "dependency_origin": "Recovered from the original hash-verified DEB, then independently compared byte-for-byte with official upstream archives. Build itself is offline.",
+  "original_build_recipe_recovered": false,
+  "original_build_manifest_recovered": false,
+  "dependencies_verified_against_upstream": {
+    "passed": true,
+    "node_version": "24.22.2",
+    "node_archive_sha256": "48cc0e21e048790e54c0cf5749c2725005313d652651c40b7a21feb9697aaf75",
+    "node_binary_sha256": "904a6d3484241d466989f9df9ba3aab822b1496191bdb28230eb491a55c32a52",
+    "node_license_matches": true,
+    "ws_version": "8.21.3",
+    "ws_archive_sha256": "df3454ef205791ce50b5b9241762dcf9bfe1aa9f7f01d3057229be7dac0c2dc3",
+    "ws_integrity": "sha512-201TZ/kPWxoPr/OKWjquZR1SWKXcvxdH+e1xrx89b3YbmzLMFCLfnaG1HFIgWzJOEWZ7MvpK++odZufgYR50Rw==",
+    "ws_files_matched": 19,
+    "note": "Downloaded only official Node HTTPS distribution and lockfile-pinned npm archive. No installation."
+  }
+}

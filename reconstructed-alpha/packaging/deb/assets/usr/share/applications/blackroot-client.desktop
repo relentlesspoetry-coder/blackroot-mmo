@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Blackroot Client
+Comment=Play the local alpha in your default web browser
+Exec=blackroot-client
+Icon=blackroot-client
+Terminal=false
+Categories=Game;RolePlaying;
+StartupNotify=false

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Blackroot Server
+Comment=Start, stop and monitor your local alpha server
+Exec=blackroot-server
+Icon=blackroot-server
+Terminal=false
+Categories=Game;RolePlaying;
+StartupNotify=false
